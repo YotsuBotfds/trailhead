@@ -11,13 +11,26 @@ static func build_cedar_hollow(parent: Node) -> Array[StaticBody3D]:
 	bodies.append(_build_surface_box(parent, "old_cedar_pad", &"packed_dirt", Vector3(0.0, -0.05, -5.3), Vector3(2.0, 0.1, 1.2)))
 	bodies.append(_build_surface_box(parent, "meadow_left", &"tall_grass", Vector3(-1.7, -0.05, -2.5), Vector3(2.0, 0.1, 5.5)))
 	bodies.append(_build_surface_box(parent, "meadow_right", &"tall_grass", Vector3(1.7, -0.05, -2.5), Vector3(2.0, 0.1, 5.5)))
+	bodies.append(_build_oriented_surface_box(parent, "outcrop_climb", &"loose_rock", Vector3(-1.2, 0.15, -7.8), Vector3(4.6, 0.1, 4.6), 0.0, 5.0))
+	bodies.append(_build_surface_box(parent, "overlook_ridge_pad", &"loose_rock", Vector3(-2.3, 0.40, -9.1), Vector3(3.8, 0.1, 1.8)))
 	return bodies
 
 
 static func _build_surface_box(parent: Node, base_name: String, surface_id: StringName, center: Vector3, size: Vector3) -> StaticBody3D:
+	return _build_surface_box_transform(parent, base_name, surface_id, Transform3D(Basis.IDENTITY, center), size)
+
+
+static func _build_oriented_surface_box(parent: Node, base_name: String, surface_id: StringName, center: Vector3, size: Vector3, yaw_degrees: float, pitch_degrees: float) -> StaticBody3D:
+	var yaw_basis: Basis = Basis(Vector3.UP, deg_to_rad(yaw_degrees))
+	var pitch_basis: Basis = Basis(Vector3.RIGHT, deg_to_rad(pitch_degrees))
+	return _build_surface_box_transform(parent, base_name, surface_id, Transform3D(yaw_basis * pitch_basis, center), size)
+
+
+static func _build_surface_box_transform(parent: Node, base_name: String, surface_id: StringName, transform: Transform3D, size: Vector3) -> StaticBody3D:
 	var body: StaticBody3D = StaticBody3D.new()
 	body.name = base_name + "__surf_" + String(surface_id)
 	body.add_to_group("surf_" + String(surface_id))
+	body.transform = transform
 	parent.add_child(body)
 
 	var collision: CollisionShape3D = CollisionShape3D.new()
@@ -25,6 +38,5 @@ static func _build_surface_box(parent: Node, base_name: String, surface_id: Stri
 	var shape: BoxShape3D = BoxShape3D.new()
 	shape.size = size
 	collision.shape = shape
-	collision.position = center
 	body.add_child(collision)
 	return body
