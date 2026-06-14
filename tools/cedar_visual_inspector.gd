@@ -4,16 +4,23 @@ const CedarHollowPlayableScene: PackedScene = preload("res://scenes/cedar_hollow
 const CedarRoute: Resource = preload("res://data/routes/cedar_hollow.tres")
 const CedarSurfaceVisualCatalog: Resource = preload("res://data/surface_visuals/cedar_hollow_surface_visuals.tres")
 const VehicleStateScript: GDScript = preload("res://systems/vehicle/vehicle_state.gd")
+const FeatureVisualBuilderScript: GDScript = preload("res://systems/render/feature_visual_builder.gd")
+const ScatterVisualBuilderScript: GDScript = preload("res://systems/render/scatter_visual_builder.gd")
+const BoundaryVisualBuilderScript: GDScript = preload("res://systems/render/boundary_visual_builder.gd")
 const SURFACE_DIR_PATH: String = "res://data/surfaces"
-const EXPECTED_BOARDWALK_SEGMENTS: int = 9
-const EXPECTED_STEPPING_STONES: int = 5
-const EXPECTED_GRASS_TUFTS: int = 18
-const EXPECTED_GRASS_OCCLUDERS: int = 10
-const EXPECTED_BOULDERS: int = 5
-const EXPECTED_BRANCHES: int = 5
-const EXPECTED_PINECONES: int = 8
-const EXPECTED_FERN_CLUMPS: int = 6
-const EXPECTED_CATTAILS: int = 5
+const EXPECTED_BOARDWALK_SEGMENTS: int = FeatureVisualBuilderScript.BOARDWALK_SEGMENT_COUNT
+const EXPECTED_STEPPING_STONES: int = FeatureVisualBuilderScript.STEPPING_STONE_COUNT
+const EXPECTED_CULVERT_PIPES: int = 1
+const EXPECTED_LOG_RAMPS: int = 1
+const EXPECTED_FEATURE_INSTANCED_CHILDREN: int = EXPECTED_BOARDWALK_SEGMENTS + EXPECTED_STEPPING_STONES + EXPECTED_CULVERT_PIPES + EXPECTED_LOG_RAMPS
+const EXPECTED_GRASS_TUFTS: int = ScatterVisualBuilderScript.EXPECTED_GRASS_TUFTS
+const EXPECTED_GRASS_OCCLUDERS: int = ScatterVisualBuilderScript.EXPECTED_GRASS_OCCLUDERS
+const EXPECTED_BOULDERS: int = ScatterVisualBuilderScript.EXPECTED_BOULDERS
+const EXPECTED_BRANCHES: int = ScatterVisualBuilderScript.EXPECTED_BRANCHES
+const EXPECTED_PINECONES: int = ScatterVisualBuilderScript.EXPECTED_PINECONES
+const EXPECTED_FERN_CLUMPS: int = ScatterVisualBuilderScript.EXPECTED_FERN_CLUMPS
+const EXPECTED_CATTAILS: int = ScatterVisualBuilderScript.EXPECTED_CATTAILS
+const EXPECTED_SCATTER_INSTANCED_CHILDREN: int = EXPECTED_GRASS_TUFTS + EXPECTED_GRASS_OCCLUDERS + EXPECTED_BOULDERS + EXPECTED_BRANCHES + EXPECTED_PINECONES + EXPECTED_FERN_CLUMPS + EXPECTED_CATTAILS
 const EXPECTED_MUD_PATCHES: int = 8
 const EXPECTED_TIRE_TRACK_PAIRS: int = 3
 const EXPECTED_GRAVEL_SPECKLES: int = 14
@@ -21,10 +28,11 @@ const EXPECTED_LEAF_LITTER: int = 12
 const EXPECTED_ROOT_RIDGES: int = 5
 const EXPECTED_PUDDLE_SHEENS: int = 4
 const EXPECTED_WET_GLINTS: int = 6
-const EXPECTED_BOUNDARY_GRASS: int = 20
-const EXPECTED_BOUNDARY_BOULDERS: int = 8
-const EXPECTED_BOUNDARY_BRANCHES: int = 6
-const EXPECTED_TRAIL_BLAZES: int = 4
+const EXPECTED_BOUNDARY_GRASS: int = BoundaryVisualBuilderScript.EXPECTED_BOUNDARY_GRASS
+const EXPECTED_BOUNDARY_BOULDERS: int = BoundaryVisualBuilderScript.EXPECTED_BOUNDARY_BOULDERS
+const EXPECTED_BOUNDARY_BRANCHES: int = BoundaryVisualBuilderScript.EXPECTED_BOUNDARY_BRANCHES
+const EXPECTED_TRAIL_BLAZES: int = BoundaryVisualBuilderScript.EXPECTED_TRAIL_BLAZES
+const EXPECTED_BOUNDARY_INSTANCED_CHILDREN: int = EXPECTED_BOUNDARY_GRASS + EXPECTED_BOUNDARY_BOULDERS + EXPECTED_BOUNDARY_BRANCHES + EXPECTED_TRAIL_BLAZES
 const EXPECTED_WAYFINDER_SIGNS: int = 3
 const FLOAT_EPSILON: float = 0.001
 const CAMERA_COMPOSITION_TOLERANCE: float = 0.01
@@ -115,10 +123,11 @@ func _inspect() -> void:
 			_errors.append("TerrainVisuals contains no mesh instances")
 	var feature_root: Node = _require_node(_scene_root, "CedarHollow/FeatureVisuals")
 	if feature_root != null:
+		_require_direct_child_count(feature_root, "FeatureVisuals", EXPECTED_FEATURE_INSTANCED_CHILDREN)
 		_require_named_count(feature_root, "boardwalk_segment_", EXPECTED_BOARDWALK_SEGMENTS)
 		_require_named_count(feature_root, "stepping_stone_", EXPECTED_STEPPING_STONES)
-		_require_named_count(feature_root, "culvert_pipe", 1)
-		_require_named_count(feature_root, "log_ramp", 1)
+		_require_named_count(feature_root, "culvert_pipe", EXPECTED_CULVERT_PIPES)
+		_require_named_count(feature_root, "log_ramp", EXPECTED_LOG_RAMPS)
 		_require_node_position(feature_root, "boardwalk_segment_1", Vector3(3.25, 0.035, -4.31), FEATURE_TRANSFORM_TOLERANCE)
 		_require_node_position(feature_root, "boardwalk_segment_9", Vector3(3.25, 0.035, -2.39), FEATURE_TRANSFORM_TOLERANCE)
 		_require_node_scale(feature_root, "boardwalk_segment_1", Vector3(1.35, 1.0, 1.0), FLOAT_EPSILON)
@@ -196,6 +205,7 @@ func _inspect() -> void:
 			_errors.append("PropVisuals contains no mesh instances")
 	var scatter_root: Node = _require_node(_scene_root, "CedarHollow/ScatterVisuals")
 	if scatter_root != null:
+		_require_direct_child_count(scatter_root, "ScatterVisuals", EXPECTED_SCATTER_INSTANCED_CHILDREN)
 		_require_named_count(scatter_root, "grass_tuft_", EXPECTED_GRASS_TUFTS)
 		_require_named_count(scatter_root, "grass_occluder_", EXPECTED_GRASS_OCCLUDERS)
 		_require_named_count(scatter_root, "boulder_", EXPECTED_BOULDERS)
@@ -230,6 +240,7 @@ func _inspect() -> void:
 			_errors.append("GroundDetailVisuals mesh count expected at least " + str(expected_ground_detail_mesh_count) + ", got " + str(ground_detail_mesh_count))
 	var boundary_root: Node = _require_node(_scene_root, "CedarHollow/BoundaryVisuals")
 	if boundary_root != null:
+		_require_direct_child_count(boundary_root, "BoundaryVisuals", EXPECTED_BOUNDARY_INSTANCED_CHILDREN)
 		_require_named_count(boundary_root, "boundary_grass_", EXPECTED_BOUNDARY_GRASS)
 		_require_named_count(boundary_root, "boundary_boulder_", EXPECTED_BOUNDARY_BOULDERS)
 		_require_named_count(boundary_root, "boundary_branch_", EXPECTED_BOUNDARY_BRANCHES)
@@ -289,6 +300,12 @@ func _require_named_count(parent: Node, prefix: String, expected: int) -> void:
 			count += 1
 	if count != expected:
 		_errors.append("expected " + str(expected) + " nodes named " + prefix + "*, got " + str(count))
+
+
+func _require_direct_child_count(parent: Node, label: String, expected: int) -> void:
+	var count: int = parent.get_child_count()
+	if count != expected:
+		_errors.append(label + " expected " + str(expected) + " direct instanced children, got " + str(count))
 
 
 func _require_node_position(parent: Node, path: String, expected: Vector3, tolerance: float) -> void:
@@ -1248,7 +1265,7 @@ func _inspect_minimap_route_content(minimap: Control) -> void:
 
 
 func _require_minimap_segment_points(minimap: Control, segment_id: StringName, expected_count: int) -> void:
-	var points: Array = minimap.call("_map_points_for_segment", segment_id)
+	var points: Array[Vector2] = minimap.call("_map_points_for_segment", segment_id)
 	if points.size() != expected_count:
 		_errors.append("MinimapView segment " + String(segment_id) + " expected " + str(expected_count) + " map points, got " + str(points.size()))
 	for point_value in points:
