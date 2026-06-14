@@ -49,6 +49,15 @@ VEHICLE_WHEEL_SOCKET_POSITIONS = {
     "wheel_rear_right": [0.08, -0.015, 0.10],
 }
 VEHICLE_SOCKET_TOLERANCE = 0.001
+VEHICLE_WHEEL_CHILD_NAME = "wheel_mesh"
+VEHICLE_WHEEL_CHILD_TRANSFORM_TOLERANCE = 0.001
+VEHICLE_WHEEL_PIVOT_TOLERANCE = 0.003
+VEHICLE_WHEEL_MIN_DIAMETER = 0.035
+VEHICLE_WHEEL_MAX_DIAMETER = 0.09
+VEHICLE_WHEEL_MIN_WIDTH = 0.018
+VEHICLE_WHEEL_MAX_WIDTH = 0.06
+VEHICLE_WHEEL_ROUNDNESS_TOLERANCE = 0.2
+VEHICLE_WHEEL_MAX_WIDTH_TO_DIAMETER_RATIO = 0.8
 DECORATION_PROFILE_DEFAULTS = {
     "prop": {
         "min_dimension": 0.05,
@@ -1011,6 +1020,18 @@ def node_translation(node):
     return vector_from_property(node.get("translation"), 3, [0.0, 0.0, 0.0])
 
 
+def node_rotation(node):
+    if node_matrix_values(node) is not None:
+        return [0.0, 0.0, 0.0, 1.0]
+    return vector_from_property(node.get("rotation"), 4, [0.0, 0.0, 0.0, 1.0])
+
+
+def node_scale(node):
+    if node_matrix_values(node) is not None:
+        return [1.0, 1.0, 1.0]
+    return vector_from_property(node.get("scale"), 3, [1.0, 1.0, 1.0])
+
+
 def node_local_matrix(node):
     values = node_matrix_values(node)
     if values is not None:
@@ -1176,6 +1197,9 @@ def collect_stats(gltf, decoded_position_bounds=None):
             "index": index,
             "name": node_name,
             "translation": node_translation(node),
+            "rotation": node_rotation(node),
+            "scale": node_scale(node),
+            "has_matrix": node_matrix_values(node) is not None,
             "children": children if isinstance(children, list) else [],
             "mesh": mesh_index if isinstance(mesh_index, int) else None,
         })
@@ -1196,6 +1220,8 @@ def collect_stats(gltf, decoded_position_bounds=None):
         "local_bounds_min": local_bounds_min if has_local_bounds else [],
         "local_bounds_max": local_bounds_max if has_local_bounds else [],
         "local_dimensions": [local_bounds_max[index] - local_bounds_min[index] for index in range(3)] if has_local_bounds else [],
+        "mesh_bounds": mesh_bounds,
+        "mesh_names": [str(mesh.get("name", "")) if isinstance(mesh, dict) else "" for mesh in meshes],
         "world_bounds_min": world_bounds_min if has_world_bounds else [],
         "world_bounds_max": world_bounds_max if has_world_bounds else [],
         "world_dimensions": [world_bounds_max[index] - world_bounds_min[index] for index in range(3)] if has_world_bounds else [],
@@ -1222,6 +1248,9 @@ def validate_vehicle(stats):
         socket_node = matching_nodes[0]
         if socket_node["index"] not in root_children:
             ok = fail(f"{socket_name} should be a direct child of rc_buggy") and ok
+        if socket_node["mesh"] is not None:
+            ok = fail(f"{socket_name} should be a pure socket node and must not own a mesh directly") and ok
+        ok = validate_vehicle_socket_transform(socket_name, socket_node) and ok
         translation = matching_nodes[0]["translation"]
         if len(translation) < 3:
             ok = fail(f"{socket_name} translation should have 3 components") and ok
@@ -1235,6 +1264,84 @@ def validate_vehicle(stats):
         mesh_children = [node for node in child_nodes if node["mesh"] is not None]
         if not mesh_children:
             ok = fail(f"{socket_name} should own at least one direct mesh child for wheel animation") and ok
+            continue
+        if len(mesh_children) != 1:
+            ok = fail(f"{socket_name} should own exactly one direct mesh child; found {len(mesh_children)}") and ok
+            continue
+        ok = validate_vehicle_wheel_child(socket_name, mesh_children[0], stats) and ok
+    return ok
+
+
+def identity_quaternion(rotation):
+    if len(rotation) < 4:
+        return False
+    positive_w = [0.0, 0.0, 0.0, 1.0]
+    negative_w = [0.0, 0.0, 0.0, -1.0]
+    return (
+        all(abs(float(rotation[index]) - positive_w[index]) <= VEHICLE_WHEEL_CHILD_TRANSFORM_TOLERANCE for index in range(4))
+        or all(abs(float(rotation[index]) - negative_w[index]) <= VEHICLE_WHEEL_CHILD_TRANSFORM_TOLERANCE for index in range(4))
+    )
+
+
+def validate_vehicle_socket_transform(socket_name, socket_node):
+    ok = True
+    if socket_node["has_matrix"]:
+        ok = fail(f"{socket_name} should not use a matrix transform; use translation-only socket pivots") and ok
+    if not identity_quaternion(socket_node["rotation"]):
+        ok = fail(f"{socket_name} rotation should be identity; got {socket_node['rotation']}") and ok
+    for value in socket_node["scale"]:
+        if abs(float(value) - 1.0) > VEHICLE_WHEEL_CHILD_TRANSFORM_TOLERANCE:
+            ok = fail(f"{socket_name} scale should be 1; got {socket_node['scale']}") and ok
+            break
+    return ok
+
+
+def validate_vehicle_wheel_child(socket_name, wheel_node, stats):
+    ok = True
+    if wheel_node["name"] != VEHICLE_WHEEL_CHILD_NAME:
+        ok = fail(f"{socket_name} direct mesh child should be named {VEHICLE_WHEEL_CHILD_NAME}; got {wheel_node['name']}") and ok
+    if wheel_node["has_matrix"]:
+        ok = fail(f"{socket_name}/{wheel_node['name']} should not use a matrix transform; bake transforms into mesh data") and ok
+    for axis, value in enumerate(wheel_node["translation"]):
+        if abs(float(value)) > VEHICLE_WHEEL_CHILD_TRANSFORM_TOLERANCE:
+            ok = fail(f"{socket_name}/{wheel_node['name']} local translation should be zero; got {wheel_node['translation']}") and ok
+            break
+    if not identity_quaternion(wheel_node["rotation"]):
+        ok = fail(f"{socket_name}/{wheel_node['name']} local rotation should be identity; got {wheel_node['rotation']}") and ok
+    for value in wheel_node["scale"]:
+        if abs(float(value) - 1.0) > VEHICLE_WHEEL_CHILD_TRANSFORM_TOLERANCE:
+            ok = fail(f"{socket_name}/{wheel_node['name']} local scale should be 1; got {wheel_node['scale']}") and ok
+            break
+
+    mesh_index = wheel_node["mesh"]
+    mesh_bounds = stats["mesh_bounds"][mesh_index] if mesh_index is not None and 0 <= mesh_index < len(stats["mesh_bounds"]) else None
+    if mesh_bounds is None:
+        ok = fail(f"{socket_name}/{wheel_node['name']} mesh must expose decoded POSITION bounds") and ok
+        return ok
+    bounds_min, bounds_max = mesh_bounds
+    dimensions = [bounds_max[index] - bounds_min[index] for index in range(3)]
+    center = [(bounds_min[index] + bounds_max[index]) * 0.5 for index in range(3)]
+    for axis, value in enumerate(center):
+        if abs(float(value)) > VEHICLE_WHEEL_PIVOT_TOLERANCE:
+            ok = fail(f"{socket_name}/{wheel_node['name']} mesh pivot should be centered; local bounds center is {center}") and ok
+            break
+    for axis, axis_name in enumerate(("X", "Y", "Z")):
+        if bounds_min[axis] >= 0.0 or bounds_max[axis] <= 0.0:
+            ok = fail(f"{socket_name}/{wheel_node['name']} mesh bounds should straddle local {axis_name}=0 pivot; got min {bounds_min[axis]:.4f}, max {bounds_max[axis]:.4f}") and ok
+    width = dimensions[1]
+    diameter_x = dimensions[0]
+    diameter_z = dimensions[2]
+    if width < VEHICLE_WHEEL_MIN_WIDTH or width > VEHICLE_WHEEL_MAX_WIDTH:
+        ok = fail(f"{socket_name}/{wheel_node['name']} wheel width {width:.3f} m is outside expected {VEHICLE_WHEEL_MIN_WIDTH:.3f}..{VEHICLE_WHEEL_MAX_WIDTH:.3f} m") and ok
+    for axis_name, diameter in (("X", diameter_x), ("Z", diameter_z)):
+        if diameter < VEHICLE_WHEEL_MIN_DIAMETER or diameter > VEHICLE_WHEEL_MAX_DIAMETER:
+            ok = fail(f"{socket_name}/{wheel_node['name']} wheel {axis_name} diameter {diameter:.3f} m is outside expected {VEHICLE_WHEEL_MIN_DIAMETER:.3f}..{VEHICLE_WHEEL_MAX_DIAMETER:.3f} m") and ok
+    larger_diameter = max(diameter_x, diameter_z)
+    if larger_diameter > 0.0 and abs(diameter_x - diameter_z) / larger_diameter > VEHICLE_WHEEL_ROUNDNESS_TOLERANCE:
+        ok = fail(f"{socket_name}/{wheel_node['name']} wheel X/Z diameters should be similar; got {diameter_x:.3f} m and {diameter_z:.3f} m") and ok
+    smaller_diameter = min(diameter_x, diameter_z)
+    if smaller_diameter > 0.0 and width / smaller_diameter >= VEHICLE_WHEEL_MAX_WIDTH_TO_DIAMETER_RATIO:
+        ok = fail(f"{socket_name}/{wheel_node['name']} wheel width {width:.3f} m should be less than {VEHICLE_WHEEL_MAX_WIDTH_TO_DIAMETER_RATIO:.2f}x diameter {smaller_diameter:.3f} m") and ok
     return ok
 
 
