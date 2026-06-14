@@ -9,10 +9,23 @@ var _kp: float = 2.0
 var _kd: float = 0.4
 var _prev_err: float = 0.0
 var _done: bool = false
+var _points: Array[Vector3] = []
+var _target_index: int = 0
 
 
 func configure(target: Vector3, radius: float) -> void:
-	target_pos = target
+	var points: Array[Vector3] = [target]
+	configure_path(points, radius)
+
+
+func configure_path(points: Array[Vector3], radius: float) -> void:
+	_points.clear()
+	for point in points:
+		_points.append(point)
+	if _points.is_empty():
+		_points.append(Vector3.ZERO)
+	_target_index = 0
+	target_pos = _points[_target_index]
 	arrive_radius = radius
 	_prev_err = 0.0
 	_done = false
@@ -25,6 +38,12 @@ func next_input(state: RefCounted) -> RefCounted:
 	var is_flipped: bool = bool(state.get("is_flipped"))
 	var to_target: Vector3 = target_pos - state_position
 	to_target.y = 0.0
+	while to_target.length() <= arrive_radius and _target_index < _points.size() - 1:
+		_target_index += 1
+		target_pos = _points[_target_index]
+		_prev_err = 0.0
+		to_target = target_pos - state_position
+		to_target.y = 0.0
 	if to_target.length() <= arrive_radius:
 		_done = true
 		input.set("brake", 1.0)

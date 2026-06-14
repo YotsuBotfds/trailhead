@@ -25,6 +25,8 @@ var _max_ticks: int = 6000
 var _target: Vector3 = DEFAULT_TARGET
 var _target_id: String = "flat_target"
 var _target_radius: float = 0.35
+var _route_segment_id: String = ""
+var _waypoints: Array[Vector3] = []
 var _controller_id: String = "pd"
 var _scenario_id: String = ""
 var _scene_id: String = "flat_plane"
@@ -76,10 +78,28 @@ func _ready() -> void:
 	_scenario_id = String(_args.get("scenario", ""))
 	_scene_id = String(_args.get("scene", "flat_plane"))
 	_route = _load_route(_scene_id)
-	_spawn_id = String(_args.get("spawn", "trailhead" if _route != null else "flat_spawn"))
+	_route_segment_id = String(_args.get("route-segment", ""))
+	if _route != null:
+		var route_errors: PackedStringArray = _route.call("validate")
+		if route_errors.size() > 0:
+			_finish_runner_error("Invalid route " + String(_route.get("scene_id")) + ": " + _join_packed_strings(route_errors, "; "))
+			return
+	if _route != null and _route_segment_id != "":
+		if not bool(_route.call("has_segment", StringName(_route_segment_id))):
+			_finish_runner_error("Unsupported route segment for route " + String(_route.get("scene_id")) + ": " + _route_segment_id)
+			return
+		if _args.has("spawn") or _args.has("target"):
+			_finish_runner_error("Route segment owns spawn and target: " + _route_segment_id)
+			return
+		_spawn_id = String(_route.call("segment_spawn_id", StringName(_route_segment_id), &"trailhead"))
+		_target_id = String(_route.call("segment_target_landmark_id", StringName(_route_segment_id), &"old_cedar"))
+		if not _args.has("max-ticks"):
+			_max_ticks = int(_route.call("segment_max_ticks_for", StringName(_route_segment_id), _max_ticks))
+	else:
+		_spawn_id = String(_args.get("spawn", "trailhead" if _route != null else "flat_spawn"))
+		_target_id = String(_args.get("target", "old_cedar" if _route != null else "flat_target"))
 	_stuck_window_ticks = maxi(int(_args.get("stuck-window", GameConfig.stuck_window_ticks)), 1)
 	_stuck_min_progress = maxf(float(_args.get("stuck-min-progress", GameConfig.stuck_min_progress)), 0.0)
-	_target_id = String(_args.get("target", "old_cedar" if _route != null else "flat_target"))
 	if _route != null and not bool(_route.call("has_spawn", StringName(_spawn_id))):
 		_finish_runner_error("Unsupported spawn for route " + String(_route.get("scene_id")) + ": " + _spawn_id)
 		return
@@ -88,6 +108,12 @@ func _ready() -> void:
 		return
 	_target = _parse_target(_target_id)
 	_target_radius = _target_radius_for_id(_target_id)
+	if _route != null and _route_segment_id != "":
+		if not _args.has("target-radius"):
+			_target_radius = float(_route.call("segment_target_radius_for", StringName(_route_segment_id), _target_radius))
+		var segment_points: Array = _route.call("segment_waypoint_path", StringName(_route_segment_id))
+		for point in segment_points:
+			_waypoints.append(point)
 	_rng.seed = int(_args.get("seed", 0))
 	_connect_event_bus()
 	_configure_flat_bounds()
@@ -140,6 +166,15 @@ func _parse_args(raw: PackedStringArray) -> Dictionary:
 	return out
 
 
+func _join_packed_strings(values: PackedStringArray, separator: String) -> String:
+	var out: String = ""
+	for i in range(values.size()):
+		if i > 0:
+			out += separator
+		out += values[i]
+	return out
+
+
 func _load_route(scene_id: String) -> Resource:
 	if scene_id == TerrainBuilderScript.CEDAR_SCENE_ID:
 		return load(CEDAR_ROUTE_PATH) as Resource
@@ -149,7 +184,14 @@ func _load_route(scene_id: String) -> Resource:
 func _make_controller(controller_id: String) -> RefCounted:
 	if controller_id == "pd":
 		var pd_controller: RefCounted = PDWaypointControllerScript.new()
-		pd_controller.call("configure", _target, _target_radius)
+		if _waypoints.is_empty():
+			pd_controller.call("configure", _target, _target_radius)
+		else:
+			var points: Array[Vector3] = []
+			for waypoint in _waypoints:
+				points.append(waypoint)
+			points.append(_target)
+			pd_controller.call("configure_path", points, _target_radius)
 		return pd_controller
 	if controller_id == "replay":
 		var replay_controller: RefCounted = ReplayControllerScript.new()
@@ -372,6 +414,7 @@ func _finish(passed: bool) -> void:
 		"scene": _scene_id,
 		"controller": _controller_id,
 		"scenario": _scenario_id,
+		"route_segment": _route_segment_id,
 		"spawn": _spawn_id,
 		"target": _target_id,
 		"seed": int(_args.get("seed", 0)),
@@ -390,6 +433,7 @@ func _finish(passed: bool) -> void:
 		"metrics": {
 			"target": _vec3_to_array(_target),
 			"target_radius": _target_radius,
+			"waypoint_count": _waypoints.size(),
 			"bounds_min": _vec3_to_array(_bounds_min),
 			"bounds_max": _vec3_to_array(_bounds_max),
 			"max_flipped_ticks": _max_flipped_ticks_seen,
@@ -433,6 +477,7 @@ func _finish_runner_error(message: String) -> void:
 		"scene": _scene_id,
 		"controller": _controller_id,
 		"scenario": _scenario_id,
+		"route_segment": _route_segment_id,
 		"spawn": _spawn_id,
 		"target": _target_id,
 		"seed": int(_args.get("seed", 0)),
