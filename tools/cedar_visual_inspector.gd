@@ -86,6 +86,7 @@ func _inspect() -> void:
 		_require_node_rotation(feature_root, "log_ramp", Vector3(0.0, 115.0, 0.0), FLOAT_EPSILON)
 		_require_node_position(feature_root, "stepping_stone_1", Vector3(3.45, 0.01, -7.05), FEATURE_TRANSFORM_TOLERANCE)
 		_require_node_position(feature_root, "stepping_stone_5", Vector3(5.0, 0.01, -7.2), FEATURE_TRANSFORM_TOLERANCE)
+		_inspect_feature_sequences(feature_root)
 		var cedar_world: Node = _require_node(_scene_root, "CedarHollow")
 		if cedar_world != null:
 			_inspect_feature_collision_alignment(cedar_world, feature_root)
@@ -321,6 +322,35 @@ func _inspect_feature_collision_alignment(cedar_world: Node, feature_root: Node)
 	_require_node_inside_body_xz(feature_root, "stepping_stone_5", cedar_world, "wet_stone_crossing__surf_wet_stone", FEATURE_COLLISION_ALIGNMENT_TOLERANCE)
 
 
+func _inspect_feature_sequences(feature_root: Node) -> void:
+	_require_sequential_named_nodes(feature_root, "boardwalk_segment_", EXPECTED_BOARDWALK_SEGMENTS)
+	var boardwalk_start_z: float = -4.31
+	var boardwalk_stride_z: float = 0.24
+	for i in range(EXPECTED_BOARDWALK_SEGMENTS):
+		var node_path: String = "boardwalk_segment_" + str(i + 1)
+		var expected_position: Vector3 = Vector3(3.25, 0.035, boardwalk_start_z + float(i) * boardwalk_stride_z)
+		_require_node_position(feature_root, node_path, expected_position, FEATURE_TRANSFORM_TOLERANCE)
+		_require_node_scale(feature_root, node_path, Vector3(1.35, 1.0, 1.0), FLOAT_EPSILON)
+		if i > 0:
+			var previous: Node3D = feature_root.get_node_or_null("boardwalk_segment_" + str(i)) as Node3D
+			var current: Node3D = feature_root.get_node_or_null(node_path) as Node3D
+			if previous != null and current != null and current.position.z <= previous.position.z:
+				_errors.append(node_path + " should advance along +Z from the previous boardwalk segment")
+	_require_sequential_named_nodes(feature_root, "stepping_stone_", EXPECTED_STEPPING_STONES)
+	var stepping_positions: Array[Vector3] = [
+		Vector3(3.45, 0.01, -7.05),
+		Vector3(3.85, 0.01, -7.35),
+		Vector3(4.25, 0.01, -7.15),
+		Vector3(4.65, 0.01, -7.5),
+		Vector3(5.0, 0.01, -7.2)
+	]
+	for i in range(mini(EXPECTED_STEPPING_STONES, stepping_positions.size())):
+		var stone_path: String = "stepping_stone_" + str(i + 1)
+		_require_node_position(feature_root, stone_path, stepping_positions[i], FEATURE_TRANSFORM_TOLERANCE)
+		_require_node_rotation(feature_root, stone_path, Vector3(0.0, float(i) * 23.0, 0.0), FLOAT_EPSILON)
+	_require_minimum_xz_spacing(feature_root, "stepping_stone_", EXPECTED_STEPPING_STONES, 0.35)
+
+
 func _inspect_scatter_layout(scatter_root: Node) -> void:
 	_require_node_position(scatter_root, "grass_tuft_1", Vector3(-2.3, 0.0, -0.9), FEATURE_TRANSFORM_TOLERANCE)
 	_require_node_position(scatter_root, "grass_tuft_18", Vector3(2.9, 0.0, -6.9), FEATURE_TRANSFORM_TOLERANCE)
@@ -334,8 +364,26 @@ func _inspect_scatter_layout(scatter_root: Node) -> void:
 	_require_node_position(scatter_root, "fern_clump_6", Vector3(3.05, 0.0, -7.65), FEATURE_TRANSFORM_TOLERANCE)
 	_require_node_position(scatter_root, "cattail_1", Vector3(3.95, 0.0, -6.25), FEATURE_TRANSFORM_TOLERANCE)
 	_require_node_position(scatter_root, "cattail_5", Vector3(4.45, 0.0, -7.55), FEATURE_TRANSFORM_TOLERANCE)
+	_inspect_scatter_sequences(scatter_root)
 	_inspect_grass_occluders(scatter_root)
 	_require_direct_children_inside_xz(scatter_root, "ScatterVisuals", SCATTER_X_MIN, SCATTER_X_MAX, SCATTER_Z_MIN, SCATTER_Z_MAX)
+
+
+func _inspect_scatter_sequences(scatter_root: Node) -> void:
+	_require_sequential_named_nodes(scatter_root, "grass_tuft_", EXPECTED_GRASS_TUFTS)
+	_require_sequential_named_nodes(scatter_root, "grass_occluder_", EXPECTED_GRASS_OCCLUDERS)
+	_require_sequential_named_nodes(scatter_root, "boulder_", EXPECTED_BOULDERS)
+	_require_sequential_named_nodes(scatter_root, "branch_", EXPECTED_BRANCHES)
+	_require_sequential_named_nodes(scatter_root, "pinecone_", EXPECTED_PINECONES)
+	_require_sequential_named_nodes(scatter_root, "fern_clump_", EXPECTED_FERN_CLUMPS)
+	_require_sequential_named_nodes(scatter_root, "cattail_", EXPECTED_CATTAILS)
+	_require_minimum_xz_spacing(scatter_root, "grass_tuft_", EXPECTED_GRASS_TUFTS, 0.45)
+	_require_minimum_xz_spacing(scatter_root, "grass_occluder_", EXPECTED_GRASS_OCCLUDERS, 0.75)
+	_require_minimum_xz_spacing(scatter_root, "boulder_", EXPECTED_BOULDERS, 0.70)
+	_require_minimum_xz_spacing(scatter_root, "branch_", EXPECTED_BRANCHES, 1.10)
+	_require_minimum_xz_spacing(scatter_root, "pinecone_", EXPECTED_PINECONES, 0.55)
+	_require_minimum_xz_spacing(scatter_root, "fern_clump_", EXPECTED_FERN_CLUMPS, 0.70)
+	_require_minimum_xz_spacing(scatter_root, "cattail_", EXPECTED_CATTAILS, 0.35)
 
 
 func _inspect_grass_occluders(scatter_root: Node) -> void:
@@ -381,6 +429,29 @@ func _require_direct_children_inside_xz(parent: Node, label: String, min_x: floa
 		var local_position: Vector3 = node.position
 		if local_position.x < min_x or local_position.x > max_x or local_position.z < min_z or local_position.z > max_z:
 			_errors.append(label + "/" + String(child.name) + " should remain inside XZ range, got " + str(local_position))
+
+
+func _require_sequential_named_nodes(parent: Node, prefix: String, expected_count: int) -> void:
+	for i in range(expected_count):
+		var node_path: String = prefix + str(i + 1)
+		if parent.get_node_or_null(node_path) == null:
+			_errors.append(String(parent.name) + " missing sequential node: " + node_path)
+
+
+func _require_minimum_xz_spacing(parent: Node, prefix: String, expected_count: int, min_spacing: float) -> void:
+	for i in range(expected_count):
+		var path_a: String = prefix + str(i + 1)
+		var node_a: Node3D = parent.get_node_or_null(path_a) as Node3D
+		if node_a == null:
+			continue
+		for j in range(i + 1, expected_count):
+			var path_b: String = prefix + str(j + 1)
+			var node_b: Node3D = parent.get_node_or_null(path_b) as Node3D
+			if node_b == null:
+				continue
+			var delta: Vector2 = Vector2(node_a.position.x - node_b.position.x, node_a.position.z - node_b.position.z)
+			if delta.length() < min_spacing:
+				_errors.append(path_a + " and " + path_b + " should stay at least " + str(min_spacing) + " m apart in XZ")
 
 
 func _require_boundary_bands(boundary_root: Node) -> void:
