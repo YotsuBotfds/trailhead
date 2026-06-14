@@ -3,5 +3,6 @@
 *.gd.uid
 *.tmp
 __pycache__/
+.venv/
 tests/out/
 assets/generated/

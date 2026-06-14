@@ -27,12 +27,39 @@ check_file() {
 		printf 'missing committed asset: %s\n' "$committed_path" >&2
 		exit 1
 	fi
-	if ! cmp -s "$generated_path" "$committed_path"; then
+	if ! generated_file_matches "$generated_path" "$committed_path"; then
 		printf 'generated asset is stale: %s\n' "$committed_path" >&2
 		printf 'regenerate with the matching tools/generate_* script, inspect the diff, then rerun this check.\n' >&2
 		exit 1
 	fi
 	printf 'ok: %s\n' "$committed_path"
+}
+
+generated_file_matches() {
+	generated_path="$1"
+	committed_path="$2"
+	case "$committed_path" in
+		*.png)
+			python3 - "$generated_path" "$committed_path" <<'PY'
+from pathlib import Path
+import sys
+
+from PIL import Image, ImageChops
+
+generated_path = Path(sys.argv[1])
+committed_path = Path(sys.argv[2])
+generated_image = Image.open(generated_path).convert("RGBA")
+committed_image = Image.open(committed_path).convert("RGBA")
+if generated_image.size != committed_image.size:
+    raise SystemExit(1)
+difference = ImageChops.difference(generated_image, committed_image)
+raise SystemExit(0 if difference.getbbox() is None else 1)
+PY
+			;;
+		*)
+			cmp -s "$generated_path" "$committed_path"
+			;;
+	esac
 }
 
 check_dir() {
