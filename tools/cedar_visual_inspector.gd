@@ -110,12 +110,9 @@ func _inspect() -> void:
 	var sun: DirectionalLight3D = _require_node(_scene_root, "GoldenHourSun") as DirectionalLight3D
 	if sun != null:
 		_inspect_default_sun(sun)
-	_require_node(_scene_root, "CedarAudioRig")
-	_require_node(_scene_root, "CedarAudioRig/MotorWhine")
-	_require_node(_scene_root, "CedarAudioRig/TireTexture")
-	_require_node(_scene_root, "CedarAudioRig/AmbientBed")
-	_require_node(_scene_root, "CedarAudioRig/CreekBed")
-	_require_node(_scene_root, "CedarAudioRig/PlankKnock")
+	var audio_rig: Node = _require_node(_scene_root, "CedarAudioRig")
+	if audio_rig != null:
+		_inspect_audio_rig(audio_rig)
 	var hud: Node = _require_node(_scene_root, "LandmarkHintHud")
 	if hud != null:
 		_inspect_hud_defaults(hud)
@@ -224,6 +221,33 @@ func _inspect_hud_defaults(hud: Node) -> void:
 		_errors.append("MinimapView position expected " + str(expected_position) + ", got " + str(minimap.position))
 	if minimap.size.distance_to(expected_size) > FLOAT_EPSILON:
 		_errors.append("MinimapView size expected " + str(expected_size) + ", got " + str(minimap.size))
+
+
+func _inspect_audio_rig(audio_rig: Node) -> void:
+	var surface_callable: Callable = Callable(audio_rig, "_on_vehicle_changed_surface")
+	if not EventBus.vehicle_changed_surface.is_connected(surface_callable):
+		_errors.append("CedarAudioRig should listen for vehicle_changed_surface")
+	_require_audio_generator(audio_rig, "MotorWhine")
+	_require_audio_generator(audio_rig, "TireTexture")
+	_require_audio_generator(audio_rig, "AmbientBed")
+	_require_audio_generator(audio_rig, "CreekBed")
+	_require_audio_generator(audio_rig, "PlankKnock")
+
+
+func _require_audio_generator(parent: Node, path: String) -> void:
+	var player: AudioStreamPlayer = _require_node(parent, path) as AudioStreamPlayer
+	if player == null:
+		return
+	var stream: AudioStreamGenerator = player.stream as AudioStreamGenerator
+	if stream == null:
+		_errors.append(path + " should use an AudioStreamGenerator")
+		return
+	if absf(stream.mix_rate - GameConfig.audio_mix_rate) > FLOAT_EPSILON:
+		_errors.append(path + " mix_rate expected " + str(GameConfig.audio_mix_rate) + ", got " + str(stream.mix_rate))
+	if absf(stream.buffer_length - GameConfig.audio_buffer_length) > FLOAT_EPSILON:
+		_errors.append(path + " buffer_length expected " + str(GameConfig.audio_buffer_length) + ", got " + str(stream.buffer_length))
+	if player.playing:
+		_errors.append(path + " should not auto-play in headless inspection")
 
 
 func _count_collision_objects(parent: Node) -> int:
