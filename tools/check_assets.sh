@@ -15,6 +15,11 @@ check_decoration() {
 	./tools/check_glb.py "$path"
 }
 
+check_vehicle() {
+	path="$1"
+	./tools/check_glb.py "$path" --profile vehicle --max-dimension=1.0
+}
+
 check_heightmesh_if_present() {
 	path="assets/models/terrain/cedar_hollow_heightmesh.glb"
 	surface_id_map="assets/models/terrain/cedar_hollow_surface_id.png"
@@ -29,6 +34,7 @@ check_heightmesh_if_present() {
 }
 
 check_heightmesh_if_present
+check_vehicle assets/models/vehicle/rc_buggy.glb
 
 check_feature assets/models/features/boardwalk_segment.glb wood_plank
 check_feature assets/models/features/culvert_pipe.glb packed_dirt

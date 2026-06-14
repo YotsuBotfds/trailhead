@@ -361,10 +361,10 @@ func _inspect_vehicle_visuals(host: Node, vehicle: Node) -> void:
 	_require_node_position(visual_root, "wheel_front_right", Vector3(0.08, -0.015, -0.10), FLOAT_EPSILON)
 	_require_node_position(visual_root, "wheel_rear_left", Vector3(-0.08, -0.015, 0.10), FLOAT_EPSILON)
 	_require_node_position(visual_root, "wheel_rear_right", Vector3(0.08, -0.015, 0.10), FLOAT_EPSILON)
-	_require_node(visual_root, "wheel_front_left/wheel_mesh")
-	_require_node(visual_root, "wheel_front_right/wheel_mesh")
-	_require_node(visual_root, "wheel_rear_left/wheel_mesh")
-	_require_node(visual_root, "wheel_rear_right/wheel_mesh")
+	_require_wheel_socket_mesh(visual_root, "wheel_front_left")
+	_require_wheel_socket_mesh(visual_root, "wheel_front_right")
+	_require_wheel_socket_mesh(visual_root, "wheel_rear_left")
+	_require_wheel_socket_mesh(visual_root, "wheel_rear_right")
 	var visual_collision_count: int = _count_collision_objects(visual_root)
 	if visual_collision_count > 0:
 		_errors.append("vehicle VisualRoot contains collision objects: " + str(visual_collision_count))
@@ -388,6 +388,16 @@ func _require_vehicle_steering_visuals(host: Node, visual_root: Node) -> void:
 	_require_node_rotation_y(visual_root, "wheel_rear_right", 0.0, FLOAT_EPSILON)
 	vehicle_input.set("steer", 0.0)
 	host.call("_update_visual_wheels", GameConfig.FIXED_DT)
+
+
+func _require_wheel_socket_mesh(parent: Node, path: String) -> void:
+	var socket: Node = _require_node(parent, path)
+	if socket == null:
+		return
+	for child in socket.get_children():
+		if child is MeshInstance3D:
+			return
+	_errors.append(path + " should contain a wheel mesh")
 
 
 func _require_node_rotation_y(parent: Node, path: String, expected: float, tolerance: float) -> void:

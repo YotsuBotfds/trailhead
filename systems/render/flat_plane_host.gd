@@ -148,9 +148,20 @@ func _update_visual_wheels(delta: float) -> void:
 	for socket in _wheel_sockets:
 		var is_front: bool = socket.name.begins_with("wheel_front")
 		socket.rotation = Vector3(0.0, steer_angle if is_front else 0.0, 0.0)
-		var wheel_mesh: Node3D = socket.get_node_or_null("wheel_mesh") as Node3D
+		var wheel_mesh: Node3D = _wheel_mesh_for_socket(socket)
 		if wheel_mesh != null:
 			wheel_mesh.rotation = Vector3(_wheel_spin, 0.0, deg_to_rad(90.0))
+
+
+func _wheel_mesh_for_socket(socket: Node3D) -> Node3D:
+	var named_mesh: Node3D = socket.get_node_or_null("wheel_mesh") as Node3D
+	if named_mesh != null:
+		return named_mesh
+	for child in socket.get_children():
+		var mesh_child: MeshInstance3D = child as MeshInstance3D
+		if mesh_child != null:
+			return mesh_child
+	return null
 
 
 func _update_camera(delta: float) -> void:
