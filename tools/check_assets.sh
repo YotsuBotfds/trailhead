@@ -34,6 +34,7 @@ check_heightmesh_if_present() {
 }
 
 check_heightmesh_if_present
+./tools/check_godot_imports.py
 check_vehicle assets/models/vehicle/rc_buggy.glb
 
 check_feature assets/models/features/boardwalk_segment.glb wood_plank
