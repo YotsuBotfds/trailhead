@@ -24,7 +24,7 @@ static func build_cedar_hollow(parent: Node) -> Array[StaticBody3D]:
 	bodies.append(_build_surface_box(parent, "bog_bottom", &"mud", Vector3(2.8, -0.05, -5.5), Vector3(2.4, 0.1, 2.4)))
 	bodies.append(_build_surface_box(parent, "boardwalk_creek_connector", &"mud", Vector3(3.9, -0.05, -4.75), Vector3(2.2, 0.1, 2.6)))
 	bodies.append(_build_surface_box(parent, "creek_bank", &"mud", Vector3(3.2, -0.05, -6.85), Vector3(2.2, 0.1, 1.9)))
-	bodies.append(_build_surface_box(parent, "wet_stone_crossing", &"wet_stone", Vector3(4.2, -0.05, -7.45), Vector3(3.0, 0.1, 2.8)))
+	bodies.append(_build_surface_box(parent, "wet_stone_crossing", &"wet_stone", Vector3(4.2, -0.01, -7.35), Vector3(3.0, 0.1, 2.9)))
 	bodies.append(_build_surface_box(parent, "boardwalk", &"wood_plank", Vector3(3.25, -0.02, -3.35), Vector3(1.4, 0.1, 2.6)))
 	return bodies
 

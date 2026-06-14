@@ -121,7 +121,7 @@ run_sim "$out_dir/cedar_hollow_the_crossing.json" \
 	--spawn=trailhead \
 	--target=the_crossing \
 	--seed=12345 \
-	--max-ticks=520 \
+	--max-ticks=620 \
 	--stuck-window=60 \
 	--stuck-min-progress=0.05
 
@@ -182,7 +182,7 @@ assert_metrics "$out_dir/cedar_hollow_bog_bottom.json" \
 assert_metrics "$out_dir/cedar_hollow_the_crossing.json" \
 	--surface=wood_plank:10 \
 	--surface=mud:30 \
-	--surface=wet_stone:2 \
+	--surface=wet_stone:12 \
 	--surface-sequence=wood_plank,mud,wet_stone \
 	--landmark=the_crossing
 
