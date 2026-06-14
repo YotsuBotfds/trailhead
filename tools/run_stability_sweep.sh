@@ -35,6 +35,8 @@ run_log_ramp() {
 		--max-ticks=440 \
 		--stuck-window=120 \
 		--stuck-min-progress=0.02
+	# The scripted ramp now approaches on packed_gravel, then climbs wood_plank.
+	# Keep the sequence narrow so a future dirt-first line is visible.
 	assert_metrics "$out_file" \
 		--surface=wood_plank:20 \
 		--surface-sequence=packed_gravel,wood_plank \
@@ -198,8 +200,10 @@ run_overlook_to_old_cedar_segment() {
 		--max-ticks=3200 \
 		--stuck-window=120 \
 		--stuck-min-progress=0.015
+	# The route is now a rock descent with only a brief packed-dirt handoff
+	# near Old Cedar, replacing the old dirt-heavy line.
 	assert_metrics "$out_file" \
-		--surface=loose_rock:20 \
+		--surface=loose_rock:200 \
 		--surface=packed_dirt:3 \
 		--landmark=old_cedar
 }
