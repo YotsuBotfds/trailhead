@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="RouteDef" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://systems/world/route_def.gd" id="1_script"]
+
+[resource]
+script = ExtResource("1_script")
+scene_id = &"cedar_hollow"
+bounds_min = Vector3(-3.5, -1.0, -6.25)
+bounds_max = Vector3(3.5, 2.0, 1.75)
+spawn_ids = Array[StringName]([&"trailhead"])
+spawn_positions = Array[Vector3]([Vector3(0.0, 0.12, 0.75)])
+spawn_yaw_degrees = Array[float]([0.0])
+landmark_ids = Array[StringName]([&"trailhead", &"old_cedar"])
+landmark_display_names = Array[String](["Trailhead", "Old Cedar"])
+landmark_positions = Array[Vector3]([Vector3(0.0, 0.0, 0.75), Vector3(0.0, 0.0, -5.25)])
+landmark_radii = Array[float]([0.4, 0.4])

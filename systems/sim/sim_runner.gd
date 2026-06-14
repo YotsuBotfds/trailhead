@@ -2,10 +2,13 @@ class_name SimRunner
 extends Node
 
 const DEFAULT_TARGET: Vector3 = Vector3(3.0, 0.0, 0.0)
+const CEDAR_ROUTE_PATH: String = "res://data/routes/cedar_hollow.tres"
+const CedarHollowSceneResource: PackedScene = preload("res://scenes/cedar_hollow.tscn")
 const VehicleScene: PackedScene = preload("res://scenes/vehicle.tscn")
 const VehicleInputScript: GDScript = preload("res://systems/vehicle/vehicle_input.gd")
 const FlatWorldBuilderScript: GDScript = preload("res://systems/world/flat_world_builder.gd")
 const SurfaceMapScript: GDScript = preload("res://systems/world/surface_map.gd")
+const TerrainBuilderScript: GDScript = preload("res://systems/world/terrain_builder.gd")
 const PDWaypointControllerScript: GDScript = preload("res://systems/sim/controllers/pd_waypoint_controller.gd")
 const ReplayControllerScript: GDScript = preload("res://systems/sim/controllers/replay_controller.gd")
 const ScriptedFeelControllerScript: GDScript = preload("res://systems/sim/controllers/scripted_feel_controller.gd")
@@ -13,10 +16,12 @@ const ScriptedFeelControllerScript: GDScript = preload("res://systems/sim/contro
 var _args: Dictionary = {}
 var _vehicle: Node = null
 var _controller: RefCounted = null
+var _route: Resource = null
 var _telemetry: Array[Dictionary] = []
 var _tick: int = 0
 var _max_ticks: int = 6000
 var _target: Vector3 = DEFAULT_TARGET
+var _target_id: String = "flat_target"
 var _target_radius: float = 0.35
 var _controller_id: String = "pd"
 var _scenario_id: String = ""
@@ -65,11 +70,19 @@ func _ready() -> void:
 	_controller_id = String(_args.get("controller", "pd"))
 	_scenario_id = String(_args.get("scenario", ""))
 	_scene_id = String(_args.get("scene", "flat_plane"))
-	_spawn_id = String(_args.get("spawn", "flat_spawn"))
+	_route = _load_route(_scene_id)
+	_spawn_id = String(_args.get("spawn", "trailhead" if _route != null else "flat_spawn"))
 	_stuck_window_ticks = maxi(int(_args.get("stuck-window", GameConfig.stuck_window_ticks)), 1)
 	_stuck_min_progress = maxf(float(_args.get("stuck-min-progress", GameConfig.stuck_min_progress)), 0.0)
-	_target = _parse_target(String(_args.get("target", "flat_target")))
-	_target_radius = float(_args.get("target-radius", 0.35))
+	_target_id = String(_args.get("target", "old_cedar" if _route != null else "flat_target"))
+	if _route != null and not bool(_route.call("has_spawn", StringName(_spawn_id))):
+		_finish_runner_error("Unsupported spawn for route " + String(_route.get("scene_id")) + ": " + _spawn_id)
+		return
+	if _route != null and not bool(_route.call("has_landmark", StringName(_target_id))):
+		_finish_runner_error("Unsupported target for route " + String(_route.get("scene_id")) + ": " + _target_id)
+		return
+	_target = _parse_target(_target_id)
+	_target_radius = _target_radius_for_id(_target_id)
 	_rng.seed = int(_args.get("seed", 0))
 	_connect_event_bus()
 	_configure_flat_bounds()
@@ -121,6 +134,12 @@ func _parse_args(raw: PackedStringArray) -> Dictionary:
 	return out
 
 
+func _load_route(scene_id: String) -> Resource:
+	if scene_id == TerrainBuilderScript.CEDAR_SCENE_ID:
+		return load(CEDAR_ROUTE_PATH) as Resource
+	return null
+
+
 func _make_controller(controller_id: String) -> RefCounted:
 	if controller_id == "pd":
 		var pd_controller: RefCounted = PDWaypointControllerScript.new()
@@ -138,6 +157,8 @@ func _make_controller(controller_id: String) -> RefCounted:
 
 
 func _parse_target(target_id: String) -> Vector3:
+	if _route != null:
+		return _route.call("landmark_position", StringName(target_id))
 	if target_id == "flat_target" or target_id == "":
 		return DEFAULT_TARGET
 	var parts: PackedStringArray = target_id.split(",", false)
@@ -146,7 +167,16 @@ func _parse_target(target_id: String) -> Vector3:
 	return DEFAULT_TARGET
 
 
+func _target_radius_for_id(target_id: String) -> float:
+	var fallback: float = 0.35
+	if _route != null:
+		fallback = float(_route.call("landmark_radius", StringName(target_id), fallback))
+	return float(_args.get("target-radius", fallback))
+
+
 func _spawn_transform(spawn_id: String) -> Transform3D:
+	if _route != null:
+		return _route.call("spawn_transform", StringName(spawn_id))
 	if spawn_id == "flat_flipped":
 		var flipped_basis: Basis = Basis(Vector3.FORWARD, PI)
 		return Transform3D(flipped_basis, Vector3(0.0, 0.12, 0.0))
@@ -154,6 +184,11 @@ func _spawn_transform(spawn_id: String) -> Transform3D:
 
 
 func _setup_flat_scene() -> void:
+	if _scene_id == TerrainBuilderScript.CEDAR_SCENE_ID:
+		var cedar_scene: Node = CedarHollowSceneResource.instantiate()
+		cedar_scene.name = "CedarHollow"
+		add_child(cedar_scene)
+		return
 	if _scene_id == "surface_strips":
 		FlatWorldBuilderScript.build_surface_strip_collision(self)
 		return
@@ -275,6 +310,10 @@ func _has_reached_target(state: RefCounted) -> bool:
 
 
 func _configure_flat_bounds() -> void:
+	if _route != null:
+		_bounds_min = _route.get("bounds_min")
+		_bounds_max = _route.get("bounds_max")
+		return
 	if _scene_id == "surface_strips":
 		_bounds_min = GameConfig.surface_probe_bounds_min
 		_bounds_max = GameConfig.surface_probe_bounds_max
@@ -316,7 +355,7 @@ func _finish(passed: bool) -> void:
 		"controller": _controller_id,
 		"scenario": _scenario_id,
 		"spawn": _spawn_id,
-		"target": String(_args.get("target", "flat_target")),
+		"target": _target_id,
 		"seed": int(_args.get("seed", 0)),
 		"ticks": _tick,
 		"result": "pass" if (passed and all_predicates_passed) else "fail",
@@ -361,7 +400,7 @@ func _finish(passed: bool) -> void:
 		"telemetry": _telemetry
 	}
 	_write_json(path, result)
-	EventBus.sim_completed_run.emit("flat_target", bool(result["result"] == "pass"))
+	EventBus.sim_completed_run.emit(_target_id, bool(result["result"] == "pass"))
 	get_tree().quit(0 if result["result"] == "pass" else 1)
 
 
@@ -373,7 +412,7 @@ func _finish_runner_error(message: String) -> void:
 		"controller": _controller_id,
 		"scenario": _scenario_id,
 		"spawn": _spawn_id,
-		"target": String(_args.get("target", "flat_target")),
+		"target": _target_id,
 		"seed": int(_args.get("seed", 0)),
 		"ticks": _tick,
 		"result": "error",
@@ -390,7 +429,7 @@ func _finish_runner_error(message: String) -> void:
 		"telemetry": _telemetry
 	}
 	_write_json(path, result)
-	EventBus.sim_completed_run.emit("flat_target", false)
+	EventBus.sim_completed_run.emit(_target_id, false)
 	get_tree().quit(2)
 
 

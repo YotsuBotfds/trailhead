@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="SurfaceDef" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://systems/world/surface_def.gd" id="1_script"]
+
+[resource]
+script = ExtResource("1_script")
+id = &"packed_gravel"
+display_name = "Packed Gravel"
+friction = 1.05
+rolling_drag = 0.1
+slip = 0.04
+bog_enabled = false
+bog_threshold = 0.2
