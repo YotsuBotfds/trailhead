@@ -3,8 +3,13 @@ extends RefCounted
 
 const HeightmeshScene: PackedScene = preload("res://assets/models/terrain/cedar_hollow_heightmesh.glb")
 const SurfaceVisualCatalogResource: Resource = preload("res://data/surface_visuals/cedar_hollow_surface_visuals.tres")
+const DetailMaskTexture: Texture2D = preload("res://assets/textures/surface_visuals/generated/terrain_detail_mask.png")
 const HEIGHTMESH_NAME: String = "cedar_hollow_heightmesh"
 const TERRAIN_MATERIAL_PREFIX: String = "terrain_mat_"
+const WET_DIFFUSE_MULTIPLIER: float = 0.2
+const WET_ROUGHNESS: float = 0.12
+const WET_CLEARCOAT: float = 0.58
+const WET_CLEARCOAT_ROUGHNESS: float = 0.08
 
 
 static func build_cedar_hollow(parent: Node3D) -> Node3D:
@@ -56,12 +61,24 @@ static func _material_token_for_mesh_surface(mesh: Mesh, surface_index: int) -> 
 static func _material_for_visual_def(visual_def: Resource) -> StandardMaterial3D:
 	var material: StandardMaterial3D = StandardMaterial3D.new()
 	var visual_id: StringName = visual_def.get("id")
+	var wetness: float = clampf(float(visual_def.get("wetness")), 0.0, 1.0)
+	var base_albedo_color: Color = visual_def.get("albedo_color")
 	material.resource_name = "terrain_visual_" + String(visual_id)
-	material.albedo_color = visual_def.get("albedo_color")
-	material.roughness = float(visual_def.get("roughness"))
+	material.albedo_color = _wet_albedo_color(base_albedo_color, wetness)
+	material.roughness = _wet_roughness(float(visual_def.get("roughness")), wetness)
 	material.metallic = 0.0
+	material.texture_repeat = true
+	material.normal_scale = float(visual_def.get("normal_scale"))
 	var texture_uv_scale: Vector2 = visual_def.get("texture_uv_scale")
 	material.uv1_scale = Vector3(texture_uv_scale.x, texture_uv_scale.y, 1.0)
+	var detail_uv_scale: Vector2 = visual_def.get("detail_uv_scale")
+	material.uv2_scale = Vector3(detail_uv_scale.x, detail_uv_scale.y, 1.0)
+	var triplanar: bool = bool(visual_def.get("triplanar"))
+	material.uv1_triplanar = triplanar
+	material.uv1_world_triplanar = triplanar
+	material.uv2_triplanar = triplanar
+	material.uv2_world_triplanar = triplanar
+	_apply_wetness(material, wetness)
 	_apply_texture_paths(material, visual_def)
 	return material
 
@@ -69,17 +86,49 @@ static func _material_for_visual_def(visual_def: Resource) -> StandardMaterial3D
 static func _apply_texture_paths(material: StandardMaterial3D, visual_def: Resource) -> void:
 	var albedo_texture_path: String = visual_def.get("albedo_texture_path")
 	if not albedo_texture_path.is_empty():
-		var albedo_texture: Texture2D = load(albedo_texture_path) as Texture2D
+		var albedo_texture: Texture2D = _load_texture(albedo_texture_path)
 		if albedo_texture != null:
 			material.albedo_texture = albedo_texture
 	var normal_texture_path: String = visual_def.get("normal_texture_path")
 	if not normal_texture_path.is_empty():
-		var normal_texture: Texture2D = load(normal_texture_path) as Texture2D
+		var normal_texture: Texture2D = _load_texture(normal_texture_path)
 		if normal_texture != null:
 			material.normal_enabled = true
 			material.normal_texture = normal_texture
-	var orm_texture_path: String = visual_def.get("orm_texture_path")
-	if not orm_texture_path.is_empty():
-		var orm_texture: Texture2D = load(orm_texture_path) as Texture2D
-		if orm_texture != null:
-			material.orm_texture = orm_texture
+	var detail_albedo_texture_path: String = visual_def.get("detail_albedo_texture_path")
+	var detail_albedo_texture: Texture2D = _load_texture(detail_albedo_texture_path)
+	var detail_normal_texture_path: String = visual_def.get("detail_normal_texture_path")
+	var detail_normal_texture: Texture2D = _load_texture(detail_normal_texture_path)
+	if detail_albedo_texture != null or detail_normal_texture != null:
+		material.detail_enabled = true
+		material.detail_mask = DetailMaskTexture
+		material.detail_blend_mode = BaseMaterial3D.BLEND_MODE_MUL
+		material.detail_uv_layer = BaseMaterial3D.DETAIL_UV_2
+		if detail_albedo_texture != null:
+			material.detail_albedo = detail_albedo_texture
+		if detail_normal_texture != null:
+			material.detail_normal = detail_normal_texture
+
+
+static func _load_texture(path: String) -> Texture2D:
+	if path.is_empty():
+		return null
+	return load(path) as Texture2D
+
+
+static func _wet_albedo_color(base_color: Color, wetness: float) -> Color:
+	var multiplier: float = 1.0 + (WET_DIFFUSE_MULTIPLIER - 1.0) * wetness
+	return Color(base_color.r * multiplier, base_color.g * multiplier, base_color.b * multiplier, base_color.a)
+
+
+static func _wet_roughness(base_roughness: float, wetness: float) -> float:
+	return base_roughness + (WET_ROUGHNESS - base_roughness) * wetness
+
+
+static func _apply_wetness(material: StandardMaterial3D, wetness: float) -> void:
+	if wetness <= 0.0:
+		material.clearcoat_enabled = false
+		return
+	material.clearcoat_enabled = true
+	material.clearcoat = WET_CLEARCOAT * wetness
+	material.clearcoat_roughness = WET_CLEARCOAT_ROUGHNESS
