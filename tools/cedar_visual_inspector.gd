@@ -78,6 +78,7 @@ func _inspect() -> void:
 	_require_node(_scene_root, "Vehicle")
 	_require_node(_scene_root, "ChaseCamera")
 	_require_node(_scene_root, "OrbitCamera")
+	_require_node(_scene_root, "FpvCamera")
 	_require_node(_scene_root, "SurfaceMap")
 	var world_environment: WorldEnvironment = _require_node(_scene_root, "GoldenHourEnvironment") as WorldEnvironment
 	if world_environment != null:

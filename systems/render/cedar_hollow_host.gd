@@ -15,6 +15,7 @@ const LandmarkHintHudScript: GDScript = preload("res://systems/render/landmark_h
 const SurfaceMapScript: GDScript = preload("res://systems/world/surface_map.gd")
 const CAMERA_MODE_CHASE: int = 0
 const CAMERA_MODE_ORBIT: int = 1
+const CAMERA_MODE_FPV: int = 2
 const MOOD_DUSK: int = 0
 const MOOD_DAWN: int = 1
 
@@ -23,6 +24,7 @@ var _vehicle: Node = null
 var _vehicle_input: RefCounted = VehicleInputScript.new()
 var _camera: Camera3D = null
 var _orbit_camera: Camera3D = null
+var _fpv_camera: Camera3D = null
 var _wheel_sockets: Array[Node3D] = []
 var _wheel_spin: float = 0.0
 var _camera_mode: int = CAMERA_MODE_CHASE
@@ -144,6 +146,11 @@ func _setup_camera() -> void:
 	_orbit_camera.current = false
 	_orbit_camera.fov = GameConfig.orbit_cam_fov
 	add_child(_orbit_camera)
+	_fpv_camera = Camera3D.new()
+	_fpv_camera.name = "FpvCamera"
+	_fpv_camera.current = false
+	_fpv_camera.fov = GameConfig.fpv_cam_fov
+	add_child(_fpv_camera)
 	_orbit_yaw_degrees = GameConfig.orbit_cam_start_yaw_deg
 	_update_camera(GameConfig.FIXED_DT)
 
@@ -172,6 +179,9 @@ func _update_camera_input() -> void:
 		return
 	if _camera_mode == CAMERA_MODE_CHASE:
 		_camera_mode = CAMERA_MODE_ORBIT
+		return
+	if _camera_mode == CAMERA_MODE_ORBIT:
+		_camera_mode = CAMERA_MODE_FPV
 		return
 	_camera_mode = CAMERA_MODE_CHASE
 
@@ -268,6 +278,7 @@ func _update_camera(delta: float) -> void:
 	var state: RefCounted = _vehicle.call("get_state")
 	_update_chase_camera(delta, state)
 	_update_orbit_camera(delta, state)
+	_update_fpv_camera(state)
 
 
 func _update_chase_camera(delta: float, state: RefCounted) -> void:
@@ -307,3 +318,16 @@ func _update_orbit_camera(delta: float, state: RefCounted) -> void:
 	_orbit_camera.look_at(vehicle_position + Vector3.UP * GameConfig.orbit_cam_look_height, Vector3.UP)
 	_orbit_camera.fov = GameConfig.orbit_cam_fov
 	_orbit_camera.current = _camera_mode == CAMERA_MODE_ORBIT
+
+
+func _update_fpv_camera(state: RefCounted) -> void:
+	if _fpv_camera == null:
+		return
+	var vehicle_position: Vector3 = state.get("position")
+	var vehicle_basis: Basis = state.get("basis")
+	var forward: Vector3 = -vehicle_basis.z.normalized()
+	var up: Vector3 = vehicle_basis.y.normalized()
+	_fpv_camera.global_position = vehicle_position + forward * GameConfig.fpv_cam_forward + up * GameConfig.fpv_cam_height
+	_fpv_camera.look_at(vehicle_position + forward * GameConfig.fpv_cam_look_ahead + up * GameConfig.fpv_cam_look_height, Vector3.UP)
+	_fpv_camera.fov = GameConfig.fpv_cam_fov
+	_fpv_camera.current = _camera_mode == CAMERA_MODE_FPV
