@@ -319,6 +319,9 @@ printf 'run: flat visuals\n'
 printf 'run: terrain surface palette\n'
 "$godot_bin" --headless --path . res://tools/terrain_palette_inspector.tscn
 
+printf 'run: data resources\n'
+"$godot_bin" --headless --path . res://tools/data_resource_inspector.tscn
+
 ./tools/check_assets.sh
 ./tools/check_generated_assets.sh
 ./tools/check.sh
