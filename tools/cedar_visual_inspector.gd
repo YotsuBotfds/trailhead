@@ -3,6 +3,10 @@ extends Node
 const CedarHollowPlayableScene: PackedScene = preload("res://scenes/cedar_hollow_playable.tscn")
 const EXPECTED_BOARDWALK_SEGMENTS: int = 9
 const EXPECTED_STEPPING_STONES: int = 5
+const EXPECTED_GRASS_TUFTS: int = 18
+const EXPECTED_BOULDERS: int = 5
+const EXPECTED_BRANCHES: int = 5
+const EXPECTED_PINECONES: int = 8
 
 var _scene_root: Node = null
 var _errors: PackedStringArray = PackedStringArray()
@@ -42,6 +46,18 @@ func _inspect() -> void:
 		var prop_mesh_count: int = _count_mesh_instances(prop_root)
 		if prop_mesh_count <= 0:
 			_errors.append("PropVisuals contains no mesh instances")
+	var scatter_root: Node = _require_node(_scene_root, "CedarHollow/ScatterVisuals")
+	if scatter_root != null:
+		_require_named_count(scatter_root, "grass_tuft_", EXPECTED_GRASS_TUFTS)
+		_require_named_count(scatter_root, "boulder_", EXPECTED_BOULDERS)
+		_require_named_count(scatter_root, "branch_", EXPECTED_BRANCHES)
+		_require_named_count(scatter_root, "pinecone_", EXPECTED_PINECONES)
+		var scatter_collision_count: int = _count_collision_objects(scatter_root)
+		if scatter_collision_count > 0:
+			_errors.append("ScatterVisuals contains collision objects: " + str(scatter_collision_count))
+		var scatter_mesh_count: int = _count_mesh_instances(scatter_root)
+		if scatter_mesh_count <= 0:
+			_errors.append("ScatterVisuals contains no mesh instances")
 	_require_node(_scene_root, "CedarHollow")
 	_require_node(_scene_root, "Vehicle")
 	_require_node(_scene_root, "ChaseCamera")
@@ -86,7 +102,7 @@ func _count_mesh_instances(parent: Node) -> int:
 
 func _finish() -> void:
 	if _errors.is_empty():
-		print("ok: Cedar Hollow feature and prop visuals instantiated")
+		print("ok: Cedar Hollow feature, prop, and scatter visuals instantiated")
 		get_tree().quit(0)
 		return
 	for error in _errors:
