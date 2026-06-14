@@ -238,7 +238,7 @@ func _capture(capture_name: String) -> void:
 	if not _image_has_variance(image):
 		_errors.append(capture_name + " captured a near-blank image")
 		return
-	var path: String = "res://" + _out_dir + "/" + capture_name + ".png"
+	var path: String = _capture_file_path(capture_name)
 	var err: Error = image.save_png(path)
 	if err != OK:
 		_errors.append(capture_name + " failed to save " + path + " error=" + str(err))
@@ -274,7 +274,16 @@ func _verify_capture_set() -> void:
 
 
 func _absolute_out_dir() -> String:
+	if _out_dir.is_absolute_path():
+		return _out_dir
 	return ProjectSettings.globalize_path("res://" + _out_dir)
+
+
+func _capture_file_path(capture_name: String) -> String:
+	var file_name: String = capture_name + ".png"
+	if _out_dir.is_absolute_path():
+		return _out_dir.path_join(file_name)
+	return ("res://" + _out_dir).path_join(file_name)
 
 
 func _image_has_variance(image: Image) -> bool:

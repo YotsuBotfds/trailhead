@@ -32,6 +32,7 @@ DECORATION_PROFILE_DEFAULTS = {
         "max_dimension": 1.5,
     },
 }
+RENDER_ATTRIBUTE_SET = {"POSITION", "NORMAL", "TEXCOORD_0"}
 
 
 def fail(message):
@@ -390,6 +391,15 @@ def validate_decoration_profile(args, stats, profile_name, surface_tags, wheel_n
     return ok
 
 
+def validate_render_attributes(stats, label):
+    ok = True
+    for index, attributes in enumerate(stats["primitive_attributes"]):
+        missing = sorted(RENDER_ATTRIBUTE_SET.difference(attributes))
+        if missing:
+            ok = fail(f"{label} primitive {index} is missing render attributes: {', '.join(missing)}") and ok
+    return ok
+
+
 def validate(args, stats, bin_chunk_count):
     ok = True
     print(f"file: {args.path}")
@@ -447,6 +457,9 @@ def validate(args, stats, bin_chunk_count):
     if args.profile == "prop" or args.profile == "scatter":
         ok = validate_decoration_profile(args, stats, args.profile, surface_tags, wheel_names) and ok
 
+    if args.require_render_attributes:
+        ok = validate_render_attributes(stats, args.path.name) and ok
+
     if ok:
         print("ok: GLB import contract checks passed")
     return ok
@@ -462,6 +475,7 @@ def main():
     parser.add_argument("--min-dimension", type=float)
     parser.add_argument("--expected-name")
     parser.add_argument("--require-surface-tag", action="store_true")
+    parser.add_argument("--require-render-attributes", action="store_true")
     parser.add_argument("--surface-id")
     parser.add_argument("--surface-id-map", type=Path)
     args = parser.parse_args()

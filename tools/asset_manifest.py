@@ -189,6 +189,7 @@ def check_assets():
         check_glb(
             "assets/models/features/" + filename,
             "--require-surface-tag",
+            "--require-render-attributes",
             "--surface-id=" + FEATURE_SURFACES[filename],
             "--max-primitives=" + str(FEATURE_MAX_PRIMITIVES),
         )
@@ -198,6 +199,7 @@ def check_assets():
             "assets/models/props/" + filename,
             "--profile",
             "prop",
+            "--require-render-attributes",
             "--min-dimension=" + f"{min_dimension:.2f}",
             "--max-dimension=" + f"{max_dimension:.2f}",
             "--max-primitives=" + str(PROP_MAX_PRIMITIVES),
@@ -208,6 +210,7 @@ def check_assets():
             "assets/models/scatter/" + filename,
             "--profile",
             "scatter",
+            "--require-render-attributes",
             "--min-dimension=" + f"{min_dimension:.2f}",
             "--max-dimension=" + f"{max_dimension:.2f}",
             "--max-primitives=" + str(SCATTER_MAX_PRIMITIVES),
@@ -233,6 +236,7 @@ def check_candidate(subdir, filename, candidate_path, surface_id_map):
         ok = check_glb_result(
             str(candidate),
             "--require-surface-tag",
+            "--require-render-attributes",
             "--surface-id=" + FEATURE_SURFACES[filename],
             "--max-primitives=" + str(FEATURE_MAX_PRIMITIVES),
         )
@@ -242,6 +246,7 @@ def check_candidate(subdir, filename, candidate_path, surface_id_map):
             str(candidate),
             "--profile",
             "prop",
+            "--require-render-attributes",
             "--expected-name",
             target_stem,
             "--min-dimension=" + f"{min_dimension:.2f}",
@@ -254,6 +259,7 @@ def check_candidate(subdir, filename, candidate_path, surface_id_map):
             str(candidate),
             "--profile",
             "scatter",
+            "--require-render-attributes",
             "--expected-name",
             target_stem,
             "--min-dimension=" + f"{min_dimension:.2f}",
