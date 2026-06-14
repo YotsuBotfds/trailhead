@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+MODEL_ASSET_EXTENSIONS = {".glb", ".png"}
 
 GENERATED_ASSETS = {
     "features": [
@@ -84,6 +85,67 @@ def check_glb(path, *args):
     run([sys.executable, "tools/check_glb.py", path, *args])
 
 
+def fail(message):
+    print("fail: " + message)
+    return False
+
+
+def check_manifest_internal_consistency():
+    ok = True
+    for filename in GENERATED_ASSETS["features"]:
+        if filename not in FEATURE_SURFACES:
+            ok = fail("feature asset missing surface tag in manifest: " + filename) and ok
+    for filename in FEATURE_SURFACES:
+        if filename not in GENERATED_ASSETS["features"]:
+            ok = fail("surface tag defined for non-feature asset: " + filename) and ok
+    for filename in GENERATED_ASSETS["props"]:
+        if filename not in PROP_BUDGETS:
+            ok = fail("prop asset missing scale budget in manifest: " + filename) and ok
+    for filename in PROP_BUDGETS:
+        if filename not in GENERATED_ASSETS["props"]:
+            ok = fail("scale budget defined for non-prop asset: " + filename) and ok
+    for filename in GENERATED_ASSETS["scatter"]:
+        if filename not in SCATTER_BUDGETS:
+            ok = fail("scatter asset missing scale budget in manifest: " + filename) and ok
+    for filename in SCATTER_BUDGETS:
+        if filename not in GENERATED_ASSETS["scatter"]:
+            ok = fail("scale budget defined for non-scatter asset: " + filename) and ok
+    return ok
+
+
+def check_manifest_coverage():
+    ok = check_manifest_internal_consistency()
+    models_dir = ROOT / "assets/models"
+    if not models_dir.is_dir():
+        return fail("missing assets/models directory") and ok
+    observed_subdirs = sorted(
+        path.name
+        for path in models_dir.iterdir()
+        if path.is_dir() and any(child.suffix in MODEL_ASSET_EXTENSIONS for child in path.iterdir())
+    )
+    for subdir in observed_subdirs:
+        if subdir not in GENERATED_ASSETS:
+            ok = fail("assets/models contains unmanifested asset directory: " + subdir) and ok
+    for subdir, expected_filenames in GENERATED_ASSETS.items():
+        asset_dir = models_dir / subdir
+        if not asset_dir.is_dir():
+            ok = fail("missing asset directory: assets/models/" + subdir) and ok
+            continue
+        observed_filenames = sorted(
+            path.name
+            for path in asset_dir.iterdir()
+            if path.is_file() and path.suffix in MODEL_ASSET_EXTENSIONS
+        )
+        expected_sorted = sorted(expected_filenames)
+        for filename in expected_sorted:
+            if filename not in observed_filenames:
+                ok = fail("manifested asset is missing: assets/models/" + subdir + "/" + filename) and ok
+        for filename in observed_filenames:
+            if filename not in expected_sorted:
+                ok = fail("committed asset is not in manifest: assets/models/" + subdir + "/" + filename) and ok
+    return ok
+
+
 def check_heightmesh_if_present():
     path = ROOT / "assets/models/terrain/cedar_hollow_heightmesh.glb"
     surface_id_map = "assets/models/terrain/cedar_hollow_surface_id.png"
@@ -101,6 +163,8 @@ def check_heightmesh_if_present():
 
 
 def check_assets():
+    if not check_manifest_coverage():
+        return 1
     check_heightmesh_if_present()
     run([sys.executable, "tools/check_godot_imports.py"])
     check_glb("assets/models/vehicle/rc_buggy.glb", "--profile", "vehicle", "--max-dimension=1.0")
@@ -129,6 +193,7 @@ def check_assets():
             "--max-dimension=" + f"{max_dimension:.2f}",
         )
     print("ok: asset GLB contracts passed")
+    return 0
 
 
 def list_generated(subdir):
@@ -144,8 +209,7 @@ def main():
     list_parser.add_argument("subdir", choices=sorted(GENERATED_ASSETS.keys()))
     args = parser.parse_args()
     if args.command == "check-assets":
-        check_assets()
-        return 0
+        return check_assets()
     if args.command == "list-generated":
         list_generated(args.subdir)
         return 0
