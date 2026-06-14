@@ -1,0 +1,51 @@
+; Engine configuration file.
+; Prefer the Godot editor for large setting changes; keep hand edits minimal.
+
+config_version=5
+
+[application]
+
+config/name="Trailhead"
+run/main_scene="res://scenes/flat_plane.tscn"
+
+[autoload]
+
+GameConfig="*res://autoload/game_config.gd"
+EventBus="*res://autoload/event_bus.gd"
+GameManager="*res://autoload/game_manager.gd"
+
+[physics]
+
+common/physics_ticks_per_second=60
+
+[input]
+
+throttle={
+"deadzone": 0.2,
+"events": []
+}
+brake={
+"deadzone": 0.2,
+"events": []
+}
+steer_left={
+"deadzone": 0.2,
+"events": []
+}
+steer_right={
+"deadzone": 0.2,
+"events": []
+}
+ebrake={
+"deadzone": 0.2,
+"events": []
+}
+self_right={
+"deadzone": 0.2,
+"events": []
+}
+cam_toggle={
+"deadzone": 0.2,
+"events": []
+}
+

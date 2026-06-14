@@ -1,0 +1,6 @@
+.DS_Store
+.godot/
+*.tmp
+tests/out/
+assets/generated/
+

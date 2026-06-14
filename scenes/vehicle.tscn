@@ -1,0 +1,7 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://systems/vehicle/raycast_vehicle_controller.gd" id="1_vehicle"]
+
+[node name="Vehicle" type="Node3D"]
+script = ExtResource("1_vehicle")
+
