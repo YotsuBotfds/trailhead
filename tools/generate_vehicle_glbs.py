@@ -118,6 +118,14 @@ def combine_meshes(meshes):
     return vertices, indices
 
 
+def translated(mesh, offset):
+    vertices, indices = mesh
+    return [
+        (vertex[0] + offset[0], vertex[1] + offset[1], vertex[2] + offset[2])
+        for vertex in vertices
+    ], indices
+
+
 def cylinder_y(radius, height, segments):
     vertices = []
     y_min = -height * 0.5
@@ -159,9 +167,107 @@ def treaded_tire(radius, width, segments, tread_count):
     return combine_meshes(meshes)
 
 
+def buggy_body_shell():
+    sections = [
+        (-0.118, 0.044, 0.030, -0.026, 0.000),
+        (-0.040, 0.074, 0.058, -0.026, 0.035),
+        (0.060, 0.074, 0.060, -0.024, 0.030),
+        (0.124, 0.056, 0.046, -0.020, 0.010),
+    ]
+    vertices = []
+    for z, lower_width, upper_width, low_y, high_y in sections:
+        vertices.extend([
+            (-lower_width, low_y, z),
+            (lower_width, low_y, z),
+            (-upper_width, high_y, z),
+            (upper_width, high_y, z),
+        ])
+    indices = []
+    for section_index in range(len(sections) - 1):
+        a = section_index * 4
+        b = (section_index + 1) * 4
+        indices.extend([a, b, b + 1, a, b + 1, a + 1])
+        indices.extend([a + 2, a + 3, b + 3, a + 2, b + 3, b + 2])
+        indices.extend([a, a + 2, b + 2, a, b + 2, b])
+        indices.extend([a + 1, b + 1, b + 3, a + 1, b + 3, a + 3])
+    last = (len(sections) - 1) * 4
+    indices.extend([0, 1, 3, 0, 3, 2])
+    indices.extend([last, last + 2, last + 3, last, last + 3, last + 1])
+    return vertices, indices
+
+
+def fender_flare_mesh():
+    meshes = []
+    for x_sign in (-1.0, 1.0):
+        for z_center in (-0.100, 0.100):
+            meshes.append(oriented_box(
+                (0.085 * x_sign, 0.025, z_center),
+                (1.0, 0.0, 0.0),
+                0.052,
+                (0.0, 1.0, 0.0),
+                0.014,
+                (0.0, 0.0, 1.0),
+                0.074,
+            ))
+    return combine_meshes(meshes)
+
+
+def fender_lip_mesh():
+    meshes = []
+    for x_sign in (-1.0, 1.0):
+        for z_center in (-0.100, 0.100):
+            meshes.append(translated(box(0.010, 0.018, 0.078), (0.113 * x_sign, 0.020, z_center)))
+            meshes.append(translated(box(0.050, 0.013, 0.010), (0.088 * x_sign, 0.020, z_center - 0.041)))
+            meshes.append(translated(box(0.050, 0.013, 0.010), (0.088 * x_sign, 0.020, z_center + 0.041)))
+    return combine_meshes(meshes)
+
+
+def headlight_mesh():
+    return combine_meshes([
+        translated(box(0.030, 0.014, 0.006), (-0.038, 0.030, -0.204)),
+        translated(box(0.030, 0.014, 0.006), (0.038, 0.030, -0.204)),
+    ])
+
+
+def tail_light_mesh():
+    return combine_meshes([
+        translated(box(0.026, 0.012, 0.006), (-0.044, 0.027, 0.171)),
+        translated(box(0.026, 0.012, 0.006), (0.044, 0.027, 0.171)),
+    ])
+
+
+def grille_mesh():
+    return translated(box(0.073, 0.018, 0.006), (0.0, 0.020, -0.207))
+
+
+def side_number_plate_mesh():
+    return combine_meshes([
+        translated(box(0.006, 0.030, 0.060), (-0.078, 0.034, -0.006)),
+        translated(box(0.006, 0.030, 0.060), (0.078, 0.034, -0.006)),
+    ])
+
+
+def side_number_mark_mesh():
+    return combine_meshes([
+        translated(box(0.007, 0.004, 0.044), (-0.082, 0.038, -0.006)),
+        translated(box(0.007, 0.004, 0.044), (0.082, 0.038, -0.006)),
+        translated(box(0.007, 0.004, 0.028), (-0.082, 0.030, -0.006)),
+        translated(box(0.007, 0.004, 0.028), (0.082, 0.030, -0.006)),
+    ])
+
+
+def vent_mesh():
+    meshes = []
+    for x_offset in (-0.028, 0.028):
+        meshes.append(translated(box(0.018, 0.004, 0.046), (x_offset, 0.061, -0.110)))
+    for x_offset in (-0.034, 0.0, 0.034):
+        meshes.append(translated(box(0.014, 0.004, 0.048), (x_offset, 0.054, 0.065)))
+    return combine_meshes(meshes)
+
+
 def write_glb(path):
     mesh_specs = [
-        ("body", box(0.145, 0.052, 0.235), [0.93, 0.18, 0.07, 1.0]),
+        ("body", buggy_body_shell(), [0.93, 0.18, 0.07, 1.0]),
         ("nose", wedge(0.115, 0.034, 0.105), [0.98, 0.33, 0.09, 1.0]),
         ("top_deck", box(0.105, 0.010, 0.155), [0.080, 0.086, 0.098, 1.0]),
         ("side_panel", box(0.006, 0.042, 0.205), [0.94, 0.22, 0.08, 1.0]),
@@ -180,6 +286,15 @@ def write_glb(path):
         ("wheel_tire", treaded_tire(0.031, 0.034, 24, 12), [0.020, 0.020, 0.023, 1.0]),
         ("wheel_rim", cylinder_y(0.017, 0.004, 18), [0.16, 0.17, 0.18, 1.0]),
         ("wheel_hub", cylinder_y(0.008, 0.006, 14), [0.76, 0.70, 0.54, 1.0]),
+        ("fender_flare", fender_flare_mesh(), [0.93, 0.18, 0.07, 1.0]),
+        ("fender_lip", fender_lip_mesh(), [0.040, 0.042, 0.048, 1.0]),
+        ("headlight_lens", headlight_mesh(), [1.00, 0.84, 0.42, 1.0]),
+        ("tail_light_lens", tail_light_mesh(), [0.95, 0.05, 0.025, 1.0]),
+        ("front_grille", grille_mesh(), [0.035, 0.038, 0.042, 1.0]),
+        ("side_number_plate", side_number_plate_mesh(), [0.93, 0.88, 0.75, 1.0]),
+        ("side_number_mark", side_number_mark_mesh(), [0.060, 0.064, 0.072, 1.0]),
+        ("body_vent", vent_mesh(), [0.045, 0.048, 0.054, 1.0]),
+        ("antenna", cylinder_y(0.0025, 0.118, 8), [0.045, 0.048, 0.054, 1.0]),
     ]
 
     binary = bytearray()
@@ -293,8 +408,17 @@ def write_glb(path):
     tire_mesh = 16
     rim_mesh = 17
     hub_mesh = 18
+    fender_flare_mesh_index = 19
+    fender_lip_mesh_index = 20
+    headlight_mesh_index = 21
+    tail_light_mesh_index = 22
+    grille_mesh_index = 23
+    side_number_plate_mesh_index = 24
+    side_number_mark_mesh_index = 25
+    vent_mesh_index = 26
+    antenna_mesh_index = 27
     nodes = [
-        {"name": "rc_buggy", "children": [1, 2, 3, 4, 5, 6, 7, 13, 17, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 36, 41, 46, 51]},
+        {"name": "rc_buggy", "children": [1, 2, 3, 4, 5, 6, 7, 13, 17, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 36, 41, 46, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60]},
         {"name": "body", "mesh": body_mesh, "translation": [0.0, 0.010, 0.015]},
         {"name": "nose", "mesh": nose_mesh, "translation": [0.0, 0.018, -0.155]},
         {"name": "top_deck", "mesh": deck_mesh, "translation": [0.0, 0.043, -0.030]},
@@ -346,6 +470,15 @@ def write_glb(path):
         {"name": "rim_inner", "mesh": rim_mesh, "translation": [0.0, -0.019, 0.0]},
         {"name": "hub_cap", "mesh": hub_mesh, "translation": [0.0, 0.022, 0.0]},
         {"name": "body_stripe", "mesh": paint_stripe_mesh, "translation": [0.0, 0.052, -0.050]},
+        {"name": "fender_flares", "mesh": fender_flare_mesh_index},
+        {"name": "fender_lips", "mesh": fender_lip_mesh_index},
+        {"name": "headlights", "mesh": headlight_mesh_index},
+        {"name": "tail_lights", "mesh": tail_light_mesh_index},
+        {"name": "front_grille", "mesh": grille_mesh_index},
+        {"name": "side_number_plates", "mesh": side_number_plate_mesh_index},
+        {"name": "side_number_marks", "mesh": side_number_mark_mesh_index},
+        {"name": "body_vents", "mesh": vent_mesh_index},
+        {"name": "antenna", "mesh": antenna_mesh_index, "translation": [0.052, 0.115, 0.063]},
     ]
 
     bin_chunk = pad4(bytes(binary), b"\0")
