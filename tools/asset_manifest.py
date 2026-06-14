@@ -10,6 +10,11 @@ FEATURE_MAX_PRIMITIVES = 16
 PROP_MAX_PRIMITIVES = 32
 SCATTER_MAX_PRIMITIVES = 16
 VEHICLE_MAX_PRIMITIVES = 32
+TERRAIN_SURFACE_ID_MAP = "assets/models/terrain/cedar_hollow_surface_id.png"
+TERRAIN_SURFACE_ID_WIDTH = 256
+TERRAIN_SURFACE_ID_HEIGHT = 256
+TERRAIN_SURFACE_ID_VALUES = [1, 2, 3, 4, 5, 6, 7]
+TERRAIN_SURFACE_ID_MIN_PIXELS = 16
 
 GENERATED_ASSETS = {
     "features": [
@@ -96,6 +101,25 @@ def check_glb_result(path, *args):
     return run([sys.executable, "tools/check_glb.py", path, *args], check=False) == 0
 
 
+def surface_id_png_args():
+    return [
+        "--expected-width=" + str(TERRAIN_SURFACE_ID_WIDTH),
+        "--expected-height=" + str(TERRAIN_SURFACE_ID_HEIGHT),
+        "--expected-ids=" + ",".join(str(value) for value in TERRAIN_SURFACE_ID_VALUES),
+        "--forbid-zero",
+        "--require-grayscale",
+        "--min-pixels-per-id=" + str(TERRAIN_SURFACE_ID_MIN_PIXELS),
+    ]
+
+
+def check_surface_id_png(path):
+    run([sys.executable, "tools/check_surface_id_png.py", path, *surface_id_png_args()])
+
+
+def check_surface_id_png_result(path):
+    return run([sys.executable, "tools/check_surface_id_png.py", path, *surface_id_png_args()], check=False) == 0
+
+
 def fail(message):
     print("fail: " + message)
     return False
@@ -159,14 +183,13 @@ def check_manifest_coverage():
 
 def check_heightmesh_if_present():
     path = ROOT / "assets/models/terrain/cedar_hollow_heightmesh.glb"
-    surface_id_map = "assets/models/terrain/cedar_hollow_surface_id.png"
     if path.is_file():
         check_glb(
             "assets/models/terrain/cedar_hollow_heightmesh.glb",
             "--profile",
             "heightmesh",
             "--surface-id-map",
-            surface_id_map,
+            TERRAIN_SURFACE_ID_MAP,
             "--max-triangles=200000",
         )
     else:
@@ -176,6 +199,7 @@ def check_heightmesh_if_present():
 def check_assets():
     if not check_manifest_coverage():
         return 1
+    check_surface_id_png(TERRAIN_SURFACE_ID_MAP)
     check_heightmesh_if_present()
     run([sys.executable, "tools/check_godot_imports.py"])
     check_glb(
@@ -278,6 +302,7 @@ def check_candidate(subdir, filename, candidate_path, surface_id_map):
         if surface_id_map is None:
             fail("terrain GLB candidate requires --surface-id-map")
             return 1
+        surface_ok = check_surface_id_png_result(surface_id_map)
         ok = check_glb_result(
             str(candidate),
             "--profile",
@@ -285,7 +310,9 @@ def check_candidate(subdir, filename, candidate_path, surface_id_map):
             "--surface-id-map",
             surface_id_map,
             "--max-triangles=200000",
-        )
+        ) and surface_ok
+    elif subdir == "terrain" and filename.endswith(".png"):
+        ok = check_surface_id_png_result(str(candidate))
     else:
         fail("candidate checks do not support target: " + target_path)
         return 1
