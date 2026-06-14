@@ -66,8 +66,18 @@ func _inspect() -> void:
 		_require_named_count(prop_root, "fire_ring", 1)
 		_require_named_count(prop_root, "hiking_boot", 1)
 		_require_named_count(prop_root, "water_bottle", 1)
-		_require_node(prop_root, "trail_sign/label_old_cedar")
-		_require_node(prop_root, "trail_sign/label_creek")
+		_require_node_position(prop_root, "trail_sign", Vector3(0.72, 0.0, 0.25), FEATURE_TRANSFORM_TOLERANCE)
+		_require_node_rotation(prop_root, "trail_sign", Vector3(0.0, -24.0, 0.0), FLOAT_EPSILON)
+		_require_node_position(prop_root, "picnic_table", Vector3(-1.45, 0.0, 0.35), FEATURE_TRANSFORM_TOLERANCE)
+		_require_node_rotation(prop_root, "picnic_table", Vector3(0.0, 18.0, 0.0), FLOAT_EPSILON)
+		_require_node_position(prop_root, "old_cedar_stump", Vector3(0.0, 0.0, -5.25), FEATURE_TRANSFORM_TOLERANCE)
+		_require_node_position(prop_root, "fire_ring", Vector3(-0.78, 0.0, 1.05), FEATURE_TRANSFORM_TOLERANCE)
+		_require_node_position(prop_root, "hiking_boot", Vector3(0.75, 0.01, -4.65), FEATURE_TRANSFORM_TOLERANCE)
+		_require_node_rotation(prop_root, "hiking_boot", Vector3(0.0, -32.0, 0.0), FLOAT_EPSILON)
+		_require_node_position(prop_root, "water_bottle", Vector3(2.45, 0.0, -4.15), FEATURE_TRANSFORM_TOLERANCE)
+		_require_node_rotation(prop_root, "water_bottle", Vector3(0.0, 17.0, 78.0), FLOAT_EPSILON)
+		_require_label(prop_root, "trail_sign/label_old_cedar", "Old Cedar", 28)
+		_require_label(prop_root, "trail_sign/label_creek", "Creek", 22)
 		var prop_collision_count: int = _count_collision_objects(prop_root)
 		if prop_collision_count > 0:
 			_errors.append("PropVisuals contains collision objects: " + str(prop_collision_count))
@@ -158,6 +168,16 @@ func _require_node_scale(parent: Node, path: String, expected: Vector3, toleranc
 		return
 	if node.scale.distance_to(expected) > tolerance:
 		_errors.append(path + " scale expected " + str(expected) + ", got " + str(node.scale))
+
+
+func _require_label(parent: Node, path: String, expected_text: String, expected_font_size: int) -> void:
+	var label: Label3D = _require_node(parent, path) as Label3D
+	if label == null:
+		return
+	if label.text != expected_text:
+		_errors.append(path + " text expected " + expected_text + ", got " + label.text)
+	if label.font_size != expected_font_size:
+		_errors.append(path + " font_size expected " + str(expected_font_size) + ", got " + str(label.font_size))
 
 
 func _inspect_default_environment(world_environment: WorldEnvironment) -> void:
