@@ -75,15 +75,27 @@ def cylinder(radius, height, segments):
     return vertices, indices
 
 
-def transformed(mesh, offset, scale=(1.0, 1.0, 1.0)):
+def transformed(mesh, offset, scale=(1.0, 1.0, 1.0), rotation=(0.0, 0.0, 0.0)):
     vertices, indices = mesh
     out = []
+    rot_x, rot_y, rot_z = rotation
+    cos_x = math.cos(rot_x)
+    sin_x = math.sin(rot_x)
+    cos_y = math.cos(rot_y)
+    sin_y = math.sin(rot_y)
+    cos_z = math.cos(rot_z)
+    sin_z = math.sin(rot_z)
     for vertex in vertices:
-        out.append((
-            vertex[0] * scale[0] + offset[0],
-            vertex[1] * scale[1] + offset[1],
-            vertex[2] * scale[2] + offset[2],
-        ))
+        x = vertex[0] * scale[0]
+        y = vertex[1] * scale[1]
+        z = vertex[2] * scale[2]
+        if rot_x != 0.0:
+            y, z = y * cos_x - z * sin_x, y * sin_x + z * cos_x
+        if rot_z != 0.0:
+            x, y = x * cos_z - y * sin_z, x * sin_z + y * cos_z
+        if rot_y != 0.0:
+            x, z = x * cos_y + z * sin_y, -x * sin_y + z * cos_y
+        out.append((x + offset[0], y + offset[1], z + offset[2]))
     return out, indices
 
 
@@ -116,19 +128,27 @@ def pipe(radius, length, segments):
 
 
 def boardwalk_segment_parts():
+    plank_offsets = [-0.31, 0.0, 0.31]
+    planks = []
+    worn_edges = []
+    nail_heads = []
+    for index, x_offset in enumerate(plank_offsets):
+        planks.append(transformed(box(0.285, 0.044, 0.205), (x_offset, 0.0, 0.0)))
+        worn_edges.append(transformed(box(0.24, 0.006, 0.026), (x_offset, 0.046, -0.080 + float(index % 2) * 0.010)))
+        worn_edges.append(transformed(box(0.20, 0.006, 0.024), (x_offset + 0.018, 0.046, 0.074 - float(index % 2) * 0.012)))
+        for z_offset in [-0.074, 0.074]:
+            nail_heads.append(transformed(box(0.024, 0.007, 0.018), (x_offset - 0.095, 0.052, z_offset)))
+            nail_heads.append(transformed(box(0.024, 0.007, 0.018), (x_offset + 0.095, 0.052, z_offset)))
     return [
-        part(box(0.9, 0.044, 0.205), [0.42, 0.25, 0.12, 1.0], "boardwalk_segment_plank"),
+        part(merge(planks), [0.44, 0.28, 0.14, 1.0], "boardwalk_segment_planks"),
         part(merge([
-            transformed(box(0.9, 0.016, 0.018), (0.0, 0.044, -0.112)),
-            transformed(box(0.9, 0.016, 0.018), (0.0, 0.044, 0.112)),
-            transformed(box(0.016, 0.014, 0.205), (-0.18, 0.044, 0.0)),
-            transformed(box(0.016, 0.014, 0.205), (0.18, 0.044, 0.0)),
-        ]), [0.16, 0.09, 0.045, 1.0], "boardwalk_segment_gaps"),
-        part(merge([
-            transformed(box(0.25, 0.006, 0.18), (-0.34, 0.058, 0.0)),
-            transformed(box(0.25, 0.006, 0.18), (0.0, 0.058, 0.0)),
-            transformed(box(0.25, 0.006, 0.18), (0.34, 0.058, 0.0)),
-        ]), [0.58, 0.38, 0.20, 1.0], "boardwalk_segment_worn_edges"),
+            transformed(box(0.016, 0.014, 0.205), (-0.155, 0.044, 0.0)),
+            transformed(box(0.016, 0.014, 0.205), (0.155, 0.044, 0.0)),
+            transformed(box(0.90, 0.018, 0.018), (0.0, 0.044, -0.112)),
+            transformed(box(0.90, 0.018, 0.018), (0.0, 0.044, 0.112)),
+        ]), [0.14, 0.075, 0.035, 1.0], "boardwalk_segment_gaps_and_edges"),
+        part(merge(worn_edges), [0.64, 0.43, 0.22, 1.0], "boardwalk_segment_worn_edges"),
+        part(merge(nail_heads), [0.09, 0.055, 0.030, 1.0], "boardwalk_segment_nail_heads"),
     ]
 
 
@@ -139,20 +159,48 @@ def culvert_pipe_parts():
             transformed(pipe(0.34, 0.08, 24), (0.0, 0.0, -0.56)),
             transformed(pipe(0.34, 0.08, 24), (0.0, 0.0, 0.56)),
         ]), [0.20, 0.21, 0.20, 1.0], "culvert_pipe_rims"),
+        part(merge([
+            transformed(pipe(0.255, 0.035, 20), (0.0, 0.0, -0.605)),
+            transformed(pipe(0.255, 0.035, 20), (0.0, 0.0, 0.605)),
+        ]), [0.050, 0.055, 0.052, 1.0], "culvert_pipe_dark_openings"),
+        part(merge([
+            transformed(box(0.42, 0.035, 0.045), (0.0, 0.63, -0.35), rotation=(0.0, 0.0, 0.12)),
+            transformed(box(0.36, 0.030, 0.040), (0.0, 0.61, 0.28), rotation=(0.0, 0.0, -0.10)),
+        ]), [0.52, 0.49, 0.42, 1.0], "culvert_pipe_worn_highlights"),
     ]
 
 
 def log_ramp_parts():
+    bark_strips = []
+    for x_offset in [-0.14, 0.0, 0.14]:
+        bark_strips.append(transformed(box(0.030, 0.022, 0.92), (x_offset, 0.205, 0.03), rotation=(0.0, float(x_offset) * 1.6, 0.0)))
     return [
-        part(wedge(0.42, 0.20, 1.15), [0.34, 0.20, 0.10, 1.0], "log_ramp_body"),
-        part(transformed(wedge(0.30, 0.025, 0.95), (0.0, 0.195, 0.02)), [0.52, 0.34, 0.18, 1.0], "log_ramp_highlight"),
+        part(wedge(0.42, 0.20, 1.15), [0.33, 0.19, 0.09, 1.0], "log_ramp_body"),
+        part(transformed(wedge(0.30, 0.025, 0.95), (0.0, 0.195, 0.02)), [0.58, 0.38, 0.18, 1.0], "log_ramp_worn_top"),
+        part(merge(bark_strips), [0.18, 0.10, 0.045, 1.0], "log_ramp_bark_strips"),
+        part(merge([
+            transformed(cylinder(0.055, 0.020, 12), (-0.17, 0.050, -0.48), rotation=(math.pi * 0.5, 0.0, 0.0)),
+            transformed(cylinder(0.048, 0.020, 12), (0.17, 0.150, 0.48), rotation=(math.pi * 0.5, 0.0, 0.0)),
+        ]), [0.66, 0.45, 0.24, 1.0], "log_ramp_cut_ends"),
     ]
 
 
 def stepping_stone_parts():
+    edge_chips = []
+    for index, angle in enumerate([0.2, 1.35, 2.45, 3.70, 5.10]):
+        edge_chips.append(transformed(
+            box(0.070, 0.014, 0.038),
+            (math.cos(angle) * 0.185, 0.073, math.sin(angle) * 0.185),
+            rotation=(0.0, -angle, 0.0),
+        ))
     return [
-        part(cylinder(0.24, 0.068, 14), [0.36, 0.37, 0.35, 1.0], "stepping_stone_base"),
-        part(transformed(cylinder(0.21, 0.012, 14), (0.0, 0.068, 0.0)), [0.52, 0.53, 0.50, 1.0], "stepping_stone_wet_top"),
+        part(cylinder(0.24, 0.068, 16), [0.34, 0.36, 0.34, 1.0], "stepping_stone_base"),
+        part(transformed(cylinder(0.21, 0.012, 16), (0.0, 0.068, 0.0)), [0.50, 0.54, 0.52, 1.0], "stepping_stone_wet_top"),
+        part(merge(edge_chips), [0.22, 0.25, 0.23, 1.0], "stepping_stone_edge_chips"),
+        part(merge([
+            transformed(box(0.17, 0.006, 0.020), (-0.04, 0.083, -0.04), rotation=(0.0, 0.42, 0.0)),
+            transformed(box(0.11, 0.006, 0.018), (0.06, 0.084, 0.07), rotation=(0.0, -0.72, 0.0)),
+        ]), [0.76, 0.86, 0.86, 1.0], "stepping_stone_wet_glints"),
     ]
 
 
