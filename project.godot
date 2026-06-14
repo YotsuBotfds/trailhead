@@ -16,7 +16,7 @@ GameManager="*res://autoload/game_manager.gd"
 
 [physics]
 
-common/physics_ticks_per_second=60
+common/physics_ticks_per_second=120
 
 [input]
 

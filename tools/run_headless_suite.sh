@@ -13,7 +13,7 @@ run_sim() {
 	out_file="$1"
 	shift
 	printf 'run: %s\n' "$out_file"
-	"$godot_bin" --headless --fixed-fps 60 --path . res://scenes/sim_runner.tscn -- "$@" --out="$out_file"
+	"$godot_bin" --headless --fixed-fps 120 --path . res://scenes/sim_runner.tscn -- "$@" --out="$out_file"
 }
 
 assert_metrics() {

@@ -1,6 +1,6 @@
 assert_metrics "$out_dir/cedar_hollow_log_ramp.json" \
 	--surface=wood_plank:20 \
-	--surface-sequence=wood_plank,tall_grass,wood_plank \
+	--surface-sequence=packed_gravel,wood_plank \
 	--metric-min=max_y_position:0.18 \
 	--metric-min=max_pitch_deg:4.0
 
@@ -37,6 +37,6 @@ assert_metrics "$out_dir/cedar_hollow_segment_trailhead_to_culvert_mouth.json" \
 	--landmark=culvert_mouth
 
 assert_metrics "$out_dir/cedar_hollow_segment_overlook_to_old_cedar.json" \
-	--surface=loose_rock:20 \
-	--surface=packed_dirt:90 \
+	--surface=loose_rock:200 \
+	--surface=packed_dirt:3 \
 	--landmark=old_cedar

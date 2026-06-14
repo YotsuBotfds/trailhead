@@ -5,6 +5,6 @@ run_sim "$out_dir/cedar_hollow_log_ramp.json" \
 	--spawn=trailhead \
 	--target=old_cedar \
 	--seed=12345 \
-	--max-ticks=220 \
-	--stuck-window=60 \
+	--max-ticks=440 \
+	--stuck-window=120 \
 	--stuck-min-progress=0.02

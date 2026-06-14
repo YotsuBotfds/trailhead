@@ -1,7 +1,6 @@
 class_name RaycastVehicleController
 extends "res://systems/vehicle/vehicle_controller.gd"
 
-const WHEEL_COUNT: int = 4
 const RaycastVehicleInputScript: GDScript = preload("res://systems/vehicle/vehicle_input.gd")
 const RaycastVehicleStateScript: GDScript = preload("res://systems/vehicle/vehicle_state.gd")
 const VehicleContaminationStateScript: GDScript = preload("res://systems/vehicle/vehicle_contamination_state.gd")
@@ -76,7 +75,6 @@ func _physics_process(_delta: float) -> void:
 	_apply_wheel_forces()
 	_apply_drive_forces()
 	_apply_speed_limit()
-	_update_flip_events()
 
 
 func _build_physics_body() -> void:
@@ -140,7 +138,10 @@ func _apply_wheel_forces() -> void:
 		var compression: float = clampf((ray_length - dist) / maxf(GameConfig.susp_travel, 0.001), 0.0, 1.0)
 		var spring_force: float = compression * GameConfig.susp_stiffness
 		var force_pos: Vector3 = hit_point - _body.global_position
-		var compression_velocity: float = -_body.linear_velocity.dot(up)
+		var center_of_mass_offset_world: Vector3 = _body.global_transform.basis * GameConfig.center_of_mass_offset
+		var contact_arm: Vector3 = force_pos - center_of_mass_offset_world
+		var contact_velocity: Vector3 = _body.linear_velocity + _body.angular_velocity.cross(contact_arm * GameConfig.susp_contact_angular_velocity_weight)
+		var compression_velocity: float = -contact_velocity.dot(up)
 		var damping_force: float = compression_velocity * GameConfig.susp_damping
 		var max_damping_force: float = spring_force * GameConfig.susp_damping_force_ratio
 		var suspension_force: float = maxf(0.0, spring_force + clampf(damping_force, -max_damping_force, max_damping_force))
@@ -185,7 +186,7 @@ func _apply_drive_forces() -> void:
 	var drive: Vector3 = forward * throttle * GameConfig.motor_torque * _surface_friction
 	_body.apply_central_force(drive)
 	if brake > 0.0:
-		var brake_factor: float = clampf(1.0 - brake * GameConfig.brake_damping_per_tick, 0.0, 1.0)
+		var brake_factor: float = clampf(1.0 - brake * GameConfig.brake_damping_per_second * GameConfig.FIXED_DT, 0.0, 1.0)
 		_body.linear_velocity *= brake_factor
 	if bool(_state.get("on_ground")):
 		_apply_surface_drag()
@@ -293,9 +294,9 @@ func _update_contamination(contact_count: int, mud_residue_sum: float, dust_resi
 
 
 func _residue_step(current: float, target: float) -> float:
-	var step: float = GameConfig.vehicle_contamination_pickup_rate
+	var step: float = GameConfig.vehicle_contamination_pickup_per_second * GameConfig.FIXED_DT
 	if target < current:
-		step = GameConfig.vehicle_contamination_decay_rate
+		step = GameConfig.vehicle_contamination_decay_per_second * GameConfig.FIXED_DT
 	var delta: float = target - current
 	if absf(delta) <= step:
 		return clampf(target, 0.0, 1.0)

@@ -4,8 +4,8 @@ run_sim "$out_dir/ebrake_drift.json" \
 	--scenario=ebrake_drift \
 	--spawn=flat_spawn \
 	--seed=12345 \
-	--max-ticks=220 \
-	--stuck-window=60 \
+	--max-ticks=440 \
+	--stuck-window=120 \
 	--stuck-min-progress=0.05
 
 run_sim "$out_dir/launch_wheelie.json" \
@@ -14,8 +14,8 @@ run_sim "$out_dir/launch_wheelie.json" \
 	--scenario=launch_wheelie \
 	--spawn=flat_spawn \
 	--seed=12345 \
-	--max-ticks=160 \
-	--stuck-window=60 \
+	--max-ticks=320 \
+	--stuck-window=120 \
 	--stuck-min-progress=0.05
 
 run_sim "$out_dir/reverse_drive.json" \
@@ -24,8 +24,8 @@ run_sim "$out_dir/reverse_drive.json" \
 	--scenario=reverse_drive \
 	--spawn=flat_spawn \
 	--seed=12345 \
-	--max-ticks=160 \
-	--stuck-window=60 \
+	--max-ticks=320 \
+	--stuck-window=120 \
 	--stuck-min-progress=0.05
 
 run_sim "$out_dir/surface_sweep.json" \
@@ -34,6 +34,6 @@ run_sim "$out_dir/surface_sweep.json" \
 	--scenario=surface_sweep \
 	--spawn=flat_spawn \
 	--seed=12345 \
-	--max-ticks=220 \
-	--stuck-window=60 \
+	--max-ticks=440 \
+	--stuck-window=120 \
 	--stuck-min-progress=0.05

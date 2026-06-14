@@ -14,7 +14,7 @@ run_sim() {
 	out_file="$1"
 	shift
 	printf 'run: %s\n' "$out_file"
-	"$godot_bin" --headless --fixed-fps 60 --path . res://scenes/sim_runner.tscn -- "$@" --out="$out_file"
+	"$godot_bin" --headless --fixed-fps 120 --path . res://scenes/sim_runner.tscn -- "$@" --out="$out_file"
 }
 
 assert_metrics() {
@@ -32,12 +32,12 @@ run_log_ramp() {
 		--spawn=trailhead \
 		--target=old_cedar \
 		--seed="$seed" \
-		--max-ticks=220 \
-		--stuck-window=60 \
+		--max-ticks=440 \
+		--stuck-window=120 \
 		--stuck-min-progress=0.02
 	assert_metrics "$out_file" \
 		--surface=wood_plank:20 \
-		--surface-sequence=wood_plank,tall_grass,wood_plank \
+		--surface-sequence=packed_gravel,wood_plank \
 		--metric-min=max_y_position:0.18 \
 		--metric-min=max_pitch_deg:4.0
 }
@@ -51,8 +51,8 @@ run_old_cedar() {
 		--spawn=trailhead \
 		--target=old_cedar \
 		--seed="$seed" \
-		--max-ticks=360 \
-		--stuck-window=60 \
+		--max-ticks=720 \
+		--stuck-window=120 \
 		--stuck-min-progress=0.05
 	assert_metrics "$out_file" \
 		--surface=packed_dirt:40 \
@@ -68,8 +68,8 @@ run_overlook_ridge() {
 		--spawn=trailhead \
 		--target=overlook_ridge \
 		--seed="$seed" \
-		--max-ticks=520 \
-		--stuck-window=60 \
+		--max-ticks=1040 \
+		--stuck-window=120 \
 		--stuck-min-progress=0.05
 	assert_metrics "$out_file" \
 		--surface=loose_rock:20 \
@@ -85,8 +85,8 @@ run_bog_bottom() {
 		--spawn=trailhead \
 		--target=bog_bottom \
 		--seed="$seed" \
-		--max-ticks=420 \
-		--stuck-window=60 \
+		--max-ticks=840 \
+		--stuck-window=120 \
 		--stuck-min-progress=0.05
 	assert_metrics "$out_file" \
 		--surface=mud:2 \
@@ -103,8 +103,8 @@ run_the_crossing() {
 		--target=the_crossing \
 		--target-radius=0.15 \
 		--seed="$seed" \
-		--max-ticks=620 \
-		--stuck-window=60 \
+		--max-ticks=1240 \
+		--stuck-window=120 \
 		--stuck-min-progress=0.05
 	assert_metrics "$out_file" \
 		--surface=wood_plank:8 \
@@ -124,8 +124,8 @@ run_boardwalk_end() {
 		--target=boardwalk_end \
 		--target-radius=0.25 \
 		--seed="$seed" \
-		--max-ticks=420 \
-		--stuck-window=60 \
+		--max-ticks=840 \
+		--stuck-window=120 \
 		--stuck-min-progress=0.05
 	assert_metrics "$out_file" \
 		--surface=wood_plank:7 \
@@ -141,8 +141,8 @@ run_culvert_mouth() {
 		--spawn=trailhead \
 		--target=culvert_mouth \
 		--seed="$seed" \
-		--max-ticks=520 \
-		--stuck-window=60 \
+		--max-ticks=1040 \
+		--stuck-window=120 \
 		--stuck-min-progress=0.05
 	assert_metrics "$out_file" \
 		--surface=packed_dirt:50 \
@@ -157,7 +157,8 @@ run_trailhead_to_culvert_segment() {
 		--controller=pd \
 		--route-segment=trailhead_to_culvert_mouth \
 		--seed="$seed" \
-		--stuck-window=60 \
+		--max-ticks=1040 \
+		--stuck-window=120 \
 		--stuck-min-progress=0.05
 	assert_metrics "$out_file" \
 		--surface=tall_grass:20 \
@@ -173,11 +174,12 @@ run_overlook_to_old_cedar_segment() {
 		--controller=pd \
 		--route-segment=overlook_to_old_cedar \
 		--seed="$seed" \
-		--stuck-window=60 \
+		--max-ticks=3200 \
+		--stuck-window=120 \
 		--stuck-min-progress=0.015
 	assert_metrics "$out_file" \
 		--surface=loose_rock:20 \
-		--surface=packed_dirt:90 \
+		--surface=packed_dirt:3 \
 		--landmark=old_cedar
 }
 

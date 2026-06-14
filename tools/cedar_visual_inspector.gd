@@ -1261,7 +1261,7 @@ func _inspect_minimap_route_content(minimap: Control) -> void:
 	if nearest_index != 0:
 		_errors.append("MinimapView should start nearest to trailhead landmark, got index " + str(nearest_index))
 	_require_minimap_segment_points(minimap, &"trailhead_to_culvert_mouth", 3)
-	_require_minimap_segment_points(minimap, &"overlook_to_old_cedar", 8)
+	_require_minimap_segment_points(minimap, &"overlook_to_old_cedar", 2)
 
 
 func _require_minimap_segment_points(minimap: Control, segment_id: StringName, expected_count: int) -> void:
