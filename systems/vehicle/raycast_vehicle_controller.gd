@@ -11,14 +11,15 @@ var _pending_input: RefCounted = RaycastVehicleInputScript.new()
 var _state: RefCounted = RaycastVehicleStateScript.new()
 var _was_flipped: bool = false
 var _current_surface_id: StringName = &""
-var _surface_friction: float = 1.0
-var _surface_rolling_drag: float = 0.1
+var _surface_friction: float = 0.0
+var _surface_rolling_drag: float = 0.0
 var _surface_slip: float = 0.0
 var _surface_bog_enabled: bool = false
-var _surface_bog_threshold: float = 0.2
+var _surface_bog_threshold: float = 0.0
 
 
 func _ready() -> void:
+	_reset_surface_cache()
 	_build_physics_body()
 	GameManager.register_vehicle(self)
 
@@ -53,9 +54,9 @@ func self_right() -> void:
 		return
 	var t: Transform3D = _body.global_transform
 	t.basis = Basis.IDENTITY
-	t.origin.y += 0.12
+	t.origin.y += GameConfig.self_right_lift
 	_body.global_transform = t
-	_body.linear_velocity *= 0.25
+	_body.linear_velocity *= GameConfig.self_right_velocity_retention
 	_body.angular_velocity = Vector3.ZERO
 	EventBus.vehicle_self_righted.emit()
 
@@ -139,7 +140,7 @@ func _apply_wheel_forces() -> void:
 		friction_sum += _surface_float(surface_def, "friction", GameConfig.default_friction)
 		rolling_drag_sum += _surface_float(surface_def, "rolling_drag", GameConfig.default_rolling_drag)
 		slip_sum += _surface_float(surface_def, "slip", GameConfig.default_slip)
-		bog_threshold_sum += _surface_float(surface_def, "bog_threshold", 0.2)
+		bog_threshold_sum += _surface_float(surface_def, "bog_threshold", GameConfig.default_bog_threshold)
 		if _surface_bool(surface_def, "bog_enabled", false):
 			bog_enabled = true
 	_state.set("on_ground", contact_count > 0)
@@ -154,7 +155,7 @@ func _apply_wheel_forces() -> void:
 		_surface_rolling_drag = GameConfig.default_rolling_drag
 		_surface_slip = GameConfig.default_slip
 		_surface_bog_enabled = false
-		_surface_bog_threshold = 0.2
+		_surface_bog_threshold = GameConfig.default_bog_threshold
 	_update_surface_event()
 
 
@@ -268,10 +269,18 @@ func _update_state() -> void:
 	_state.set("linear_velocity", _body.linear_velocity)
 	_state.set("angular_velocity", _body.angular_velocity)
 	_state.set("is_flipped", _is_flipped())
-	_state.set("motor_rpm", absf(float(_pending_input.get("throttle"))) * GameConfig.max_speed * 100.0)
+	_state.set("motor_rpm", absf(float(_pending_input.get("throttle"))) * GameConfig.max_speed * GameConfig.motor_rpm_speed_scale)
 
 
 func _is_flipped() -> bool:
 	if _body == null:
 		return false
 	return _body.global_transform.basis.y.dot(Vector3.UP) < 0.0
+
+
+func _reset_surface_cache() -> void:
+	_surface_friction = GameConfig.default_friction
+	_surface_rolling_drag = GameConfig.default_rolling_drag
+	_surface_slip = GameConfig.default_slip
+	_surface_bog_enabled = false
+	_surface_bog_threshold = GameConfig.default_bog_threshold

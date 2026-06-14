@@ -4,10 +4,8 @@ extends RefCounted
 const VehicleInputScript: GDScript = preload("res://systems/vehicle/vehicle_input.gd")
 
 var target_pos: Vector3 = Vector3.ZERO
-var arrive_radius: float = 0.35
-var intermediate_radius: float = 0.35
-var _kp: float = 2.0
-var _kd: float = 0.4
+var arrive_radius: float = 0.0
+var intermediate_radius: float = 0.0
 var _prev_err: float = 0.0
 var _done: bool = false
 var _use_rough_throttle: bool = false
@@ -58,14 +56,14 @@ func next_input(state: RefCounted) -> RefCounted:
 		return input
 	var fwd: Vector3 = -state_basis.z
 	fwd.y = 0.0
-	if fwd.length() <= 0.001:
+	if fwd.length() <= GameConfig.pd_waypoint_forward_epsilon:
 		fwd = Vector3.FORWARD
 	fwd = fwd.normalized()
 	var desired: Vector3 = to_target.normalized()
 	var err: float = signf(fwd.cross(desired).y) * fwd.angle_to(desired)
 	var d_err: float = err - _prev_err
 	_prev_err = err
-	var steer: float = clampf(_kp * err + _kd * d_err, -1.0, 1.0)
+	var steer: float = clampf(GameConfig.pd_waypoint_kp * err + GameConfig.pd_waypoint_kd * d_err, -1.0, 1.0)
 	input.set("steer", steer)
 	var throttle: float = _throttle_for_steer(steer, bool(state.get("on_ground")))
 	input.set("throttle", throttle)

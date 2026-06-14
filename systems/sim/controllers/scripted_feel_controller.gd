@@ -41,11 +41,11 @@ func _fill_ebrake_drift(input: RefCounted) -> void:
 		input.set("throttle", GameConfig.drift_probe_accel_throttle)
 	elif _tick < drift_end_tick:
 		input.set("throttle", GameConfig.drift_probe_ebrake_throttle)
-		input.set("steer", 1.0)
+		input.set("steer", GameConfig.drift_probe_ebrake_steer)
 		input.set("ebrake", true)
 	elif _tick < recover_end_tick:
-		input.set("throttle", 0.2)
-		input.set("brake", 0.2)
+		input.set("throttle", GameConfig.drift_probe_recover_throttle)
+		input.set("brake", GameConfig.drift_probe_recover_brake)
 	else:
 		input.set("brake", 1.0)
 		_done = true
@@ -53,7 +53,7 @@ func _fill_ebrake_drift(input: RefCounted) -> void:
 
 func _fill_launch_wheelie(input: RefCounted) -> void:
 	if _tick < GameConfig.wheelie_probe_ticks:
-		input.set("throttle", 1.0)
+		input.set("throttle", GameConfig.wheelie_probe_throttle)
 	else:
 		input.set("brake", 1.0)
 		_done = true

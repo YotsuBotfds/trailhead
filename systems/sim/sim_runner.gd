@@ -24,7 +24,7 @@ var _tick: int = 0
 var _max_ticks: int = 6000
 var _target: Vector3 = DEFAULT_TARGET
 var _target_id: String = "flat_target"
-var _target_radius: float = 0.35
+var _target_radius: float = 0.0
 var _route_segment_id: String = ""
 var _waypoints: Array[Vector3] = []
 var _controller_id: String = "pd"
@@ -229,7 +229,7 @@ func _parse_target(target_id: String) -> Vector3:
 
 
 func _target_radius_for_id(target_id: String) -> float:
-	var fallback: float = 0.35
+	var fallback: float = GameConfig.default_target_radius
 	if _route != null:
 		fallback = float(_route.call("landmark_radius", StringName(target_id), fallback))
 	return float(_args.get("target-radius", fallback))
@@ -240,8 +240,8 @@ func _spawn_transform(spawn_id: String) -> Transform3D:
 		return _route.call("spawn_transform", StringName(spawn_id))
 	if spawn_id == "flat_flipped":
 		var flipped_basis: Basis = Basis(Vector3.FORWARD, PI)
-		return Transform3D(flipped_basis, Vector3(0.0, 0.12, 0.0))
-	return Transform3D(Basis.IDENTITY, Vector3(0.0, 0.12, 0.0))
+		return Transform3D(flipped_basis, Vector3(0.0, GameConfig.flat_spawn_height, 0.0))
+	return Transform3D(Basis.IDENTITY, Vector3(0.0, GameConfig.flat_spawn_height, 0.0))
 
 
 func _setup_flat_scene() -> void:
@@ -398,8 +398,8 @@ func _configure_flat_bounds() -> void:
 	var max_x: float = maxf(0.0, _target.x) + 1.0
 	var min_z: float = minf(0.0, _target.z) - 1.0
 	var max_z: float = maxf(0.0, _target.z) + 1.0
-	_bounds_min = Vector3(min_x, -1.0, min_z)
-	_bounds_max = Vector3(max_x, 2.0, max_z)
+	_bounds_min = Vector3(min_x, GameConfig.flat_target_bounds_y_min, min_z)
+	_bounds_max = Vector3(max_x, GameConfig.flat_target_bounds_y_max, max_z)
 
 
 func _finish(passed: bool) -> void:
