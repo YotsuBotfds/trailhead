@@ -7,8 +7,8 @@ const CEDAR_TERRAIN_PALETTE_PATH: String = "res://data/surface_palettes/cedar_ho
 const CedarHollowSceneResource: PackedScene = preload("res://scenes/cedar_hollow.tscn")
 const VehicleScene: PackedScene = preload("res://scenes/vehicle.tscn")
 const VehicleInputScript: GDScript = preload("res://systems/vehicle/vehicle_input.gd")
-const FlatWorldBuilderScript: GDScript = preload("res://systems/world/flat_world_builder.gd")
 const SurfaceMapScript: GDScript = preload("res://systems/world/surface_map.gd")
+const FlatWorldBuilderScript: GDScript = preload("res://systems/world/flat_world_builder.gd")
 const TerrainBuilderScript: GDScript = preload("res://systems/world/terrain_builder.gd")
 const LandmarksScript: GDScript = preload("res://systems/world/landmarks.gd")
 const PDWaypointControllerScript: GDScript = preload("res://systems/sim/controllers/pd_waypoint_controller.gd")
@@ -65,12 +65,15 @@ var _previous_speed: float = 0.0
 var _ebrake_ticks: int = 0
 var _reverse_ticks: int = 0
 var _min_initial_forward_displacement: float = 999999.0
+var _max_initial_forward_displacement: float = 0.0
 var _max_reverse_distance: float = 0.0
 var _front_air_rear_contact_ticks: int = 0
 var _surface_event_count: int = 0
 var _landmark_event_count: int = 0
 var _flipped_event_count: int = 0
 var _self_righted_event_count: int = 0
+var _recovered_to_trail_event_count: int = 0
+var _max_recovery_displacement: float = 0.0
 var _last_surface_event: StringName = &""
 var _last_landmark_event: StringName = &""
 var _surface_event_sequence: Array[String] = []
@@ -267,6 +270,8 @@ func _spawn_transform(spawn_id: String) -> Transform3D:
 		var yaw_basis: Basis = Basis(Vector3.UP, deg_to_rad(45.0))
 		var flipped_basis: Basis = Basis(Vector3.FORWARD, PI)
 		return Transform3D(yaw_basis * flipped_basis, Vector3(0.0, GameConfig.flat_spawn_height, 0.0))
+	if spawn_id == "offtrail_tall_grass" or spawn_id == "offtrail_loose_rock":
+		return Transform3D(Basis.IDENTITY, Vector3(0.0, GameConfig.flat_spawn_height, 0.0))
 	return Transform3D(Basis.IDENTITY, Vector3(0.0, GameConfig.flat_spawn_height, 0.0))
 
 
@@ -275,6 +280,12 @@ func _setup_flat_scene() -> void:
 		var cedar_scene: Node = CedarHollowSceneResource.instantiate()
 		cedar_scene.name = "CedarHollow"
 		add_child(cedar_scene)
+		return
+	if _scene_id == "offtrail_escape":
+		_setup_offtrail_escape_scene()
+		return
+	if _scene_id == "recovery_trap":
+		_setup_recovery_trap_scene()
 		return
 	if _scene_id == "surface_strips":
 		FlatWorldBuilderScript.build_surface_strip_collision(self)
@@ -298,6 +309,34 @@ func _setup_surface_map() -> bool:
 
 func _uses_cedar_terrain_surface_map() -> bool:
 	return _scene_id == TerrainBuilderScript.CEDAR_SCENE_ID or _scene_id == FlatWorldBuilderScript.TERRAIN_SURFACE_MAP_PROBE_SCENE_ID
+
+
+func _setup_offtrail_escape_scene() -> void:
+	var surface_id: StringName = &"tall_grass"
+	if _spawn_id == "offtrail_loose_rock":
+		surface_id = &"loose_rock"
+	_build_sim_surface_box("offtrail_escape_ground", surface_id, GameConfig.flat_ground_center, GameConfig.flat_ground_size)
+
+
+func _setup_recovery_trap_scene() -> void:
+	_build_sim_surface_box("recovery_trap_ground", &"packed_dirt", GameConfig.flat_ground_center, GameConfig.flat_ground_size)
+	_build_sim_surface_box("recovery_trap_wall", &"packed_dirt", GameConfig.recovery_trap_wall_center, GameConfig.recovery_trap_wall_size)
+
+
+func _build_sim_surface_box(prefix: String, surface_id: StringName, center: Vector3, size: Vector3) -> StaticBody3D:
+	var body: StaticBody3D = StaticBody3D.new()
+	body.name = prefix + "__surf_" + String(surface_id)
+	body.add_to_group("surf_" + String(surface_id))
+	add_child(body)
+
+	var collision: CollisionShape3D = CollisionShape3D.new()
+	collision.name = "Collision"
+	var shape: BoxShape3D = BoxShape3D.new()
+	shape.size = size
+	collision.shape = shape
+	collision.position = center
+	body.add_child(collision)
+	return body
 
 
 func _setup_landmarks() -> void:
@@ -373,6 +412,7 @@ func _record(state: RefCounted, input: RefCounted) -> void:
 	if input_throttle < 0.0:
 		_reverse_ticks += 1
 	_min_initial_forward_displacement = minf(_min_initial_forward_displacement, initial_forward_displacement)
+	_max_initial_forward_displacement = maxf(_max_initial_forward_displacement, initial_forward_displacement)
 	_max_reverse_distance = maxf(_max_reverse_distance, -initial_forward_displacement)
 	if front_contact_count == 0 and rear_contact_count > 0:
 		_front_air_rear_contact_ticks += 1
@@ -472,6 +512,7 @@ func _finish(passed: bool) -> void:
 	var target_landmark_event_observed: bool = _target_landmark_event_observed()
 	var event_bus_contract_passed: bool = _event_bus_contract_passed()
 	var self_right_heading_preserved: bool = _self_right_heading_preserved()
+	var never_stuck_predicate_passed: bool = _never_stuck or _recovered_to_trail_event_count > 0 or _scenario_id == "standstill_yaw_rate"
 	var predicates: Dictionary = {
 		"reached_target": target_predicate_passed,
 		"scenario_passed": scenario_predicate_passed,
@@ -479,14 +520,14 @@ func _finish(passed: bool) -> void:
 		"target_landmark_event_observed": target_landmark_event_observed,
 		"event_bus_contract": event_bus_contract_passed,
 		"self_right_heading_preserved": self_right_heading_preserved,
-		"never_stuck": _never_stuck,
+		"never_stuck": never_stuck_predicate_passed,
 		"upright_or_recovered": _upright_or_recovered,
 		"stayed_in_bounds": _stayed_in_bounds
 	}
 	var golden_replay: Dictionary = _golden_replay_result(predicates)
 	var golden_replay_matched: bool = bool(golden_replay.get("matched", true))
 	predicates["golden_replay_matched"] = golden_replay_matched
-	var all_predicates_passed: bool = target_predicate_passed and scenario_predicate_passed and surface_event_observed and target_landmark_event_observed and event_bus_contract_passed and self_right_heading_preserved and _never_stuck and _upright_or_recovered and _stayed_in_bounds and golden_replay_matched
+	var all_predicates_passed: bool = target_predicate_passed and scenario_predicate_passed and surface_event_observed and target_landmark_event_observed and event_bus_contract_passed and self_right_heading_preserved and never_stuck_predicate_passed and _upright_or_recovered and _stayed_in_bounds and golden_replay_matched
 	var result: Dictionary = {
 		"scene": _scene_id,
 		"controller": _controller_id,
@@ -518,6 +559,7 @@ func _finish(passed: bool) -> void:
 			"ebrake_ticks": _ebrake_ticks,
 			"reverse_ticks": _reverse_ticks,
 			"min_initial_forward_displacement": _min_initial_forward_displacement if _min_initial_forward_displacement < 999998.0 else null,
+			"max_initial_forward_displacement": _max_initial_forward_displacement,
 			"max_reverse_distance": _max_reverse_distance,
 			"front_air_rear_contact_ticks": _front_air_rear_contact_ticks,
 			"surface_event_count": _surface_event_count,
@@ -536,6 +578,8 @@ func _finish(passed: bool) -> void:
 			"avg_abs_slip_angle_by_surface": _surface_average_dictionary(_surface_abs_slip_sum),
 			"flipped_event_count": _flipped_event_count,
 			"self_righted_event_count": _self_righted_event_count,
+			"recovered_to_trail_event_count": _recovered_to_trail_event_count,
+			"max_recovery_displacement": _max_recovery_displacement,
 			"min_progress_window": _min_progress_window if _min_progress_window < 999998.0 else null,
 			"stuck_window_ticks": _stuck_window_ticks,
 			"stuck_min_progress": _stuck_min_progress,
@@ -610,6 +654,13 @@ func _scenario_predicate_passed() -> bool:
 		return _max_pitch_deg >= GameConfig.wheelie_min_peak_pitch_deg and _front_air_rear_contact_ticks >= GameConfig.wheelie_min_front_air_rear_contact_ticks and _max_flipped_ticks_seen == 0
 	if _scenario_id == "reverse_drive":
 		return _reverse_ticks >= GameConfig.reverse_min_ticks and _max_reverse_distance >= GameConfig.reverse_min_distance
+	if _scenario_id == "standstill_yaw_rate":
+		var yaw_rate_limit: float = GameConfig.steer_max_yaw_rate * GameConfig.standstill_yaw_probe_max_multiplier
+		return _max_abs_yaw_rate <= yaw_rate_limit and _max_abs_yaw_rate >= GameConfig.standstill_yaw_probe_min_rate
+	if _scenario_id == "offtrail_escape":
+		return _max_initial_forward_displacement >= GameConfig.offtrail_escape_min_distance
+	if _scenario_id == "recover_to_trail":
+		return _recovered_to_trail_event_count > 0 and _max_recovery_displacement >= GameConfig.recover_event_min_displacement and _max_flipped_ticks_seen == 0
 	if _scenario_id == "surface_sweep":
 		return _surface_sweep_predicate_passed()
 	if _scenario_id == "log_ramp":
@@ -933,7 +984,7 @@ func _compare_golden_metric_block(expected_metrics: Dictionary, result: Dictiona
 	if expected_metrics.has("surface_contact_ticks") and expected_metrics["surface_contact_ticks"] is Dictionary:
 		var expected_surface_ticks: Dictionary = expected_metrics["surface_contact_ticks"]
 		_compare_golden_int_dictionary("surface_contact_ticks", expected_surface_ticks, _surface_contact_ticks, surface_tick_tolerance, result, failures)
-	var event_count_keys: Array[String] = ["surface_event_count", "landmark_event_count", "flipped_event_count", "self_righted_event_count"]
+	var event_count_keys: Array[String] = ["surface_event_count", "landmark_event_count", "flipped_event_count", "self_righted_event_count", "recovered_to_trail_event_count"]
 	for key in event_count_keys:
 		if expected_metrics.has(key):
 			var actual_value: int = 0
@@ -945,6 +996,8 @@ func _compare_golden_metric_block(expected_metrics: Dictionary, result: Dictiona
 				actual_value = _flipped_event_count
 			elif key == "self_righted_event_count":
 				actual_value = _self_righted_event_count
+			elif key == "recovered_to_trail_event_count":
+				actual_value = _recovered_to_trail_event_count
 			_compare_golden_int_metric(key, int(expected_metrics[key]), actual_value, event_count_tolerance, result, failures)
 	if expected_metrics.has("max_abs_slip_angle_deg"):
 		_compare_golden_float_metric("max_abs_slip_angle_deg", float(expected_metrics["max_abs_slip_angle_deg"]), _max_abs_slip_angle_deg, slip_tolerance, result, failures)
@@ -1041,11 +1094,15 @@ func _connect_event_bus() -> void:
 		EventBus.vehicle_flipped_over.connect(_on_vehicle_flipped_over)
 	if not EventBus.vehicle_self_righted.is_connected(_on_vehicle_self_righted):
 		EventBus.vehicle_self_righted.connect(_on_vehicle_self_righted)
+	if not EventBus.vehicle_recovered_to_trail.is_connected(_on_vehicle_recovered_to_trail):
+		EventBus.vehicle_recovered_to_trail.connect(_on_vehicle_recovered_to_trail)
 
 
 func _event_bus_contract_passed() -> bool:
 	if _spawn_id == "flat_flipped" or _spawn_id == "flat_flipped_yawed":
 		return _flipped_event_count > 0 and _self_righted_event_count > 0
+	if _scenario_id == "recover_to_trail":
+		return _recovered_to_trail_event_count > 0
 	return true
 
 
@@ -1087,3 +1144,10 @@ func _on_vehicle_flipped_over() -> void:
 
 func _on_vehicle_self_righted() -> void:
 	_self_righted_event_count += 1
+
+
+func _on_vehicle_recovered_to_trail(from_position: Vector3, to_position: Vector3) -> void:
+	_recovered_to_trail_event_count += 1
+	var from_flat: Vector3 = Vector3(from_position.x, 0.0, from_position.z)
+	var to_flat: Vector3 = Vector3(to_position.x, 0.0, to_position.z)
+	_max_recovery_displacement = maxf(_max_recovery_displacement, from_flat.distance_to(to_flat))

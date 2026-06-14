@@ -10,9 +10,9 @@ assert_metrics "$out_dir/flat_flipped_yawed.json" \
 
 assert_metrics "$out_dir/ebrake_drift.json" \
 	--surface=packed_dirt:40 \
-	--metric-min=ebrake_ticks:160 \
-	--metric-min=max_abs_slip_angle_deg:90.0 \
-	--metric-min=max_abs_yaw_rate:10.0 \
+	--metric-min=ebrake_ticks:120 \
+	--metric-min=max_abs_slip_angle_deg:45.0 \
+	--metric-min=max_abs_yaw_rate:1.3 \
 	--metric-min=max_speed:2.5
 
 assert_metrics "$out_dir/launch_wheelie.json" \

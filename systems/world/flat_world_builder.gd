@@ -1,6 +1,7 @@
 class_name FlatWorldBuilder
 extends RefCounted
 
+const SurfaceMapScript: GDScript = preload("res://systems/world/surface_map.gd")
 const TERRAIN_SURFACE_MAP_PROBE_SCENE_ID: String = "terrain_surface_map_probe"
 const SURFACE_STRIP_IDS: Array[StringName] = [
 	&"packed_dirt",
@@ -30,7 +31,7 @@ static func build_surface_strip_collision(parent: Node) -> Array[StaticBody3D]:
 static func build_terrain_surface_map_probe_collision(parent: Node) -> StaticBody3D:
 	var body: StaticBody3D = StaticBody3D.new()
 	body.name = "terrain_surface_map_probe"
-	body.add_to_group(SurfaceMap.TERRAIN_SURFACE_MAP_GROUP)
+	body.add_to_group(SurfaceMapScript.TERRAIN_SURFACE_MAP_GROUP)
 	parent.add_child(body)
 
 	var collision: CollisionShape3D = CollisionShape3D.new()

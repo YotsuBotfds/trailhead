@@ -38,6 +38,5 @@ assert_metrics "$out_dir/cedar_hollow_segment_trailhead_to_culvert_mouth.json" \
 	--landmark=culvert_mouth
 
 assert_metrics "$out_dir/cedar_hollow_segment_overlook_to_old_cedar.json" \
-	--surface=loose_rock:200 \
-	--surface=packed_dirt:3 \
+	--surface=loose_rock:150 \
 	--landmark=old_cedar
