@@ -12,6 +12,8 @@ TRIANGLE_STRIP = 5
 TRIANGLE_FAN = 6
 SURFACE_PATTERN = re.compile(r"__surf_([A-Za-z0-9_]+)")
 WHEEL_PATTERN = re.compile(r"(wheel|tire|tyre)", re.IGNORECASE)
+SNAKE_CASE_PATTERN = re.compile(r"^[a-z0-9_]+$")
+PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
 
 def fail(message):
@@ -48,6 +50,20 @@ def read_glb(path):
     return json.loads(json_chunk.decode("utf-8").rstrip(" \t\r\n\0")), bin_chunk_count
 
 
+def read_png_dimensions(path):
+    data = path.read_bytes()
+    if len(data) < 24:
+        raise ValueError("surface-ID map is too small for a PNG header")
+    if data[:8] != PNG_SIGNATURE:
+        raise ValueError("surface-ID map is not a PNG")
+    if data[12:16] != b"IHDR":
+        raise ValueError("surface-ID map is missing IHDR")
+    width, height = struct.unpack_from(">II", data, 16)
+    if width <= 0 or height <= 0:
+        raise ValueError(f"surface-ID map has invalid dimensions {width}x{height}")
+    return width, height
+
+
 def accessor_count(gltf, accessor_index):
     accessors = gltf.get("accessors", [])
     if accessor_index is None or accessor_index < 0 or accessor_index >= len(accessors):
@@ -81,6 +97,7 @@ def collect_stats(gltf):
     accessors = gltf.get("accessors", [])
     triangle_count = 0
     primitive_count = 0
+    primitive_attributes = []
     bounds_min = [float("inf"), float("inf"), float("inf")]
     bounds_max = [float("-inf"), float("-inf"), float("-inf")]
     has_bounds = False
@@ -88,6 +105,11 @@ def collect_stats(gltf):
     for mesh in meshes:
         for primitive in mesh.get("primitives", []):
             primitive_count += 1
+            attributes = primitive.get("attributes", {})
+            if isinstance(attributes, dict):
+                primitive_attributes.append(sorted(attributes.keys()))
+            else:
+                primitive_attributes.append([])
             triangle_count += primitive_triangle_count(gltf, primitive)
             position_accessor = primitive_position_accessor(primitive)
             if position_accessor is not None and 0 <= position_accessor < len(accessors):
@@ -121,7 +143,52 @@ def collect_stats(gltf):
         "bounds_max": bounds_max if has_bounds else [],
         "dimensions": dimensions,
         "names": names,
+        "primitive_attributes": primitive_attributes,
     }
+
+
+def validate_heightmesh(args, stats):
+    ok = True
+    if stats["mesh_count"] <= 0:
+        ok = fail("heightmesh profile requires at least one mesh") and ok
+    if stats["primitive_count"] <= 0:
+        ok = fail("heightmesh profile requires at least one primitive") and ok
+    if stats["triangle_count"] <= 0:
+        ok = fail("heightmesh profile requires nonzero triangles") and ok
+    if not stats["dimensions"]:
+        ok = fail("heightmesh profile requires POSITION min/max bounds") and ok
+    else:
+        x_size, y_size, z_size = stats["dimensions"][:3]
+        if x_size < 6.0 or x_size > 40.0:
+            ok = fail(f"heightmesh X extent {x_size:.3f} m is outside expected 6..40 m range") and ok
+        if z_size < 6.0 or z_size > 40.0:
+            ok = fail(f"heightmesh Z extent {z_size:.3f} m is outside expected 6..40 m range") and ok
+        if y_size > 6.0:
+            ok = fail(f"heightmesh Y extent {y_size:.3f} m exceeds 6 m vertical sanity limit") and ok
+
+    if not any("cedar_hollow_heightmesh" in name for name in stats["names"]):
+        ok = fail("heightmesh profile requires a node or mesh named cedar_hollow_heightmesh") and ok
+    for name in stats["names"]:
+        if not SNAKE_CASE_PATTERN.match(name):
+            ok = fail(f"heightmesh node/mesh name is not snake_case: {name}") and ok
+
+    required_attributes = {"POSITION", "NORMAL", "TEXCOORD_0"}
+    for index, attributes in enumerate(stats["primitive_attributes"]):
+        missing = sorted(required_attributes.difference(attributes))
+        if missing:
+            ok = fail(f"heightmesh primitive {index} is missing attributes: {', '.join(missing)}") and ok
+
+    if args.surface_id_map is None:
+        ok = fail("heightmesh profile requires --surface-id-map") and ok
+    elif not args.surface_id_map.is_file():
+        ok = fail(f"surface-ID map not found: {args.surface_id_map}") and ok
+    else:
+        try:
+            width, height = read_png_dimensions(args.surface_id_map)
+            print(f"surface-ID map: {args.surface_id_map} ({width}x{height})")
+        except Exception as exc:
+            ok = fail(str(exc)) and ok
+    return ok
 
 
 def validate(args, stats, bin_chunk_count):
@@ -129,6 +196,8 @@ def validate(args, stats, bin_chunk_count):
     print(f"file: {args.path}")
     print(f"nodes: {stats['node_count']}  meshes: {stats['mesh_count']}  primitives: {stats['primitive_count']}  bin_chunks: {bin_chunk_count}")
     print(f"triangles: {stats['triangle_count']}")
+    if bin_chunk_count < 1:
+        ok = fail("missing BIN chunk") and ok
     if stats["dimensions"]:
         dims = ", ".join(f"{value:.3f}" for value in stats["dimensions"])
         print(f"bounds dimensions: {dims} m")
@@ -169,6 +238,9 @@ def validate(args, stats, bin_chunk_count):
     if wheel_names:
         print("wheel-like names: " + ", ".join(wheel_names))
 
+    if args.profile == "heightmesh":
+        ok = validate_heightmesh(args, stats) and ok
+
     if ok:
         print("ok: GLB import contract checks passed")
     return ok
@@ -177,12 +249,13 @@ def validate(args, stats, bin_chunk_count):
 def main():
     parser = argparse.ArgumentParser(description="Validate Trailhead GLB import contracts.")
     parser.add_argument("path", type=Path)
-    parser.add_argument("--profile", choices=["generic", "vehicle"], default="generic")
+    parser.add_argument("--profile", choices=["generic", "vehicle", "heightmesh"], default="generic")
     parser.add_argument("--max-triangles", type=int, default=200000)
     parser.add_argument("--max-dimension", type=float)
     parser.add_argument("--min-dimension", type=float)
     parser.add_argument("--require-surface-tag", action="store_true")
     parser.add_argument("--surface-id")
+    parser.add_argument("--surface-id-map", type=Path)
     args = parser.parse_args()
 
     try:

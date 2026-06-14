@@ -15,6 +15,21 @@ check_decoration() {
 	./tools/check_glb.py "$path"
 }
 
+check_heightmesh_if_present() {
+	path="assets/models/terrain/cedar_hollow_heightmesh.glb"
+	surface_id_map="assets/models/terrain/cedar_hollow_surface_id.png"
+	if [ -f "$path" ]; then
+		./tools/check_glb.py "$path" \
+			--profile heightmesh \
+			--surface-id-map "$surface_id_map" \
+			--max-triangles=200000
+	else
+		printf 'skip: cedar_hollow_heightmesh.glb pending\n'
+	fi
+}
+
+check_heightmesh_if_present
+
 check_feature assets/models/features/boardwalk_segment.glb wood_plank
 check_feature assets/models/features/culvert_pipe.glb packed_dirt
 check_feature assets/models/features/log_ramp.glb wood_plank
