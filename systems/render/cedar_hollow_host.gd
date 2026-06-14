@@ -12,8 +12,12 @@ const FeatureVisualBuilderScript: GDScript = preload("res://systems/render/featu
 const PropVisualBuilderScript: GDScript = preload("res://systems/render/prop_visual_builder.gd")
 const ScatterVisualBuilderScript: GDScript = preload("res://systems/render/scatter_visual_builder.gd")
 const BoundaryVisualBuilderScript: GDScript = preload("res://systems/render/boundary_visual_builder.gd")
+const AtmosphereVisualBuilderScript: GDScript = preload("res://systems/render/atmosphere_visual_builder.gd")
+const DustTiltShiftVisualBuilderScript: GDScript = preload("res://systems/render/dust_tilt_shift_visual_builder.gd")
+const WaterVisualBuilderScript: GDScript = preload("res://systems/render/water_visual_builder.gd")
 const ProceduralBuggyVisualScript: GDScript = preload("res://systems/render/procedural_buggy_visual.gd")
 const VehicleResidueVisualScript: GDScript = preload("res://systems/render/vehicle_residue_visual.gd")
+const VehicleJuiceRigScript: GDScript = preload("res://systems/render/vehicle_juice_rig.gd")
 const CedarAudioRigScript: GDScript = preload("res://systems/render/cedar_audio_rig.gd")
 const LandmarkHintHudScript: GDScript = preload("res://systems/render/landmark_hint_hud.gd")
 const SurfaceMapScript: GDScript = preload("res://systems/world/surface_map.gd")
@@ -52,6 +56,7 @@ func _ready() -> void:
 	_setup_environment()
 	_setup_light()
 	_setup_camera()
+	_setup_vehicle_juice()
 	_setup_hud()
 
 
@@ -112,6 +117,7 @@ func _setup_world() -> void:
 	PropVisualBuilderScript.build_cedar_hollow(_world)
 	ScatterVisualBuilderScript.build_cedar_hollow(_world)
 	BoundaryVisualBuilderScript.build_cedar_hollow(_world)
+	WaterVisualBuilderScript.build_cedar_hollow(_world)
 
 
 func _spawn_vehicle() -> void:
@@ -162,8 +168,16 @@ func _setup_camera() -> void:
 	_fpv_camera.current = false
 	_fpv_camera.fov = GameConfig.fpv_cam_fov
 	add_child(_fpv_camera)
+	DustTiltShiftVisualBuilderScript.build(self, _camera, _orbit_camera, _fpv_camera)
 	_orbit_yaw_degrees = GameConfig.orbit_cam_start_yaw_deg
 	_update_camera(GameConfig.FIXED_DT)
+
+
+func _setup_vehicle_juice() -> void:
+	var juice_rig: Node = VehicleJuiceRigScript.new()
+	juice_rig.name = "VehicleJuiceRig"
+	add_child(juice_rig)
+	juice_rig.call("configure", _vehicle, _camera, _vehicle_visual_root as Node3D)
 
 
 func _setup_hud() -> void:
@@ -263,6 +277,7 @@ func _apply_mood() -> void:
 		environment.ambient_light_energy = GameConfig.dusk_ambient_energy
 		environment.fog_density = GameConfig.dusk_fog_density
 		environment.fog_light_color = GameConfig.dusk_fog_light_color
+	AtmosphereVisualBuilderScript.apply_mood(_world_environment, _sun, _mood)
 
 
 func _collect_visual_wheels() -> void:
