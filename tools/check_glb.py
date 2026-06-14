@@ -400,6 +400,29 @@ def validate_render_attributes(stats, label):
     return ok
 
 
+def validate_grounded_origin(args, stats, label):
+    if not stats["dimensions"]:
+        return fail(f"{label} requires POSITION min/max bounds for grounded-origin check")
+    ok = True
+    min_y = float(stats["bounds_min"][1])
+    max_y = float(stats["bounds_max"][1])
+    if min_y < -args.origin_ground_tolerance or min_y > args.origin_ground_tolerance:
+        ok = fail(f"{label} origin/contact plane should be at Y=0; bounds min.y is {min_y:.4f}") and ok
+    if max_y <= min_y:
+        ok = fail(f"{label} bounds should extend above the grounded origin") and ok
+    x_size = max(float(stats["dimensions"][0]), 0.000001)
+    z_size = max(float(stats["dimensions"][2]), 0.000001)
+    center_x = (float(stats["bounds_min"][0]) + float(stats["bounds_max"][0])) * 0.5
+    center_z = (float(stats["bounds_min"][2]) + float(stats["bounds_max"][2])) * 0.5
+    allowed_x = max(args.origin_ground_tolerance, x_size * args.max_origin_offset_ratio)
+    allowed_z = max(args.origin_ground_tolerance, z_size * args.max_origin_offset_ratio)
+    if abs(center_x) > allowed_x:
+        ok = fail(f"{label} footprint center.x {center_x:.4f} exceeds allowed grounded-origin offset {allowed_x:.4f}") and ok
+    if abs(center_z) > allowed_z:
+        ok = fail(f"{label} footprint center.z {center_z:.4f} exceeds allowed grounded-origin offset {allowed_z:.4f}") and ok
+    return ok
+
+
 def validate(args, stats, bin_chunk_count):
     ok = True
     print(f"file: {args.path}")
@@ -460,6 +483,9 @@ def validate(args, stats, bin_chunk_count):
     if args.require_render_attributes:
         ok = validate_render_attributes(stats, args.path.name) and ok
 
+    if args.require_grounded_origin:
+        ok = validate_grounded_origin(args, stats, args.path.name) and ok
+
     if ok:
         print("ok: GLB import contract checks passed")
     return ok
@@ -476,6 +502,9 @@ def main():
     parser.add_argument("--expected-name")
     parser.add_argument("--require-surface-tag", action="store_true")
     parser.add_argument("--require-render-attributes", action="store_true")
+    parser.add_argument("--require-grounded-origin", action="store_true")
+    parser.add_argument("--origin-ground-tolerance", type=float, default=0.015)
+    parser.add_argument("--max-origin-offset-ratio", type=float, default=0.4)
     parser.add_argument("--surface-id")
     parser.add_argument("--surface-id-map", type=Path)
     args = parser.parse_args()
