@@ -122,9 +122,9 @@ func _fill_tires(speed: float) -> void:
 	if _tire_playback == null:
 		return
 	var frames_available: int = _tire_playback.get_frames_available()
-	var frequency: float = GameConfig.audio_tire_base_hz * _surface_tire_pitch()
+	var frequency: float = GameConfig.audio_tire_base_hz * surface_tire_pitch_for(_current_surface_id)
 	var phase_step: float = TAU * frequency / maxf(GameConfig.audio_mix_rate, 1.0)
-	var volume: float = (GameConfig.audio_tire_volume + speed * GameConfig.audio_tire_speed_volume_gain) * _surface_tire_gain()
+	var volume: float = (GameConfig.audio_tire_volume + speed * GameConfig.audio_tire_speed_volume_gain) * surface_tire_gain_for(_current_surface_id)
 	for i in range(frames_available):
 		_tire_phase += phase_step
 		if _tire_phase > TAU:
@@ -157,11 +157,7 @@ func _fill_ambient() -> void:
 func _fill_water(vehicle_position: Vector3) -> void:
 	if _water_playback == null:
 		return
-	var flat_position: Vector3 = Vector3(vehicle_position.x, 0.0, vehicle_position.z)
-	var flat_center: Vector3 = Vector3(GameConfig.audio_water_center.x, 0.0, GameConfig.audio_water_center.z)
-	var distance: float = flat_position.distance_to(flat_center)
-	var radius: float = maxf(GameConfig.audio_water_audible_radius, 0.001)
-	var volume: float = clampf(1.0 - distance / radius, 0.0, 1.0) * GameConfig.audio_water_volume
+	var volume: float = water_volume_for_position(vehicle_position)
 	var frames_available: int = _water_playback.get_frames_available()
 	var phase_step: float = TAU * GameConfig.audio_water_base_hz / maxf(GameConfig.audio_mix_rate, 1.0)
 	for i in range(frames_available):
@@ -206,40 +202,48 @@ func _next_water_noise() -> float:
 	return float(_water_noise_state % 2000) / 1000.0 - 1.0
 
 
-func _surface_tire_gain() -> float:
-	if _current_surface_id == &"packed_gravel":
+func surface_tire_gain_for(surface_id: StringName) -> float:
+	if surface_id == &"packed_gravel":
 		return GameConfig.audio_tire_gain_gravel
-	if _current_surface_id == &"packed_dirt":
+	if surface_id == &"packed_dirt":
 		return GameConfig.audio_tire_gain_dirt
-	if _current_surface_id == &"tall_grass":
+	if surface_id == &"tall_grass":
 		return GameConfig.audio_tire_gain_grass
-	if _current_surface_id == &"mud":
+	if surface_id == &"mud":
 		return GameConfig.audio_tire_gain_mud
-	if _current_surface_id == &"loose_rock":
+	if surface_id == &"loose_rock":
 		return GameConfig.audio_tire_gain_rock
-	if _current_surface_id == &"wet_stone":
+	if surface_id == &"wet_stone":
 		return GameConfig.audio_tire_gain_stone
-	if _current_surface_id == &"wood_plank":
+	if surface_id == &"wood_plank":
 		return GameConfig.audio_tire_gain_wood
 	return GameConfig.audio_tire_gain_dirt
 
 
-func _surface_tire_pitch() -> float:
-	if _current_surface_id == &"packed_gravel":
+func surface_tire_pitch_for(surface_id: StringName) -> float:
+	if surface_id == &"packed_gravel":
 		return GameConfig.audio_tire_pitch_gravel
-	if _current_surface_id == &"packed_dirt":
+	if surface_id == &"packed_dirt":
 		return GameConfig.audio_tire_pitch_dirt
-	if _current_surface_id == &"tall_grass":
+	if surface_id == &"tall_grass":
 		return GameConfig.audio_tire_pitch_grass
-	if _current_surface_id == &"mud":
+	if surface_id == &"mud":
 		return GameConfig.audio_tire_pitch_mud
-	if _current_surface_id == &"loose_rock":
+	if surface_id == &"loose_rock":
 		return GameConfig.audio_tire_pitch_rock
-	if _current_surface_id == &"wet_stone":
+	if surface_id == &"wet_stone":
 		return GameConfig.audio_tire_pitch_stone
-	if _current_surface_id == &"wood_plank":
+	if surface_id == &"wood_plank":
 		return GameConfig.audio_tire_pitch_wood
 	return GameConfig.audio_tire_pitch_dirt
+
+
+func water_volume_for_position(vehicle_position: Vector3) -> float:
+	var flat_position: Vector3 = Vector3(vehicle_position.x, 0.0, vehicle_position.z)
+	var flat_center: Vector3 = Vector3(GameConfig.audio_water_center.x, 0.0, GameConfig.audio_water_center.z)
+	var distance: float = flat_position.distance_to(flat_center)
+	var radius: float = maxf(GameConfig.audio_water_audible_radius, 0.001)
+	return clampf(1.0 - distance / radius, 0.0, 1.0) * GameConfig.audio_water_volume
 
 
 func _on_vehicle_changed_surface(surface_id: StringName) -> void:

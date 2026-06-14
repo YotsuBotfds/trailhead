@@ -341,6 +341,7 @@ func _inspect_audio_rig(audio_rig: Node) -> void:
 	var surface_callable: Callable = Callable(audio_rig, "_on_vehicle_changed_surface")
 	if not EventBus.vehicle_changed_surface.is_connected(surface_callable):
 		_errors.append("CedarAudioRig should listen for vehicle_changed_surface")
+	_require_audio_reactivity(audio_rig)
 	_require_audio_generator(audio_rig, "MotorWhine")
 	_require_audio_generator(audio_rig, "TireTexture")
 	_require_audio_generator(audio_rig, "AmbientBed")
@@ -362,6 +363,29 @@ func _require_audio_generator(parent: Node, path: String) -> void:
 		_errors.append(path + " buffer_length expected " + str(GameConfig.audio_buffer_length) + ", got " + str(stream.buffer_length))
 	if player.playing:
 		_errors.append(path + " should not auto-play in headless inspection")
+
+
+func _require_audio_reactivity(audio_rig: Node) -> void:
+	_require_audio_surface_response(audio_rig, &"packed_gravel", GameConfig.audio_tire_gain_gravel, GameConfig.audio_tire_pitch_gravel)
+	_require_audio_surface_response(audio_rig, &"mud", GameConfig.audio_tire_gain_mud, GameConfig.audio_tire_pitch_mud)
+	_require_audio_surface_response(audio_rig, &"wet_stone", GameConfig.audio_tire_gain_stone, GameConfig.audio_tire_pitch_stone)
+	_require_audio_surface_response(audio_rig, &"wood_plank", GameConfig.audio_tire_gain_wood, GameConfig.audio_tire_pitch_wood)
+	var center_volume: float = float(audio_rig.call("water_volume_for_position", GameConfig.audio_water_center))
+	if absf(center_volume - GameConfig.audio_water_volume) > FLOAT_EPSILON:
+		_errors.append("CedarAudioRig water volume should be max at creek center")
+	var far_position: Vector3 = GameConfig.audio_water_center + Vector3(GameConfig.audio_water_audible_radius * 2.0, 0.0, 0.0)
+	var far_volume: float = float(audio_rig.call("water_volume_for_position", far_position))
+	if absf(far_volume) > FLOAT_EPSILON:
+		_errors.append("CedarAudioRig water volume should be silent outside audible radius")
+
+
+func _require_audio_surface_response(audio_rig: Node, surface_id: StringName, expected_gain: float, expected_pitch: float) -> void:
+	var gain: float = float(audio_rig.call("surface_tire_gain_for", surface_id))
+	var pitch: float = float(audio_rig.call("surface_tire_pitch_for", surface_id))
+	if absf(gain - expected_gain) > FLOAT_EPSILON:
+		_errors.append("CedarAudioRig tire gain for " + String(surface_id) + " expected " + str(expected_gain) + ", got " + str(gain))
+	if absf(pitch - expected_pitch) > FLOAT_EPSILON:
+		_errors.append("CedarAudioRig tire pitch for " + String(surface_id) + " expected " + str(expected_pitch) + ", got " + str(pitch))
 
 
 func _count_collision_objects(parent: Node) -> int:
