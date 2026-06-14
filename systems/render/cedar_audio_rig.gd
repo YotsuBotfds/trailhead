@@ -78,6 +78,50 @@ func _process(_delta: float) -> void:
 	_fill_planks(speed)
 
 
+func preview_audio_output_stats(speed: float, vehicle_position: Vector3, surface_id: StringName, frame_count: int) -> Dictionary:
+	var previous_surface_id: StringName = _current_surface_id
+	var previous_motor_phase: float = _motor_phase
+	var previous_tire_phase: float = _tire_phase
+	var previous_ambient_phase: float = _ambient_phase
+	var previous_bird_phase: float = _bird_phase
+	var previous_water_phase: float = _water_phase
+	var previous_plank_phase: float = _plank_phase
+	var previous_plank_envelope: float = _plank_envelope
+	var previous_noise_state: int = _noise_state
+	var previous_ambient_noise_state: int = _ambient_noise_state
+	var previous_water_noise_state: int = _water_noise_state
+	_current_surface_id = surface_id
+	var motor_stats: Dictionary = _new_audio_stats()
+	var tire_stats: Dictionary = _new_audio_stats()
+	var ambient_stats: Dictionary = _new_audio_stats()
+	var water_stats: Dictionary = _new_audio_stats()
+	var plank_stats: Dictionary = _new_audio_stats()
+	for _i in range(maxi(frame_count, 0)):
+		_record_audio_sample(motor_stats, _next_motor_sample(speed))
+		_record_audio_sample(tire_stats, _next_tire_sample(speed))
+		_record_audio_sample(ambient_stats, _next_ambient_sample())
+		_record_audio_sample(water_stats, _next_water_sample(vehicle_position))
+		_record_audio_sample(plank_stats, _next_plank_sample(speed))
+	_current_surface_id = previous_surface_id
+	_motor_phase = previous_motor_phase
+	_tire_phase = previous_tire_phase
+	_ambient_phase = previous_ambient_phase
+	_bird_phase = previous_bird_phase
+	_water_phase = previous_water_phase
+	_plank_phase = previous_plank_phase
+	_plank_envelope = previous_plank_envelope
+	_noise_state = previous_noise_state
+	_ambient_noise_state = previous_ambient_noise_state
+	_water_noise_state = previous_water_noise_state
+	return {
+		"motor": _finalize_audio_stats(motor_stats),
+		"tire": _finalize_audio_stats(tire_stats),
+		"ambient": _finalize_audio_stats(ambient_stats),
+		"water": _finalize_audio_stats(water_stats),
+		"plank": _finalize_audio_stats(plank_stats),
+	}
+
+
 func _make_generator_player(player_name: String) -> AudioStreamPlayer:
 	var player: AudioStreamPlayer = AudioStreamPlayer.new()
 	player.name = player_name
@@ -118,13 +162,8 @@ func _fill_motor(speed: float) -> void:
 	if _motor_playback == null:
 		return
 	var frames_available: int = _motor_playback.get_frames_available()
-	var frequency: float = GameConfig.audio_motor_base_hz + speed * GameConfig.audio_motor_speed_hz_gain
-	var phase_step: float = TAU * frequency / maxf(GameConfig.audio_mix_rate, 1.0)
 	for i in range(frames_available):
-		_motor_phase += phase_step
-		if _motor_phase > TAU:
-			_motor_phase -= TAU
-		var sample: float = sin(_motor_phase) * GameConfig.audio_motor_volume
+		var sample: float = _next_motor_sample(speed)
 		_motor_playback.push_frame(Vector2(sample, sample))
 
 
@@ -132,15 +171,8 @@ func _fill_tires(speed: float) -> void:
 	if _tire_playback == null:
 		return
 	var frames_available: int = _tire_playback.get_frames_available()
-	var frequency: float = GameConfig.audio_tire_base_hz * surface_tire_pitch_for(_current_surface_id)
-	var phase_step: float = TAU * frequency / maxf(GameConfig.audio_mix_rate, 1.0)
-	var volume: float = (GameConfig.audio_tire_volume + speed * GameConfig.audio_tire_speed_volume_gain) * surface_tire_gain_for(_current_surface_id)
 	for i in range(frames_available):
-		_tire_phase += phase_step
-		if _tire_phase > TAU:
-			_tire_phase -= TAU
-		var wave: float = sin(_tire_phase) * 0.65 + _next_noise() * 0.35
-		var sample: float = wave * volume
+		var sample: float = _next_tire_sample(speed)
 		_tire_playback.push_frame(Vector2(sample, sample))
 
 
@@ -148,34 +180,17 @@ func _fill_ambient() -> void:
 	if _ambient_playback == null:
 		return
 	var frames_available: int = _ambient_playback.get_frames_available()
-	var wind_step: float = TAU * GameConfig.audio_ambient_wind_base_hz / maxf(GameConfig.audio_mix_rate, 1.0)
-	var bird_step: float = TAU * GameConfig.audio_ambient_bird_hz / maxf(GameConfig.audio_mix_rate, 1.0)
 	for i in range(frames_available):
-		_ambient_phase += wind_step
-		_bird_phase += bird_step
-		if _ambient_phase > TAU:
-			_ambient_phase -= TAU
-		if _bird_phase > TAU:
-			_bird_phase -= TAU
-		var wind: float = (sin(_ambient_phase) * 0.35 + _next_ambient_noise() * 0.65) * GameConfig.audio_ambient_wind_volume
-		var bird_gate: float = 1.0 if _ambient_noise_state % 991 > 982 else 0.0
-		var bird: float = sin(_bird_phase) * bird_gate * GameConfig.audio_ambient_bird_volume
-		var sample: float = wind + bird
+		var sample: float = _next_ambient_sample()
 		_ambient_playback.push_frame(Vector2(sample, sample))
 
 
 func _fill_water(vehicle_position: Vector3) -> void:
 	if _water_playback == null:
 		return
-	var volume: float = water_volume_for_position(vehicle_position)
 	var frames_available: int = _water_playback.get_frames_available()
-	var phase_step: float = TAU * GameConfig.audio_water_base_hz / maxf(GameConfig.audio_mix_rate, 1.0)
 	for i in range(frames_available):
-		_water_phase += phase_step
-		if _water_phase > TAU:
-			_water_phase -= TAU
-		var stream_noise: float = _next_water_noise() * 0.75 + sin(_water_phase) * 0.25
-		var sample: float = stream_noise * volume
+		var sample: float = _next_water_sample(vehicle_position)
 		_water_playback.push_frame(Vector2(sample, sample))
 
 
@@ -183,18 +198,95 @@ func _fill_planks(speed: float) -> void:
 	if _plank_playback == null:
 		return
 	var frames_available: int = _plank_playback.get_frames_available()
+	for i in range(frames_available):
+		var sample: float = _next_plank_sample(speed)
+		_plank_playback.push_frame(Vector2(sample, sample))
+
+
+func _next_motor_sample(speed: float) -> float:
+	var frequency: float = GameConfig.audio_motor_base_hz + speed * GameConfig.audio_motor_speed_hz_gain
+	var phase_step: float = TAU * frequency / maxf(GameConfig.audio_mix_rate, 1.0)
+	_motor_phase += phase_step
+	if _motor_phase > TAU:
+		_motor_phase -= TAU
+	return sin(_motor_phase) * GameConfig.audio_motor_volume
+
+
+func _next_tire_sample(speed: float) -> float:
+	var frequency: float = GameConfig.audio_tire_base_hz * surface_tire_pitch_for(_current_surface_id)
+	var phase_step: float = TAU * frequency / maxf(GameConfig.audio_mix_rate, 1.0)
+	var volume: float = (GameConfig.audio_tire_volume + speed * GameConfig.audio_tire_speed_volume_gain) * surface_tire_gain_for(_current_surface_id)
+	_tire_phase += phase_step
+	if _tire_phase > TAU:
+		_tire_phase -= TAU
+	var wave: float = sin(_tire_phase) * 0.65 + _next_noise() * 0.35
+	return wave * volume
+
+
+func _next_ambient_sample() -> float:
+	var wind_step: float = TAU * GameConfig.audio_ambient_wind_base_hz / maxf(GameConfig.audio_mix_rate, 1.0)
+	var bird_step: float = TAU * GameConfig.audio_ambient_bird_hz / maxf(GameConfig.audio_mix_rate, 1.0)
+	_ambient_phase += wind_step
+	_bird_phase += bird_step
+	if _ambient_phase > TAU:
+		_ambient_phase -= TAU
+	if _bird_phase > TAU:
+		_bird_phase -= TAU
+	var wind: float = (sin(_ambient_phase) * 0.35 + _next_ambient_noise() * 0.65) * GameConfig.audio_ambient_wind_volume
+	var bird_gate: float = 1.0 if _ambient_noise_state % 991 > 982 else 0.0
+	var bird: float = sin(_bird_phase) * bird_gate * GameConfig.audio_ambient_bird_volume
+	return wind + bird
+
+
+func _next_water_sample(vehicle_position: Vector3) -> float:
+	var volume: float = water_volume_for_position(vehicle_position)
+	var phase_step: float = TAU * GameConfig.audio_water_base_hz / maxf(GameConfig.audio_mix_rate, 1.0)
+	_water_phase += phase_step
+	if _water_phase > TAU:
+		_water_phase -= TAU
+	var stream_noise: float = _next_water_noise() * 0.75 + sin(_water_phase) * 0.25
+	return stream_noise * volume
+
+
+func _next_plank_sample(speed: float) -> float:
 	var is_on_plank: bool = _current_surface_id == &"wood_plank"
 	var frequency: float = GameConfig.audio_plank_base_hz + speed * GameConfig.audio_plank_speed_hz_gain
 	var phase_step: float = TAU * frequency / maxf(GameConfig.audio_mix_rate, 1.0)
-	for i in range(frames_available):
-		if is_on_plank:
-			_plank_phase += phase_step
-			if _plank_phase > TAU:
-				_plank_phase -= TAU
-				_plank_envelope = 1.0
-		_plank_envelope *= GameConfig.audio_plank_decay
-		var knock: float = sin(_plank_phase * 5.0) * _plank_envelope * GameConfig.audio_plank_volume
-		_plank_playback.push_frame(Vector2(knock, knock))
+	if is_on_plank:
+		_plank_phase += phase_step
+		if _plank_phase > TAU:
+			_plank_phase -= TAU
+			_plank_envelope = 1.0
+	_plank_envelope *= GameConfig.audio_plank_decay
+	return sin(_plank_phase * 5.0) * _plank_envelope * GameConfig.audio_plank_volume
+
+
+func _new_audio_stats() -> Dictionary:
+	return {
+		"sample_count": 0,
+		"max_abs": 0.0,
+		"abs_sum": 0.0,
+		"square_sum": 0.0,
+		"mean_abs": 0.0,
+		"rms": 0.0,
+	}
+
+
+func _record_audio_sample(stats: Dictionary, sample: float) -> void:
+	var abs_sample: float = absf(sample)
+	stats["sample_count"] = int(stats["sample_count"]) + 1
+	stats["max_abs"] = maxf(float(stats["max_abs"]), abs_sample)
+	stats["abs_sum"] = float(stats["abs_sum"]) + abs_sample
+	stats["square_sum"] = float(stats["square_sum"]) + sample * sample
+
+
+func _finalize_audio_stats(stats: Dictionary) -> Dictionary:
+	var sample_count: int = int(stats["sample_count"])
+	if sample_count > 0:
+		var count_float: float = float(sample_count)
+		stats["mean_abs"] = float(stats["abs_sum"]) / count_float
+		stats["rms"] = sqrt(float(stats["square_sum"]) / count_float)
+	return stats
 
 
 func _next_noise() -> float:

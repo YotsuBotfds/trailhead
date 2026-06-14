@@ -342,6 +342,9 @@ printf 'run: cedar feature visuals\n'
 printf 'run: flat visuals\n'
 "$godot_bin" --headless --path . res://tools/flat_visual_inspector.tscn
 
+printf 'run: audio output preview\n'
+"$godot_bin" --headless --path . res://tools/audio_output_inspector.tscn
+
 printf 'run: terrain surface palette\n'
 "$godot_bin" --headless --path . res://tools/terrain_palette_inspector.tscn
 
