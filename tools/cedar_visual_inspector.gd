@@ -125,6 +125,7 @@ func _inspect() -> void:
 			_errors.append("BoundaryVisuals contains no mesh instances")
 	_require_node(_scene_root, "CedarHollow")
 	var vehicle: Node = _require_node(_scene_root, "Vehicle")
+	_inspect_vehicle_visuals(_scene_root, vehicle)
 	var chase_camera: Camera3D = _require_node(_scene_root, "ChaseCamera") as Camera3D
 	var orbit_camera: Camera3D = _require_node(_scene_root, "OrbitCamera") as Camera3D
 	var fpv_camera: Camera3D = _require_node(_scene_root, "FpvCamera") as Camera3D
@@ -344,6 +345,56 @@ func _inspect_camera_defaults(vehicle: Node, chase_camera: Camera3D, orbit_camer
 		_errors.append("FpvCamera should start above the vehicle")
 	if fpv_camera.global_position.z >= vehicle_position.z:
 		_errors.append("FpvCamera should start ahead of the trailhead spawn")
+
+
+func _inspect_vehicle_visuals(host: Node, vehicle: Node) -> void:
+	if host == null or vehicle == null:
+		return
+	var visual_root: Node = _require_node(vehicle, "PhysicsBody/VisualRoot")
+	if visual_root == null:
+		return
+	_require_node(visual_root, "body")
+	_require_node(visual_root, "nose")
+	_require_node(visual_root, "roll_cage")
+	_require_node_position(visual_root, "wheel_front_left", Vector3(-0.08, -0.015, -0.10), FLOAT_EPSILON)
+	_require_node_position(visual_root, "wheel_front_right", Vector3(0.08, -0.015, -0.10), FLOAT_EPSILON)
+	_require_node_position(visual_root, "wheel_rear_left", Vector3(-0.08, -0.015, 0.10), FLOAT_EPSILON)
+	_require_node_position(visual_root, "wheel_rear_right", Vector3(0.08, -0.015, 0.10), FLOAT_EPSILON)
+	_require_node(visual_root, "wheel_front_left/wheel_mesh")
+	_require_node(visual_root, "wheel_front_right/wheel_mesh")
+	_require_node(visual_root, "wheel_rear_left/wheel_mesh")
+	_require_node(visual_root, "wheel_rear_right/wheel_mesh")
+	var visual_collision_count: int = _count_collision_objects(visual_root)
+	if visual_collision_count > 0:
+		_errors.append("vehicle VisualRoot contains collision objects: " + str(visual_collision_count))
+	var visual_mesh_count: int = _count_mesh_instances(visual_root)
+	if visual_mesh_count < 9:
+		_errors.append("vehicle VisualRoot should include chassis, roll cage, and wheel meshes")
+	_require_vehicle_steering_visuals(host, visual_root)
+
+
+func _require_vehicle_steering_visuals(host: Node, visual_root: Node) -> void:
+	var vehicle_input: RefCounted = host.get("_vehicle_input") as RefCounted
+	if vehicle_input == null:
+		_errors.append("CedarHollowHost should expose vehicle input for visual wheel updates")
+		return
+	vehicle_input.set("steer", 1.0)
+	host.call("_update_visual_wheels", GameConfig.FIXED_DT)
+	var expected_steer: float = deg_to_rad(GameConfig.steer_limit_deg)
+	_require_node_rotation_y(visual_root, "wheel_front_left", expected_steer, FLOAT_EPSILON)
+	_require_node_rotation_y(visual_root, "wheel_front_right", expected_steer, FLOAT_EPSILON)
+	_require_node_rotation_y(visual_root, "wheel_rear_left", 0.0, FLOAT_EPSILON)
+	_require_node_rotation_y(visual_root, "wheel_rear_right", 0.0, FLOAT_EPSILON)
+	vehicle_input.set("steer", 0.0)
+	host.call("_update_visual_wheels", GameConfig.FIXED_DT)
+
+
+func _require_node_rotation_y(parent: Node, path: String, expected: float, tolerance: float) -> void:
+	var node: Node3D = _require_node(parent, path) as Node3D
+	if node == null:
+		return
+	if absf(node.rotation.y - expected) > tolerance:
+		_errors.append(path + " rotation.y expected " + str(expected) + ", got " + str(node.rotation.y))
 
 
 func _inspect_camera_reactivity(host: Node, vehicle: Node, chase_camera: Camera3D, orbit_camera: Camera3D, fpv_camera: Camera3D) -> void:
