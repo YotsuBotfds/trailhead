@@ -44,6 +44,15 @@ var cam_fov_base: float = 60.0
 var cam_fov_speed_gain: float = 12.0
 var cam_pitch_deg: float = -6.0
 
+var dusk_sun_rotation_degrees: Vector3 = Vector3(-34.0, -48.0, 0.0)
+var dusk_sun_energy: float = 2.8
+var dusk_sun_color: Color = Color(1.0, 0.78, 0.52)
+var dusk_background_color: Color = Color(0.58, 0.46, 0.36)
+var dusk_ambient_color: Color = Color(0.42, 0.35, 0.32)
+var dusk_ambient_energy: float = 0.35
+var dusk_fog_density: float = 0.018
+var dusk_fog_light_color: Color = Color(0.78, 0.57, 0.38)
+
 var stuck_window_ticks: int = 180
 var stuck_min_progress: float = 0.05
 var max_flipped_ticks: int = 300

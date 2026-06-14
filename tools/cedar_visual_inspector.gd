@@ -62,6 +62,8 @@ func _inspect() -> void:
 	_require_node(_scene_root, "Vehicle")
 	_require_node(_scene_root, "ChaseCamera")
 	_require_node(_scene_root, "SurfaceMap")
+	_require_node(_scene_root, "GoldenHourEnvironment")
+	_require_node(_scene_root, "GoldenHourSun")
 	_finish()
 
 
@@ -102,7 +104,7 @@ func _count_mesh_instances(parent: Node) -> int:
 
 func _finish() -> void:
 	if _errors.is_empty():
-		print("ok: Cedar Hollow feature, prop, and scatter visuals instantiated")
+		print("ok: Cedar Hollow visuals and mood nodes instantiated")
 		get_tree().quit(0)
 		return
 	for error in _errors:

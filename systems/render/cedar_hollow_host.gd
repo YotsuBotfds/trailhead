@@ -24,6 +24,7 @@ func _ready() -> void:
 	_setup_surface_map()
 	_setup_world()
 	_spawn_vehicle()
+	_setup_environment()
 	_setup_light()
 	_setup_camera()
 
@@ -88,10 +89,26 @@ func _spawn_vehicle() -> void:
 func _setup_light() -> void:
 	var sun: DirectionalLight3D = DirectionalLight3D.new()
 	sun.name = "GoldenHourSun"
-	sun.rotation_degrees = Vector3(-34.0, -48.0, 0.0)
-	sun.light_energy = 2.8
-	sun.light_color = Color(1.0, 0.78, 0.52)
+	sun.rotation_degrees = GameConfig.dusk_sun_rotation_degrees
+	sun.light_energy = GameConfig.dusk_sun_energy
+	sun.light_color = GameConfig.dusk_sun_color
 	add_child(sun)
+
+
+func _setup_environment() -> void:
+	var world_environment: WorldEnvironment = WorldEnvironment.new()
+	world_environment.name = "GoldenHourEnvironment"
+	var environment: Environment = Environment.new()
+	environment.background_mode = Environment.BG_COLOR
+	environment.background_color = GameConfig.dusk_background_color
+	environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	environment.ambient_light_color = GameConfig.dusk_ambient_color
+	environment.ambient_light_energy = GameConfig.dusk_ambient_energy
+	environment.fog_enabled = true
+	environment.fog_density = GameConfig.dusk_fog_density
+	environment.fog_light_color = GameConfig.dusk_fog_light_color
+	world_environment.environment = environment
+	add_child(world_environment)
 
 
 func _setup_camera() -> void:
