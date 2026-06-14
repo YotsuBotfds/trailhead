@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import argparse
 import json
 import math
 import struct
@@ -6,8 +7,14 @@ import zlib
 from pathlib import Path
 
 OUT_DIR = Path("assets/models/terrain")
-GLB_PATH = OUT_DIR / "cedar_hollow_heightmesh.glb"
-SURFACE_ID_PATH = OUT_DIR / "cedar_hollow_surface_id.png"
+GLB_FILENAME = "cedar_hollow_heightmesh.glb"
+SURFACE_ID_FILENAME = "cedar_hollow_surface_id.png"
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Generate Trailhead Cedar Hollow terrain assets.")
+    parser.add_argument("--out-dir", type=Path, default=OUT_DIR, help="Directory to write generated terrain assets.")
+    return parser.parse_args()
 
 X_MIN = -5.5
 X_MAX = 5.5
@@ -328,11 +335,15 @@ def write_surface_id_png(path):
 
 
 def main():
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
-    write_glb(GLB_PATH)
-    write_surface_id_png(SURFACE_ID_PATH)
-    print(f"wrote: {GLB_PATH}")
-    print(f"wrote: {SURFACE_ID_PATH}")
+    args = parse_args()
+    out_dir = args.out_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
+    glb_path = out_dir / GLB_FILENAME
+    surface_id_path = out_dir / SURFACE_ID_FILENAME
+    write_glb(glb_path)
+    write_surface_id_png(surface_id_path)
+    print(f"wrote: {glb_path}")
+    print(f"wrote: {surface_id_path}")
 
 
 if __name__ == "__main__":

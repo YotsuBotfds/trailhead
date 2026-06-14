@@ -1,10 +1,17 @@
 #!/usr/bin/env python3
+import argparse
 import json
 import math
 import struct
 from pathlib import Path
 
 OUT_DIR = Path("assets/models/features")
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Generate Trailhead feature GLBs.")
+    parser.add_argument("--out-dir", type=Path, default=OUT_DIR, help="Directory to write generated feature GLBs.")
+    return parser.parse_args()
 
 
 def pad4(data, pad_byte=b" "):
@@ -171,7 +178,9 @@ def pipe(radius, length, segments):
 
 
 def main():
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    args = parse_args()
+    out_dir = args.out_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
     assets = [
         ("boardwalk_segment", "wood_plank", box(0.9, 0.06, 0.24), [0.46, 0.30, 0.18, 1.0]),
         ("culvert_pipe", "packed_dirt", pipe(0.34, 1.2, 24), [0.35, 0.36, 0.35, 1.0]),
@@ -180,7 +189,7 @@ def main():
     ]
     for asset_name, surface_id, mesh, color in assets:
         vertices, indices = mesh
-        output_path = OUT_DIR / (asset_name + ".glb")
+        output_path = out_dir / (asset_name + ".glb")
         write_glb(output_path, asset_name, surface_id, vertices, indices, color)
         print(f"wrote: {output_path}")
 

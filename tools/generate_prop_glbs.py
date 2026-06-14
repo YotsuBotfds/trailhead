@@ -1,10 +1,17 @@
 #!/usr/bin/env python3
+import argparse
 import json
 import math
 import struct
 from pathlib import Path
 
 OUT_DIR = Path("assets/models/props")
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Generate Trailhead prop GLBs.")
+    parser.add_argument("--out-dir", type=Path, default=OUT_DIR, help="Directory to write generated prop GLBs.")
+    return parser.parse_args()
 
 
 def pad4(data, pad_byte=b" "):
@@ -219,7 +226,9 @@ def water_bottle():
 
 
 def main():
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    args = parse_args()
+    out_dir = args.out_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
     assets = [
         ("trail_sign", trail_sign(), [0.45, 0.29, 0.16, 1.0]),
         ("picnic_table", picnic_table(), [0.42, 0.26, 0.14, 1.0]),
@@ -230,7 +239,7 @@ def main():
     ]
     for asset_name, mesh, color in assets:
         vertices, indices = mesh
-        output_path = OUT_DIR / (asset_name + ".glb")
+        output_path = out_dir / (asset_name + ".glb")
         write_glb(output_path, asset_name, vertices, indices, color)
         print(f"wrote: {output_path}")
 

@@ -1,10 +1,17 @@
 #!/usr/bin/env python3
+import argparse
 import json
 import math
 import struct
 from pathlib import Path
 
 OUT_DIR = Path("assets/models/scatter")
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Generate Trailhead scatter GLBs.")
+    parser.add_argument("--out-dir", type=Path, default=OUT_DIR, help="Directory to write generated scatter GLBs.")
+    return parser.parse_args()
 
 
 def pad4(data, pad_byte=b" "):
@@ -209,7 +216,9 @@ def trail_blaze():
 
 
 def main():
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    args = parse_args()
+    out_dir = args.out_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
     assets = [
         ("grass_tuft", grass_tuft(), [0.22, 0.37, 0.13, 1.0]),
         ("boulder_a", boulder_a(), [0.36, 0.36, 0.33, 1.0]),
@@ -221,7 +230,7 @@ def main():
     ]
     for asset_name, mesh, color in assets:
         vertices, indices = mesh
-        output_path = OUT_DIR / (asset_name + ".glb")
+        output_path = out_dir / (asset_name + ".glb")
         write_glb(output_path, asset_name, vertices, indices, color)
         print(f"wrote: {output_path}")
 

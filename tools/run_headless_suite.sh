@@ -320,4 +320,5 @@ printf 'run: terrain surface palette\n'
 "$godot_bin" --headless --path . res://tools/terrain_palette_inspector.tscn
 
 ./tools/check_assets.sh
+./tools/check_generated_assets.sh
 ./tools/check.sh
