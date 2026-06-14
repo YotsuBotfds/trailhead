@@ -8,6 +8,7 @@ ASSET_ROOTS = (ROOT / "assets" / "models", ROOT / "assets" / "textures")
 CHECKED_SUFFIXES = {".glb", ".png", ".jpg", ".jpeg"}
 TEXTURE_SUFFIXES = {".png", ".jpg", ".jpeg"}
 SURFACE_ID_PNG_NAME = "cedar_hollow_surface_id.png"
+RESIDUE_TEXTURE_DIR = Path("assets/textures/vehicle/residue")
 
 
 def unquote(value):
@@ -78,7 +79,10 @@ def validate_texture_import(path, import_path, values, errors):
     label = str(import_path.relative_to(ROOT))
     if values.get("importer", "") != "texture":
         errors.append(label + " importer should be texture for image asset")
+    rel_path = path.relative_to(ROOT)
     if path.name != SURFACE_ID_PNG_NAME:
+        if rel_path.parent == RESIDUE_TEXTURE_DIR:
+            validate_residue_texture_import(label, values, errors)
         return
     expected_values = {
         "compress/mode": "0",
@@ -88,6 +92,21 @@ def validate_texture_import(path, import_path, values, errors):
         "process/channel_remap/blue": "2",
         "process/channel_remap/alpha": "3",
         "process/hdr_as_srgb": "false",
+        "detect_3d/compress_to": "1",
+    }
+    for key, expected_value in expected_values.items():
+        actual_value = values.get(key, "")
+        if actual_value != expected_value:
+            errors.append(label + " " + key + " expected " + expected_value + ", got " + actual_value)
+
+
+def validate_residue_texture_import(label, values, errors):
+    expected_values = {
+        "compress/mode": "0",
+        "mipmaps/generate": "false",
+        "process/channel_remap/alpha": "3",
+        "process/fix_alpha_border": "true",
+        "process/premult_alpha": "false",
         "detect_3d/compress_to": "1",
     }
     for key, expected_value in expected_values.items():

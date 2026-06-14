@@ -14,6 +14,7 @@ python3 tools/generate_prop_glbs.py --out-dir "$tmp_dir/props" >/dev/null
 python3 tools/generate_scatter_glbs.py --out-dir "$tmp_dir/scatter" >/dev/null
 python3 tools/generate_heightmesh_assets.py --out-dir "$tmp_dir/terrain" >/dev/null
 python3 tools/generate_vehicle_glbs.py --out-dir "$tmp_dir/vehicle" >/dev/null
+python3 tools/generate_vehicle_residue_textures.py --out-dir "$tmp_dir/vehicle_residue" >/dev/null
 
 check_file() {
 	generated_path="$1"
@@ -63,3 +64,10 @@ check_manifest_dir props
 check_manifest_dir scatter
 check_manifest_dir terrain
 check_manifest_dir vehicle
+check_file "$tmp_dir/vehicle_residue/SOURCES.md" "assets/textures/vehicle/residue/SOURCES.md"
+check_file "$tmp_dir/vehicle_residue/mud_body_mask.png" "assets/textures/vehicle/residue/mud_body_mask.png"
+check_file "$tmp_dir/vehicle_residue/dust_body_mask.png" "assets/textures/vehicle/residue/dust_body_mask.png"
+check_file "$tmp_dir/vehicle_residue/wetness_body_mask.png" "assets/textures/vehicle/residue/wetness_body_mask.png"
+check_file "$tmp_dir/vehicle_residue/mud_tire_mask.png" "assets/textures/vehicle/residue/mud_tire_mask.png"
+check_file "$tmp_dir/vehicle_residue/dust_tire_mask.png" "assets/textures/vehicle/residue/dust_tire_mask.png"
+check_file "$tmp_dir/vehicle_residue/wetness_tire_mask.png" "assets/textures/vehicle/residue/wetness_tire_mask.png"

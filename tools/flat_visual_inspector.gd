@@ -7,6 +7,21 @@ const CAMERA_PITCH_TOLERANCE_DEG: float = 0.25
 const RESIDUE_MUD_OVERLAY: String = "residue_mud_overlay"
 const RESIDUE_DUST_OVERLAY: String = "residue_dust_overlay"
 const RESIDUE_WETNESS_OVERLAY: String = "residue_wetness_overlay"
+const RESIDUE_MUD_TIRE_OVERLAY: String = "residue_mud_tire"
+const RESIDUE_DUST_TIRE_OVERLAY: String = "residue_dust_tire"
+const RESIDUE_WETNESS_TIRE_OVERLAY: String = "residue_wetness_tire"
+const RESIDUE_MUD_BODY_MASK: String = "res://assets/textures/vehicle/residue/mud_body_mask.png"
+const RESIDUE_DUST_BODY_MASK: String = "res://assets/textures/vehicle/residue/dust_body_mask.png"
+const RESIDUE_WETNESS_BODY_MASK: String = "res://assets/textures/vehicle/residue/wetness_body_mask.png"
+const RESIDUE_MUD_TIRE_MASK: String = "res://assets/textures/vehicle/residue/mud_tire_mask.png"
+const RESIDUE_DUST_TIRE_MASK: String = "res://assets/textures/vehicle/residue/dust_tire_mask.png"
+const RESIDUE_WETNESS_TIRE_MASK: String = "res://assets/textures/vehicle/residue/wetness_tire_mask.png"
+const WHEEL_SOCKET_NAMES: Array[String] = [
+	"wheel_front_left",
+	"wheel_front_right",
+	"wheel_rear_left",
+	"wheel_rear_right"
+]
 
 var _scene_root: Node = null
 var _errors: PackedStringArray = PackedStringArray()
@@ -106,42 +121,91 @@ func _require_vehicle_residue_visuals(host: Node, vehicle: Node, visual_root: No
 		return
 	contamination.call("set_values", 0.5, 0.25, 0.75)
 	host.call("_update_vehicle_residue_visual", state)
-	_require_residue_overlay_alpha(visual_root, RESIDUE_MUD_OVERLAY, 0.5 * GameConfig.vehicle_residue_mud_visual_alpha)
-	_require_residue_overlay_alpha(visual_root, RESIDUE_DUST_OVERLAY, 0.25 * GameConfig.vehicle_residue_dust_visual_alpha)
-	_require_residue_overlay_alpha(visual_root, RESIDUE_WETNESS_OVERLAY, 0.75 * GameConfig.vehicle_residue_wetness_visual_alpha)
+	_require_residue_overlay_alpha(visual_root, RESIDUE_MUD_OVERLAY, 0.5 * GameConfig.vehicle_residue_mud_visual_alpha, RESIDUE_MUD_BODY_MASK)
+	_require_residue_overlay_alpha(visual_root, RESIDUE_DUST_OVERLAY, 0.25 * GameConfig.vehicle_residue_dust_visual_alpha, RESIDUE_DUST_BODY_MASK)
+	_require_residue_overlay_alpha(visual_root, RESIDUE_WETNESS_OVERLAY, 0.75 * GameConfig.vehicle_residue_wetness_visual_alpha, RESIDUE_WETNESS_BODY_MASK)
+	_require_tire_residue_overlays(visual_root)
 	contamination.call("reset")
 	host.call("_update_vehicle_residue_visual", state)
 	_require_residue_overlay_hidden(visual_root, RESIDUE_MUD_OVERLAY)
 	_require_residue_overlay_hidden(visual_root, RESIDUE_DUST_OVERLAY)
 	_require_residue_overlay_hidden(visual_root, RESIDUE_WETNESS_OVERLAY)
+	_require_tire_residue_overlays_hidden(visual_root)
 
 
-func _require_residue_overlay_alpha(parent: Node, path: String, expected_alpha: float) -> void:
+func _require_tire_residue_overlays(visual_root: Node) -> void:
+	for wheel_socket_name in WHEEL_SOCKET_NAMES:
+		_require_residue_overlay_visible(visual_root, wheel_socket_name.path_join(RESIDUE_MUD_TIRE_OVERLAY), RESIDUE_MUD_TIRE_MASK)
+		_require_residue_overlay_visible(visual_root, wheel_socket_name.path_join(RESIDUE_DUST_TIRE_OVERLAY), RESIDUE_DUST_TIRE_MASK)
+		_require_residue_overlay_visible(visual_root, wheel_socket_name.path_join(RESIDUE_WETNESS_TIRE_OVERLAY), RESIDUE_WETNESS_TIRE_MASK)
+
+
+func _require_tire_residue_overlays_hidden(visual_root: Node) -> void:
+	for wheel_socket_name in WHEEL_SOCKET_NAMES:
+		_require_residue_overlay_hidden(visual_root, wheel_socket_name.path_join(RESIDUE_MUD_TIRE_OVERLAY))
+		_require_residue_overlay_hidden(visual_root, wheel_socket_name.path_join(RESIDUE_DUST_TIRE_OVERLAY))
+		_require_residue_overlay_hidden(visual_root, wheel_socket_name.path_join(RESIDUE_WETNESS_TIRE_OVERLAY))
+
+
+func _require_residue_overlay_visible(parent: Node, path: String, expected_texture_path: String) -> void:
 	var overlay: MeshInstance3D = _require_node(parent, path) as MeshInstance3D
 	if overlay == null:
 		return
 	if not overlay.visible:
 		_errors.append(path + " should be visible when contamination is nonzero")
-	var material: StandardMaterial3D = overlay.material_override as StandardMaterial3D
+	var material: StandardMaterial3D = _require_residue_material(overlay, path)
 	if material == null:
-		_errors.append(path + " should use StandardMaterial3D")
+		return
+	if material.albedo_color.a <= FLOAT_EPSILON:
+		_errors.append(path + " alpha should be above zero when contamination is nonzero")
+	_require_residue_texture(material, path, expected_texture_path)
+
+
+func _require_residue_overlay_alpha(parent: Node, path: String, expected_alpha: float, expected_texture_path: String) -> void:
+	var overlay: MeshInstance3D = _require_node(parent, path) as MeshInstance3D
+	if overlay == null:
+		return
+	if not overlay.visible:
+		_errors.append(path + " should be visible when contamination is nonzero")
+	var material: StandardMaterial3D = _require_residue_material(overlay, path)
+	if material == null:
 		return
 	if absf(material.albedo_color.a - expected_alpha) > FLOAT_EPSILON:
 		_errors.append(path + " alpha expected " + str(expected_alpha) + ", got " + str(material.albedo_color.a))
+	_require_residue_texture(material, path, expected_texture_path)
 
 
 func _require_residue_overlay_hidden(parent: Node, path: String) -> void:
 	var overlay: MeshInstance3D = _require_node(parent, path) as MeshInstance3D
 	if overlay == null:
 		return
-	var material: StandardMaterial3D = overlay.material_override as StandardMaterial3D
+	var material: StandardMaterial3D = _require_residue_material(overlay, path)
 	if material == null:
-		_errors.append(path + " should use StandardMaterial3D")
 		return
 	if overlay.visible:
 		_errors.append(path + " should hide after contamination reset")
 	if material.albedo_color.a > FLOAT_EPSILON:
 		_errors.append(path + " alpha should reset to zero, got " + str(material.albedo_color.a))
+
+
+func _require_residue_material(overlay: MeshInstance3D, path: String) -> StandardMaterial3D:
+	var material: StandardMaterial3D = overlay.material_override as StandardMaterial3D
+	if material == null:
+		_errors.append(path + " should use StandardMaterial3D")
+		return null
+	if material.transparency != BaseMaterial3D.TRANSPARENCY_ALPHA:
+		_errors.append(path + " material should use alpha transparency")
+	if absf(material.metallic) > FLOAT_EPSILON:
+		_errors.append(path + " material metallic should be 0")
+	return material
+
+
+func _require_residue_texture(material: StandardMaterial3D, path: String, expected_texture_path: String) -> void:
+	if material.albedo_texture == null:
+		_errors.append(path + " should use a residue mask texture")
+		return
+	if material.albedo_texture.resource_path != expected_texture_path:
+		_errors.append(path + " mask expected " + expected_texture_path + ", got " + material.albedo_texture.resource_path)
 
 
 func _inspect_chase_camera(vehicle: Node, chase_camera: Camera3D) -> void:
