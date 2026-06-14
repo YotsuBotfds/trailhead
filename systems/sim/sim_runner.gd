@@ -127,9 +127,11 @@ func _ready() -> void:
 	if _route != null and _route_segment_id != "":
 		if not _args.has("target-radius"):
 			_target_radius = float(_route.call("segment_target_radius_for", StringName(_route_segment_id), _target_radius))
-		var segment_points: Array = _route.call("segment_waypoint_path", StringName(_route_segment_id))
-		for point in segment_points:
-			_waypoints.append(point)
+		var segment_points_value: Variant = _route.call("segment_waypoint_path", StringName(_route_segment_id))
+		if segment_points_value is Array:
+			for point in segment_points_value:
+				if point is Vector3:
+					_waypoints.append(point)
 	_rng.seed = int(_args.get("seed", 0))
 	_connect_event_bus()
 	_configure_flat_bounds()
@@ -314,6 +316,7 @@ func _record(state: RefCounted, input: RefCounted) -> void:
 	var state_velocity: Vector3 = state.get("linear_velocity")
 	var state_angular_velocity: Vector3 = state.get("angular_velocity")
 	var state_basis: Basis = state.get("basis")
+	var motor_rpm: float = float(state.get("motor_rpm"))
 	var pitch_deg: float = _pitch_deg(state_basis)
 	var roll_deg: float = _roll_deg(state_basis)
 	var speed: float = state_velocity.length()
@@ -321,8 +324,8 @@ func _record(state: RefCounted, input: RefCounted) -> void:
 	var slip_angle_deg: float = _slip_angle_deg(state_basis, state_velocity)
 	var yaw_rate: float = state_angular_velocity.dot(Vector3.UP)
 	var input_throttle: float = float(input.get("throttle"))
-	var wheel_contact: Array = state.get("wheel_contact")
-	var wheel_surface: Array = state.get("wheel_surface")
+	var wheel_contact: Variant = state.get("wheel_contact")
+	var wheel_surface: Variant = state.get("wheel_surface")
 	var vehicle_contamination: Dictionary = _vehicle_contamination_dictionary(state)
 	var surface_id: StringName = _dominant_surface_from_array(wheel_surface)
 	var front_contact_count: int = _contact_count(wheel_contact, 0, 2)
@@ -338,6 +341,7 @@ func _record(state: RefCounted, input: RefCounted) -> void:
 		"roll_deg": roll_deg,
 		"speed": speed,
 		"speed_delta": speed_delta,
+		"motor_rpm": motor_rpm,
 		"initial_forward_displacement": initial_forward_displacement,
 		"slip_angle_deg": slip_angle_deg,
 		"wheel_contact_count": front_contact_count + rear_contact_count,
@@ -458,12 +462,7 @@ func _finish(passed: bool) -> void:
 	var reached_target: bool = false
 	if _telemetry.size() > 0:
 		var last_row: Dictionary = _telemetry[_telemetry.size() - 1]
-		var last_position_data: Array = last_row["position"]
-		var last_position: Vector3 = Vector3(
-			float(last_position_data[0]),
-			float(last_position_data[1]),
-			float(last_position_data[2])
-		)
+		var last_position: Vector3 = _vec3_from_array(last_row.get("position", []), Vector3(INF, INF, INF))
 		var target_delta: Vector3 = _target - last_position
 		target_delta.y = 0.0
 		reached_target = target_delta.length() <= _target_radius
@@ -693,7 +692,9 @@ func _angle_delta_abs_deg(a: float, b: float) -> float:
 	return absf(delta)
 
 
-func _contact_count(wheel_contact: Array, start_index: int, end_index: int) -> int:
+func _contact_count(wheel_contact: Variant, start_index: int, end_index: int) -> int:
+	if not (wheel_contact is Array):
+		return 0
 	var count: int = 0
 	for i in range(start_index, end_index):
 		if i < wheel_contact.size() and bool(wheel_contact[i]):
@@ -701,15 +702,19 @@ func _contact_count(wheel_contact: Array, start_index: int, end_index: int) -> i
 	return count
 
 
-func _bool_array_to_array(values: Array) -> Array[bool]:
+func _bool_array_to_array(values: Variant) -> Array[bool]:
 	var out: Array[bool] = []
+	if not (values is Array):
+		return out
 	for value in values:
 		out.append(bool(value))
 	return out
 
 
-func _surface_array_to_array(values: Array) -> Array[String]:
+func _surface_array_to_array(values: Variant) -> Array[String]:
 	var out: Array[String] = []
+	if not (values is Array):
+		return out
 	for value in values:
 		out.append(String(value))
 	return out
@@ -748,7 +753,9 @@ func _max_vehicle_contamination_dictionary() -> Dictionary:
 	}
 
 
-func _dominant_surface_from_array(values: Array) -> StringName:
+func _dominant_surface_from_array(values: Variant) -> StringName:
+	if not (values is Array):
+		return &""
 	var counts: Dictionary = {}
 	var best_surface_id: StringName = &""
 	var best_count: int = 0
@@ -802,24 +809,45 @@ func _golden_replay_result(predicates: Dictionary) -> Dictionary:
 		"expected_ticks": null,
 		"tick_delta": 0,
 		"compared_samples": 0,
+		"compared_slip_samples": 0,
+		"compared_motor_rpm_samples": 0,
+		"compared_surface_ticks": 0,
+		"compared_event_counts": 0,
 		"max_position_error": 0.0,
 		"max_velocity_error": 0.0,
 		"max_speed_error": 0.0,
+		"max_slip_error": 0.0,
+		"max_motor_rpm_error": 0.0,
 		"failures": failures
 	}
 	if _controller_id != "replay" or _controller == null:
 		return result
 	var expected_ticks: int = int(_controller.call("expected_ticks"))
 	var tolerances: Dictionary = _controller.call("expected_tolerances")
-	var expected_samples: Array = _controller.call("expected_samples")
+	var expected_samples_value: Variant = _controller.call("expected_samples")
 	var expected_predicates: Dictionary = _controller.call("expected_predicates")
-	var tick_tolerance: int = int(tolerances.get("ticks", 0))
-	var position_tolerance: float = float(tolerances.get("position_m", 0.0))
-	var velocity_tolerance: float = float(tolerances.get("velocity_mps", 0.0))
-	var speed_tolerance: float = float(tolerances.get("speed_mps", 0.0))
+	var replay_data: Dictionary = _replay_fixture_data(failures)
+	var tick_tolerance: int = int(tolerances.get("ticks", GameConfig.golden_tick_tolerance))
+	var position_tolerance: float = float(tolerances.get("position_m", GameConfig.golden_position_tolerance_m))
+	var velocity_tolerance: float = float(tolerances.get("velocity_mps", GameConfig.golden_velocity_tolerance_mps))
+	var speed_tolerance: float = float(tolerances.get("speed_mps", GameConfig.golden_speed_tolerance_mps))
+	var slip_tolerance: float = float(tolerances.get("slip_deg", tolerances.get("slip_angle_deg", GameConfig.golden_slip_tolerance_deg)))
+	var motor_rpm_tolerance: float = float(tolerances.get("motor_rpm", GameConfig.golden_motor_rpm_tolerance))
+	var surface_tick_tolerance: int = int(tolerances.get("surface_ticks", tolerances.get("surface_contact_ticks", GameConfig.golden_surface_tick_tolerance)))
+	var event_count_tolerance: int = int(tolerances.get("event_counts", GameConfig.golden_event_count_tolerance))
 	var tick_delta: int = absi(_tick - expected_ticks)
 	result["expected_ticks"] = expected_ticks
 	result["tick_delta"] = tick_delta
+	result["tolerances"] = {
+		"ticks": tick_tolerance,
+		"position_m": position_tolerance,
+		"velocity_mps": velocity_tolerance,
+		"speed_mps": speed_tolerance,
+		"slip_deg": slip_tolerance,
+		"surface_ticks": surface_tick_tolerance,
+		"event_counts": event_count_tolerance,
+		"motor_rpm": motor_rpm_tolerance
+	}
 	if tick_delta > tick_tolerance:
 		failures.append("tick delta " + str(tick_delta) + " exceeded tolerance " + str(tick_tolerance))
 	for key in expected_predicates.keys():
@@ -832,33 +860,144 @@ func _golden_replay_result(predicates: Dictionary) -> Dictionary:
 		var actual_predicate: bool = bool(predicates[key])
 		if actual_predicate != expected_predicate:
 			failures.append("predicate " + String(key) + " expected " + str(expected_predicate) + " got " + str(actual_predicate))
-	for value in expected_samples:
-		if not (value is Dictionary):
-			continue
-		var sample: Dictionary = value
-		var sample_tick: int = int(sample.get("tick", -1))
-		var row: Dictionary = _telemetry_row_for_tick(sample_tick)
-		if row.is_empty():
-			failures.append("missing telemetry row for golden sample tick " + str(sample_tick))
-			continue
-		var position_error: float = _vec3_array_distance(sample.get("position", []), row.get("position", []))
-		var velocity_error: float = _vec3_array_distance(sample.get("linear_velocity", []), row.get("linear_velocity", []))
-		var speed_error: float = absf(float(sample.get("speed", 0.0)) - float(row.get("speed", 0.0)))
-		result["compared_samples"] = int(result["compared_samples"]) + 1
-		result["max_position_error"] = maxf(float(result["max_position_error"]), position_error)
-		result["max_velocity_error"] = maxf(float(result["max_velocity_error"]), velocity_error)
-		result["max_speed_error"] = maxf(float(result["max_speed_error"]), speed_error)
-		if position_error > position_tolerance:
-			failures.append("position error at tick " + str(sample_tick) + " was " + str(position_error))
-		if velocity_error > velocity_tolerance:
-			failures.append("velocity error at tick " + str(sample_tick) + " was " + str(velocity_error))
-		if speed_error > speed_tolerance:
-			failures.append("speed error at tick " + str(sample_tick) + " was " + str(speed_error))
-	if expected_samples.size() > 0 and int(result["compared_samples"]) <= 0:
+	if expected_samples_value is Array:
+		for value in expected_samples_value:
+			if not (value is Dictionary):
+				continue
+			var sample: Dictionary = value
+			var sample_tick: int = int(sample.get("tick", -1))
+			var row: Dictionary = _telemetry_row_for_tick(sample_tick)
+			if row.is_empty():
+				failures.append("missing telemetry row for golden sample tick " + str(sample_tick))
+				continue
+			var position_error: float = _vec3_array_distance(sample.get("position", []), row.get("position", []))
+			var velocity_error: float = _vec3_array_distance(sample.get("linear_velocity", []), row.get("linear_velocity", []))
+			var speed_error: float = absf(float(sample.get("speed", 0.0)) - float(row.get("speed", 0.0)))
+			result["compared_samples"] = int(result["compared_samples"]) + 1
+			result["max_position_error"] = maxf(float(result["max_position_error"]), position_error)
+			result["max_velocity_error"] = maxf(float(result["max_velocity_error"]), velocity_error)
+			result["max_speed_error"] = maxf(float(result["max_speed_error"]), speed_error)
+			if position_error > position_tolerance:
+				failures.append("position error at tick " + str(sample_tick) + " was " + str(position_error) + " > " + str(position_tolerance))
+			if velocity_error > velocity_tolerance:
+				failures.append("velocity error at tick " + str(sample_tick) + " was " + str(velocity_error) + " > " + str(velocity_tolerance))
+			if speed_error > speed_tolerance:
+				failures.append("speed error at tick " + str(sample_tick) + " was " + str(speed_error) + " > " + str(speed_tolerance))
+			if sample.has("slip_angle_deg"):
+				var slip_error: float = absf(float(sample.get("slip_angle_deg", 0.0)) - float(row.get("slip_angle_deg", 0.0)))
+				result["compared_slip_samples"] = int(result["compared_slip_samples"]) + 1
+				result["max_slip_error"] = maxf(float(result["max_slip_error"]), slip_error)
+				if slip_error > slip_tolerance:
+					failures.append("slip error at tick " + str(sample_tick) + " was " + str(slip_error) + " > " + str(slip_tolerance))
+			if sample.has("motor_rpm"):
+				var motor_rpm_error: float = absf(float(sample.get("motor_rpm", 0.0)) - float(row.get("motor_rpm", 0.0)))
+				result["compared_motor_rpm_samples"] = int(result["compared_motor_rpm_samples"]) + 1
+				result["max_motor_rpm_error"] = maxf(float(result["max_motor_rpm_error"]), motor_rpm_error)
+				if motor_rpm_error > motor_rpm_tolerance:
+					failures.append("motor_rpm error at tick " + str(sample_tick) + " was " + str(motor_rpm_error) + " > " + str(motor_rpm_tolerance))
+			if sample.has("is_flipped") and bool(sample.get("is_flipped", false)) != bool(row.get("is_flipped", false)):
+				failures.append("is_flipped mismatch at tick " + str(sample_tick) + " expected " + str(bool(sample.get("is_flipped", false))) + " got " + str(bool(row.get("is_flipped", false))))
+	if expected_samples_value is Array and expected_samples_value.size() > 0 and int(result["compared_samples"]) <= 0:
 		failures.append("no golden samples were compared")
+	if replay_data.has("metrics") and replay_data["metrics"] is Dictionary:
+		var expected_metrics: Dictionary = replay_data["metrics"]
+		_compare_golden_metric_block(expected_metrics, result, failures, surface_tick_tolerance, event_count_tolerance, slip_tolerance)
 	result["matched"] = failures.is_empty()
 	result["failures"] = failures
 	return result
+
+
+func _replay_fixture_data(failures: Array[String]) -> Dictionary:
+	var replay_path: String = String(_args.get("replay", ""))
+	if replay_path == "":
+		return {}
+	var file: FileAccess = FileAccess.open(_resolve_project_path(replay_path), FileAccess.READ)
+	if file == null:
+		failures.append("failed to open replay metadata: " + replay_path)
+		return {}
+	var parsed: Variant = JSON.parse_string(file.get_as_text())
+	file.close()
+	if not (parsed is Dictionary):
+		failures.append("replay metadata root is not a dictionary: " + replay_path)
+		return {}
+	return parsed
+
+
+func _resolve_project_path(path: String) -> String:
+	if path.begins_with("res://") or path.begins_with("user://") or path.begins_with("/"):
+		return path
+	return "res://" + path
+
+
+func _compare_golden_metric_block(expected_metrics: Dictionary, result: Dictionary, failures: Array[String], surface_tick_tolerance: int, event_count_tolerance: int, slip_tolerance: float) -> void:
+	if expected_metrics.has("surface_contact_ticks") and expected_metrics["surface_contact_ticks"] is Dictionary:
+		var expected_surface_ticks: Dictionary = expected_metrics["surface_contact_ticks"]
+		_compare_golden_int_dictionary("surface_contact_ticks", expected_surface_ticks, _surface_contact_ticks, surface_tick_tolerance, result, failures)
+	var event_count_keys: Array[String] = ["surface_event_count", "landmark_event_count", "flipped_event_count", "self_righted_event_count"]
+	for key in event_count_keys:
+		if expected_metrics.has(key):
+			var actual_value: int = 0
+			if key == "surface_event_count":
+				actual_value = _surface_event_count
+			elif key == "landmark_event_count":
+				actual_value = _landmark_event_count
+			elif key == "flipped_event_count":
+				actual_value = _flipped_event_count
+			elif key == "self_righted_event_count":
+				actual_value = _self_righted_event_count
+			_compare_golden_int_metric(key, int(expected_metrics[key]), actual_value, event_count_tolerance, result, failures)
+	if expected_metrics.has("max_abs_slip_angle_deg"):
+		_compare_golden_float_metric("max_abs_slip_angle_deg", float(expected_metrics["max_abs_slip_angle_deg"]), _max_abs_slip_angle_deg, slip_tolerance, result, failures)
+	if expected_metrics.has("max_abs_slip_angle_by_surface") and expected_metrics["max_abs_slip_angle_by_surface"] is Dictionary:
+		var expected_surface_slip: Dictionary = expected_metrics["max_abs_slip_angle_by_surface"]
+		_compare_golden_float_dictionary("max_abs_slip_angle_by_surface", expected_surface_slip, _surface_max_abs_slip, slip_tolerance, result, failures)
+
+
+func _compare_golden_int_metric(metric_name: String, expected_value: int, actual_value: int, tolerance: int, result: Dictionary, failures: Array[String]) -> void:
+	var delta: int = absi(actual_value - expected_value)
+	result["compared_event_counts"] = int(result["compared_event_counts"]) + 1
+	if delta > tolerance:
+		failures.append(metric_name + " delta " + str(delta) + " exceeded tolerance " + str(tolerance) + " expected " + str(expected_value) + " got " + str(actual_value))
+
+
+func _compare_golden_float_metric(metric_name: String, expected_value: float, actual_value: float, tolerance: float, result: Dictionary, failures: Array[String]) -> void:
+	var delta: float = absf(actual_value - expected_value)
+	result["max_slip_error"] = maxf(float(result["max_slip_error"]), delta)
+	if delta > tolerance:
+		failures.append(metric_name + " delta " + str(delta) + " exceeded tolerance " + str(tolerance) + " expected " + str(expected_value) + " got " + str(actual_value))
+
+
+func _compare_golden_int_dictionary(metric_name: String, expected_values: Dictionary, actual_values: Dictionary, tolerance: int, result: Dictionary, failures: Array[String]) -> void:
+	for key in _dictionary_key_union(expected_values, actual_values):
+		var expected_value: int = int(expected_values.get(key, 0))
+		var actual_value: int = int(actual_values.get(key, 0))
+		var delta: int = absi(actual_value - expected_value)
+		result["compared_surface_ticks"] = int(result["compared_surface_ticks"]) + 1
+		if delta > tolerance:
+			failures.append(metric_name + "." + key + " delta " + str(delta) + " exceeded tolerance " + str(tolerance) + " expected " + str(expected_value) + " got " + str(actual_value))
+
+
+func _compare_golden_float_dictionary(metric_name: String, expected_values: Dictionary, actual_values: Dictionary, tolerance: float, result: Dictionary, failures: Array[String]) -> void:
+	for key in _dictionary_key_union(expected_values, actual_values):
+		var expected_value: float = float(expected_values.get(key, 0.0))
+		var actual_value: float = float(actual_values.get(key, 0.0))
+		var delta: float = absf(actual_value - expected_value)
+		result["max_slip_error"] = maxf(float(result["max_slip_error"]), delta)
+		if delta > tolerance:
+			failures.append(metric_name + "." + key + " delta " + str(delta) + " exceeded tolerance " + str(tolerance) + " expected " + str(expected_value) + " got " + str(actual_value))
+
+
+func _dictionary_key_union(a: Dictionary, b: Dictionary) -> Array[String]:
+	var keys: Array[String] = []
+	for key_value in a.keys():
+		var key: String = String(key_value)
+		if not keys.has(key):
+			keys.append(key)
+	for other_key_value in b.keys():
+		var other_key: String = String(other_key_value)
+		if not keys.has(other_key):
+			keys.append(other_key)
+	return keys
 
 
 func _telemetry_row_for_tick(tick: int) -> Dictionary:
@@ -874,15 +1013,23 @@ func _telemetry_row_for_tick(tick: int) -> Dictionary:
 
 
 func _vec3_array_distance(expected_value: Variant, actual_value: Variant) -> float:
-	if not (expected_value is Array) or not (actual_value is Array):
+	if not _is_vec3_array(expected_value) or not _is_vec3_array(actual_value):
 		return INF
-	var expected: Array = expected_value
-	var actual: Array = actual_value
-	if expected.size() < 3 or actual.size() < 3:
-		return INF
-	var expected_vector: Vector3 = Vector3(float(expected[0]), float(expected[1]), float(expected[2]))
-	var actual_vector: Vector3 = Vector3(float(actual[0]), float(actual[1]), float(actual[2]))
+	var expected_vector: Vector3 = _vec3_from_array(expected_value, Vector3.ZERO)
+	var actual_vector: Vector3 = _vec3_from_array(actual_value, Vector3.ZERO)
 	return expected_vector.distance_to(actual_vector)
+
+
+func _is_vec3_array(value: Variant) -> bool:
+	if not (value is Array):
+		return false
+	return value.size() >= 3
+
+
+func _vec3_from_array(value: Variant, fallback: Vector3) -> Vector3:
+	if not _is_vec3_array(value):
+		return fallback
+	return Vector3(float(value[0]), float(value[1]), float(value[2]))
 
 
 func _connect_event_bus() -> void:
