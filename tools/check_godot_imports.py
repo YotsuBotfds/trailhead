@@ -4,8 +4,9 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-ASSET_ROOT = ROOT / "assets" / "models"
-CHECKED_SUFFIXES = {".glb", ".png"}
+ASSET_ROOTS = (ROOT / "assets" / "models", ROOT / "assets" / "textures")
+CHECKED_SUFFIXES = {".glb", ".png", ".jpg", ".jpeg"}
+TEXTURE_SUFFIXES = {".png", ".jpg", ".jpeg"}
 SURFACE_ID_PNG_NAME = "cedar_hollow_surface_id.png"
 
 
@@ -51,10 +52,11 @@ def validate_asset(path):
     uid = values.get("uid", "")
     if not uid.startswith("uid://"):
         errors.append(str(import_path.relative_to(ROOT)) + " should include a Godot uid")
-    if path.suffix == ".glb":
+    suffix = path.suffix.lower()
+    if suffix == ".glb":
         validate_glb_import(path, import_path, values, errors)
-    if path.suffix == ".png":
-        validate_png_import(path, import_path, values, errors)
+    if suffix in TEXTURE_SUFFIXES:
+        validate_texture_import(path, import_path, values, errors)
     return errors
 
 
@@ -68,12 +70,14 @@ def validate_glb_import(path, import_path, values, errors):
         errors.append(label + " nodes/apply_root_scale should stay true with root_scale=1.0")
     if values.get("nodes/use_name_suffixes", "") != "true":
         errors.append(label + " nodes/use_name_suffixes should stay true for imported node contract checks")
+    if values.get("meshes/ensure_tangents", "") != "true":
+        errors.append(label + " meshes/ensure_tangents should stay true for normal-mapped render assets")
 
 
-def validate_png_import(path, import_path, values, errors):
+def validate_texture_import(path, import_path, values, errors):
     label = str(import_path.relative_to(ROOT))
     if values.get("importer", "") != "texture":
-        errors.append(label + " importer should be texture for PNG asset")
+        errors.append(label + " importer should be texture for image asset")
     if path.name != SURFACE_ID_PNG_NAME:
         return
     expected_values = {
@@ -94,14 +98,17 @@ def validate_png_import(path, import_path, values, errors):
 
 def main():
     errors = []
-    for path in sorted(ASSET_ROOT.rglob("*")):
-        if path.suffix in CHECKED_SUFFIXES:
-            errors.extend(validate_asset(path))
+    for asset_root in ASSET_ROOTS:
+        if not asset_root.exists():
+            continue
+        for path in sorted(asset_root.rglob("*")):
+            if path.suffix.lower() in CHECKED_SUFFIXES:
+                errors.extend(validate_asset(path))
     if errors:
         for error in errors:
             print(error, file=sys.stderr)
         return 1
-    print("ok: Godot import metadata present for assets/models")
+    print("ok: Godot import metadata present for assets/models and assets/textures")
     return 0
 
 

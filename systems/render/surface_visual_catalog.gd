@@ -59,7 +59,10 @@ func surface_ids_with_visual_variants() -> Array[StringName]:
 		var surface_id: StringName = visual_def.get("surface_id")
 		var visual_count: int = 0
 		for candidate in visual_defs:
-			if candidate != null and StringName(candidate.get("surface_id")) == surface_id:
+			if candidate == null:
+				continue
+			var candidate_surface_id: StringName = candidate.get("surface_id")
+			if candidate_surface_id == surface_id:
 				visual_count += 1
 		if visual_count > 1 and not ids.has(surface_id):
 			ids.append(surface_id)
@@ -73,6 +76,23 @@ func default_visual_for_surface_id(surface_id: StringName) -> Resource:
 	if surface_id != fallback_surface_id:
 		return _default_visual_for_surface_id(fallback_surface_id)
 	return null
+
+
+func visual_for_id(visual_id: StringName) -> Resource:
+	for visual_def in visual_defs:
+		if visual_def == null:
+			continue
+		var candidate_visual_id: StringName = visual_def.get("id")
+		if candidate_visual_id == visual_id:
+			return visual_def
+	return null
+
+
+func visual_for_terrain_material_token(material_token: StringName) -> Resource:
+	var visual_def: Resource = visual_for_id(material_token)
+	if visual_def != null:
+		return visual_def
+	return _default_visual_for_surface_id(material_token)
 
 
 func tire_audio_gain_for(surface_id: StringName) -> float:
@@ -98,6 +118,9 @@ func emits_plank_knock_for(surface_id: StringName) -> bool:
 
 func _default_visual_for_surface_id(surface_id: StringName) -> Resource:
 	for visual_def in visual_defs:
-		if visual_def != null and StringName(visual_def.get("surface_id")) == surface_id and bool(visual_def.get("default_for_surface")):
+		if visual_def == null:
+			continue
+		var candidate_surface_id: StringName = visual_def.get("surface_id")
+		if candidate_surface_id == surface_id and bool(visual_def.get("default_for_surface")):
 			return visual_def
 	return null

@@ -322,22 +322,25 @@ func _inspect_heightmesh_mesh_materials(mesh_instance: MeshInstance3D, observed_
 	if mesh == null:
 		return
 	for surface_index in range(mesh.get_surface_count()):
-		var surface_id: StringName = _surface_id_for_terrain_surface(mesh, surface_index)
-		if surface_id == &"":
+		var material_token: StringName = _material_token_for_terrain_surface(mesh, surface_index)
+		if material_token == &"":
 			continue
+		var visual_def: Resource = CedarSurfaceVisualCatalog.call("visual_for_terrain_material_token", material_token)
+		if visual_def == null:
+			_errors.append("missing SurfaceVisualDef for terrain material token " + String(material_token))
+			continue
+		var surface_id: StringName = visual_def.get("surface_id")
+		var visual_id: StringName = visual_def.get("id")
 		if not observed_surface_ids.has(surface_id):
 			observed_surface_ids.append(surface_id)
 		var material: StandardMaterial3D = mesh_instance.get_surface_override_material(surface_index) as StandardMaterial3D
 		if material == null:
 			_errors.append("terrain surface " + String(surface_id) + " should have a StandardMaterial3D override")
 			continue
-		var visual_def: Resource = CedarSurfaceVisualCatalog.call("default_visual_for_surface_id", surface_id)
-		if visual_def == null:
-			_errors.append("missing SurfaceVisualDef for terrain surface " + String(surface_id))
-			continue
 		var expected_color: Color = visual_def.get("albedo_color")
 		var expected_roughness: float = float(visual_def.get("roughness"))
-		var expected_name: String = "terrain_visual_" + String(surface_id)
+		var expected_uv_scale: Vector2 = visual_def.get("texture_uv_scale")
+		var expected_name: String = "terrain_visual_" + String(visual_id)
 		if material.resource_name != expected_name:
 			_errors.append("terrain surface " + String(surface_id) + " override name expected " + expected_name + ", got " + material.resource_name)
 		if not _colors_match(material.albedo_color, expected_color):
@@ -346,9 +349,17 @@ func _inspect_heightmesh_mesh_materials(mesh_instance: MeshInstance3D, observed_
 			_errors.append("terrain surface " + String(surface_id) + " roughness expected " + str(expected_roughness) + ", got " + str(material.roughness))
 		if absf(material.metallic) > FLOAT_EPSILON:
 			_errors.append("terrain surface " + String(surface_id) + " metallic should be 0")
+		if absf(material.uv1_scale.x - expected_uv_scale.x) > FLOAT_EPSILON or absf(material.uv1_scale.y - expected_uv_scale.y) > FLOAT_EPSILON:
+			_errors.append("terrain surface " + String(surface_id) + " uv1_scale expected " + str(expected_uv_scale) + ", got " + str(material.uv1_scale))
+		_require_material_texture(material.albedo_texture, String(visual_def.get("albedo_texture_path")), "terrain surface " + String(surface_id) + " albedo texture")
+		var expected_normal_texture_path: String = visual_def.get("normal_texture_path")
+		if not expected_normal_texture_path.is_empty() and not material.normal_enabled:
+			_errors.append("terrain surface " + String(surface_id) + " should enable normal mapping")
+		_require_material_texture(material.normal_texture, expected_normal_texture_path, "terrain surface " + String(surface_id) + " normal texture")
+		_require_material_texture(material.orm_texture, String(visual_def.get("orm_texture_path")), "terrain surface " + String(surface_id) + " ORM texture")
 
 
-func _surface_id_for_terrain_surface(mesh: Mesh, surface_index: int) -> StringName:
+func _material_token_for_terrain_surface(mesh: Mesh, surface_index: int) -> StringName:
 	var material: Material = mesh.surface_get_material(surface_index)
 	if material == null:
 		return &""
@@ -356,6 +367,16 @@ func _surface_id_for_terrain_surface(mesh: Mesh, surface_index: int) -> StringNa
 	if not material_name.begins_with(TERRAIN_MATERIAL_PREFIX):
 		return &""
 	return StringName(material_name.substr(TERRAIN_MATERIAL_PREFIX.length()))
+
+
+func _require_material_texture(texture: Texture2D, expected_path: String, label: String) -> void:
+	if expected_path.is_empty():
+		return
+	if texture == null:
+		_errors.append(label + " should load " + expected_path)
+		return
+	if texture.resource_path != expected_path:
+		_errors.append(label + " expected " + expected_path + ", got " + texture.resource_path)
 
 
 func _colors_match(actual: Color, expected: Color) -> bool:

@@ -65,6 +65,22 @@ func _inspect_surface_visuals() -> void:
 	var variant_surface_ids: Array[StringName] = CedarSurfaceVisualCatalog.call("surface_ids_with_visual_variants")
 	if variant_surface_ids.is_empty():
 		_errors.append("CedarSurfaceVisualCatalog should include at least one visual-only variant sharing a SurfaceDef")
+	_inspect_surface_visual_texture_paths()
+
+
+func _inspect_surface_visual_texture_paths() -> void:
+	var visual_defs: Array = CedarSurfaceVisualCatalog.get("visual_defs")
+	for i in range(visual_defs.size()):
+		var visual_def: Resource = visual_defs[i]
+		if visual_def == null:
+			continue
+		var visual_id: StringName = visual_def.get("id")
+		var albedo_texture_path: String = visual_def.get("albedo_texture_path")
+		var normal_texture_path: String = visual_def.get("normal_texture_path")
+		if albedo_texture_path.is_empty():
+			_errors.append("SurfaceVisualDef " + String(visual_id) + " should have an albedo texture path")
+		if normal_texture_path.is_empty():
+			_errors.append("SurfaceVisualDef " + String(visual_id) + " should have a normal texture path")
 
 
 func _inspect_surface(surface: Resource, resource_path: String, expected_id: StringName) -> void:
