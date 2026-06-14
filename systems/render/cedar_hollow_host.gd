@@ -179,17 +179,30 @@ func _update_vehicle_input() -> void:
 func _update_camera_input() -> void:
 	if not Input.is_action_just_pressed("cam_toggle"):
 		return
+	cycle_camera_mode()
+
+
+func cycle_camera_mode() -> void:
 	if _camera_mode == CAMERA_MODE_CHASE:
 		_camera_mode = CAMERA_MODE_ORBIT
+		_update_camera(GameConfig.FIXED_DT)
 		return
 	if _camera_mode == CAMERA_MODE_ORBIT:
 		_camera_mode = CAMERA_MODE_FPV
+		_update_camera(GameConfig.FIXED_DT)
 		return
 	_camera_mode = CAMERA_MODE_CHASE
+	_update_camera(GameConfig.FIXED_DT)
 
 
 func _update_hud_input() -> void:
 	if _landmark_hint_hud == null or not Input.is_action_just_pressed("map_toggle"):
+		return
+	toggle_landmark_hint_hud()
+
+
+func toggle_landmark_hint_hud() -> void:
+	if _landmark_hint_hud == null:
 		return
 	_landmark_hint_hud.visible = not _landmark_hint_hud.visible
 
@@ -197,6 +210,10 @@ func _update_hud_input() -> void:
 func _update_mood_input() -> void:
 	if not Input.is_action_just_pressed("mood_toggle"):
 		return
+	toggle_mood()
+
+
+func toggle_mood() -> void:
 	if _mood == MOOD_DUSK:
 		_mood = MOOD_DAWN
 	else:

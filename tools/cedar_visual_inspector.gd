@@ -130,6 +130,7 @@ func _inspect() -> void:
 	var hud: Node = _require_node(_scene_root, "LandmarkHintHud")
 	if hud != null:
 		_inspect_hud_defaults(hud)
+	_inspect_render_toggles(_scene_root, chase_camera, orbit_camera, fpv_camera, world_environment, sun, hud)
 	_finish()
 
 
@@ -285,6 +286,55 @@ func _inspect_hud_defaults(hud: Node) -> void:
 		_errors.append("MinimapView position expected " + str(expected_position) + ", got " + str(minimap.position))
 	if minimap.size.distance_to(expected_size) > FLOAT_EPSILON:
 		_errors.append("MinimapView size expected " + str(expected_size) + ", got " + str(minimap.size))
+
+
+func _inspect_render_toggles(host: Node, chase_camera: Camera3D, orbit_camera: Camera3D, fpv_camera: Camera3D, world_environment: WorldEnvironment, sun: DirectionalLight3D, hud: Node) -> void:
+	if host == null:
+		return
+	if chase_camera != null and orbit_camera != null and fpv_camera != null:
+		host.call("cycle_camera_mode")
+		_require_current_camera("orbit toggle", chase_camera, orbit_camera, fpv_camera, orbit_camera)
+		host.call("cycle_camera_mode")
+		_require_current_camera("fpv toggle", chase_camera, orbit_camera, fpv_camera, fpv_camera)
+		host.call("cycle_camera_mode")
+		_require_current_camera("chase toggle", chase_camera, orbit_camera, fpv_camera, chase_camera)
+	if hud != null:
+		host.call("toggle_landmark_hint_hud")
+		if not hud.visible:
+			_errors.append("LandmarkHintHud should become visible after toggle")
+		host.call("toggle_landmark_hint_hud")
+		if hud.visible:
+			_errors.append("LandmarkHintHud should hide after second toggle")
+	if world_environment != null and sun != null:
+		host.call("toggle_mood")
+		_require_dawn_mood(world_environment, sun)
+		host.call("toggle_mood")
+		_inspect_default_environment(world_environment)
+		_inspect_default_sun(sun)
+
+
+func _require_current_camera(context: String, chase_camera: Camera3D, orbit_camera: Camera3D, fpv_camera: Camera3D, expected: Camera3D) -> void:
+	if chase_camera.current != (chase_camera == expected):
+		_errors.append(context + " ChaseCamera current state was wrong")
+	if orbit_camera.current != (orbit_camera == expected):
+		_errors.append(context + " OrbitCamera current state was wrong")
+	if fpv_camera.current != (fpv_camera == expected):
+		_errors.append(context + " FpvCamera current state was wrong")
+
+
+func _require_dawn_mood(world_environment: WorldEnvironment, sun: DirectionalLight3D) -> void:
+	if world_environment.environment == null:
+		_errors.append("GoldenHourEnvironment has no Environment resource for dawn toggle")
+		return
+	var environment: Environment = world_environment.environment
+	if environment.background_color != GameConfig.dawn_background_color:
+		_errors.append("GoldenHourEnvironment should switch to dawn background color")
+	if absf(environment.fog_density - GameConfig.dawn_fog_density) > FLOAT_EPSILON:
+		_errors.append("GoldenHourEnvironment should switch to dawn fog density")
+	if sun.light_color != GameConfig.dawn_sun_color:
+		_errors.append("GoldenHourSun should switch to dawn color")
+	if absf(sun.light_energy - GameConfig.dawn_sun_energy) > FLOAT_EPSILON:
+		_errors.append("GoldenHourSun should switch to dawn energy")
 
 
 func _inspect_audio_rig(audio_rig: Node) -> void:
