@@ -99,6 +99,7 @@ const RESIDUE_DUST_TIRE_MASK: String = "res://assets/textures/vehicle/residue/du
 const RESIDUE_WETNESS_TIRE_MASK: String = "res://assets/textures/vehicle/residue/wetness_tire_mask.png"
 const TERRAIN_MATERIAL_PREFIX: String = "terrain_mat_"
 const TERRAIN_DETAIL_MASK_TEXTURE: String = "res://assets/textures/surface_visuals/generated/terrain_detail_mask.png"
+const TEXTURE_SOURCE_PATH_META: StringName = &"trailhead_source_path"
 const WET_DIFFUSE_MULTIPLIER: float = 0.2
 const WET_ROUGHNESS: float = 0.12
 const WET_CLEARCOAT: float = 0.58
@@ -514,8 +515,11 @@ func _require_material_texture(texture: Texture2D, expected_path: String, label:
 	if texture == null:
 		_errors.append(label + " should load " + expected_path)
 		return
-	if texture.resource_path != expected_path:
-		_errors.append(label + " expected " + expected_path + ", got " + texture.resource_path)
+	var actual_path: String = texture.resource_path
+	if actual_path.is_empty() and texture.has_meta(TEXTURE_SOURCE_PATH_META):
+		actual_path = String(texture.get_meta(TEXTURE_SOURCE_PATH_META))
+	if actual_path != expected_path:
+		_errors.append(label + " expected " + expected_path + ", got " + actual_path)
 
 
 func _colors_match(actual: Color, expected: Color) -> bool:

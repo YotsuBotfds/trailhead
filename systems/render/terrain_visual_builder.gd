@@ -3,7 +3,9 @@ extends RefCounted
 
 const HeightmeshScene: PackedScene = preload("res://assets/models/terrain/cedar_hollow_heightmesh.glb")
 const SurfaceVisualCatalogResource: Resource = preload("res://data/surface_visuals/cedar_hollow_surface_visuals.tres")
-const DetailMaskTexture: Texture2D = preload("res://assets/textures/surface_visuals/generated/terrain_detail_mask.png")
+const DETAIL_MASK_TEXTURE_PATH: String = "res://assets/textures/surface_visuals/generated/terrain_detail_mask.png"
+const GENERATED_SURFACE_TEXTURE_DIR: String = "res://assets/textures/surface_visuals/generated/"
+const TEXTURE_SOURCE_PATH_META: StringName = &"trailhead_source_path"
 const HEIGHTMESH_NAME: String = "cedar_hollow_heightmesh"
 const TERRAIN_MATERIAL_PREFIX: String = "terrain_mat_"
 const WET_DIFFUSE_MULTIPLIER: float = 0.2
@@ -101,7 +103,7 @@ static func _apply_texture_paths(material: StandardMaterial3D, visual_def: Resou
 	var detail_normal_texture: Texture2D = _load_texture(detail_normal_texture_path)
 	if detail_albedo_texture != null or detail_normal_texture != null:
 		material.detail_enabled = true
-		material.detail_mask = DetailMaskTexture
+		material.detail_mask = _load_texture(DETAIL_MASK_TEXTURE_PATH)
 		material.detail_blend_mode = BaseMaterial3D.BLEND_MODE_MUL
 		material.detail_uv_layer = BaseMaterial3D.DETAIL_UV_2
 		if detail_albedo_texture != null:
@@ -113,7 +115,22 @@ static func _apply_texture_paths(material: StandardMaterial3D, visual_def: Resou
 static func _load_texture(path: String) -> Texture2D:
 	if path.is_empty():
 		return null
-	return load(path) as Texture2D
+	if path.begins_with(GENERATED_SURFACE_TEXTURE_DIR):
+		return _load_source_image_texture(path)
+	var texture: Texture2D = load(path) as Texture2D
+	if texture != null:
+		return texture
+	return _load_source_image_texture(path)
+
+
+static func _load_source_image_texture(path: String) -> Texture2D:
+	var image: Image = Image.load_from_file(ProjectSettings.globalize_path(path))
+	if image == null or image.is_empty():
+		return null
+	var image_texture: ImageTexture = ImageTexture.create_from_image(image)
+	image_texture.take_over_path(path)
+	image_texture.set_meta(TEXTURE_SOURCE_PATH_META, path)
+	return image_texture
 
 
 static func _wet_albedo_color(base_color: Color, wetness: float) -> Color:
