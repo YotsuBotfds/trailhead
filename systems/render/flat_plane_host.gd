@@ -115,7 +115,7 @@ func _update_vehicle_input() -> void:
 	var brake: float = 0.0
 	if forward_throttle > 0.0 or reverse_throttle <= 0.0:
 		brake = brake_action
-	var steer: float = Input.get_action_strength("steer_right") - Input.get_action_strength("steer_left")
+	var steer: float = Input.get_action_strength("steer_left") - Input.get_action_strength("steer_right")
 	_vehicle_input.set("throttle", clampf(throttle, -1.0, 1.0))
 	_vehicle_input.set("brake", brake)
 	_vehicle_input.set("steer", clampf(steer, -1.0, 1.0))
