@@ -15,6 +15,13 @@ SURFACE_PATTERN = re.compile(r"__surf_([A-Za-z0-9_]+)")
 WHEEL_PATTERN = re.compile(r"(wheel|tire|tyre)", re.IGNORECASE)
 SNAKE_CASE_PATTERN = re.compile(r"^[a-z0-9_]+$")
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+VEHICLE_WHEEL_SOCKET_POSITIONS = {
+    "wheel_front_left": [-0.08, -0.015, -0.10],
+    "wheel_front_right": [0.08, -0.015, -0.10],
+    "wheel_rear_left": [-0.08, -0.015, 0.10],
+    "wheel_rear_right": [0.08, -0.015, 0.10],
+}
+VEHICLE_SOCKET_TOLERANCE = 0.001
 
 
 def fail(message):
@@ -225,9 +232,16 @@ def collect_stats(gltf):
                         bounds_max[index] = max(bounds_max[index], float(amax[index]))
 
     names = []
+    node_summaries = []
     for node in nodes:
         if "name" in node:
-            names.append(str(node["name"]))
+            node_name = str(node["name"])
+            names.append(node_name)
+            translation = node.get("translation", [0.0, 0.0, 0.0])
+            node_summaries.append({
+                "name": node_name,
+                "translation": translation if isinstance(translation, list) else [0.0, 0.0, 0.0],
+            })
     for mesh in meshes:
         if "name" in mesh:
             names.append(str(mesh["name"]))
@@ -245,8 +259,31 @@ def collect_stats(gltf):
         "bounds_max": bounds_max if has_bounds else [],
         "dimensions": dimensions,
         "names": names,
+        "nodes": node_summaries,
         "primitive_attributes": primitive_attributes,
     }
+
+
+def validate_vehicle(stats):
+    ok = True
+    node_names = [node["name"] for node in stats["nodes"]]
+    if "rc_buggy" not in node_names:
+        ok = fail("vehicle profile requires rc_buggy root node") and ok
+    for socket_name, expected_position in VEHICLE_WHEEL_SOCKET_POSITIONS.items():
+        matching_nodes = [node for node in stats["nodes"] if node["name"] == socket_name]
+        if len(matching_nodes) != 1:
+            ok = fail(f"vehicle profile requires exactly one {socket_name} node; found {len(matching_nodes)}") and ok
+            continue
+        translation = matching_nodes[0]["translation"]
+        if len(translation) < 3:
+            ok = fail(f"{socket_name} translation should have 3 components") and ok
+            continue
+        for axis in range(3):
+            delta = abs(float(translation[axis]) - expected_position[axis])
+            if delta > VEHICLE_SOCKET_TOLERANCE:
+                ok = fail(f"{socket_name} translation expected {expected_position}, got {translation}") and ok
+                break
+    return ok
 
 
 def validate_heightmesh(args, stats):
@@ -341,6 +378,7 @@ def validate(args, stats, bin_chunk_count):
             ok = fail(f"vehicle profile requires 4 wheel/tire nodes; found {len(wheel_names)}") and ok
         if args.max_dimension is None and stats["dimensions"] and max(stats["dimensions"]) > 1.0:
             ok = fail("vehicle profile expects RC-scale bounds; largest dimension exceeds 1.0 m") and ok
+        ok = validate_vehicle(stats) and ok
     if wheel_names:
         print("wheel-like names: " + ", ".join(wheel_names))
 
