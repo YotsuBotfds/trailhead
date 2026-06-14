@@ -31,6 +31,7 @@ var _controller_id: String = "pd"
 var _scenario_id: String = ""
 var _scene_id: String = "flat_plane"
 var _spawn_id: String = "flat_spawn"
+var _controller_config_error: String = ""
 var _stuck_window_ticks: int = 180
 var _stuck_min_progress: float = 0.05
 var _rng: RandomNumberGenerator = RandomNumberGenerator.new()
@@ -131,7 +132,10 @@ func _begin_run() -> void:
 	_started_flipped = bool(initial_state.get("is_flipped"))
 	_controller = _make_controller(_controller_id)
 	if _controller == null:
-		_finish_runner_error("Unsupported controller: " + _controller_id)
+		if _controller_config_error != "":
+			_finish_runner_error(_controller_config_error)
+		else:
+			_finish_runner_error("Unsupported controller: " + _controller_id)
 		return
 	set_physics_process(true)
 
@@ -198,7 +202,13 @@ func _make_controller(controller_id: String) -> RefCounted:
 		return pd_controller
 	if controller_id == "replay":
 		var replay_controller: RefCounted = ReplayControllerScript.new()
-		replay_controller.call("configure_empty")
+		var replay_path: String = String(_args.get("replay", ""))
+		if replay_path == "":
+			_controller_config_error = "Replay controller requires --replay=<path>"
+			return null
+		if not bool(replay_controller.call("configure_from_file", replay_path)):
+			_controller_config_error = String(replay_controller.call("last_error"))
+			return null
 		return replay_controller
 	if controller_id == "scripted":
 		var scripted_controller: RefCounted = ScriptedFeelControllerScript.new()

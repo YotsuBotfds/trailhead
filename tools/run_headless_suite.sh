@@ -145,6 +145,57 @@ run_sim "$out_dir/cedar_hollow_segment_overlook_to_old_cedar.json" \
 	--stuck-window=60 \
 	--stuck-min-progress=0.03
 
+run_sim "$out_dir/golden_flat_target.json" \
+	--scene=flat_plane \
+	--controller=replay \
+	--replay=tests/golden/flat_target_replay.json \
+	--spawn=flat_spawn \
+	--target=flat_target \
+	--seed=12345 \
+	--max-ticks=220 \
+	--stuck-window=60 \
+	--stuck-min-progress=0.05
+
+run_sim "$out_dir/golden_flat_flipped.json" \
+	--scene=flat_plane \
+	--controller=replay \
+	--replay=tests/golden/flat_flipped_replay.json \
+	--spawn=flat_flipped \
+	--target=flat_target \
+	--seed=12345 \
+	--max-ticks=420 \
+	--stuck-window=60 \
+	--stuck-min-progress=0.05
+
+run_sim "$out_dir/golden_cedar_hollow_old_cedar.json" \
+	--scene=cedar_hollow \
+	--controller=replay \
+	--replay=tests/golden/cedar_hollow_old_cedar_replay.json \
+	--spawn=trailhead \
+	--target=old_cedar \
+	--seed=12345 \
+	--max-ticks=360 \
+	--stuck-window=60 \
+	--stuck-min-progress=0.05
+
+run_sim "$out_dir/golden_cedar_hollow_segment_trailhead_to_culvert_mouth.json" \
+	--scene=cedar_hollow \
+	--controller=replay \
+	--replay=tests/golden/cedar_hollow_segment_trailhead_to_culvert_mouth_replay.json \
+	--route-segment=trailhead_to_culvert_mouth \
+	--seed=12345 \
+	--stuck-window=60 \
+	--stuck-min-progress=0.05
+
+run_sim "$out_dir/golden_cedar_hollow_segment_overlook_to_old_cedar.json" \
+	--scene=cedar_hollow \
+	--controller=replay \
+	--replay=tests/golden/cedar_hollow_segment_overlook_to_old_cedar_replay.json \
+	--route-segment=overlook_to_old_cedar \
+	--seed=12345 \
+	--stuck-window=60 \
+	--stuck-min-progress=0.03
+
 printf 'run: cedar feature visuals\n'
 "$godot_bin" --headless --path . res://tools/cedar_visual_inspector.tscn
 
