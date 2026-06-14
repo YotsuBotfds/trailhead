@@ -81,7 +81,9 @@ func _inspect() -> void:
 	_require_node(_scene_root, "CedarAudioRig/AmbientBed")
 	_require_node(_scene_root, "CedarAudioRig/CreekBed")
 	_require_node(_scene_root, "CedarAudioRig/PlankKnock")
-	_require_node(_scene_root, "LandmarkHintHud")
+	var hud: Node = _require_node(_scene_root, "LandmarkHintHud")
+	if hud != null and hud.visible:
+		_errors.append("LandmarkHintHud should be hidden by default")
 	_require_node(_scene_root, "LandmarkHintHud/MinimapView")
 	_finish()
 

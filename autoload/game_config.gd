@@ -53,6 +53,7 @@ var orbit_cam_start_yaw_deg: float = 35.0
 var minimap_size: float = 132.0
 var minimap_margin: float = 16.0
 var minimap_inner_padding: float = 12.0
+var minimap_enabled_by_default: bool = false
 var minimap_route_line_width: float = 1.5
 var minimap_dot_radius: float = 2.6
 var minimap_player_radius: float = 4.0

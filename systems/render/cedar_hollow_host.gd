@@ -47,6 +47,7 @@ func _physics_process(delta: float) -> void:
 		return
 	_update_vehicle_input()
 	_update_camera_input()
+	_update_hud_input()
 	_vehicle.call("apply_input", _vehicle_input)
 	_update_visual_wheels(delta)
 	_update_camera(delta)
@@ -60,6 +61,7 @@ func _ensure_default_input_map() -> void:
 	_ensure_action(&"ebrake", [KEY_SPACE])
 	_ensure_action(&"self_right", [KEY_R])
 	_ensure_action(&"cam_toggle", [KEY_C])
+	_ensure_action(&"map_toggle", [KEY_M])
 
 
 func _ensure_action(action_name: StringName, keycodes: Array[int]) -> void:
@@ -151,6 +153,7 @@ func _setup_camera() -> void:
 func _setup_hud() -> void:
 	_landmark_hint_hud = LandmarkHintHudScript.new() as CanvasLayer
 	_landmark_hint_hud.name = "LandmarkHintHud"
+	_landmark_hint_hud.visible = GameConfig.minimap_enabled_by_default
 	add_child(_landmark_hint_hud)
 	_landmark_hint_hud.call("configure", CedarRoute, _vehicle)
 
@@ -173,6 +176,12 @@ func _update_camera_input() -> void:
 		_camera_mode = CAMERA_MODE_ORBIT
 		return
 	_camera_mode = CAMERA_MODE_CHASE
+
+
+func _update_hud_input() -> void:
+	if _landmark_hint_hud == null or not Input.is_action_just_pressed("map_toggle"):
+		return
+	_landmark_hint_hud.visible = not _landmark_hint_hud.visible
 
 
 func _collect_visual_wheels() -> void:
