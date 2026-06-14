@@ -1,6 +1,7 @@
 extends Node
 
 const CedarHollowPlayableScene: PackedScene = preload("res://scenes/cedar_hollow_playable.tscn")
+const CedarRoute: Resource = preload("res://data/routes/cedar_hollow.tres")
 const VehicleStateScript: GDScript = preload("res://systems/vehicle/vehicle_state.gd")
 const EXPECTED_BOARDWALK_SEGMENTS: int = 9
 const EXPECTED_STEPPING_STONES: int = 5
@@ -447,6 +448,35 @@ func _inspect_hud_defaults(hud: Node) -> void:
 		_errors.append("MinimapView position expected " + str(expected_position) + ", got " + str(minimap.position))
 	if minimap.size.distance_to(expected_size) > FLOAT_EPSILON:
 		_errors.append("MinimapView size expected " + str(expected_size) + ", got " + str(minimap.size))
+	_inspect_minimap_route_content(minimap)
+
+
+func _inspect_minimap_route_content(minimap: Control) -> void:
+	var bounds_min: Vector3 = CedarRoute.get("bounds_min")
+	var bounds_max: Vector3 = CedarRoute.get("bounds_max")
+	var map_min: float = GameConfig.minimap_inner_padding
+	var map_max: float = GameConfig.minimap_size - GameConfig.minimap_inner_padding
+	var mapped_min: Vector2 = minimap.call("_world_to_map", bounds_min)
+	var mapped_max: Vector2 = minimap.call("_world_to_map", bounds_max)
+	if mapped_min.distance_to(Vector2(map_min, map_max)) > FLOAT_EPSILON:
+		_errors.append("MinimapView should map route bounds_min to lower-left padded corner")
+	if mapped_max.distance_to(Vector2(map_max, map_min)) > FLOAT_EPSILON:
+		_errors.append("MinimapView should map route bounds_max to upper-right padded corner")
+	var nearest_index: int = int(minimap.call("_nearest_landmark_index"))
+	if nearest_index != 0:
+		_errors.append("MinimapView should start nearest to trailhead landmark, got index " + str(nearest_index))
+	_require_minimap_segment_points(minimap, &"trailhead_to_culvert_mouth", 3)
+	_require_minimap_segment_points(minimap, &"overlook_to_old_cedar", 6)
+
+
+func _require_minimap_segment_points(minimap: Control, segment_id: StringName, expected_count: int) -> void:
+	var points: Array = minimap.call("_map_points_for_segment", segment_id)
+	if points.size() != expected_count:
+		_errors.append("MinimapView segment " + String(segment_id) + " expected " + str(expected_count) + " map points, got " + str(points.size()))
+	for point_value in points:
+		var point: Vector2 = point_value
+		if point.x < 0.0 or point.y < 0.0 or point.x > minimap.size.x or point.y > minimap.size.y:
+			_errors.append("MinimapView segment " + String(segment_id) + " point outside minimap bounds: " + str(point))
 
 
 func _inspect_render_toggles(host: Node, chase_camera: Camera3D, orbit_camera: Camera3D, fpv_camera: Camera3D, world_environment: WorldEnvironment, sun: DirectionalLight3D, hud: Node) -> void:
