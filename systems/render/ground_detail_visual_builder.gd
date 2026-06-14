@@ -5,6 +5,8 @@ const EXPECTED_MUD_PATCHES: int = 8
 const EXPECTED_TIRE_TRACK_PAIRS: int = 3
 const EXPECTED_GRAVEL_SPECKLES: int = 14
 const EXPECTED_LEAF_LITTER: int = 12
+const EXPECTED_ROOT_RIDGES: int = 5
+const EXPECTED_PUDDLE_SHEENS: int = 4
 const EXPECTED_WET_GLINTS: int = 6
 const DECAL_Y: float = 0.012
 const LOW_DETAIL_Y: float = 0.018
@@ -18,6 +20,8 @@ static func build_cedar_hollow(parent: Node3D) -> Node3D:
 	_add_tire_tracks(root)
 	_add_gravel_speckles(root)
 	_add_leaf_litter(root)
+	_add_root_ridges(root)
+	_add_puddle_sheens(root)
 	_add_wet_glints(root)
 	return root
 
@@ -110,6 +114,35 @@ static func _add_leaf_litter(parent: Node3D) -> void:
 		var size: Vector2 = Vector2(0.10 + float(i % 2) * 0.025, 0.035 + float(i % 3) * 0.008)
 		var color: Color = Color(0.42 + float(i % 3) * 0.05, 0.25 + float(i % 2) * 0.035, 0.10, 0.72)
 		_add_plane(parent, "leaf_litter_" + str(i + 1), positions[i], size, float(i) * 38.0, color, 0.9)
+
+
+static func _add_root_ridges(parent: Node3D) -> void:
+	var positions: Array[Vector3] = [
+		Vector3(-0.55, DECAL_Y + 0.004, -3.42),
+		Vector3(0.62, DECAL_Y + 0.004, -4.92),
+		Vector3(-0.22, DECAL_Y + 0.004, -5.08),
+		Vector3(1.00, DECAL_Y + 0.004, -5.72),
+		Vector3(-0.92, DECAL_Y + 0.004, -6.02)
+	]
+	var yaws: Array[float] = [22.0, -18.0, 36.0, -42.0, 12.0]
+	for i in range(EXPECTED_ROOT_RIDGES):
+		var size: Vector2 = Vector2(0.28 + float(i % 2) * 0.08, 0.028 + float(i % 3) * 0.006)
+		var color: Color = Color(0.19 + float(i % 3) * 0.020, 0.105, 0.050, 0.68)
+		_add_plane(parent, "root_ridge_" + str(i + 1), positions[i], size, yaws[i], color, 0.88)
+
+
+static func _add_puddle_sheens(parent: Node3D) -> void:
+	var positions: Array[Vector3] = [
+		Vector3(2.85, DECAL_Y + 0.004, -5.10),
+		Vector3(3.72, DECAL_Y + 0.004, -4.82),
+		Vector3(3.16, DECAL_Y + 0.004, -6.02),
+		Vector3(4.42, DECAL_Y + 0.004, -6.88)
+	]
+	var yaws: Array[float] = [-8.0, 18.0, -26.0, 11.0]
+	for i in range(EXPECTED_PUDDLE_SHEENS):
+		var size: Vector2 = Vector2(0.34 + float(i % 2) * 0.10, 0.16 + float(i % 3) * 0.035)
+		var color: Color = Color(0.15, 0.12, 0.085, 0.34)
+		_add_blob(parent, "puddle_sheen_" + str(i + 1), positions[i], size, yaws[i], color, 0.22)
 
 
 static func _add_wet_glints(parent: Node3D) -> void:

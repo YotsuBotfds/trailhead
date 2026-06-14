@@ -18,6 +18,8 @@ const EXPECTED_MUD_PATCHES: int = 8
 const EXPECTED_TIRE_TRACK_PAIRS: int = 3
 const EXPECTED_GRAVEL_SPECKLES: int = 14
 const EXPECTED_LEAF_LITTER: int = 12
+const EXPECTED_ROOT_RIDGES: int = 5
+const EXPECTED_PUDDLE_SHEENS: int = 4
 const EXPECTED_WET_GLINTS: int = 6
 const EXPECTED_BOUNDARY_GRASS: int = 20
 const EXPECTED_BOUNDARY_BOULDERS: int = 8
@@ -215,13 +217,15 @@ func _inspect() -> void:
 		_require_named_count(ground_detail_root, "tire_track_", EXPECTED_TIRE_TRACK_PAIRS * 2)
 		_require_named_count(ground_detail_root, "gravel_speckle_", EXPECTED_GRAVEL_SPECKLES)
 		_require_named_count(ground_detail_root, "leaf_litter_", EXPECTED_LEAF_LITTER)
+		_require_named_count(ground_detail_root, "root_ridge_", EXPECTED_ROOT_RIDGES)
+		_require_named_count(ground_detail_root, "puddle_sheen_", EXPECTED_PUDDLE_SHEENS)
 		_require_named_count(ground_detail_root, "wet_glint_", EXPECTED_WET_GLINTS)
 		_inspect_ground_detail_layout(ground_detail_root)
 		var ground_detail_collision_count: int = _count_collision_objects(ground_detail_root)
 		if ground_detail_collision_count > 0:
 			_errors.append("GroundDetailVisuals contains collision objects: " + str(ground_detail_collision_count))
 		var ground_detail_mesh_count: int = _count_mesh_instances(ground_detail_root)
-		var expected_ground_detail_mesh_count: int = EXPECTED_MUD_PATCHES + EXPECTED_TIRE_TRACK_PAIRS * 2 + EXPECTED_GRAVEL_SPECKLES + EXPECTED_LEAF_LITTER + EXPECTED_WET_GLINTS
+		var expected_ground_detail_mesh_count: int = EXPECTED_MUD_PATCHES + EXPECTED_TIRE_TRACK_PAIRS * 2 + EXPECTED_GRAVEL_SPECKLES + EXPECTED_LEAF_LITTER + EXPECTED_ROOT_RIDGES + EXPECTED_PUDDLE_SHEENS + EXPECTED_WET_GLINTS
 		if ground_detail_mesh_count < expected_ground_detail_mesh_count:
 			_errors.append("GroundDetailVisuals mesh count expected at least " + str(expected_ground_detail_mesh_count) + ", got " + str(ground_detail_mesh_count))
 	var boundary_root: Node = _require_node(_scene_root, "CedarHollow/BoundaryVisuals")
@@ -580,6 +584,8 @@ func _inspect_ground_detail_layout(ground_detail_root: Node) -> void:
 	_require_node_position(ground_detail_root, "tire_track_1_left", Vector3(2.28642, 0.014, -5.133514), FEATURE_TRANSFORM_TOLERANCE)
 	_require_node_position(ground_detail_root, "gravel_speckle_1", Vector3(-0.82, 0.018, 1.16), FEATURE_TRANSFORM_TOLERANCE)
 	_require_node_position(ground_detail_root, "leaf_litter_1", Vector3(-0.82, 0.015, -1.72), FEATURE_TRANSFORM_TOLERANCE)
+	_require_node_position(ground_detail_root, "root_ridge_1", Vector3(-0.55, 0.016, -3.42), FEATURE_TRANSFORM_TOLERANCE)
+	_require_node_position(ground_detail_root, "puddle_sheen_1", Vector3(2.85, 0.016, -5.10), FEATURE_TRANSFORM_TOLERANCE)
 	_require_node_position(ground_detail_root, "wet_glint_1", Vector3(3.58, 0.016, -7.08), FEATURE_TRANSFORM_TOLERANCE)
 	_require_direct_children_inside_xz(ground_detail_root, "GroundDetailVisuals", GROUND_DETAIL_X_MIN, GROUND_DETAIL_X_MAX, GROUND_DETAIL_Z_MIN, GROUND_DETAIL_Z_MAX)
 	for child in ground_detail_root.get_children():
