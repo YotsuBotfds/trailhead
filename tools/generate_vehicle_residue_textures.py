@@ -8,7 +8,10 @@ import random
 import argparse
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFilter
+try:
+    from PIL import Image, ImageDraw, ImageFilter
+except ImportError as exc:  # pragma: no cover - local tooling guard.
+    raise SystemExit("Pillow is required: python3 -m pip install Pillow") from exc
 
 
 ROOT = Path(__file__).resolve().parents[1]
