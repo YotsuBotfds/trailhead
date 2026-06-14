@@ -4,6 +4,7 @@ extends Node3D
 const VehicleScene: PackedScene = preload("res://scenes/vehicle.tscn")
 const VehicleInputScript: GDScript = preload("res://systems/vehicle/vehicle_input.gd")
 const ProceduralBuggyVisualScript: GDScript = preload("res://systems/render/procedural_buggy_visual.gd")
+const FlatWorldBuilderScript: GDScript = preload("res://systems/world/flat_world_builder.gd")
 
 var _vehicle: Node = null
 var _vehicle_input: RefCounted = VehicleInputScript.new()
@@ -52,25 +53,14 @@ func _ensure_action(action_name: StringName, keycodes: Array[int]) -> void:
 
 
 func _build_ground() -> void:
-	var ground: StaticBody3D = StaticBody3D.new()
-	ground.name = "flat_ground__surf_packed_dirt"
-	ground.add_to_group("surf_packed_dirt")
-	add_child(ground)
-
-	var collision: CollisionShape3D = CollisionShape3D.new()
-	collision.name = "Collision"
-	var shape: BoxShape3D = BoxShape3D.new()
-	shape.size = Vector3(10.0, 0.1, 6.0)
-	collision.shape = shape
-	collision.position = Vector3(2.5, -0.05, 0.0)
-	ground.add_child(collision)
+	var ground: StaticBody3D = FlatWorldBuilderScript.build_collision(self)
 
 	var mesh_instance: MeshInstance3D = MeshInstance3D.new()
 	mesh_instance.name = "GroundVisual"
 	var mesh: BoxMesh = BoxMesh.new()
-	mesh.size = Vector3(10.0, 0.04, 6.0)
+	mesh.size = Vector3(GameConfig.flat_ground_size.x, 0.04, GameConfig.flat_ground_size.z)
 	mesh_instance.mesh = mesh
-	mesh_instance.position = Vector3(2.5, -0.02, 0.0)
+	mesh_instance.position = Vector3(GameConfig.flat_ground_center.x, -0.02, GameConfig.flat_ground_center.z)
 	var material: StandardMaterial3D = StandardMaterial3D.new()
 	material.albedo_color = Color(0.35, 0.29, 0.20)
 	material.roughness = 0.9

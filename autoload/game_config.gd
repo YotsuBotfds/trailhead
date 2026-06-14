@@ -9,10 +9,17 @@ var center_of_mass_offset: Vector3 = Vector3(0.0, -0.02, 0.0)
 var motor_torque: float = 6.0
 var max_speed: float = 8.0
 var brake_force: float = 4.0
+var brake_damping_per_tick: float = 0.08
 var ebrake_factor: float = 0.4
+var lateral_grip_force: float = 3.0
 var steer_limit_deg: float = 28.0
 var steer_rate_deg: float = 90.0
+var steer_yaw_torque: float = 0.75
 var air_pitch_torque: float = 2.0
+var launch_wheelie_torque: float = 0.03
+var launch_wheelie_min_throttle: float = 0.95
+var launch_wheelie_max_steer: float = 0.15
+var launch_wheelie_speed_max: float = 0.7
 var self_right_impulse: float = 5.0
 
 var susp_rest_length: float = 0.06
@@ -37,6 +44,22 @@ var cam_pitch_deg: float = -6.0
 var stuck_window_ticks: int = 180
 var stuck_min_progress: float = 0.05
 var max_flipped_ticks: int = 300
+var flat_ground_size: Vector3 = Vector3(12.0, 0.1, 12.0)
+var flat_ground_center: Vector3 = Vector3(2.0, -0.05, 0.0)
+var flat_probe_bounds_min: Vector3 = Vector3(-3.5, -1.0, -6.0)
+var flat_probe_bounds_max: Vector3 = Vector3(7.5, 2.0, 6.0)
+var drift_probe_accel_ticks: int = 55
+var drift_probe_ebrake_ticks: int = 85
+var drift_probe_recover_ticks: int = 20
+var drift_probe_accel_throttle: float = 0.8
+var drift_probe_ebrake_throttle: float = 0.65
+var drift_min_peak_slip_angle_deg: float = 12.0
+var drift_min_yaw_rate: float = 0.8
+var drift_min_ebrake_ticks: int = 30
+var drift_min_speed: float = 0.5
+var wheelie_probe_ticks: int = 70
+var wheelie_min_peak_pitch_deg: float = 8.0
+var wheelie_min_front_air_rear_contact_ticks: int = 6
 
 var default_landmark_radius: float = 0.4
 
@@ -44,4 +67,3 @@ var default_landmark_radius: float = 0.4
 func get_fov_for_speed(speed: float) -> float:
 	var t: float = clampf(speed / maxf(max_speed, 0.001), 0.0, 1.0)
 	return cam_fov_base + cam_fov_speed_gain * t
-

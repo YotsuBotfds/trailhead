@@ -68,6 +68,8 @@ func _build_physics_body() -> void:
 	_body = RigidBody3D.new()
 	_body.name = "PhysicsBody"
 	_body.mass = GameConfig.chassis_mass
+	_body.center_of_mass_mode = RigidBody3D.CENTER_OF_MASS_MODE_CUSTOM
+	_body.center_of_mass = GameConfig.center_of_mass_offset
 	add_child(_body)
 
 	var collision: CollisionShape3D = CollisionShape3D.new()
@@ -131,14 +133,17 @@ func _apply_drive_forces() -> void:
 	var drive: Vector3 = forward * throttle * GameConfig.motor_torque
 	_body.apply_central_force(drive)
 	if brake > 0.0:
-		var brake_factor: float = clampf(1.0 - brake * 0.08, 0.0, 1.0)
+		var brake_factor: float = clampf(1.0 - brake * GameConfig.brake_damping_per_tick, 0.0, 1.0)
 		_body.linear_velocity *= brake_factor
 	var lateral_speed: float = _body.linear_velocity.dot(right)
 	var lateral_grip: float = GameConfig.default_friction
 	if bool(_pending_input.get("ebrake")):
 		lateral_grip *= GameConfig.ebrake_factor
-	_body.apply_central_force(-right * lateral_speed * lateral_grip * 3.0)
-	_body.apply_torque(Vector3.UP * steer * 1.5)
+	_body.apply_central_force(-right * lateral_speed * lateral_grip * GameConfig.lateral_grip_force)
+	if bool(_state.get("on_ground")):
+		_body.apply_torque(Vector3.UP * steer * GameConfig.steer_yaw_torque)
+	if bool(_state.get("on_ground")) and throttle >= GameConfig.launch_wheelie_min_throttle and absf(steer) <= GameConfig.launch_wheelie_max_steer and _body.linear_velocity.length() <= GameConfig.launch_wheelie_speed_max:
+		_body.apply_torque(right * GameConfig.launch_wheelie_torque)
 
 
 func _apply_speed_limit() -> void:
