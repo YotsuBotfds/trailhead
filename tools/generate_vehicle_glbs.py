@@ -5,6 +5,8 @@ import math
 import struct
 from pathlib import Path
 
+from simple_glb_writer import compute_normals, compute_uvs, pack_normals, pack_uvs
+
 OUT_DIR = Path("assets/models/vehicle")
 
 
@@ -124,8 +126,12 @@ def write_glb(path):
     for mesh_index, (mesh_name, mesh, color) in enumerate(mesh_specs):
         vertices, indices = mesh
         position_data = pack_positions(vertices)
+        normal_data = pack_normals(compute_normals(vertices, indices))
+        uv_data = pack_uvs(compute_uvs(vertices))
         index_data = pack_indices(indices)
         position_offset = append_aligned(binary, position_data)
+        normal_offset = append_aligned(binary, normal_data)
+        uv_offset = append_aligned(binary, uv_data)
         index_offset = append_aligned(binary, index_data, 2)
         buffer_views.append({"buffer": 0, "byteOffset": position_offset, "byteLength": len(position_data), "target": 34962})
         position_accessor = len(accessors)
@@ -139,6 +145,28 @@ def write_glb(path):
                 "type": "VEC3",
                 "min": mins,
                 "max": maxs,
+            }
+        )
+        buffer_views.append({"buffer": 0, "byteOffset": normal_offset, "byteLength": len(normal_data), "target": 34962})
+        normal_accessor = len(accessors)
+        accessors.append(
+            {
+                "bufferView": len(buffer_views) - 1,
+                "byteOffset": 0,
+                "componentType": 5126,
+                "count": len(vertices),
+                "type": "VEC3",
+            }
+        )
+        buffer_views.append({"buffer": 0, "byteOffset": uv_offset, "byteLength": len(uv_data), "target": 34962})
+        uv_accessor = len(accessors)
+        accessors.append(
+            {
+                "bufferView": len(buffer_views) - 1,
+                "byteOffset": 0,
+                "componentType": 5126,
+                "count": len(vertices),
+                "type": "VEC2",
             }
         )
         buffer_views.append({"buffer": 0, "byteOffset": index_offset, "byteLength": len(index_data), "target": 34963})
@@ -168,7 +196,11 @@ def write_glb(path):
             {
                 "name": mesh_name,
                 "primitives": [{
-                    "attributes": {"POSITION": position_accessor},
+                    "attributes": {
+                        "POSITION": position_accessor,
+                        "NORMAL": normal_accessor,
+                        "TEXCOORD_0": uv_accessor,
+                    },
                     "indices": index_accessor,
                     "mode": 4,
                     "material": mesh_index,

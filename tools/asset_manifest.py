@@ -206,6 +206,7 @@ def check_assets():
         "assets/models/vehicle/rc_buggy.glb",
         "--profile",
         "vehicle",
+        "--require-render-attributes",
         "--max-dimension=1.0",
         "--max-primitives=" + str(VEHICLE_MAX_PRIMITIVES),
     )
@@ -295,6 +296,7 @@ def check_candidate(subdir, filename, candidate_path, surface_id_map):
             str(candidate),
             "--profile",
             "vehicle",
+            "--require-render-attributes",
             "--max-dimension=1.0",
             "--max-primitives=" + str(VEHICLE_MAX_PRIMITIVES),
         )
