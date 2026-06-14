@@ -35,44 +35,36 @@ def bounds(vertices):
     return mins, maxs
 
 
-def write_glb(path, asset_name, surface_id, vertices, indices, color):
-    position_data = pack_positions(vertices)
-    index_data = pack_indices(indices)
-    position_offset = 0
-    index_offset = len(position_data)
-    bin_chunk = pad4(position_data + index_data, b"\0")
-    mins, maxs = bounds(vertices)
+def write_glb_parts(path, asset_name, surface_id, parts):
     node_name = asset_name + "__surf_" + surface_id
-    gltf = {
-        "asset": {"version": "2.0", "generator": "Trailhead generate_feature_glbs.py"},
-        "scene": 0,
-        "scenes": [{"nodes": [0]}],
-        "nodes": [{"name": node_name, "mesh": 0}],
-        "meshes": [{
-            "name": node_name,
-            "primitives": [{
-                "attributes": {"POSITION": 0},
-                "indices": 1,
-                "mode": 4,
-                "material": 0,
-            }],
-        }],
-        "materials": [{
-            "name": asset_name + "_mat",
-            "pbrMetallicRoughness": {
-                "baseColorFactor": color,
-                "roughnessFactor": 0.85,
-                "metallicFactor": 0.0,
-            },
-        }],
-        "buffers": [{"byteLength": len(bin_chunk)}],
-        "bufferViews": [
+    bin_data = bytearray()
+    buffer_views = []
+    accessors = []
+    primitives = []
+    materials = []
+    for part_index, mesh_part in enumerate(parts):
+        vertices, indices, color, part_name = mesh_part
+        position_data = pack_positions(vertices)
+        index_data = pack_indices(indices)
+        position_offset = len(bin_data)
+        bin_data.extend(position_data)
+        index_offset = len(bin_data)
+        bin_data.extend(index_data)
+        padding = (-len(bin_data)) % 4
+        if padding:
+            bin_data.extend(b"\0" * padding)
+        mins, maxs = bounds(vertices)
+        position_view = len(buffer_views)
+        index_view = position_view + 1
+        position_accessor = len(accessors)
+        index_accessor = position_accessor + 1
+        buffer_views.extend([
             {"buffer": 0, "byteOffset": position_offset, "byteLength": len(position_data), "target": 34962},
             {"buffer": 0, "byteOffset": index_offset, "byteLength": len(index_data), "target": 34963},
-        ],
-        "accessors": [
+        ])
+        accessors.extend([
             {
-                "bufferView": 0,
+                "bufferView": position_view,
                 "byteOffset": 0,
                 "componentType": 5126,
                 "count": len(vertices),
@@ -81,7 +73,7 @@ def write_glb(path, asset_name, surface_id, vertices, indices, color):
                 "max": maxs,
             },
             {
-                "bufferView": 1,
+                "bufferView": index_view,
                 "byteOffset": 0,
                 "componentType": 5123,
                 "count": len(indices),
@@ -89,7 +81,35 @@ def write_glb(path, asset_name, surface_id, vertices, indices, color):
                 "min": [min(indices)],
                 "max": [max(indices)],
             },
-        ],
+        ])
+        primitives.append({
+            "attributes": {"POSITION": position_accessor},
+            "indices": index_accessor,
+            "mode": 4,
+            "material": part_index,
+        })
+        materials.append({
+            "name": part_name + "_mat",
+            "pbrMetallicRoughness": {
+                "baseColorFactor": color,
+                "roughnessFactor": 0.85,
+                "metallicFactor": 0.0,
+            },
+        })
+    bin_chunk = pad4(bytes(bin_data), b"\0")
+    gltf = {
+        "asset": {"version": "2.0", "generator": "Trailhead generate_feature_glbs.py"},
+        "scene": 0,
+        "scenes": [{"nodes": [0]}],
+        "nodes": [{"name": node_name, "mesh": 0}],
+        "meshes": [{
+            "name": node_name,
+            "primitives": primitives,
+        }],
+        "materials": materials,
+        "buffers": [{"byteLength": len(bin_chunk)}],
+        "bufferViews": buffer_views,
+        "accessors": accessors,
     }
     json_chunk = pad4(json.dumps(gltf, separators=(",", ":")).encode("utf-8"), b" ")
     total_length = 12 + 8 + len(json_chunk) + 8 + len(bin_chunk)
@@ -99,6 +119,15 @@ def write_glb(path, asset_name, surface_id, vertices, indices, color):
         file.write(json_chunk)
         file.write(struct.pack("<II", len(bin_chunk), 0x004E4942))
         file.write(bin_chunk)
+
+
+def write_glb(path, asset_name, surface_id, vertices, indices, color):
+    write_glb_parts(path, asset_name, surface_id, [part((vertices, indices), color, asset_name)])
+
+
+def part(mesh, color, part_name):
+    vertices, indices = mesh
+    return vertices, indices, color, part_name
 
 
 def box(width, height, depth):
@@ -160,6 +189,29 @@ def cylinder(radius, height, segments):
     return vertices, indices
 
 
+def transformed(mesh, offset, scale=(1.0, 1.0, 1.0)):
+    vertices, indices = mesh
+    out = []
+    for vertex in vertices:
+        out.append((
+            vertex[0] * scale[0] + offset[0],
+            vertex[1] * scale[1] + offset[1],
+            vertex[2] * scale[2] + offset[2],
+        ))
+    return out, indices
+
+
+def merge(meshes):
+    vertices = []
+    indices = []
+    for mesh_vertices, mesh_indices in meshes:
+        base_index = len(vertices)
+        vertices.extend(mesh_vertices)
+        for index in mesh_indices:
+            indices.append(index + base_index)
+    return vertices, indices
+
+
 def pipe(radius, length, segments):
     vertices = []
     for z in (-length * 0.5, length * 0.5):
@@ -177,20 +229,53 @@ def pipe(radius, length, segments):
     return vertices, indices
 
 
+def boardwalk_segment_parts():
+    return [
+        part(box(0.9, 0.048, 0.24), [0.48, 0.31, 0.18, 1.0], "boardwalk_segment_plank"),
+        part(merge([
+            transformed(box(0.9, 0.012, 0.035), (0.0, 0.048, -0.085)),
+            transformed(box(0.9, 0.012, 0.035), (0.0, 0.048, 0.085)),
+        ]), [0.26, 0.16, 0.08, 1.0], "boardwalk_segment_seams"),
+    ]
+
+
+def culvert_pipe_parts():
+    return [
+        part(pipe(0.325, 1.2, 24), [0.35, 0.36, 0.35, 1.0], "culvert_pipe_body"),
+        part(merge([
+            transformed(pipe(0.34, 0.08, 24), (0.0, 0.0, -0.56)),
+            transformed(pipe(0.34, 0.08, 24), (0.0, 0.0, 0.56)),
+        ]), [0.20, 0.21, 0.20, 1.0], "culvert_pipe_rims"),
+    ]
+
+
+def log_ramp_parts():
+    return [
+        part(wedge(0.42, 0.20, 1.15), [0.34, 0.20, 0.10, 1.0], "log_ramp_body"),
+        part(transformed(wedge(0.30, 0.025, 0.95), (0.0, 0.195, 0.02)), [0.52, 0.34, 0.18, 1.0], "log_ramp_highlight"),
+    ]
+
+
+def stepping_stone_parts():
+    return [
+        part(cylinder(0.24, 0.068, 14), [0.36, 0.37, 0.35, 1.0], "stepping_stone_base"),
+        part(transformed(cylinder(0.21, 0.012, 14), (0.0, 0.068, 0.0)), [0.52, 0.53, 0.50, 1.0], "stepping_stone_wet_top"),
+    ]
+
+
 def main():
     args = parse_args()
     out_dir = args.out_dir
     out_dir.mkdir(parents=True, exist_ok=True)
     assets = [
-        ("boardwalk_segment", "wood_plank", box(0.9, 0.06, 0.24), [0.46, 0.30, 0.18, 1.0]),
-        ("culvert_pipe", "packed_dirt", pipe(0.34, 1.2, 24), [0.35, 0.36, 0.35, 1.0]),
-        ("log_ramp", "wood_plank", wedge(0.42, 0.22, 1.15), [0.38, 0.23, 0.12, 1.0]),
-        ("stepping_stone", "wet_stone", cylinder(0.24, 0.08, 14), [0.42, 0.43, 0.40, 1.0]),
+        ("boardwalk_segment", "wood_plank", boardwalk_segment_parts()),
+        ("culvert_pipe", "packed_dirt", culvert_pipe_parts()),
+        ("log_ramp", "wood_plank", log_ramp_parts()),
+        ("stepping_stone", "wet_stone", stepping_stone_parts()),
     ]
-    for asset_name, surface_id, mesh, color in assets:
-        vertices, indices = mesh
+    for asset_name, surface_id, parts in assets:
         output_path = out_dir / (asset_name + ".glb")
-        write_glb(output_path, asset_name, surface_id, vertices, indices, color)
+        write_glb_parts(output_path, asset_name, surface_id, parts)
         print(f"wrote: {output_path}")
 
 
