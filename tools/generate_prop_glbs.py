@@ -1,132 +1,19 @@
 #!/usr/bin/env python3
 import argparse
-import json
 import math
-import struct
 from pathlib import Path
 
+from simple_glb_writer import part, write_glb_parts
+
 OUT_DIR = Path("assets/models/props")
+GENERATOR_NAME = "Trailhead generate_prop_glbs.py"
+ROUGHNESS_FACTOR = 0.88
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Generate Trailhead prop GLBs.")
     parser.add_argument("--out-dir", type=Path, default=OUT_DIR, help="Directory to write generated prop GLBs.")
     return parser.parse_args()
-
-
-def pad4(data, pad_byte=b" "):
-    padding = (-len(data)) % 4
-    if padding:
-        data += pad_byte * padding
-    return data
-
-
-def pack_positions(vertices):
-    return b"".join(struct.pack("<fff", vertex[0], vertex[1], vertex[2]) for vertex in vertices)
-
-
-def pack_indices(indices):
-    return b"".join(struct.pack("<H", index) for index in indices)
-
-
-def bounds(vertices):
-    mins = [min(vertex[index] for vertex in vertices) for index in range(3)]
-    maxs = [max(vertex[index] for vertex in vertices) for index in range(3)]
-    return mins, maxs
-
-
-def write_glb_parts(path, asset_name, parts):
-    bin_data = bytearray()
-    buffer_views = []
-    accessors = []
-    primitives = []
-    materials = []
-    for part_index, mesh_part in enumerate(parts):
-        vertices, indices, color, part_name = mesh_part
-        position_data = pack_positions(vertices)
-        index_data = pack_indices(indices)
-        position_offset = len(bin_data)
-        bin_data.extend(position_data)
-        index_offset = len(bin_data)
-        bin_data.extend(index_data)
-        padding = (-len(bin_data)) % 4
-        if padding:
-            bin_data.extend(b"\0" * padding)
-        mins, maxs = bounds(vertices)
-        position_view = len(buffer_views)
-        index_view = position_view + 1
-        position_accessor = len(accessors)
-        index_accessor = position_accessor + 1
-        buffer_views.extend([
-            {"buffer": 0, "byteOffset": position_offset, "byteLength": len(position_data), "target": 34962},
-            {"buffer": 0, "byteOffset": index_offset, "byteLength": len(index_data), "target": 34963},
-        ])
-        accessors.extend([
-            {
-                "bufferView": position_view,
-                "byteOffset": 0,
-                "componentType": 5126,
-                "count": len(vertices),
-                "type": "VEC3",
-                "min": mins,
-                "max": maxs,
-            },
-            {
-                "bufferView": index_view,
-                "byteOffset": 0,
-                "componentType": 5123,
-                "count": len(indices),
-                "type": "SCALAR",
-                "min": [min(indices)],
-                "max": [max(indices)],
-            },
-        ])
-        primitives.append({
-            "attributes": {"POSITION": position_accessor},
-            "indices": index_accessor,
-            "mode": 4,
-            "material": part_index,
-        })
-        materials.append({
-            "name": part_name + "_mat",
-            "pbrMetallicRoughness": {
-                "baseColorFactor": color,
-                "roughnessFactor": 0.88,
-                "metallicFactor": 0.0,
-            },
-        })
-    bin_chunk = pad4(bytes(bin_data), b"\0")
-    gltf = {
-        "asset": {"version": "2.0", "generator": "Trailhead generate_prop_glbs.py"},
-        "scene": 0,
-        "scenes": [{"nodes": [0]}],
-        "nodes": [{"name": asset_name, "mesh": 0}],
-        "meshes": [{
-            "name": asset_name,
-            "primitives": primitives,
-        }],
-        "materials": materials,
-        "buffers": [{"byteLength": len(bin_chunk)}],
-        "bufferViews": buffer_views,
-        "accessors": accessors,
-    }
-    json_chunk = pad4(json.dumps(gltf, separators=(",", ":")).encode("utf-8"), b" ")
-    total_length = 12 + 8 + len(json_chunk) + 8 + len(bin_chunk)
-    with path.open("wb") as file:
-        file.write(struct.pack("<4sII", b"glTF", 2, total_length))
-        file.write(struct.pack("<II", len(json_chunk), 0x4E4F534A))
-        file.write(json_chunk)
-        file.write(struct.pack("<II", len(bin_chunk), 0x004E4942))
-        file.write(bin_chunk)
-
-
-def write_glb(path, asset_name, vertices, indices, color):
-    write_glb_parts(path, asset_name, [part((vertices, indices), color, asset_name)])
-
-
-def part(mesh, color, part_name):
-    vertices, indices = mesh
-    return vertices, indices, color, part_name
 
 
 def box(width, height, depth):
@@ -465,7 +352,7 @@ def main():
     ]
     for asset_name, parts in assets:
         output_path = out_dir / (asset_name + ".glb")
-        write_glb_parts(output_path, asset_name, parts)
+        write_glb_parts(output_path, asset_name, parts, generator=GENERATOR_NAME, roughness_factor=ROUGHNESS_FACTOR)
         print(f"wrote: {output_path}")
 
 
