@@ -34,6 +34,22 @@ const EXPECTED_BOUNDARY_BRANCHES: int = BoundaryVisualBuilderScript.EXPECTED_BOU
 const EXPECTED_TRAIL_BLAZES: int = BoundaryVisualBuilderScript.EXPECTED_TRAIL_BLAZES
 const EXPECTED_BOUNDARY_INSTANCED_CHILDREN: int = EXPECTED_BOUNDARY_GRASS + EXPECTED_BOUNDARY_BOULDERS + EXPECTED_BOUNDARY_BRANCHES + EXPECTED_TRAIL_BLAZES
 const EXPECTED_WAYFINDER_SIGNS: int = 3
+const EXPECTED_PROP_MESH_NODES: Array[String] = [
+	"trail_sign",
+	"kiosk",
+	"mile_marker",
+	"park_bench",
+	"carabiner",
+	"bottle_cap",
+	"wayfinder_culvert",
+	"wayfinder_overlook",
+	"wayfinder_creek",
+	"picnic_table",
+	"old_cedar_stump",
+	"fire_ring",
+	"hiking_boot",
+	"water_bottle"
+]
 const FLOAT_EPSILON: float = 0.001
 const CAMERA_COMPOSITION_TOLERANCE: float = 0.01
 const CAMERA_LOOK_TOLERANCE: float = 0.01
@@ -197,6 +213,7 @@ func _inspect() -> void:
 		_require_label(prop_root, "wayfinder_overlook/label_secondary", "Ridge", 18)
 		_require_label(prop_root, "wayfinder_creek/label_primary", "Bog", 22)
 		_require_label(prop_root, "wayfinder_creek/label_secondary", "Crossing", 18)
+		_require_prop_meshes(prop_root)
 		var prop_collision_count: int = _count_collision_objects(prop_root)
 		if prop_collision_count > 0:
 			_errors.append("PropVisuals contains collision objects: " + str(prop_collision_count))
@@ -340,6 +357,24 @@ func _require_label(parent: Node, path: String, expected_text: String, expected_
 		_errors.append(path + " text expected " + expected_text + ", got " + label.text)
 	if label.font_size != expected_font_size:
 		_errors.append(path + " font_size expected " + str(expected_font_size) + ", got " + str(label.font_size))
+
+
+func _require_prop_meshes(prop_root: Node) -> void:
+	for prop_path in EXPECTED_PROP_MESH_NODES:
+		var prop: Node = _require_node(prop_root, prop_path)
+		if prop == null:
+			continue
+		if not _has_mesh_instance(prop):
+			_errors.append("PropVisuals/" + prop_path + " contains no mesh instances")
+
+
+func _has_mesh_instance(parent: Node) -> bool:
+	if parent is MeshInstance3D:
+		return true
+	for child in parent.get_children():
+		if _has_mesh_instance(child):
+			return true
+	return false
 
 
 func _inspect_heightmesh_layout(heightmesh: Node) -> void:
