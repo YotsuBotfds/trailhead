@@ -31,7 +31,7 @@ static func build_cedar_hollow(parent: Node3D) -> Node3D:
 	_instance_prop(root, CarabinerScene, "carabiner", Vector3(1.25, 0.02, -1.15), Vector3(0.0, -18.0, 0.0), Vector3.ONE)
 	_instance_prop(root, BottleCapScene, "bottle_cap", Vector3(-0.95, 0.0, -3.25), Vector3(0.0, 12.0, 0.0), Vector3.ONE)
 	_instance_prop(root, PicnicTableScene, "picnic_table", Vector3(-1.45, 0.0, 0.35), Vector3(0.0, 18.0, 0.0), Vector3.ONE)
-	_instance_prop(root, OldCedarStumpScene, "old_cedar_stump", Vector3(0.0, 0.0, -5.25), Vector3.ZERO, Vector3(0.88, 0.88, 0.88))
+	_instance_prop(root, OldCedarStumpScene, "old_cedar_stump", Vector3(0.65, 0.0, -5.25), Vector3(0.0, 12.0, 0.0), Vector3(0.78, 0.78, 0.78))
 	_instance_prop(root, FireRingScene, "fire_ring", Vector3(-0.78, 0.0, 1.05), Vector3(0.0, 12.0, 0.0), Vector3.ONE)
 	_instance_prop(root, HikingBootScene, "hiking_boot", Vector3(0.75, 0.01, -4.65), Vector3(0.0, -32.0, 0.0), Vector3.ONE)
 	_instance_prop(root, WaterBottleScene, "water_bottle", Vector3(2.45, 0.0, -4.15), Vector3(0.0, 17.0, 78.0), Vector3.ONE)
