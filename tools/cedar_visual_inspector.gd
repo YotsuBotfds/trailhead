@@ -38,6 +38,10 @@ const CROSSING_CHASE_QA_YAW_DEGREES: float = -70.0
 const CHASE_CLEAR_CORRIDOR_LENGTH: float = 0.7
 const CHASE_CLEAR_CORRIDOR_HALF_WIDTH: float = 0.18
 const CAMERA_PROP_CLEARANCE_MARGIN: float = 0.025
+const READABILITY_CENTER_CLEAR_RECT: Rect2 = Rect2(0.34, 0.18, 0.32, 0.62)
+const READABILITY_MAX_DECOR_SCREEN_AREA: float = 0.34
+const READABILITY_MAX_FOCAL_SCREEN_AREA: float = 0.42
+const READABILITY_MAX_DECOR_CENTER_OVERLAP: float = 0.055
 const BOUNDARY_EDGE_X: float = 4.5
 const BOUNDARY_BACK_Z: float = -9.8
 const HEIGHTMESH_ROUTE_MARGIN: float = 0.35
@@ -198,6 +202,9 @@ func _inspect() -> void:
 	var prop_visual_root: Node = _scene_root.get_node_or_null("CedarHollow/PropVisuals")
 	if prop_visual_root != null:
 		_inspect_chase_camera_prop_clearance(prop_visual_root, chase_camera)
+	var scatter_visual_root: Node = _scene_root.get_node_or_null("CedarHollow/ScatterVisuals")
+	if prop_visual_root != null and scatter_visual_root != null and chase_camera != null:
+		_inspect_camera_space_readability(chase_camera, prop_visual_root, scatter_visual_root)
 	_inspect_camera_reactivity(_scene_root, vehicle, chase_camera, orbit_camera, fpv_camera)
 	_require_node(_scene_root, "SurfaceMap")
 	var world_environment: WorldEnvironment = _require_node(_scene_root, "GoldenHourEnvironment") as WorldEnvironment
@@ -366,7 +373,7 @@ func _inspect_scatter_layout(scatter_root: Node) -> void:
 	_require_node_position(scatter_root, "grass_occluder_1", Vector3(-2.65, 0.0, -1.25), FEATURE_TRANSFORM_TOLERANCE)
 	_require_node_position(scatter_root, "grass_occluder_10", Vector3(2.65, 0.0, -7.25), FEATURE_TRANSFORM_TOLERANCE)
 	_require_node_position(scatter_root, "boulder_1", Vector3(-2.65, 0.3, -8.5), FEATURE_TRANSFORM_TOLERANCE)
-	_require_node_position(scatter_root, "boulder_5", Vector3(3.55, 0.0, -6.55), FEATURE_TRANSFORM_TOLERANCE)
+	_require_node_position(scatter_root, "boulder_5", Vector3(3.15, 0.0, -7.25), FEATURE_TRANSFORM_TOLERANCE)
 	_require_node_position(scatter_root, "branch_5", Vector3(-0.9, 0.02, -9.45), FEATURE_TRANSFORM_TOLERANCE)
 	_require_node_position(scatter_root, "pinecone_8", Vector3(-1.9, 0.24, -8.9), FEATURE_TRANSFORM_TOLERANCE)
 	_require_node_position(scatter_root, "fern_clump_1", Vector3(2.2, 0.0, -4.65), FEATURE_TRANSFORM_TOLERANCE)
@@ -766,6 +773,110 @@ func _inspect_chase_camera_prop_clearance(prop_root: Node, chase_camera: Camera3
 			continue
 		if _point_inside_bounds(chase_camera.global_position, accumulator, CAMERA_PROP_CLEARANCE_MARGIN):
 			_errors.append("ChaseCamera starts inside PropVisuals/" + String(child.name) + " bounds")
+
+
+func _inspect_camera_space_readability(chase_camera: Camera3D, prop_root: Node, scatter_root: Node) -> void:
+	var original_transform: Transform3D = chase_camera.global_transform
+	var original_fov: float = chase_camera.fov
+	_inspect_chase_readability_shot(chase_camera, prop_root, scatter_root, "trailhead", Vector3(0.0, 0.12, 0.75), 0.0, PackedStringArray())
+	_inspect_chase_readability_shot(chase_camera, prop_root, scatter_root, "meadow", Vector3(1.45, 0.12, -2.8), 205.0, PackedStringArray())
+	_inspect_chase_readability_shot(chase_camera, prop_root, scatter_root, "bog_bottom", Vector3(2.85, 0.12, -5.3), 30.0, PackedStringArray())
+	_inspect_chase_readability_shot(chase_camera, prop_root, scatter_root, "crossing", Vector3(4.25, 0.12, -6.55), -70.0, PackedStringArray())
+	_inspect_chase_readability_shot(chase_camera, prop_root, scatter_root, "boardwalk", Vector3(3.25, 0.12, -4.15), 180.0, PackedStringArray())
+	_inspect_chase_readability_shot(chase_camera, prop_root, scatter_root, "old_cedar", Vector3(0.0, 0.12, -3.55), 0.0, PackedStringArray(["old_cedar_stump"]))
+	chase_camera.global_transform = original_transform
+	chase_camera.fov = original_fov
+
+
+func _inspect_chase_readability_shot(chase_camera: Camera3D, prop_root: Node, scatter_root: Node, shot_name: String, vehicle_position: Vector3, yaw_degrees: float, focal_prop_names: PackedStringArray) -> void:
+	_position_chase_camera_for_readability(chase_camera, vehicle_position, yaw_degrees)
+	_require_readability_root(chase_camera, prop_root, shot_name, "PropVisuals", focal_prop_names)
+	_require_readability_root(chase_camera, scatter_root, shot_name, "ScatterVisuals", PackedStringArray())
+
+
+func _position_chase_camera_for_readability(chase_camera: Camera3D, vehicle_position: Vector3, yaw_degrees: float) -> void:
+	var vehicle_basis: Basis = Basis(Vector3.UP, deg_to_rad(yaw_degrees))
+	var back: Vector3 = vehicle_basis.z.normalized()
+	var forward: Vector3 = -vehicle_basis.z.normalized()
+	chase_camera.global_position = vehicle_position + back * GameConfig.cam_distance + Vector3.UP * GameConfig.cam_height
+	var target: Vector3 = vehicle_position + forward * GameConfig.cam_look_ahead
+	var flat_delta: Vector3 = Vector3(target.x - chase_camera.global_position.x, 0.0, target.z - chase_camera.global_position.z)
+	var horizontal_distance: float = maxf(flat_delta.length(), 0.001)
+	target.y = chase_camera.global_position.y + tan(deg_to_rad(GameConfig.cam_pitch_deg)) * horizontal_distance
+	chase_camera.look_at(target, Vector3.UP)
+	chase_camera.fov = GameConfig.cam_fov_base
+
+
+func _require_readability_root(chase_camera: Camera3D, root: Node, shot_name: String, root_label: String, focal_names: PackedStringArray) -> void:
+	for child in root.get_children():
+		var node: Node3D = child as Node3D
+		if node == null:
+			continue
+		var accumulator: BoundsAccumulator = BoundsAccumulator.new()
+		_collect_mesh_bounds(node, accumulator)
+		if not accumulator.has_bounds:
+			continue
+		var screen_rect: Rect2 = _project_bounds_to_screen_rect(chase_camera, accumulator)
+		if screen_rect.size.x <= 0.0 or screen_rect.size.y <= 0.0:
+			continue
+		var child_name: String = String(child.name)
+		var screen_area: float = _rect_area(screen_rect)
+		if focal_names.has(child_name):
+			if screen_area > READABILITY_MAX_FOCAL_SCREEN_AREA:
+				_errors.append(shot_name + " " + root_label + "/" + child_name + " dominates screen area: " + str(screen_area))
+			continue
+		if screen_area > READABILITY_MAX_DECOR_SCREEN_AREA:
+			_errors.append(shot_name + " " + root_label + "/" + child_name + " dominates screen area: " + str(screen_area))
+		if screen_rect.intersects(READABILITY_CENTER_CLEAR_RECT):
+			var overlap: Rect2 = screen_rect.intersection(READABILITY_CENTER_CLEAR_RECT)
+			var overlap_area: float = _rect_area(overlap)
+			if overlap_area > READABILITY_MAX_DECOR_CENTER_OVERLAP:
+				_errors.append(shot_name + " " + root_label + "/" + child_name + " blocks central chase readability area: " + str(overlap_area))
+
+
+func _project_bounds_to_screen_rect(chase_camera: Camera3D, accumulator: BoundsAccumulator) -> Rect2:
+	var viewport_size_i: Vector2i = get_viewport().get_visible_rect().size
+	if viewport_size_i.x <= 0 or viewport_size_i.y <= 0:
+		_errors.append("cannot inspect camera-space readability with empty viewport")
+		return Rect2()
+	var viewport_size: Vector2 = Vector2(float(viewport_size_i.x), float(viewport_size_i.y))
+	var has_point: bool = false
+	var min_point: Vector2 = Vector2.ZERO
+	var max_point: Vector2 = Vector2.ZERO
+	for x_index in range(2):
+		for y_index in range(2):
+			for z_index in range(2):
+				var world_point: Vector3 = Vector3(
+					accumulator.bounds_min.x if x_index == 0 else accumulator.bounds_max.x,
+					accumulator.bounds_min.y if y_index == 0 else accumulator.bounds_max.y,
+					accumulator.bounds_min.z if z_index == 0 else accumulator.bounds_max.z
+				)
+				if chase_camera.is_position_behind(world_point):
+					continue
+				var screen_point: Vector2 = chase_camera.unproject_position(world_point)
+				var normalized_point: Vector2 = Vector2(screen_point.x / viewport_size.x, screen_point.y / viewport_size.y)
+				if not has_point:
+					has_point = true
+					min_point = normalized_point
+					max_point = normalized_point
+				else:
+					min_point = Vector2(minf(min_point.x, normalized_point.x), minf(min_point.y, normalized_point.y))
+					max_point = Vector2(maxf(max_point.x, normalized_point.x), maxf(max_point.y, normalized_point.y))
+	if not has_point:
+		return Rect2()
+	return _clamp_screen_rect(Rect2(min_point, max_point - min_point))
+
+
+func _clamp_screen_rect(rect: Rect2) -> Rect2:
+	var min_point: Vector2 = Vector2(clampf(rect.position.x, 0.0, 1.0), clampf(rect.position.y, 0.0, 1.0))
+	var rect_end: Vector2 = rect.position + rect.size
+	var max_point: Vector2 = Vector2(clampf(rect_end.x, 0.0, 1.0), clampf(rect_end.y, 0.0, 1.0))
+	var size: Vector2 = Vector2(maxf(max_point.x - min_point.x, 0.0), maxf(max_point.y - min_point.y, 0.0))
+	return Rect2(min_point, size)
+
+
+func _rect_area(rect: Rect2) -> float:
+	return maxf(rect.size.x, 0.0) * maxf(rect.size.y, 0.0)
 
 
 func _point_inside_bounds(point: Vector3, accumulator: BoundsAccumulator, margin: float) -> bool:

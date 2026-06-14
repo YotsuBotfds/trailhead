@@ -42,7 +42,7 @@ static func _add_grass(parent: Node3D) -> void:
 		Vector3(1.15, 0.0, -0.8),
 		Vector3(1.85, 0.0, -1.35),
 		Vector3(2.3, 0.0, -2.05),
-		Vector3(1.45, 0.0, -2.8),
+		Vector3(0.85, 0.0, -2.85),
 		Vector3(2.1, 0.0, -3.55),
 		Vector3(1.35, 0.0, -4.2),
 		Vector3(2.65, 0.0, -4.85),
@@ -83,7 +83,7 @@ static func _add_boulders(parent: Node3D) -> void:
 		Vector3(-0.85, 0.22, -8.2),
 		Vector3(-1.8, 0.16, -6.75),
 		Vector3(4.9, 0.0, -6.95),
-		Vector3(3.55, 0.0, -6.55)
+		Vector3(3.15, 0.0, -7.25)
 	]
 	for i in range(mini(EXPECTED_BOULDERS, positions.size())):
 		var scale: Vector3 = Vector3.ONE * (0.75 + float(i % 3) * 0.15)

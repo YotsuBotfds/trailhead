@@ -109,7 +109,7 @@ func _run() -> void:
 	_set_camera_mode(CAMERA_MODE_ORBIT)
 	await _wait_for_render()
 	_capture("overlook_dusk_orbit")
-	_reset_vehicle(Vector3(0.0, 0.12, -4.45), 0.0)
+	_reset_vehicle(Vector3(0.0, 0.12, -3.55), 0.0)
 	_set_camera_mode(CAMERA_MODE_CHASE)
 	await _wait_for_render()
 	_capture("old_cedar_dusk_chase")
