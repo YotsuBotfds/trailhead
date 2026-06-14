@@ -1,3 +1,5 @@
+# The scripted ramp now approaches on packed_gravel, then climbs wood_plank.
+# Keep the sequence narrow so a future dirt-first line is visible.
 assert_metrics "$out_dir/cedar_hollow_log_ramp.json" \
 	--surface=wood_plank:20 \
 	--surface-sequence=packed_gravel,wood_plank \
@@ -37,6 +39,8 @@ assert_metrics "$out_dir/cedar_hollow_segment_trailhead_to_culvert_mouth.json" \
 	--surface=packed_dirt:50 \
 	--landmark=culvert_mouth
 
+# The overlook-to-old-cedar route is a rock descent with only a brief
+# packed-dirt handoff near Old Cedar, replacing the old dirt-heavy line.
 assert_metrics "$out_dir/cedar_hollow_segment_overlook_to_old_cedar.json" \
 	--surface=loose_rock:200 \
 	--surface=packed_dirt:3 \
