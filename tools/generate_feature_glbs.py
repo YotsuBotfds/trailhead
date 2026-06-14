@@ -34,6 +34,30 @@ def box(width, height, depth):
     return vertices, indices
 
 
+def hard_box(width, height, depth):
+    x = width * 0.5
+    z = depth * 0.5
+    corners = [
+        (-x, 0.0, -z), (x, 0.0, -z), (x, height, -z), (-x, height, -z),
+        (-x, 0.0, z), (x, 0.0, z), (x, height, z), (-x, height, z),
+    ]
+    faces = [
+        (0, 1, 2, 3),
+        (4, 7, 6, 5),
+        (0, 4, 5, 1),
+        (3, 2, 6, 7),
+        (1, 5, 6, 2),
+        (0, 3, 7, 4),
+    ]
+    vertices = []
+    indices = []
+    for face in faces:
+        base = len(vertices)
+        vertices.extend(corners[index] for index in face)
+        indices.extend([base, base + 1, base + 2, base, base + 2, base + 3])
+    return vertices, indices
+
+
 def wedge(width, height, depth):
     x = width * 0.5
     z = depth * 0.5
@@ -72,6 +96,40 @@ def cylinder(radius, height, segments):
         indices.extend([bottom_a, bottom_b, top_b, bottom_a, top_b, top_a])
         indices.extend([bottom_center, bottom_a, bottom_b])
         indices.extend([top_center, top_b, top_a])
+    return vertices, indices
+
+
+def hard_capped_cylinder(radius, height, segments):
+    side_vertices = []
+    bottom_cap_vertices = []
+    top_cap_vertices = []
+    for y in (0.0, height):
+        for segment in range(segments):
+            angle = math.tau * float(segment) / float(segments)
+            wobble = 1.0 + (0.08 if segment % 2 == 0 else -0.04)
+            side_vertices.append((math.cos(angle) * radius * wobble, y, math.sin(angle) * radius * wobble))
+    for segment in range(segments):
+        angle = math.tau * float(segment) / float(segments)
+        wobble = 1.0 + (0.08 if segment % 2 == 0 else -0.04)
+        bottom_cap_vertices.append((math.cos(angle) * radius * wobble, 0.0, math.sin(angle) * radius * wobble))
+        top_cap_vertices.append((math.cos(angle) * radius * wobble, height, math.sin(angle) * radius * wobble))
+    vertices = side_vertices + bottom_cap_vertices + top_cap_vertices
+    bottom_center = len(vertices)
+    top_center = bottom_center + 1
+    vertices.append((0.0, 0.0, 0.0))
+    vertices.append((0.0, height, 0.0))
+    bottom_cap_start = segments * 2
+    top_cap_start = bottom_cap_start + segments
+    indices = []
+    for segment in range(segments):
+        next_segment = (segment + 1) % segments
+        bottom_a = segment
+        bottom_b = next_segment
+        top_a = segment + segments
+        top_b = next_segment + segments
+        indices.extend([bottom_a, bottom_b, top_b, bottom_a, top_b, top_a])
+        indices.extend([bottom_center, bottom_cap_start + segment, bottom_cap_start + next_segment])
+        indices.extend([top_center, top_cap_start + next_segment, top_cap_start + segment])
     return vertices, indices
 
 
@@ -142,6 +200,8 @@ def boardwalk_segment_parts():
     return [
         part(merge(planks), [0.44, 0.28, 0.14, 1.0], "boardwalk_segment_planks"),
         part(merge([
+            transformed(hard_box(0.052, 0.022, 0.198), (-0.155, 0.006, 0.0)),
+            transformed(hard_box(0.052, 0.022, 0.198), (0.155, 0.006, 0.0)),
             transformed(box(0.016, 0.014, 0.205), (-0.155, 0.044, 0.0)),
             transformed(box(0.016, 0.014, 0.205), (0.155, 0.044, 0.0)),
             transformed(box(0.90, 0.018, 0.018), (0.0, 0.044, -0.112)),
@@ -164,8 +224,8 @@ def culvert_pipe_parts():
             transformed(pipe(0.255, 0.035, 20), (0.0, 0.0, 0.605)),
         ]), [0.050, 0.055, 0.052, 1.0], "culvert_pipe_dark_openings"),
         part(merge([
-            transformed(box(0.42, 0.035, 0.045), (0.0, 0.63, -0.35), rotation=(0.0, 0.0, 0.12)),
-            transformed(box(0.36, 0.030, 0.040), (0.0, 0.61, 0.28), rotation=(0.0, 0.0, -0.10)),
+            transformed(hard_box(0.42, 0.035, 0.045), (0.0, 0.63, -0.35), rotation=(0.0, 0.0, 0.12)),
+            transformed(hard_box(0.36, 0.030, 0.040), (0.0, 0.61, 0.28), rotation=(0.0, 0.0, -0.10)),
         ]), [0.52, 0.49, 0.42, 1.0], "culvert_pipe_worn_highlights"),
     ]
 
@@ -179,8 +239,8 @@ def log_ramp_parts():
         part(transformed(wedge(0.30, 0.025, 0.95), (0.0, 0.195, 0.02)), [0.58, 0.38, 0.18, 1.0], "log_ramp_worn_top"),
         part(merge(bark_strips), [0.18, 0.10, 0.045, 1.0], "log_ramp_bark_strips"),
         part(merge([
-            transformed(cylinder(0.055, 0.020, 12), (-0.17, 0.050, -0.48), rotation=(math.pi * 0.5, 0.0, 0.0)),
-            transformed(cylinder(0.048, 0.020, 12), (0.17, 0.150, 0.48), rotation=(math.pi * 0.5, 0.0, 0.0)),
+            transformed(hard_capped_cylinder(0.055, 0.020, 12), (-0.17, 0.050, -0.48), rotation=(math.pi * 0.5, 0.0, 0.0)),
+            transformed(hard_capped_cylinder(0.048, 0.020, 12), (0.17, 0.150, 0.48), rotation=(math.pi * 0.5, 0.0, 0.0)),
         ]), [0.66, 0.45, 0.24, 1.0], "log_ramp_cut_ends"),
     ]
 
