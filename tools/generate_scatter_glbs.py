@@ -35,43 +35,35 @@ def bounds(vertices):
     return mins, maxs
 
 
-def write_glb(path, asset_name, vertices, indices, color):
-    position_data = pack_positions(vertices)
-    index_data = pack_indices(indices)
-    position_offset = 0
-    index_offset = len(position_data)
-    bin_chunk = pad4(position_data + index_data, b"\0")
-    mins, maxs = bounds(vertices)
-    gltf = {
-        "asset": {"version": "2.0", "generator": "Trailhead generate_scatter_glbs.py"},
-        "scene": 0,
-        "scenes": [{"nodes": [0]}],
-        "nodes": [{"name": asset_name, "mesh": 0}],
-        "meshes": [{
-            "name": asset_name,
-            "primitives": [{
-                "attributes": {"POSITION": 0},
-                "indices": 1,
-                "mode": 4,
-                "material": 0,
-            }],
-        }],
-        "materials": [{
-            "name": asset_name + "_mat",
-            "pbrMetallicRoughness": {
-                "baseColorFactor": color,
-                "roughnessFactor": 0.9,
-                "metallicFactor": 0.0,
-            },
-        }],
-        "buffers": [{"byteLength": len(bin_chunk)}],
-        "bufferViews": [
+def write_glb_parts(path, asset_name, parts):
+    bin_data = bytearray()
+    buffer_views = []
+    accessors = []
+    primitives = []
+    materials = []
+    for part_index, mesh_part in enumerate(parts):
+        vertices, indices, color, part_name = mesh_part
+        position_data = pack_positions(vertices)
+        index_data = pack_indices(indices)
+        position_offset = len(bin_data)
+        bin_data.extend(position_data)
+        index_offset = len(bin_data)
+        bin_data.extend(index_data)
+        padding = (-len(bin_data)) % 4
+        if padding:
+            bin_data.extend(b"\0" * padding)
+        mins, maxs = bounds(vertices)
+        position_view = len(buffer_views)
+        index_view = position_view + 1
+        position_accessor = len(accessors)
+        index_accessor = position_accessor + 1
+        buffer_views.extend([
             {"buffer": 0, "byteOffset": position_offset, "byteLength": len(position_data), "target": 34962},
             {"buffer": 0, "byteOffset": index_offset, "byteLength": len(index_data), "target": 34963},
-        ],
-        "accessors": [
+        ])
+        accessors.extend([
             {
-                "bufferView": 0,
+                "bufferView": position_view,
                 "byteOffset": 0,
                 "componentType": 5126,
                 "count": len(vertices),
@@ -80,7 +72,7 @@ def write_glb(path, asset_name, vertices, indices, color):
                 "max": maxs,
             },
             {
-                "bufferView": 1,
+                "bufferView": index_view,
                 "byteOffset": 0,
                 "componentType": 5123,
                 "count": len(indices),
@@ -88,7 +80,35 @@ def write_glb(path, asset_name, vertices, indices, color):
                 "min": [min(indices)],
                 "max": [max(indices)],
             },
-        ],
+        ])
+        primitives.append({
+            "attributes": {"POSITION": position_accessor},
+            "indices": index_accessor,
+            "mode": 4,
+            "material": part_index,
+        })
+        materials.append({
+            "name": part_name + "_mat",
+            "pbrMetallicRoughness": {
+                "baseColorFactor": color,
+                "roughnessFactor": 0.9,
+                "metallicFactor": 0.0,
+            },
+        })
+    bin_chunk = pad4(bytes(bin_data), b"\0")
+    gltf = {
+        "asset": {"version": "2.0", "generator": "Trailhead generate_scatter_glbs.py"},
+        "scene": 0,
+        "scenes": [{"nodes": [0]}],
+        "nodes": [{"name": asset_name, "mesh": 0}],
+        "meshes": [{
+            "name": asset_name,
+            "primitives": primitives,
+        }],
+        "materials": materials,
+        "buffers": [{"byteLength": len(bin_chunk)}],
+        "bufferViews": buffer_views,
+        "accessors": accessors,
     }
     json_chunk = pad4(json.dumps(gltf, separators=(",", ":")).encode("utf-8"), b" ")
     total_length = 12 + 8 + len(json_chunk) + 8 + len(bin_chunk)
@@ -98,6 +118,15 @@ def write_glb(path, asset_name, vertices, indices, color):
         file.write(json_chunk)
         file.write(struct.pack("<II", len(bin_chunk), 0x004E4942))
         file.write(bin_chunk)
+
+
+def write_glb(path, asset_name, vertices, indices, color):
+    write_glb_parts(path, asset_name, [part((vertices, indices), color, asset_name)])
+
+
+def part(mesh, color, part_name):
+    vertices, indices = mesh
+    return vertices, indices, color, part_name
 
 
 def box(width, height, depth):
@@ -215,23 +244,72 @@ def trail_blaze():
     ])
 
 
+def grass_tuft_parts():
+    blade = box(0.025, 0.42, 0.025)
+    return [
+        part(merge([
+            transformed(blade, (-0.08, 0.0, 0.0), (1.0, 1.0, 1.0)),
+            transformed(blade, (0.08, 0.0, 0.02), (1.0, 0.95, 1.0)),
+        ]), [0.18, 0.34, 0.12, 1.0], "grass_tuft_deep_blades"),
+        part(merge([
+            transformed(blade, (0.0, 0.0, -0.05), (1.0, 0.82, 1.0)),
+            transformed(blade, (0.02, 0.0, 0.08), (1.0, 0.72, 1.0)),
+        ]), [0.30, 0.46, 0.16, 1.0], "grass_tuft_light_blades"),
+    ]
+
+
+def branch_parts():
+    return [
+        part(transformed(box(0.12, 0.08, 0.95), (0.0, 0.0, 0.0)), [0.22, 0.13, 0.07, 1.0], "branch_main"),
+        part(transformed(box(0.08, 0.06, 0.38), (0.23, 0.02, 0.18)), [0.34, 0.21, 0.11, 1.0], "branch_side"),
+    ]
+
+
+def fern_clump_parts():
+    leaf = box(0.06, 0.018, 0.34)
+    return [
+        part(merge([
+            transformed(leaf, (-0.10, 0.03, 0.00), (1.0, 1.0, 1.0)),
+            transformed(leaf, (0.00, 0.04, -0.10), (0.9, 1.0, 1.0)),
+        ]), [0.10, 0.29, 0.14, 1.0], "fern_clump_dark_leaves"),
+        part(merge([
+            transformed(leaf, (0.10, 0.03, 0.00), (1.0, 1.0, 1.0)),
+            transformed(leaf, (0.00, 0.04, 0.10), (0.9, 1.0, 1.0)),
+        ]), [0.17, 0.39, 0.18, 1.0], "fern_clump_light_leaves"),
+        part(transformed(box(0.05, 0.07, 0.05), (0.0, 0.0, 0.0)), [0.12, 0.18, 0.08, 1.0], "fern_clump_crown"),
+    ]
+
+
+def cattail_parts():
+    return [
+        part(transformed(cylinder(0.012, 0.58, 8, 0.02), (0.0, 0.0, 0.0)), [0.20, 0.32, 0.12, 1.0], "cattail_stem"),
+        part(transformed(cylinder(0.035, 0.16, 10, 0.04), (0.0, 0.47, 0.0)), [0.31, 0.20, 0.09, 1.0], "cattail_head"),
+    ]
+
+
+def trail_blaze_parts():
+    return [
+        part(transformed(box(0.08, 0.52, 0.045), (0.0, 0.0, 0.0)), [0.30, 0.18, 0.09, 1.0], "trail_blaze_post"),
+        part(transformed(box(0.13, 0.08, 0.055), (0.0, 0.33, -0.004)), [0.82, 0.55, 0.20, 1.0], "trail_blaze_mark"),
+    ]
+
+
 def main():
     args = parse_args()
     out_dir = args.out_dir
     out_dir.mkdir(parents=True, exist_ok=True)
     assets = [
-        ("grass_tuft", grass_tuft(), [0.22, 0.37, 0.13, 1.0]),
-        ("boulder_a", boulder_a(), [0.36, 0.36, 0.33, 1.0]),
-        ("branch_a", branch_a(), [0.28, 0.17, 0.09, 1.0]),
-        ("pinecone", pinecone(), [0.26, 0.15, 0.08, 1.0]),
-        ("fern_clump", fern_clump(), [0.12, 0.33, 0.16, 1.0]),
-        ("cattail", cattail(), [0.30, 0.22, 0.10, 1.0]),
-        ("trail_blaze", trail_blaze(), [0.55, 0.32, 0.12, 1.0]),
+        ("grass_tuft", grass_tuft_parts()),
+        ("boulder_a", [part(boulder_a(), [0.36, 0.36, 0.33, 1.0], "boulder_a")]),
+        ("branch_a", branch_parts()),
+        ("pinecone", [part(pinecone(), [0.26, 0.15, 0.08, 1.0], "pinecone")]),
+        ("fern_clump", fern_clump_parts()),
+        ("cattail", cattail_parts()),
+        ("trail_blaze", trail_blaze_parts()),
     ]
-    for asset_name, mesh, color in assets:
-        vertices, indices = mesh
+    for asset_name, parts in assets:
         output_path = out_dir / (asset_name + ".glb")
-        write_glb(output_path, asset_name, vertices, indices, color)
+        write_glb_parts(output_path, asset_name, parts)
         print(f"wrote: {output_path}")
 
 
