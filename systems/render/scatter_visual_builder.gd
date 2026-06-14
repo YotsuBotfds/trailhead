@@ -19,6 +19,43 @@ const EXPECTED_GRASS_OCCLUDERS: int = 16
 const GRASS_MIN_SPACING: float = 0.45
 const GRASS_OCCLUDER_MIN_SPACING: float = 0.75
 const BLADE_SPIRAL_DEGREES: float = 137.5
+const GRASS_PRIMARY_BLADE_MULTIPLIER: int = 2
+const GRASS_LOW_BLADE_MULTIPLIER: int = 1
+const GRASS_LOW_BLADE_HEIGHT_FACTOR: float = 0.42
+const GRASS_LOW_BLADE_WIDTH_FACTOR: float = 1.32
+const GRASS_LOW_BLADE_RADIUS_FACTOR: float = 1.18
+const GRASS_BLADE_YAW_JITTER_DEGREES: float = 19.0
+const GRASS_BLADE_LEAN_DEGREES: float = 7.0
+const GRASS_PATTERN_MODULUS: int = 997
+const GRASS_PATTERN_INDEX_MULTIPLIER: int = 37
+const GRASS_PATTERN_SALT_MULTIPLIER: int = 101
+const GRASS_PATTERN_CLUMP_STRIDE: int = 53
+const GRASS_WIND_CULL_MARGIN: float = 0.05
+const GRASS_BASE_COLOR: Color = Color(0.10, 0.23, 0.08, 1.0)
+const GRASS_TIP_COLOR: Color = Color(0.42, 0.58, 0.21, 1.0)
+const GRASS_SHADER_CODE: String = "shader_type spatial;\n" \
+		+ "render_mode cull_disabled, diffuse_lambert, specular_schlick_ggx;\n" \
+		+ "uniform vec4 blade_base_color : source_color = vec4(0.10, 0.23, 0.08, 1.0);\n" \
+		+ "uniform vec4 blade_tip_color : source_color = vec4(0.42, 0.58, 0.21, 1.0);\n" \
+		+ "uniform float blade_height_reference = 0.42;\n" \
+		+ "uniform float wind_strength = 0.018;\n" \
+		+ "uniform float wind_speed = 1.15;\n" \
+		+ "varying float blade_height;\n" \
+		+ "void vertex() {\n" \
+		+ "	blade_height = smoothstep(0.0, blade_height_reference, VERTEX.y);\n" \
+		+ "	float wind_phase = INSTANCE_CUSTOM.y * 6.28318530718;\n" \
+		+ "	float sway = sin(TIME * wind_speed + wind_phase);\n" \
+		+ "	float flutter = sin(TIME * wind_speed * 1.73 + wind_phase * 0.41);\n" \
+		+ "	float bend = (sway * 0.75 + flutter * 0.25) * wind_strength * blade_height * blade_height * INSTANCE_CUSTOM.x;\n" \
+		+ "	VERTEX.x += bend;\n" \
+		+ "	VERTEX.z += bend * (INSTANCE_CUSTOM.z * 0.7 - 0.35);\n" \
+		+ "}\n" \
+		+ "void fragment() {\n" \
+		+ "	vec3 blade_color = mix(blade_base_color.rgb, blade_tip_color.rgb, blade_height);\n" \
+		+ "	ALBEDO = blade_color * COLOR.rgb;\n" \
+		+ "	ROUGHNESS = 0.86;\n" \
+		+ "	SPECULAR = 0.16;\n" \
+		+ "}\n"
 
 
 static func build_cedar_hollow(parent: Node3D) -> Node3D:
@@ -39,6 +76,7 @@ static func _add_grass(parent: Node3D) -> void:
 	var grass_mesh: Mesh = _extract_first_mesh(GrassTuftScene, "grass_tuft")
 	if grass_mesh == null:
 		return
+	var grass_material: ShaderMaterial = _create_grass_material()
 	var positions: Array[Vector3] = _grass_positions(maxi(GameConfig.grass_clump_count, 0))
 	if positions.size() < GameConfig.grass_clump_count:
 		push_error("ScatterVisualBuilder: failed to place requested grass clumps")
@@ -50,7 +88,9 @@ static func _add_grass(parent: Node3D) -> void:
 		var clump: MultiMeshInstance3D = _create_grass_clump(
 			"grass_tuft_" + str(i + 1),
 			grass_mesh,
+			grass_material,
 			positions[i],
+			i,
 			yaw_degrees,
 			blade_count,
 			radius,
@@ -63,6 +103,7 @@ static func _add_grass_occluders(parent: Node3D) -> void:
 	var grass_mesh: Mesh = _extract_first_mesh(GrassTuftScene, "grass_occluder")
 	if grass_mesh == null:
 		return
+	var grass_material: ShaderMaterial = _create_grass_material()
 	var positions: Array[Vector3] = _grass_occluder_positions(maxi(GameConfig.grass_occluder_band_count, 0))
 	if positions.size() < GameConfig.grass_occluder_band_count:
 		push_error("ScatterVisualBuilder: failed to place requested grass occluder bands")
@@ -73,7 +114,9 @@ static func _add_grass_occluders(parent: Node3D) -> void:
 		var clump: MultiMeshInstance3D = _create_grass_clump(
 			"grass_occluder_" + str(i + 1),
 			grass_mesh,
+			grass_material,
 			positions[i],
+			i + EXPECTED_GRASS_TUFTS,
 			18.0 + float(i) * 41.0,
 			blade_count,
 			radius,
@@ -192,25 +235,63 @@ static func _find_first_mesh(parent: Node) -> Mesh:
 	return null
 
 
-static func _create_grass_clump(node_name: String, mesh: Mesh, position: Vector3, yaw_degrees: float, blade_count: int, radius: float, base_scale: Vector3) -> MultiMeshInstance3D:
+static func _create_grass_material() -> ShaderMaterial:
+	var shader: Shader = Shader.new()
+	shader.code = GRASS_SHADER_CODE
+	var material: ShaderMaterial = ShaderMaterial.new()
+	material.shader = shader
+	material.set_shader_parameter(&"blade_base_color", GRASS_BASE_COLOR)
+	material.set_shader_parameter(&"blade_tip_color", GRASS_TIP_COLOR)
+	return material
+
+
+static func _create_grass_clump(node_name: String, mesh: Mesh, material: ShaderMaterial, position: Vector3, clump_index: int, yaw_degrees: float, blade_count: int, radius: float, base_scale: Vector3) -> MultiMeshInstance3D:
 	var instance: MultiMeshInstance3D = MultiMeshInstance3D.new()
 	instance.name = node_name
 	instance.position = position
+	instance.material_override = material
+	instance.extra_cull_margin = GRASS_WIND_CULL_MARGIN
+	var primary_blade_count: int = maxi(blade_count * GRASS_PRIMARY_BLADE_MULTIPLIER, 1)
+	var low_blade_count: int = maxi(blade_count * GRASS_LOW_BLADE_MULTIPLIER, 0)
+	var total_blade_count: int = primary_blade_count + low_blade_count
 	var multimesh: MultiMesh = MultiMesh.new()
 	multimesh.transform_format = MultiMesh.TRANSFORM_3D
+	multimesh.use_colors = true
+	multimesh.use_custom_data = true
 	multimesh.mesh = mesh
-	multimesh.instance_count = blade_count
-	for i in range(blade_count):
-		var blade_basis: Basis = Basis(Vector3.UP, deg_to_rad(yaw_degrees + float(i) * BLADE_SPIRAL_DEGREES))
-		var blade_scale_factor: float = 0.82 + float((i * 7) % 5) * 0.06
-		var blade_height_factor: float = 0.9 + float((i * 3) % 4) * 0.05
+	multimesh.instance_count = total_blade_count
+	for i in range(total_blade_count):
+		var low_pass: bool = i >= primary_blade_count
+		var pattern_index: int = clump_index * GRASS_PATTERN_CLUMP_STRIDE + i
+		var pass_height_factor: float = 1.0
+		var pass_width_factor: float = 1.0
+		var pass_radius: float = radius
+		if low_pass:
+			pass_height_factor = GRASS_LOW_BLADE_HEIGHT_FACTOR
+			pass_width_factor = GRASS_LOW_BLADE_WIDTH_FACTOR
+			pass_radius = radius * GRASS_LOW_BLADE_RADIUS_FACTOR
+		var yaw_jitter: float = (_pattern_unit(pattern_index, 3) - 0.5) * GRASS_BLADE_YAW_JITTER_DEGREES
+		var blade_basis: Basis = Basis(Vector3.UP, deg_to_rad(yaw_degrees + float(i) * BLADE_SPIRAL_DEGREES + yaw_jitter))
+		var lean_x: float = (_pattern_unit(pattern_index, 5) - 0.5) * GRASS_BLADE_LEAN_DEGREES
+		var lean_z: float = (_pattern_unit(pattern_index, 7) - 0.5) * GRASS_BLADE_LEAN_DEGREES
+		blade_basis = blade_basis * Basis(Vector3(1.0, 0.0, 0.0), deg_to_rad(lean_x)) * Basis(Vector3(0.0, 0.0, 1.0), deg_to_rad(lean_z))
+		var blade_scale_factor: float = 0.78 + _pattern_unit(pattern_index, 11) * 0.34
+		var blade_height_factor: float = 0.82 + _pattern_unit(pattern_index, 13) * 0.32
 		blade_basis = blade_basis.scaled(Vector3(
-			base_scale.x * blade_scale_factor,
-			base_scale.y * blade_height_factor,
-			base_scale.z * blade_scale_factor
+			base_scale.x * blade_scale_factor * pass_width_factor,
+			base_scale.y * blade_height_factor * pass_height_factor,
+			base_scale.z * blade_scale_factor * pass_width_factor
 		))
-		var blade_transform: Transform3D = Transform3D(blade_basis, _blade_offset(i, blade_count, radius))
+		var blade_transform: Transform3D = Transform3D(blade_basis, _blade_offset(i, total_blade_count, pass_radius))
 		multimesh.set_instance_transform(i, blade_transform)
+		var color_factor: float = 0.82 + _pattern_unit(pattern_index, 17) * 0.30
+		if low_pass:
+			color_factor *= 0.84
+		multimesh.set_instance_color(i, Color(color_factor, color_factor, color_factor, 1.0))
+		var wind_weight: float = 0.62 + _pattern_unit(pattern_index, 19) * 0.48
+		if low_pass:
+			wind_weight *= 0.55
+		multimesh.set_instance_custom_data(i, Color(wind_weight, _pattern_unit(pattern_index, 23), _pattern_unit(pattern_index, 29), 1.0))
 	instance.multimesh = multimesh
 	_add_bounds_reference(instance, mesh, base_scale)
 	return instance
@@ -219,11 +300,16 @@ static func _create_grass_clump(node_name: String, mesh: Mesh, position: Vector3
 static func _blade_offset(blade_index: int, blade_count: int, radius: float) -> Vector3:
 	if blade_index == 0:
 		return Vector3.ZERO
-	var angle: float = deg_to_rad(float((blade_index * 137) % 360))
+	var angle: float = deg_to_rad(float(blade_index) * BLADE_SPIRAL_DEGREES)
 	var denominator: float = maxf(float(blade_count - 1), 1.0)
 	var ring_fraction: float = float(blade_index) / denominator
 	var offset_radius: float = radius * (0.35 + ring_fraction * 0.65)
 	return Vector3(cos(angle) * offset_radius, 0.0, sin(angle) * offset_radius)
+
+
+static func _pattern_unit(index: int, salt: int) -> float:
+	var value: int = (index * GRASS_PATTERN_INDEX_MULTIPLIER + salt * GRASS_PATTERN_SALT_MULTIPLIER) % GRASS_PATTERN_MODULUS
+	return float(value) / float(GRASS_PATTERN_MODULUS - 1)
 
 
 static func _add_bounds_reference(parent: Node3D, mesh: Mesh, reference_scale: Vector3) -> void:

@@ -124,43 +124,61 @@ def merge(meshes):
     return vertices, indices
 
 
-def grass_tuft():
-    blade = tapered_blade(0.035, 0.42, 0.035, 0.055)
-    return merge([
-        transformed(blade, (-0.08, 0.0, 0.0), (1.0, 1.0, 1.0), (0.0, -0.45, 0.0)),
-        transformed(blade, (-0.02, 0.0, -0.06), (0.8, 0.86, 0.8), (0.0, 0.35, 0.0)),
-        transformed(blade, (0.06, 0.0, -0.02), (1.05, 0.94, 1.05), (0.0, 1.10, 0.0)),
-        transformed(blade, (0.04, 0.0, 0.07), (0.75, 0.70, 0.75), (0.0, 2.45, 0.0)),
-        transformed(blade, (-0.045, 0.0, 0.055), (0.70, 0.78, 0.70), (0.0, -1.85, 0.0)),
-    ])
+def flat_triangles(vertices, triangles):
+    out_vertices = []
+    out_indices = []
+    for triangle in triangles:
+        base_index = len(out_vertices)
+        out_vertices.extend([
+            vertices[triangle[0]],
+            vertices[triangle[1]],
+            vertices[triangle[2]],
+        ])
+        out_indices.extend([base_index, base_index + 1, base_index + 2])
+    return out_vertices, out_indices
 
 
-def boulder_a():
-    radius_x = 0.33
-    radius_z = 0.30
-    height = 0.26
-    segments = 18
-    vertical_segments = 8
-    vertices = [(0.0, height, 0.0)]
-    for ring in range(1, vertical_segments):
-        phi = math.pi * float(ring) / float(vertical_segments)
-        ring_y = (math.cos(phi) * 0.5 + 0.5) * height
-        ring_radius = math.sin(phi)
+def boulder_a_face_groups():
+    radius_x = 0.27
+    radius_z = 0.245
+    height = 0.205
+    segments = 12
+    ring_specs = [
+        (0.0, 0.76),
+        (0.032, 1.04),
+        (0.088, 0.98),
+        (0.136, 0.76),
+        (0.176, 0.50),
+        (0.198, 0.28),
+    ]
+    segment_lumps = [0.16, -0.07, 0.10, -0.15, 0.18, -0.04, 0.11, -0.16, 0.07, -0.10, 0.14, -0.12]
+    segment_y_offsets = [0.0, 0.03, -0.02, 0.025, -0.015, 0.035, -0.01, 0.02, -0.025, 0.015, -0.02, 0.01]
+    ring_offsets = [0.0, 0.018, -0.026, 0.014, -0.018, 0.0]
+    vertices = []
+    for ring_index, ring_spec in enumerate(ring_specs):
+        base_y, ring_radius = ring_spec
+        vertical_weight = float(ring_index) / float(len(ring_specs) - 1)
         for segment in range(segments):
             angle = math.tau * float(segment) / float(segments)
-            lump = 1.0 + math.sin(angle * 3.0 + float(ring) * 0.7) * 0.055 + math.cos(angle * 5.0 - float(ring) * 0.35) * 0.035
-            x = math.cos(angle) * radius_x * ring_radius * lump
-            z = math.sin(angle) * radius_z * ring_radius * (1.0 + math.cos(angle * 2.0 + float(ring) * 0.4) * 0.045)
-            vertices.append((x, ring_y, z))
-    bottom_index = len(vertices)
+            segment_lump = segment_lumps[segment]
+            angular_radius = 1.0 + segment_lump * (0.82 + vertical_weight * 0.20) + ring_offsets[ring_index]
+            y = base_y
+            if ring_index > 0:
+                y += segment_y_offsets[segment] * height * vertical_weight
+            x = math.cos(angle) * radius_x * ring_radius * angular_radius
+            z = math.sin(angle) * radius_z * ring_radius * (1.0 + segment_lump * 0.64 - ring_offsets[ring_index] * 0.5)
+            vertices.append((x, y, z))
+    bottom_center = len(vertices)
     vertices.append((0.0, 0.0, 0.0))
-    indices = []
-    first_ring = 1
+    top_center = len(vertices)
+    vertices.append((0.0, height * 0.98, 0.0))
+    face_groups = [[], [], []]
+    highlight_segments = {0, 4, 8}
     for segment in range(segments):
         next_segment = (segment + 1) % segments
-        indices.extend([0, first_ring + segment, first_ring + next_segment])
-    for ring in range(vertical_segments - 2):
-        current_start = 1 + ring * segments
+        face_groups[0].append((bottom_center, next_segment, segment))
+    for ring_index in range(len(ring_specs) - 1):
+        current_start = ring_index * segments
         next_start = current_start + segments
         for segment in range(segments):
             next_segment = (segment + 1) % segments
@@ -168,20 +186,27 @@ def boulder_a():
             b = current_start + next_segment
             c = next_start + segment
             d = next_start + next_segment
-            indices.extend([a, b, d, a, d, c])
-    last_ring = 1 + (vertical_segments - 2) * segments
+            group_index = 1
+            if ring_index <= 1:
+                group_index = 0
+            elif ring_index >= 3 and segment in highlight_segments:
+                group_index = 2
+            face_groups[group_index].extend([(a, b, d), (a, d, c)])
+    top_ring = (len(ring_specs) - 1) * segments
     for segment in range(segments):
         next_segment = (segment + 1) % segments
-        indices.extend([bottom_index, last_ring + next_segment, last_ring + segment])
-    return vertices, indices
+        group_index = 2 if segment in highlight_segments else 1
+        face_groups[group_index].append((top_center, top_ring + segment, top_ring + next_segment))
+    return vertices, face_groups
 
 
-def branch_a():
-    return merge([
-        transformed(cylinder(0.045, 0.95, 10, 0.08), (0.0, 0.05, -0.475), (1.0, 1.0, 1.0), (math.pi * 0.5, 0.0, 0.0)),
-        transformed(tapered_cylinder(0.032, 0.018, 0.42, 8, 0.06), (0.10, 0.045, -0.08), (1.0, 1.0, 1.0), (math.pi * 0.5, 0.78, 0.0)),
-        transformed(tapered_cylinder(0.024, 0.012, 0.28, 8, 0.05), (-0.12, 0.04, 0.16), (1.0, 1.0, 1.0), (math.pi * 0.5, -0.65, 0.0)),
-    ])
+def boulder_a_parts():
+    vertices, face_groups = boulder_a_face_groups()
+    return [
+        part(flat_triangles(vertices, face_groups[0]), [0.25, 0.25, 0.23, 1.0], "boulder_a_shadow_facets"),
+        part(flat_triangles(vertices, face_groups[1]), [0.36, 0.36, 0.32, 1.0], "boulder_a_mid_facets"),
+        part(flat_triangles(vertices, face_groups[2]), [0.46, 0.45, 0.39, 1.0], "boulder_a_lit_facets"),
+    ]
 
 
 def pinecone():
@@ -189,34 +214,6 @@ def pinecone():
         tapered_cylinder(0.082, 0.068, 0.055, 10, 0.12),
         transformed(tapered_cylinder(0.070, 0.052, 0.055, 10, 0.10), (0.0, 0.045, 0.0)),
         transformed(tapered_cylinder(0.052, 0.026, 0.070, 10, 0.08), (0.0, 0.090, 0.0)),
-    ])
-
-
-def fern_clump():
-    frond = tapered_frond(0.09, 0.34, 0.055)
-    return merge([
-        transformed(frond, (0.0, 0.025, 0.0), (1.0, 1.0, 1.0), (0.0, 0.0, 0.0)),
-        transformed(frond, (0.0, 0.025, 0.0), (0.95, 0.95, 0.95), (0.0, 1.30, 0.0)),
-        transformed(frond, (0.0, 0.025, 0.0), (0.9, 0.9, 0.9), (0.0, 2.55, 0.0)),
-        transformed(frond, (0.0, 0.025, 0.0), (0.85, 0.85, 0.85), (0.0, 3.80, 0.0)),
-        transformed(tapered_cylinder(0.035, 0.026, 0.06, 8, 0.04), (0.0, 0.0, 0.0)),
-    ])
-
-
-def cattail():
-    leaf = tapered_blade(0.055, 0.50, 0.025, 0.11)
-    return merge([
-        transformed(cylinder(0.012, 0.58, 8, 0.02), (0.0, 0.0, 0.0)),
-        transformed(cylinder(0.035, 0.16, 10, 0.04), (0.0, 0.47, 0.0)),
-        transformed(leaf, (-0.025, 0.0, 0.018), (1.0, 0.95, 1.0), (0.0, -0.45, 0.0)),
-        transformed(leaf, (0.026, 0.0, -0.018), (0.85, 0.85, 0.85), (0.0, 2.15, 0.0)),
-    ])
-
-
-def trail_blaze():
-    return merge([
-        transformed(box(0.08, 0.52, 0.045), (0.0, 0.0, 0.0)),
-        transformed(box(0.13, 0.08, 0.055), (0.0, 0.33, -0.004)),
     ])
 
 
@@ -285,7 +282,7 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
     assets = [
         ("grass_tuft", grass_tuft_parts()),
-        ("boulder_a", [part(boulder_a(), [0.36, 0.36, 0.33, 1.0], "boulder_a")]),
+        ("boulder_a", boulder_a_parts()),
         ("branch_a", branch_parts()),
         ("pinecone", [part(pinecone(), [0.26, 0.15, 0.08, 1.0], "pinecone")]),
         ("fern_clump", fern_clump_parts()),
