@@ -64,6 +64,9 @@ func _inspect() -> void:
 	_require_node(_scene_root, "SurfaceMap")
 	_require_node(_scene_root, "GoldenHourEnvironment")
 	_require_node(_scene_root, "GoldenHourSun")
+	_require_node(_scene_root, "CedarAudioRig")
+	_require_node(_scene_root, "CedarAudioRig/MotorWhine")
+	_require_node(_scene_root, "CedarAudioRig/TireTexture")
 	_finish()
 
 
@@ -104,9 +107,15 @@ func _count_mesh_instances(parent: Node) -> int:
 
 func _finish() -> void:
 	if _errors.is_empty():
-		print("ok: Cedar Hollow visuals and mood nodes instantiated")
+		print("ok: Cedar Hollow visuals, mood, and audio nodes instantiated")
+		if _scene_root != null:
+			_scene_root.queue_free()
+		await get_tree().process_frame
 		get_tree().quit(0)
 		return
 	for error in _errors:
 		push_error(error)
+	if _scene_root != null:
+		_scene_root.queue_free()
+	await get_tree().process_frame
 	get_tree().quit(1)

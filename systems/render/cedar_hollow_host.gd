@@ -9,6 +9,7 @@ const FeatureVisualBuilderScript: GDScript = preload("res://systems/render/featu
 const PropVisualBuilderScript: GDScript = preload("res://systems/render/prop_visual_builder.gd")
 const ScatterVisualBuilderScript: GDScript = preload("res://systems/render/scatter_visual_builder.gd")
 const ProceduralBuggyVisualScript: GDScript = preload("res://systems/render/procedural_buggy_visual.gd")
+const CedarAudioRigScript: GDScript = preload("res://systems/render/cedar_audio_rig.gd")
 const SurfaceMapScript: GDScript = preload("res://systems/world/surface_map.gd")
 
 var _world: Node3D = null
@@ -24,6 +25,7 @@ func _ready() -> void:
 	_setup_surface_map()
 	_setup_world()
 	_spawn_vehicle()
+	_setup_audio()
 	_setup_environment()
 	_setup_light()
 	_setup_camera()
@@ -93,6 +95,13 @@ func _setup_light() -> void:
 	sun.light_energy = GameConfig.dusk_sun_energy
 	sun.light_color = GameConfig.dusk_sun_color
 	add_child(sun)
+
+
+func _setup_audio() -> void:
+	var audio_rig: Node = CedarAudioRigScript.new()
+	audio_rig.name = "CedarAudioRig"
+	add_child(audio_rig)
+	audio_rig.call("configure", _vehicle)
 
 
 func _setup_environment() -> void:
