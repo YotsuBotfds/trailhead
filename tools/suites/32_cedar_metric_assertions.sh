@@ -39,8 +39,8 @@ assert_metrics "$out_dir/cedar_hollow_segment_trailhead_to_culvert_mouth.json" \
 	--surface=packed_dirt:50 \
 	--landmark=culvert_mouth
 
-# The overlook-to-old-cedar route is a rock descent with only a brief
-# packed-dirt handoff near Old Cedar, replacing the old dirt-heavy line.
+# The overlook-to-old-cedar route stays rock-heavy after the feel re-record.
+# Keep the floor near the golden route so future dirt-heavy drift is visible.
 assert_metrics "$out_dir/cedar_hollow_segment_overlook_to_old_cedar.json" \
 	--surface=loose_rock:150 \
 	--landmark=old_cedar

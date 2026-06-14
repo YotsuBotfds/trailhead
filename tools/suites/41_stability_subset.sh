@@ -23,10 +23,8 @@ run_sim "$out_dir/stability_seed_${stability_seed}_cedar_hollow_segment_overlook
 	--stuck-window=120 \
 	--stuck-min-progress=0.015
 
-# The route is intentionally loose_rock-dominant now; packed_dirt is just
-# the final handoff, so this low floor catches loss of the handoff only.
+# The feel re-record keeps this segment rock-heavy through Old Cedar.
+# Keep the floor near the golden route so future dirt-heavy drift is visible.
 assert_metrics "$out_dir/stability_seed_${stability_seed}_cedar_hollow_segment_overlook_to_old_cedar.json" \
-	--surface=loose_rock:200 \
-	--surface=packed_dirt:3 \
-	--surface-sequence=loose_rock,packed_dirt \
+	--surface=loose_rock:150 \
 	--landmark=old_cedar
