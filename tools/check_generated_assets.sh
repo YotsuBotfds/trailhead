@@ -58,11 +58,14 @@ check_dir features \
 	stepping_stone.glb
 
 check_dir props \
+	bottle_cap.glb \
+	carabiner.glb \
 	fire_ring.glb \
 	hiking_boot.glb \
 	kiosk.glb \
 	mile_marker.glb \
 	old_cedar_stump.glb \
+	park_bench.glb \
 	picnic_table.glb \
 	trail_sign.glb \
 	water_bottle.glb

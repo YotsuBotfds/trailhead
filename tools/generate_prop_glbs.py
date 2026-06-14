@@ -192,6 +192,39 @@ def mile_marker():
     ])
 
 
+def park_bench():
+    return merge([
+        transformed(box(1.15, 0.055, 0.18), (0.0, 0.42, -0.12)),
+        transformed(box(1.15, 0.055, 0.18), (0.0, 0.42, 0.12)),
+        transformed(box(1.15, 0.06, 0.14), (0.0, 0.72, 0.28)),
+        transformed(box(1.15, 0.06, 0.14), (0.0, 0.54, 0.32)),
+        transformed(box(0.075, 0.42, 0.075), (-0.44, 0.0, -0.20)),
+        transformed(box(0.075, 0.42, 0.075), (0.44, 0.0, -0.20)),
+        transformed(box(0.075, 0.56, 0.075), (-0.44, 0.0, 0.32)),
+        transformed(box(0.075, 0.56, 0.075), (0.44, 0.0, 0.32)),
+    ])
+
+
+def carabiner():
+    return merge([
+        transformed(box(0.035, 0.012, 0.22), (-0.06, 0.0, 0.0)),
+        transformed(box(0.035, 0.012, 0.22), (0.06, 0.0, 0.0)),
+        transformed(box(0.16, 0.012, 0.035), (0.0, 0.0, -0.095)),
+        transformed(box(0.16, 0.012, 0.035), (0.0, 0.0, 0.095)),
+        transformed(box(0.024, 0.018, 0.15), (0.028, 0.018, 0.0)),
+    ])
+
+
+def bottle_cap():
+    return merge([
+        cylinder(0.075, 0.035, 20, 0.035),
+        transformed(box(0.018, 0.02, 0.018), (0.075, 0.035, 0.0)),
+        transformed(box(0.018, 0.02, 0.018), (-0.075, 0.035, 0.0)),
+        transformed(box(0.018, 0.02, 0.018), (0.0, 0.035, 0.075)),
+        transformed(box(0.018, 0.02, 0.018), (0.0, 0.035, -0.075)),
+    ])
+
+
 def picnic_table():
     return merge([
         transformed(box(1.25, 0.08, 0.42), (0.0, 0.52, 0.0)),
@@ -251,6 +284,9 @@ def main():
         ("trail_sign", trail_sign(), [0.45, 0.29, 0.16, 1.0]),
         ("kiosk", kiosk(), [0.40, 0.26, 0.14, 1.0]),
         ("mile_marker", mile_marker(), [0.48, 0.40, 0.26, 1.0]),
+        ("park_bench", park_bench(), [0.40, 0.25, 0.14, 1.0]),
+        ("carabiner", carabiner(), [0.10, 0.12, 0.12, 1.0]),
+        ("bottle_cap", bottle_cap(), [0.50, 0.42, 0.32, 1.0]),
         ("picnic_table", picnic_table(), [0.42, 0.26, 0.14, 1.0]),
         ("old_cedar_stump", old_cedar_stump(), [0.32, 0.20, 0.11, 1.0]),
         ("fire_ring", fire_ring(), [0.30, 0.28, 0.24, 1.0]),
