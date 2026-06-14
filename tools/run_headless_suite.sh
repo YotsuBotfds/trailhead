@@ -199,4 +199,5 @@ run_sim "$out_dir/golden_cedar_hollow_segment_overlook_to_old_cedar.json" \
 printf 'run: cedar feature visuals\n'
 "$godot_bin" --headless --path . res://tools/cedar_visual_inspector.tscn
 
+./tools/check_assets.sh
 ./tools/check.sh
