@@ -6,6 +6,7 @@ ROOT = Path(__file__).resolve().parents[1]
 OUT_DIR = ROOT / "tests" / "out"
 GOLDEN_DIR = ROOT / "tests" / "golden"
 SAMPLE_STRIDE = 10
+FRESHNESS_INPUT_ROOTS = ("autoload", "data", "scenes", "systems", "tools")
 TOLERANCES = {
     "ticks": 2,
     "position_m": 0.08,
@@ -37,6 +38,53 @@ GOLDENS = [
         "cedar_hollow_segment_overlook_to_old_cedar_replay.json",
     ),
 ]
+
+
+def project_path(path):
+    try:
+        return str(path.relative_to(ROOT))
+    except ValueError:
+        return str(path)
+
+
+def freshness_inputs():
+    for root_name in FRESHNESS_INPUT_ROOTS:
+        root = ROOT / root_name
+        if root.is_file():
+            yield root
+            continue
+        if not root.exists():
+            continue
+        for path in root.rglob("*"):
+            if path.is_file() and "__pycache__" not in path.parts:
+                yield path
+
+
+def newest_freshness_input():
+    newest_path = None
+    newest_mtime = 0.0
+    for path in freshness_inputs():
+        mtime = path.stat().st_mtime
+        if mtime > newest_mtime:
+            newest_path = path
+            newest_mtime = mtime
+    return newest_path, newest_mtime
+
+
+def assert_fresh_source_runs(source_paths):
+    newest_path, newest_mtime = newest_freshness_input()
+    if newest_path is None:
+        return
+    stale_paths = [path for path in source_paths if path.stat().st_mtime < newest_mtime]
+    if not stale_paths:
+        return
+    stale_list = "\n".join(f"- {project_path(path)}" for path in stale_paths)
+    raise SystemExit(
+        "refusing to record golden replays from stale suite output.\n"
+        f"Newest checked input is {project_path(newest_path)}; rerun "
+        "./tools/run_headless_suite.sh before recording.\n"
+        f"Stale source runs:\n{stale_list}"
+    )
 
 
 def input_from_row(row):
@@ -114,10 +162,15 @@ def build_replay(name, source_path):
 
 def main():
     GOLDEN_DIR.mkdir(parents=True, exist_ok=True)
+    source_paths = []
     for name, source_name, output_name in GOLDENS:
         source_path = OUT_DIR / source_name
         if not source_path.exists():
             raise SystemExit(f"missing source run for {name}: {source_path}")
+        source_paths.append(source_path)
+    assert_fresh_source_runs(source_paths)
+    for name, source_name, output_name in GOLDENS:
+        source_path = OUT_DIR / source_name
         replay = build_replay(name, source_path)
         output_path = GOLDEN_DIR / output_name
         output_path.write_text(json.dumps(replay, indent="\t") + "\n")
