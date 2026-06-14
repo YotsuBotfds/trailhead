@@ -1,6 +1,7 @@
 extends Node
 
 const CedarRoute: Resource = preload("res://data/routes/cedar_hollow.tres")
+const CedarSurfaceVisualCatalog: Resource = preload("res://data/surface_visuals/cedar_hollow_surface_visuals.tres")
 const SURFACE_DIR_PATH: String = "res://data/surfaces"
 const EXPECTED_SURFACE_IDS: Array[StringName] = [
 	&"loose_rock",
@@ -13,6 +14,7 @@ const EXPECTED_SURFACE_IDS: Array[StringName] = [
 ]
 
 var _errors: PackedStringArray = PackedStringArray()
+var _surface_ids: Array[StringName] = []
 
 
 func _ready() -> void:
@@ -21,12 +23,14 @@ func _ready() -> void:
 
 func _inspect() -> void:
 	_inspect_surfaces()
+	_inspect_surface_visuals()
 	_inspect_cedar_route()
 	_finish()
 
 
 func _inspect_surfaces() -> void:
 	var observed_ids: Array[StringName] = []
+	_surface_ids.clear()
 	var dir: DirAccess = DirAccess.open(SURFACE_DIR_PATH)
 	if dir == null:
 		_errors.append("failed to open surface directory: " + SURFACE_DIR_PATH)
@@ -45,12 +49,22 @@ func _inspect_surfaces() -> void:
 				var surface_id: StringName = surface.get("id")
 				if surface_id != &"":
 					observed_ids.append(surface_id)
+					_surface_ids.append(surface_id)
 		file_name = dir.get_next()
 	dir.list_dir_end()
 	_require_unique_ids(observed_ids, "SurfaceDef")
 	for expected_surface_id in EXPECTED_SURFACE_IDS:
 		if not observed_ids.has(expected_surface_id):
 			_errors.append("missing expected SurfaceDef: " + String(expected_surface_id))
+
+
+func _inspect_surface_visuals() -> void:
+	var visual_errors: PackedStringArray = CedarSurfaceVisualCatalog.call("validate", _surface_ids)
+	for error in visual_errors:
+		_errors.append("CedarSurfaceVisualCatalog: " + error)
+	var variant_surface_ids: Array[StringName] = CedarSurfaceVisualCatalog.call("surface_ids_with_visual_variants")
+	if variant_surface_ids.is_empty():
+		_errors.append("CedarSurfaceVisualCatalog should include at least one visual-only variant sharing a SurfaceDef")
 
 
 func _inspect_surface(surface: Resource, resource_path: String, expected_id: StringName) -> void:

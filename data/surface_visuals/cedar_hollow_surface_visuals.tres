@@ -1,0 +1,120 @@
+[gd_resource type="Resource" script_class="SurfaceVisualCatalog" load_steps=13 format=3]
+
+[ext_resource type="Script" path="res://systems/render/surface_visual_catalog.gd" id="1_catalog"]
+[ext_resource type="Script" path="res://systems/render/surface_visual_def.gd" id="2_visual"]
+
+[sub_resource type="Resource" id="SurfaceVisualDef_packed_gravel"]
+script = ExtResource("2_visual")
+id = &"packed_gravel_default"
+surface_id = &"packed_gravel"
+display_name = "Packed Gravel"
+default_for_surface = true
+albedo_color = Color(0.42, 0.39, 0.33, 1.0)
+roughness = 0.92
+tire_audio_gain = 1.1
+tire_audio_pitch = 1.2
+
+[sub_resource type="Resource" id="SurfaceVisualDef_packed_dirt"]
+script = ExtResource("2_visual")
+id = &"packed_dirt_default"
+surface_id = &"packed_dirt"
+display_name = "Packed Dirt"
+default_for_surface = true
+albedo_color = Color(0.31, 0.22, 0.14, 1.0)
+roughness = 0.88
+tire_audio_gain = 0.8
+tire_audio_pitch = 0.95
+
+[sub_resource type="Resource" id="SurfaceVisualDef_pine_floor_dirt"]
+script = ExtResource("2_visual")
+id = &"pine_floor_dirt"
+surface_id = &"packed_dirt"
+display_name = "Pine Floor Dirt"
+default_for_surface = false
+albedo_color = Color(0.24, 0.18, 0.11, 1.0)
+roughness = 0.9
+tire_audio_gain = 0.78
+tire_audio_pitch = 0.9
+
+[sub_resource type="Resource" id="SurfaceVisualDef_tall_grass"]
+script = ExtResource("2_visual")
+id = &"tall_grass_default"
+surface_id = &"tall_grass"
+display_name = "Tall Grass"
+default_for_surface = true
+albedo_color = Color(0.21, 0.32, 0.14, 1.0)
+roughness = 0.78
+tire_audio_gain = 0.45
+tire_audio_pitch = 0.6
+
+[sub_resource type="Resource" id="SurfaceVisualDef_mud"]
+script = ExtResource("2_visual")
+id = &"mud_default"
+surface_id = &"mud"
+display_name = "Wet Mud"
+default_for_surface = true
+albedo_color = Color(0.15, 0.09, 0.055, 1.0)
+roughness = 0.62
+tire_audio_gain = 1.35
+tire_audio_pitch = 0.42
+
+[sub_resource type="Resource" id="SurfaceVisualDef_dried_mud"]
+script = ExtResource("2_visual")
+id = &"dried_mud"
+surface_id = &"mud"
+display_name = "Dried Mud"
+default_for_surface = false
+albedo_color = Color(0.25, 0.16, 0.09, 1.0)
+roughness = 0.84
+tire_audio_gain = 1.05
+tire_audio_pitch = 0.58
+
+[sub_resource type="Resource" id="SurfaceVisualDef_loose_rock"]
+script = ExtResource("2_visual")
+id = &"loose_rock_default"
+surface_id = &"loose_rock"
+display_name = "Loose Rock"
+default_for_surface = true
+albedo_color = Color(0.34, 0.34, 0.31, 1.0)
+roughness = 0.86
+tire_audio_gain = 1.25
+tire_audio_pitch = 1.35
+
+[sub_resource type="Resource" id="SurfaceVisualDef_wet_stone"]
+script = ExtResource("2_visual")
+id = &"wet_stone_default"
+surface_id = &"wet_stone"
+display_name = "Wet Stone"
+default_for_surface = true
+albedo_color = Color(0.23, 0.27, 0.26, 1.0)
+roughness = 0.46
+tire_audio_gain = 1.15
+tire_audio_pitch = 1.55
+
+[sub_resource type="Resource" id="SurfaceVisualDef_mossy_wet_stone"]
+script = ExtResource("2_visual")
+id = &"mossy_wet_stone"
+surface_id = &"wet_stone"
+display_name = "Mossy Wet Stone"
+default_for_surface = false
+albedo_color = Color(0.18, 0.26, 0.20, 1.0)
+roughness = 0.58
+tire_audio_gain = 1.08
+tire_audio_pitch = 1.35
+
+[sub_resource type="Resource" id="SurfaceVisualDef_wood_plank"]
+script = ExtResource("2_visual")
+id = &"wood_plank_default"
+surface_id = &"wood_plank"
+display_name = "Aged Wood Plank"
+default_for_surface = true
+albedo_color = Color(0.35, 0.25, 0.16, 1.0)
+roughness = 0.72
+tire_audio_gain = 0.9
+tire_audio_pitch = 1.05
+emits_plank_knock = true
+
+[resource]
+script = ExtResource("1_catalog")
+visual_defs = Array[Resource]([SubResource("SurfaceVisualDef_packed_gravel"), SubResource("SurfaceVisualDef_packed_dirt"), SubResource("SurfaceVisualDef_pine_floor_dirt"), SubResource("SurfaceVisualDef_tall_grass"), SubResource("SurfaceVisualDef_mud"), SubResource("SurfaceVisualDef_dried_mud"), SubResource("SurfaceVisualDef_loose_rock"), SubResource("SurfaceVisualDef_wet_stone"), SubResource("SurfaceVisualDef_mossy_wet_stone"), SubResource("SurfaceVisualDef_wood_plank")])
+fallback_surface_id = &"packed_dirt"

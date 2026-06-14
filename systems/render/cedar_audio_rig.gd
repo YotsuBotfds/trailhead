@@ -1,15 +1,7 @@
 class_name CedarAudioRig
 extends Node
 
-const AUDIO_SURFACE_IDS: Array[StringName] = [
-	&"packed_gravel",
-	&"packed_dirt",
-	&"tall_grass",
-	&"mud",
-	&"loose_rock",
-	&"wet_stone",
-	&"wood_plank"
-]
+const SurfaceVisualCatalogResource: Resource = preload("res://data/surface_visuals/cedar_hollow_surface_visuals.tres")
 
 var _vehicle: Node = null
 var _motor_player: AudioStreamPlayer = null
@@ -249,7 +241,7 @@ func _next_water_sample(vehicle_position: Vector3) -> float:
 
 
 func _next_plank_sample(speed: float) -> float:
-	var is_on_plank: bool = _current_surface_id == &"wood_plank"
+	var is_on_plank: bool = bool(SurfaceVisualCatalogResource.call("emits_plank_knock_for", _current_surface_id))
 	var frequency: float = GameConfig.audio_plank_base_hz + speed * GameConfig.audio_plank_speed_hz_gain
 	var phase_step: float = TAU * frequency / maxf(GameConfig.audio_mix_rate, 1.0)
 	if is_on_plank:
@@ -305,46 +297,19 @@ func _next_water_noise() -> float:
 
 
 func surface_tire_gain_for(surface_id: StringName) -> float:
-	if surface_id == &"packed_gravel":
-		return GameConfig.audio_tire_gain_gravel
-	if surface_id == &"packed_dirt":
-		return GameConfig.audio_tire_gain_dirt
-	if surface_id == &"tall_grass":
-		return GameConfig.audio_tire_gain_grass
-	if surface_id == &"mud":
-		return GameConfig.audio_tire_gain_mud
-	if surface_id == &"loose_rock":
-		return GameConfig.audio_tire_gain_rock
-	if surface_id == &"wet_stone":
-		return GameConfig.audio_tire_gain_stone
-	if surface_id == &"wood_plank":
-		return GameConfig.audio_tire_gain_wood
-	return GameConfig.audio_tire_gain_dirt
+	return float(SurfaceVisualCatalogResource.call("tire_audio_gain_for", surface_id))
 
 
 func supported_audio_surface_ids() -> Array[StringName]:
 	var ids: Array[StringName] = []
-	for surface_id in AUDIO_SURFACE_IDS:
+	var supported_ids: Array[StringName] = SurfaceVisualCatalogResource.call("supported_surface_ids")
+	for surface_id in supported_ids:
 		ids.append(surface_id)
 	return ids
 
 
 func surface_tire_pitch_for(surface_id: StringName) -> float:
-	if surface_id == &"packed_gravel":
-		return GameConfig.audio_tire_pitch_gravel
-	if surface_id == &"packed_dirt":
-		return GameConfig.audio_tire_pitch_dirt
-	if surface_id == &"tall_grass":
-		return GameConfig.audio_tire_pitch_grass
-	if surface_id == &"mud":
-		return GameConfig.audio_tire_pitch_mud
-	if surface_id == &"loose_rock":
-		return GameConfig.audio_tire_pitch_rock
-	if surface_id == &"wet_stone":
-		return GameConfig.audio_tire_pitch_stone
-	if surface_id == &"wood_plank":
-		return GameConfig.audio_tire_pitch_wood
-	return GameConfig.audio_tire_pitch_dirt
+	return float(SurfaceVisualCatalogResource.call("tire_audio_pitch_for", surface_id))
 
 
 func water_volume_for_position(vehicle_position: Vector3) -> float:

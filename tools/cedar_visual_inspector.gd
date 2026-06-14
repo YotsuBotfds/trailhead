@@ -2,6 +2,7 @@ extends Node
 
 const CedarHollowPlayableScene: PackedScene = preload("res://scenes/cedar_hollow_playable.tscn")
 const CedarRoute: Resource = preload("res://data/routes/cedar_hollow.tres")
+const CedarSurfaceVisualCatalog: Resource = preload("res://data/surface_visuals/cedar_hollow_surface_visuals.tres")
 const VehicleStateScript: GDScript = preload("res://systems/vehicle/vehicle_state.gd")
 const SURFACE_DIR_PATH: String = "res://data/surfaces"
 const EXPECTED_BOARDWALK_SEGMENTS: int = 9
@@ -1201,41 +1202,11 @@ func _load_surface_resource_ids() -> Array[StringName]:
 
 
 func _expected_audio_gain(surface_id: StringName) -> float:
-	if surface_id == &"packed_gravel":
-		return GameConfig.audio_tire_gain_gravel
-	if surface_id == &"packed_dirt":
-		return GameConfig.audio_tire_gain_dirt
-	if surface_id == &"tall_grass":
-		return GameConfig.audio_tire_gain_grass
-	if surface_id == &"mud":
-		return GameConfig.audio_tire_gain_mud
-	if surface_id == &"loose_rock":
-		return GameConfig.audio_tire_gain_rock
-	if surface_id == &"wet_stone":
-		return GameConfig.audio_tire_gain_stone
-	if surface_id == &"wood_plank":
-		return GameConfig.audio_tire_gain_wood
-	_errors.append("missing inspector tire gain expectation for SurfaceDef: " + String(surface_id))
-	return GameConfig.audio_tire_gain_dirt
+	return float(CedarSurfaceVisualCatalog.call("tire_audio_gain_for", surface_id))
 
 
 func _expected_audio_pitch(surface_id: StringName) -> float:
-	if surface_id == &"packed_gravel":
-		return GameConfig.audio_tire_pitch_gravel
-	if surface_id == &"packed_dirt":
-		return GameConfig.audio_tire_pitch_dirt
-	if surface_id == &"tall_grass":
-		return GameConfig.audio_tire_pitch_grass
-	if surface_id == &"mud":
-		return GameConfig.audio_tire_pitch_mud
-	if surface_id == &"loose_rock":
-		return GameConfig.audio_tire_pitch_rock
-	if surface_id == &"wet_stone":
-		return GameConfig.audio_tire_pitch_stone
-	if surface_id == &"wood_plank":
-		return GameConfig.audio_tire_pitch_wood
-	_errors.append("missing inspector tire pitch expectation for SurfaceDef: " + String(surface_id))
-	return GameConfig.audio_tire_pitch_dirt
+	return float(CedarSurfaceVisualCatalog.call("tire_audio_pitch_for", surface_id))
 
 
 func _require_audio_surface_response(audio_rig: Node, surface_id: StringName, expected_gain: float, expected_pitch: float) -> void:
