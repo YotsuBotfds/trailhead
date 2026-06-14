@@ -17,6 +17,11 @@ GOLDENS = [
     ("flat_target", "flat_target.json", "flat_target_replay.json"),
     ("flat_flipped", "flat_flipped.json", "flat_flipped_replay.json"),
     ("cedar_hollow_old_cedar", "cedar_hollow_old_cedar.json", "cedar_hollow_old_cedar_replay.json"),
+    ("cedar_hollow_overlook_ridge", "cedar_hollow_overlook_ridge.json", "cedar_hollow_overlook_ridge_replay.json"),
+    ("cedar_hollow_bog_bottom", "cedar_hollow_bog_bottom.json", "cedar_hollow_bog_bottom_replay.json"),
+    ("cedar_hollow_the_crossing", "cedar_hollow_the_crossing.json", "cedar_hollow_the_crossing_replay.json"),
+    ("cedar_hollow_boardwalk_end", "cedar_hollow_boardwalk_end.json", "cedar_hollow_boardwalk_end_replay.json"),
+    ("cedar_hollow_culvert_mouth", "cedar_hollow_culvert_mouth.json", "cedar_hollow_culvert_mouth_replay.json"),
     (
         "cedar_hollow_segment_trailhead_to_culvert_mouth",
         "cedar_hollow_segment_trailhead_to_culvert_mouth.json",
