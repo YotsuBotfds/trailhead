@@ -9,6 +9,7 @@ const VehicleInputScript: GDScript = preload("res://systems/vehicle/vehicle_inpu
 const FlatWorldBuilderScript: GDScript = preload("res://systems/world/flat_world_builder.gd")
 const SurfaceMapScript: GDScript = preload("res://systems/world/surface_map.gd")
 const TerrainBuilderScript: GDScript = preload("res://systems/world/terrain_builder.gd")
+const LandmarksScript: GDScript = preload("res://systems/world/landmarks.gd")
 const PDWaypointControllerScript: GDScript = preload("res://systems/sim/controllers/pd_waypoint_controller.gd")
 const ReplayControllerScript: GDScript = preload("res://systems/sim/controllers/replay_controller.gd")
 const ScriptedFeelControllerScript: GDScript = preload("res://systems/sim/controllers/scripted_feel_controller.gd")
@@ -17,6 +18,7 @@ var _args: Dictionary = {}
 var _vehicle: Node = null
 var _controller: RefCounted = null
 var _route: Resource = null
+var _landmarks: Node = null
 var _telemetry: Array[Dictionary] = []
 var _tick: int = 0
 var _max_ticks: int = 6000
@@ -52,10 +54,13 @@ var _previous_speed: float = 0.0
 var _ebrake_ticks: int = 0
 var _front_air_rear_contact_ticks: int = 0
 var _surface_event_count: int = 0
+var _landmark_event_count: int = 0
 var _flipped_event_count: int = 0
 var _self_righted_event_count: int = 0
 var _last_surface_event: StringName = &""
+var _last_landmark_event: StringName = &""
 var _surface_event_sequence: Array[String] = []
+var _landmark_event_sequence: Array[String] = []
 var _surface_contact_ticks: Dictionary = {}
 var _surface_speed_sum: Dictionary = {}
 var _surface_speed_delta_sum: Dictionary = {}
@@ -87,6 +92,7 @@ func _ready() -> void:
 	_connect_event_bus()
 	_configure_flat_bounds()
 	_setup_surface_map()
+	_setup_landmarks()
 	_setup_flat_scene()
 	call_deferred("_begin_run")
 
@@ -201,8 +207,19 @@ func _setup_surface_map() -> void:
 	add_child(surface_map)
 
 
+func _setup_landmarks() -> void:
+	if _route == null:
+		return
+	_landmarks = LandmarksScript.new()
+	_landmarks.name = "Landmarks"
+	add_child(_landmarks)
+	_landmarks.call("configure", _route)
+
+
 func _record(state: RefCounted, input: RefCounted) -> void:
 	var state_position: Vector3 = state.get("position")
+	if _landmarks != null:
+		_landmarks.call("sample_position", state_position)
 	var state_velocity: Vector3 = state.get("linear_velocity")
 	var state_angular_velocity: Vector3 = state.get("angular_velocity")
 	var state_basis: Basis = state.get("basis")
@@ -348,8 +365,9 @@ func _finish(passed: bool) -> void:
 	var target_predicate_passed: bool = reached_target if _requires_target() else true
 	var scenario_predicate_passed: bool = _scenario_predicate_passed()
 	var surface_event_observed: bool = _surface_event_count > 0
+	var target_landmark_event_observed: bool = _target_landmark_event_observed()
 	var event_bus_contract_passed: bool = _event_bus_contract_passed()
-	var all_predicates_passed: bool = target_predicate_passed and scenario_predicate_passed and surface_event_observed and event_bus_contract_passed and _never_stuck and _upright_or_recovered and _stayed_in_bounds
+	var all_predicates_passed: bool = target_predicate_passed and scenario_predicate_passed and surface_event_observed and target_landmark_event_observed and event_bus_contract_passed and _never_stuck and _upright_or_recovered and _stayed_in_bounds
 	var result: Dictionary = {
 		"scene": _scene_id,
 		"controller": _controller_id,
@@ -363,6 +381,7 @@ func _finish(passed: bool) -> void:
 			"reached_target": target_predicate_passed,
 			"scenario_passed": scenario_predicate_passed,
 			"surface_event_observed": surface_event_observed,
+			"target_landmark_event_observed": target_landmark_event_observed,
 			"event_bus_contract": event_bus_contract_passed,
 			"never_stuck": _never_stuck,
 			"upright_or_recovered": _upright_or_recovered,
@@ -386,6 +405,9 @@ func _finish(passed: bool) -> void:
 			"surface_event_count": _surface_event_count,
 			"last_surface_event": String(_last_surface_event),
 			"surface_event_sequence": _surface_event_sequence,
+			"landmark_event_count": _landmark_event_count,
+			"last_landmark_event": String(_last_landmark_event),
+			"landmark_event_sequence": _landmark_event_sequence,
 			"surface_contact_ticks": _surface_contact_ticks,
 			"avg_speed_by_surface": _surface_average_dictionary(_surface_speed_sum),
 			"avg_speed_delta_by_surface": _surface_average_dictionary(_surface_speed_delta_sum),
@@ -420,6 +442,7 @@ func _finish_runner_error(message: String) -> void:
 		"predicates": {
 			"reached_target": false,
 			"surface_event_observed": false,
+			"target_landmark_event_observed": false,
 			"event_bus_contract": false,
 			"never_stuck": false,
 			"upright_or_recovered": false,
@@ -581,6 +604,8 @@ func _surface_sequence_contains(expected: Array[String]) -> bool:
 func _connect_event_bus() -> void:
 	if not EventBus.vehicle_changed_surface.is_connected(_on_vehicle_changed_surface):
 		EventBus.vehicle_changed_surface.connect(_on_vehicle_changed_surface)
+	if not EventBus.world_reached_landmark.is_connected(_on_world_reached_landmark):
+		EventBus.world_reached_landmark.connect(_on_world_reached_landmark)
 	if not EventBus.vehicle_flipped_over.is_connected(_on_vehicle_flipped_over):
 		EventBus.vehicle_flipped_over.connect(_on_vehicle_flipped_over)
 	if not EventBus.vehicle_self_righted.is_connected(_on_vehicle_self_righted):
@@ -593,12 +618,26 @@ func _event_bus_contract_passed() -> bool:
 	return true
 
 
+func _target_landmark_event_observed() -> bool:
+	if _route == null:
+		return true
+	return _landmark_event_sequence.has(_target_id)
+
+
 func _on_vehicle_changed_surface(surface_id: StringName) -> void:
 	_surface_event_count += 1
 	_last_surface_event = surface_id
 	var surface_string: String = String(surface_id)
 	if _surface_event_sequence.is_empty() or _surface_event_sequence[_surface_event_sequence.size() - 1] != surface_string:
 		_surface_event_sequence.append(surface_string)
+
+
+func _on_world_reached_landmark(landmark_id: StringName) -> void:
+	_landmark_event_count += 1
+	_last_landmark_event = landmark_id
+	var landmark_string: String = String(landmark_id)
+	if _landmark_event_sequence.is_empty() or _landmark_event_sequence[_landmark_event_sequence.size() - 1] != landmark_string:
+		_landmark_event_sequence.append(landmark_string)
 
 
 func _on_vehicle_flipped_over() -> void:
