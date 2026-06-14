@@ -20,6 +20,7 @@ const EXPECTED_TRAIL_BLAZES: int = 4
 const EXPECTED_WAYFINDER_SIGNS: int = 3
 const FLOAT_EPSILON: float = 0.001
 const CAMERA_COMPOSITION_TOLERANCE: float = 0.01
+const CAMERA_LOOK_TOLERANCE: float = 0.01
 const CAMERA_PITCH_TOLERANCE_DEG: float = 0.25
 const FEATURE_TRANSFORM_TOLERANCE: float = 0.01
 const FEATURE_COLLISION_ALIGNMENT_TOLERANCE: float = 0.05
@@ -202,6 +203,7 @@ func _inspect() -> void:
 	if hud != null:
 		_inspect_hud_defaults(hud)
 	_inspect_render_toggles(_scene_root, chase_camera, orbit_camera, fpv_camera, world_environment, sun, hud)
+	_inspect_input_map()
 	_finish()
 
 
@@ -484,14 +486,8 @@ func _inspect_camera_defaults(vehicle: Node, chase_camera: Camera3D, orbit_camer
 	if chase_camera.global_position.z <= vehicle_position.z:
 		_errors.append("ChaseCamera should start behind the trailhead spawn")
 	_require_chase_camera_composition(state, chase_camera, "ChaseCamera")
-	if orbit_camera.global_position.y <= vehicle_position.y:
-		_errors.append("OrbitCamera should start above the vehicle")
-	if orbit_camera.global_position.distance_to(vehicle_position) <= GameConfig.orbit_cam_distance:
-		_errors.append("OrbitCamera should start outside its horizontal orbit radius")
-	if fpv_camera.global_position.y <= vehicle_position.y:
-		_errors.append("FpvCamera should start above the vehicle")
-	if fpv_camera.global_position.z >= vehicle_position.z:
-		_errors.append("FpvCamera should start ahead of the trailhead spawn")
+	_require_orbit_camera_composition(state, orbit_camera, GameConfig.orbit_cam_start_yaw_deg, "OrbitCamera")
+	_require_fpv_camera_composition(state, fpv_camera, "FpvCamera")
 
 
 func _inspect_vehicle_visuals(host: Node, vehicle: Node) -> void:
@@ -576,18 +572,20 @@ func _inspect_camera_reactivity(host: Node, vehicle: Node, chase_camera: Camera3
 
 	host.call("cycle_camera_mode")
 	var orbit_position_before: Vector3 = orbit_camera.global_position
+	host.set("_orbit_camera_initialized", false)
+	host.set("_orbit_yaw_degrees", GameConfig.orbit_cam_start_yaw_deg)
 	host.call("_update_orbit_camera", GameConfig.FIXED_DT, test_state)
+	var expected_orbit_yaw: float = float(host.get("_orbit_yaw_degrees"))
 	if orbit_camera.global_position.distance_to(orbit_position_before) <= FLOAT_EPSILON:
 		_errors.append("OrbitCamera should move while orbit mode is active")
 	if absf(orbit_camera.fov - GameConfig.orbit_cam_fov) > FLOAT_EPSILON:
 		_errors.append("OrbitCamera should keep orbit FOV during reactive update")
+	_require_orbit_camera_composition(test_state, orbit_camera, expected_orbit_yaw, "OrbitCamera reactive update")
 
 	host.call("_update_fpv_camera", test_state)
-	var expected_fpv_position: Vector3 = test_position + Vector3.FORWARD * GameConfig.fpv_cam_forward + Vector3.UP * GameConfig.fpv_cam_height
-	if fpv_camera.global_position.distance_to(expected_fpv_position) > FEATURE_TRANSFORM_TOLERANCE:
-		_errors.append("FpvCamera should attach to the synthetic vehicle state")
 	if absf(fpv_camera.fov - GameConfig.fpv_cam_fov) > FLOAT_EPSILON:
 		_errors.append("FpvCamera should keep FPV FOV during reactive update")
+	_require_fpv_camera_composition(test_state, fpv_camera, "FpvCamera reactive update")
 
 	host.call("cycle_camera_mode")
 	host.call("cycle_camera_mode")
@@ -612,6 +610,66 @@ func _require_camera_pitch(camera: Camera3D, context: String) -> void:
 	var pitch_degrees: float = rad_to_deg(asin(clampf(forward.y, -1.0, 1.0)))
 	if absf(pitch_degrees - GameConfig.cam_pitch_deg) > CAMERA_PITCH_TOLERANCE_DEG:
 		_errors.append(context + " pitch expected " + str(GameConfig.cam_pitch_deg) + ", got " + str(pitch_degrees))
+
+
+func _require_orbit_camera_composition(state: RefCounted, orbit_camera: Camera3D, yaw_degrees: float, context: String) -> void:
+	var vehicle_position: Vector3 = state.get("position")
+	var offset: Vector3 = orbit_camera.global_position - vehicle_position
+	var actual_offset_xz: Vector2 = Vector2(offset.x, offset.z)
+	var yaw_radians: float = deg_to_rad(yaw_degrees)
+	var expected_offset_xz: Vector2 = Vector2(sin(yaw_radians), cos(yaw_radians)) * GameConfig.orbit_cam_distance
+	if actual_offset_xz.distance_to(expected_offset_xz) > CAMERA_COMPOSITION_TOLERANCE:
+		_errors.append(context + " horizontal orbit offset expected " + str(expected_offset_xz) + ", got " + str(actual_offset_xz))
+	if absf(offset.y - GameConfig.orbit_cam_height) > CAMERA_COMPOSITION_TOLERANCE:
+		_errors.append(context + " height offset expected " + str(GameConfig.orbit_cam_height) + ", got " + str(offset.y))
+	var look_target: Vector3 = vehicle_position + Vector3.UP * GameConfig.orbit_cam_look_height
+	_require_camera_look_target(orbit_camera, look_target, context)
+
+
+func _require_fpv_camera_composition(state: RefCounted, fpv_camera: Camera3D, context: String) -> void:
+	var vehicle_position: Vector3 = state.get("position")
+	var vehicle_basis: Basis = state.get("basis")
+	var forward: Vector3 = -vehicle_basis.z.normalized()
+	var up: Vector3 = vehicle_basis.y.normalized()
+	var expected_position: Vector3 = vehicle_position + forward * GameConfig.fpv_cam_forward + up * GameConfig.fpv_cam_height
+	if fpv_camera.global_position.distance_to(expected_position) > FEATURE_TRANSFORM_TOLERANCE:
+		_errors.append(context + " position expected " + str(expected_position) + ", got " + str(fpv_camera.global_position))
+	var look_target: Vector3 = vehicle_position + forward * GameConfig.fpv_cam_look_ahead + up * GameConfig.fpv_cam_look_height
+	_require_camera_look_target(fpv_camera, look_target, context)
+
+
+func _require_camera_look_target(camera: Camera3D, target: Vector3, context: String) -> void:
+	var expected_forward: Vector3 = (target - camera.global_position).normalized()
+	var actual_forward: Vector3 = -camera.global_transform.basis.z.normalized()
+	if actual_forward.distance_to(expected_forward) > CAMERA_LOOK_TOLERANCE:
+		_errors.append(context + " forward vector should look at " + str(target))
+
+
+func _inspect_input_map() -> void:
+	_require_input_action_keys(&"throttle", [KEY_W, KEY_UP])
+	_require_input_action_keys(&"brake", [KEY_S, KEY_DOWN])
+	_require_input_action_keys(&"steer_left", [KEY_A, KEY_LEFT])
+	_require_input_action_keys(&"steer_right", [KEY_D, KEY_RIGHT])
+	_require_input_action_keys(&"ebrake", [KEY_SPACE])
+	_require_input_action_keys(&"self_right", [KEY_R])
+	_require_input_action_keys(&"cam_toggle", [KEY_C])
+	_require_input_action_keys(&"map_toggle", [KEY_M])
+	_require_input_action_keys(&"mood_toggle", [KEY_N])
+
+
+func _require_input_action_keys(action_name: StringName, expected_keycodes: Array[int]) -> void:
+	var action_string: String = String(action_name)
+	if not InputMap.has_action(action_string):
+		_errors.append("InputMap missing action: " + action_string)
+		return
+	var observed_keycodes: Array[int] = []
+	for event in InputMap.action_get_events(action_string):
+		var key_event: InputEventKey = event as InputEventKey
+		if key_event != null:
+			observed_keycodes.append(key_event.physical_keycode)
+	for keycode in expected_keycodes:
+		if not observed_keycodes.has(keycode):
+			_errors.append("InputMap action " + action_string + " missing keycode " + str(keycode))
 
 
 func _inspect_hud_defaults(hud: Node) -> void:
