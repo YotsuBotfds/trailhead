@@ -7,6 +7,7 @@ const WAIT_FRAMES: int = 8
 const SHUTDOWN_FRAMES: int = 8
 const VARIANCE_SAMPLE_STEP: int = 32
 const MIN_LUMA_VARIANCE: float = 0.05
+const CAPTURE_POSITION_XZ_EPSILON: float = 0.35
 const CAMERA_MODE_CHASE: int = 0
 const CAMERA_MODE_ORBIT: int = 1
 const CAMERA_MODE_FPV: int = 2
@@ -75,44 +76,44 @@ func _run() -> void:
 	_set_mood(MOOD_DUSK)
 	_set_camera_mode(CAMERA_MODE_CHASE)
 	await _wait_for_render()
-	_capture("trailhead_dusk_chase")
+	_capture_checked("trailhead_dusk_chase", CAMERA_MODE_CHASE, MOOD_DUSK, false, Vector3(0.0, 0.12, 0.75))
 	_host.call("toggle_landmark_hint_hud")
 	await _wait_for_render()
-	_capture("trailhead_dusk_chase_map")
+	_capture_checked("trailhead_dusk_chase_map", CAMERA_MODE_CHASE, MOOD_DUSK, true, Vector3(0.0, 0.12, 0.75))
 	_host.call("toggle_landmark_hint_hud")
 	_reset_vehicle(Vector3(1.45, 0.12, -2.8), 205.0)
 	_set_mood(MOOD_DUSK)
 	_set_camera_mode(CAMERA_MODE_CHASE)
 	await _wait_for_render()
-	_capture("meadow_dusk_chase")
+	_capture_checked("meadow_dusk_chase", CAMERA_MODE_CHASE, MOOD_DUSK, false, Vector3(1.45, 0.12, -2.8))
 	_set_camera_mode(CAMERA_MODE_ORBIT)
 	await _wait_for_render()
-	_capture("meadow_dusk_orbit")
+	_capture_checked("meadow_dusk_orbit", CAMERA_MODE_ORBIT, MOOD_DUSK, false, Vector3(1.45, 0.12, -2.8))
 	_reset_vehicle(Vector3(2.85, 0.12, -5.3), 30.0)
 	_set_camera_mode(CAMERA_MODE_CHASE)
 	await _wait_for_render()
-	_capture("bog_bottom_dusk_chase")
+	_capture_checked("bog_bottom_dusk_chase", CAMERA_MODE_CHASE, MOOD_DUSK, false, Vector3(2.85, 0.12, -5.3))
 	_reset_vehicle(Vector3(4.25, 0.12, -6.55), -70.0)
 	_set_mood(MOOD_DAWN)
 	_set_camera_mode(CAMERA_MODE_CHASE)
 	await _wait_for_render()
-	_capture("crossing_dawn_chase")
+	_capture_checked("crossing_dawn_chase", CAMERA_MODE_CHASE, MOOD_DAWN, false, Vector3(4.25, 0.12, -6.55))
 	_set_mood(MOOD_DUSK)
 	_reset_vehicle(Vector3(3.25, 0.12, -4.15), 180.0)
 	_set_camera_mode(CAMERA_MODE_CHASE)
 	await _wait_for_render()
-	_capture("boardwalk_dusk_chase")
+	_capture_checked("boardwalk_dusk_chase", CAMERA_MODE_CHASE, MOOD_DUSK, false, Vector3(3.25, 0.12, -4.15))
 	_set_camera_mode(CAMERA_MODE_FPV)
 	await _wait_for_render()
-	_capture("boardwalk_dusk_fpv")
+	_capture_checked("boardwalk_dusk_fpv", CAMERA_MODE_FPV, MOOD_DUSK, false, Vector3(3.25, 0.12, -4.15))
 	_reset_vehicle(Vector3(-2.1, 0.45, -8.9), 245.0)
 	_set_camera_mode(CAMERA_MODE_ORBIT)
 	await _wait_for_render()
-	_capture("overlook_dusk_orbit")
+	_capture_checked("overlook_dusk_orbit", CAMERA_MODE_ORBIT, MOOD_DUSK, false, Vector3(-2.1, 0.45, -8.9))
 	_reset_vehicle(Vector3(0.0, 0.12, -3.55), 0.0)
 	_set_camera_mode(CAMERA_MODE_CHASE)
 	await _wait_for_render()
-	_capture("old_cedar_dusk_chase")
+	_capture_checked("old_cedar_dusk_chase", CAMERA_MODE_CHASE, MOOD_DUSK, false, Vector3(0.0, 0.12, -3.55))
 	_verify_capture_set()
 	await _finish()
 
@@ -149,6 +150,80 @@ func _set_mood(mood: int) -> void:
 		return
 	_host.set("_mood", mood)
 	_host.call("_apply_mood")
+
+
+func _capture_checked(capture_name: String, expected_camera_mode: int, expected_mood: int, expected_hud_visible: bool, expected_position: Vector3) -> void:
+	_verify_capture_state(capture_name, expected_camera_mode, expected_mood, expected_hud_visible, expected_position)
+	_capture(capture_name)
+
+
+func _verify_capture_state(capture_name: String, expected_camera_mode: int, expected_mood: int, expected_hud_visible: bool, expected_position: Vector3) -> void:
+	if _host == null:
+		_errors.append(capture_name + " has no capture host for state verification")
+		return
+	var actual_camera_mode: int = int(_host.get("_camera_mode"))
+	if actual_camera_mode != expected_camera_mode:
+		_errors.append(capture_name + " expected camera " + _camera_mode_name(expected_camera_mode) + ", got " + _camera_mode_name(actual_camera_mode))
+	var actual_mood: int = int(_host.get("_mood"))
+	if actual_mood != expected_mood:
+		_errors.append(capture_name + " expected mood " + _mood_name(expected_mood) + ", got " + _mood_name(actual_mood))
+	_verify_current_camera(capture_name, expected_camera_mode)
+	var hud: CanvasLayer = _host.get_node_or_null("LandmarkHintHud") as CanvasLayer
+	if hud == null:
+		_errors.append(capture_name + " missing LandmarkHintHud")
+	elif hud.visible != expected_hud_visible:
+		_errors.append(capture_name + " expected HUD visible=" + str(expected_hud_visible) + ", got " + str(hud.visible))
+	_verify_vehicle_position(capture_name, expected_position)
+
+
+func _verify_current_camera(capture_name: String, expected_camera_mode: int) -> void:
+	var chase_camera: Camera3D = _host.get_node_or_null("ChaseCamera") as Camera3D
+	var orbit_camera: Camera3D = _host.get_node_or_null("OrbitCamera") as Camera3D
+	var fpv_camera: Camera3D = _host.get_node_or_null("FpvCamera") as Camera3D
+	if chase_camera == null or orbit_camera == null or fpv_camera == null:
+		_errors.append(capture_name + " missing one or more capture cameras")
+		return
+	if expected_camera_mode == CAMERA_MODE_CHASE and not chase_camera.current:
+		_errors.append(capture_name + " expected ChaseCamera to be current")
+	if expected_camera_mode == CAMERA_MODE_ORBIT and not orbit_camera.current:
+		_errors.append(capture_name + " expected OrbitCamera to be current")
+	if expected_camera_mode == CAMERA_MODE_FPV and not fpv_camera.current:
+		_errors.append(capture_name + " expected FpvCamera to be current")
+
+
+func _verify_vehicle_position(capture_name: String, expected_position: Vector3) -> void:
+	var vehicle: Node = _host.get_node_or_null("Vehicle")
+	if vehicle == null:
+		_errors.append(capture_name + " missing Vehicle")
+		return
+	var state: RefCounted = vehicle.call("get_state")
+	if state == null:
+		_errors.append(capture_name + " could not read VehicleState")
+		return
+	var actual_position: Vector3 = state.get("position")
+	var actual_xz: Vector2 = Vector2(actual_position.x, actual_position.z)
+	var expected_xz: Vector2 = Vector2(expected_position.x, expected_position.z)
+	var distance: float = actual_xz.distance_to(expected_xz)
+	if distance > CAPTURE_POSITION_XZ_EPSILON:
+		_errors.append(capture_name + " expected vehicle near " + str(expected_xz) + ", got " + str(actual_xz))
+
+
+func _camera_mode_name(mode: int) -> String:
+	if mode == CAMERA_MODE_CHASE:
+		return "chase"
+	if mode == CAMERA_MODE_ORBIT:
+		return "orbit"
+	if mode == CAMERA_MODE_FPV:
+		return "fpv"
+	return "unknown(" + str(mode) + ")"
+
+
+func _mood_name(mood: int) -> String:
+	if mood == MOOD_DUSK:
+		return "dusk"
+	if mood == MOOD_DAWN:
+		return "dawn"
+	return "unknown(" + str(mood) + ")"
 
 
 func _capture(capture_name: String) -> void:
