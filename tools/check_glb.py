@@ -243,15 +243,20 @@ def collect_stats(gltf):
 
     names = []
     node_summaries = []
-    for node in nodes:
+    for index, node in enumerate(nodes):
+        node_name = str(node.get("name", ""))
+        translation = node.get("translation", [0.0, 0.0, 0.0])
+        children = node.get("children", [])
+        mesh_index = node.get("mesh")
+        node_summaries.append({
+            "index": index,
+            "name": node_name,
+            "translation": translation if isinstance(translation, list) else [0.0, 0.0, 0.0],
+            "children": children if isinstance(children, list) else [],
+            "mesh": mesh_index if isinstance(mesh_index, int) else None,
+        })
         if "name" in node:
-            node_name = str(node["name"])
             names.append(node_name)
-            translation = node.get("translation", [0.0, 0.0, 0.0])
-            node_summaries.append({
-                "name": node_name,
-                "translation": translation if isinstance(translation, list) else [0.0, 0.0, 0.0],
-            })
     for mesh in meshes:
         if "name" in mesh:
             names.append(str(mesh["name"]))
@@ -276,14 +281,20 @@ def collect_stats(gltf):
 
 def validate_vehicle(stats):
     ok = True
-    node_names = [node["name"] for node in stats["nodes"]]
-    if "rc_buggy" not in node_names:
-        ok = fail("vehicle profile requires rc_buggy root node") and ok
+    root_nodes = [node for node in stats["nodes"] if node["name"] == "rc_buggy"]
+    if len(root_nodes) != 1:
+        ok = fail(f"vehicle profile requires exactly one rc_buggy root node; found {len(root_nodes)}") and ok
+        root_children = set()
+    else:
+        root_children = set(root_nodes[0]["children"])
     for socket_name, expected_position in VEHICLE_WHEEL_SOCKET_POSITIONS.items():
         matching_nodes = [node for node in stats["nodes"] if node["name"] == socket_name]
         if len(matching_nodes) != 1:
             ok = fail(f"vehicle profile requires exactly one {socket_name} node; found {len(matching_nodes)}") and ok
             continue
+        socket_node = matching_nodes[0]
+        if socket_node["index"] not in root_children:
+            ok = fail(f"{socket_name} should be a direct child of rc_buggy") and ok
         translation = matching_nodes[0]["translation"]
         if len(translation) < 3:
             ok = fail(f"{socket_name} translation should have 3 components") and ok
@@ -293,6 +304,10 @@ def validate_vehicle(stats):
             if delta > VEHICLE_SOCKET_TOLERANCE:
                 ok = fail(f"{socket_name} translation expected {expected_position}, got {translation}") and ok
                 break
+        child_nodes = [node for node in stats["nodes"] if node["index"] in set(socket_node["children"])]
+        mesh_children = [node for node in child_nodes if node["mesh"] is not None]
+        if not mesh_children:
+            ok = fail(f"{socket_name} should own at least one direct mesh child for wheel animation") and ok
     return ok
 
 
