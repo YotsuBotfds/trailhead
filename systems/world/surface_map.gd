@@ -8,9 +8,9 @@ const SOURCE_TAGGED: String = "tagged"
 const SOURCE_TERRAIN: String = "terrain"
 const SOURCE_FALLBACK: String = "fallback"
 
-var _defs: Dictionary = {}
+var _defs: Dictionary[StringName, Resource] = {}
 var _fallback: Resource = null
-var _source_counts: Dictionary = {}
+var _source_counts: Dictionary[String, int] = {}
 var _terrain_palette: Resource = null
 var _terrain_surface_samples: PackedByteArray = PackedByteArray()
 var _terrain_surface_width: int = 0
@@ -149,7 +149,7 @@ func reset_source_counts() -> void:
 	}
 
 
-func source_counts() -> Dictionary:
+func source_counts() -> Dictionary[String, int]:
 	return _source_counts.duplicate()
 
 

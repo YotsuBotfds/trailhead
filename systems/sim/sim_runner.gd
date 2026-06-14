@@ -15,12 +15,13 @@ const PDWaypointControllerScript: GDScript = preload("res://systems/sim/controll
 const ReplayControllerScript: GDScript = preload("res://systems/sim/controllers/replay_controller.gd")
 const ScriptedFeelControllerScript: GDScript = preload("res://systems/sim/controllers/scripted_feel_controller.gd")
 
-var _args: Dictionary = {}
+var _args: Dictionary[String, Variant] = {}
 var _vehicle: Node = null
 var _controller: RefCounted = null
 var _surface_map: Node = null
 var _route: Resource = null
 var _landmarks: Node = null
+# GDScript 4.6 cannot express key/value types inside Array[Dictionary].
 var _telemetry: Array[Dictionary] = []
 var _tick: int = 0
 var _max_ticks: int = 6000
@@ -78,15 +79,15 @@ var _last_surface_event: StringName = &""
 var _last_landmark_event: StringName = &""
 var _surface_event_sequence: Array[String] = []
 var _landmark_event_sequence: Array[String] = []
-var _surface_contact_ticks: Dictionary = {}
-var _surface_speed_sum: Dictionary = {}
-var _surface_speed_delta_sum: Dictionary = {}
-var _surface_abs_slip_sum: Dictionary = {}
-var _surface_max_abs_slip: Dictionary = {}
+var _surface_contact_ticks: Dictionary[String, int] = {}
+var _surface_speed_sum: Dictionary[String, float] = {}
+var _surface_speed_delta_sum: Dictionary[String, float] = {}
+var _surface_abs_slip_sum: Dictionary[String, float] = {}
+var _surface_max_abs_slip: Dictionary[String, float] = {}
 var _max_contamination_mud: float = 0.0
 var _max_contamination_dust: float = 0.0
 var _max_contamination_wetness: float = 0.0
-var _final_vehicle_contamination: Dictionary = {}
+var _final_vehicle_contamination: Dictionary[String, float] = {}
 
 
 func _ready() -> void:
@@ -184,8 +185,8 @@ func _physics_process(_delta: float) -> void:
 	_tick += 1
 
 
-func _parse_args(raw: PackedStringArray) -> Dictionary:
-	var out: Dictionary = {}
+func _parse_args(raw: PackedStringArray) -> Dictionary[String, Variant]:
+	var out: Dictionary[String, Variant] = {}
 	for arg in raw:
 		var s: String = String(arg)
 		if s.begins_with("--") and s.contains("="):
@@ -365,7 +366,7 @@ func _record(state: RefCounted, input: RefCounted) -> void:
 	var input_throttle: float = float(input.get("throttle"))
 	var wheel_contact: Variant = state.get("wheel_contact")
 	var wheel_surface: Variant = state.get("wheel_surface")
-	var vehicle_contamination: Dictionary = _vehicle_contamination_dictionary(state)
+	var vehicle_contamination: Dictionary[String, float] = _vehicle_contamination_dictionary(state)
 	var surface_id: StringName = _dominant_surface_from_array(wheel_surface)
 	var front_contact_count: int = _contact_count(wheel_contact, 0, 2)
 	var rear_contact_count: int = _contact_count(wheel_contact, 2, 4)
@@ -771,37 +772,39 @@ func _surface_array_to_array(values: Variant) -> Array[String]:
 	return out
 
 
-func _vehicle_contamination_dictionary(state: RefCounted) -> Dictionary:
+func _vehicle_contamination_dictionary(state: RefCounted) -> Dictionary[String, float]:
+	var out: Dictionary[String, float] = {}
 	var contamination: RefCounted = state.get("contamination") as RefCounted
 	if contamination == null:
-		return {
-			"mud": 0.0,
-			"dust": 0.0,
-			"wetness": 0.0
-		}
-	return {
-		"mud": float(contamination.get("mud")),
-		"dust": float(contamination.get("dust")),
-		"wetness": float(contamination.get("wetness"))
-	}
+		out["mud"] = 0.0
+		out["dust"] = 0.0
+		out["wetness"] = 0.0
+		return out
+	out["mud"] = float(contamination.get("mud"))
+	out["dust"] = float(contamination.get("dust"))
+	out["wetness"] = float(contamination.get("wetness"))
+	return out
 
 
-func _record_contamination_metrics(contamination: Dictionary) -> void:
+func _record_contamination_metrics(contamination: Dictionary[String, float]) -> void:
 	var mud: float = float(contamination.get("mud", 0.0))
 	var dust: float = float(contamination.get("dust", 0.0))
 	var wetness: float = float(contamination.get("wetness", 0.0))
 	_max_contamination_mud = maxf(_max_contamination_mud, mud)
 	_max_contamination_dust = maxf(_max_contamination_dust, dust)
 	_max_contamination_wetness = maxf(_max_contamination_wetness, wetness)
-	_final_vehicle_contamination = contamination.duplicate()
+	_final_vehicle_contamination.clear()
+	_final_vehicle_contamination["mud"] = mud
+	_final_vehicle_contamination["dust"] = dust
+	_final_vehicle_contamination["wetness"] = wetness
 
 
-func _max_vehicle_contamination_dictionary() -> Dictionary:
-	return {
-		"mud": _max_contamination_mud,
-		"dust": _max_contamination_dust,
-		"wetness": _max_contamination_wetness
-	}
+func _max_vehicle_contamination_dictionary() -> Dictionary[String, float]:
+	var out: Dictionary[String, float] = {}
+	out["mud"] = _max_contamination_mud
+	out["dust"] = _max_contamination_dust
+	out["wetness"] = _max_contamination_wetness
+	return out
 
 
 func _dominant_surface_from_array(values: Variant) -> StringName:
