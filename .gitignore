@@ -1,6 +1,6 @@
 .DS_Store
 .godot/
+*.gd.uid
 *.tmp
 tests/out/
 assets/generated/
-

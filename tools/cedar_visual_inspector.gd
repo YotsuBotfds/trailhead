@@ -31,6 +31,17 @@ func _inspect() -> void:
 		var mesh_count: int = _count_mesh_instances(feature_root)
 		if mesh_count <= 0:
 			_errors.append("FeatureVisuals contains no mesh instances")
+	var prop_root: Node = _require_node(_scene_root, "CedarHollow/PropVisuals")
+	if prop_root != null:
+		_require_named_count(prop_root, "trail_sign", 1)
+		_require_named_count(prop_root, "picnic_table", 1)
+		_require_named_count(prop_root, "old_cedar_stump", 1)
+		var prop_collision_count: int = _count_collision_objects(prop_root)
+		if prop_collision_count > 0:
+			_errors.append("PropVisuals contains collision objects: " + str(prop_collision_count))
+		var prop_mesh_count: int = _count_mesh_instances(prop_root)
+		if prop_mesh_count <= 0:
+			_errors.append("PropVisuals contains no mesh instances")
 	_require_node(_scene_root, "CedarHollow")
 	_require_node(_scene_root, "Vehicle")
 	_require_node(_scene_root, "ChaseCamera")
@@ -75,7 +86,7 @@ func _count_mesh_instances(parent: Node) -> int:
 
 func _finish() -> void:
 	if _errors.is_empty():
-		print("ok: Cedar Hollow feature visuals instantiated")
+		print("ok: Cedar Hollow feature and prop visuals instantiated")
 		get_tree().quit(0)
 		return
 	for error in _errors:
