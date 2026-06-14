@@ -2,6 +2,8 @@ extends Node
 
 const FlatPlaneScene: PackedScene = preload("res://scenes/flat_plane.tscn")
 const FLOAT_EPSILON: float = 0.001
+const CAMERA_COMPOSITION_TOLERANCE: float = 0.01
+const CAMERA_PITCH_TOLERANCE_DEG: float = 0.25
 
 var _scene_root: Node = null
 var _errors: PackedStringArray = PackedStringArray()
@@ -103,6 +105,28 @@ func _inspect_chase_camera(vehicle: Node, chase_camera: Camera3D) -> void:
 		_errors.append("flat ChaseCamera should start above the vehicle")
 	if chase_camera.global_position.z <= vehicle_position.z:
 		_errors.append("flat ChaseCamera should start behind the spawn")
+	_require_chase_camera_composition(state, chase_camera, "flat ChaseCamera")
+
+
+func _require_chase_camera_composition(state: RefCounted, chase_camera: Camera3D, context: String) -> void:
+	var vehicle_position: Vector3 = state.get("position")
+	var vehicle_basis: Basis = state.get("basis")
+	var back: Vector3 = vehicle_basis.z.normalized()
+	var offset: Vector3 = chase_camera.global_position - vehicle_position
+	var expected_offset_xz: Vector2 = Vector2(back.x, back.z) * GameConfig.cam_distance
+	var actual_offset_xz: Vector2 = Vector2(offset.x, offset.z)
+	if actual_offset_xz.distance_to(expected_offset_xz) > CAMERA_COMPOSITION_TOLERANCE:
+		_errors.append(context + " rear offset expected " + str(expected_offset_xz) + ", got " + str(actual_offset_xz))
+	if absf(offset.y - GameConfig.cam_height) > CAMERA_COMPOSITION_TOLERANCE:
+		_errors.append(context + " height offset expected " + str(GameConfig.cam_height) + ", got " + str(offset.y))
+	_require_camera_pitch(chase_camera, context)
+
+
+func _require_camera_pitch(camera: Camera3D, context: String) -> void:
+	var forward: Vector3 = -camera.global_transform.basis.z.normalized()
+	var pitch_degrees: float = rad_to_deg(asin(clampf(forward.y, -1.0, 1.0)))
+	if absf(pitch_degrees - GameConfig.cam_pitch_deg) > CAMERA_PITCH_TOLERANCE_DEG:
+		_errors.append(context + " pitch expected " + str(GameConfig.cam_pitch_deg) + ", got " + str(pitch_degrees))
 
 
 func _require_node(parent: Node, path: String) -> Node:

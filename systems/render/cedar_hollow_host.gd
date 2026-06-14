@@ -325,9 +325,19 @@ func _update_chase_camera(delta: float, state: RefCounted) -> void:
 		_chase_camera_initialized = true
 	else:
 		_camera.global_position = _camera.global_position.lerp(desired_position, follow_alpha)
-	_camera.look_at(vehicle_position + forward * GameConfig.cam_look_ahead, Vector3.UP)
+	_camera.look_at(_chase_camera_look_target(vehicle_position, forward), Vector3.UP)
 	_camera.fov = GameConfig.get_fov_for_speed(float(state.call("speed")))
 	_camera.current = _camera_mode == CAMERA_MODE_CHASE
+
+
+func _chase_camera_look_target(vehicle_position: Vector3, forward: Vector3) -> Vector3:
+	var target: Vector3 = vehicle_position + forward * GameConfig.cam_look_ahead
+	if _camera == null:
+		return target
+	var flat_delta: Vector3 = Vector3(target.x - _camera.global_position.x, 0.0, target.z - _camera.global_position.z)
+	var horizontal_distance: float = maxf(flat_delta.length(), 0.001)
+	target.y = _camera.global_position.y + tan(deg_to_rad(GameConfig.cam_pitch_deg)) * horizontal_distance
+	return target
 
 
 func _update_orbit_camera(delta: float, state: RefCounted) -> void:

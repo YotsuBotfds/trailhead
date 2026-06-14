@@ -18,6 +18,8 @@ const EXPECTED_BOUNDARY_BRANCHES: int = 6
 const EXPECTED_TRAIL_BLAZES: int = 4
 const EXPECTED_WAYFINDER_SIGNS: int = 3
 const FLOAT_EPSILON: float = 0.001
+const CAMERA_COMPOSITION_TOLERANCE: float = 0.01
+const CAMERA_PITCH_TOLERANCE_DEG: float = 0.25
 const FEATURE_TRANSFORM_TOLERANCE: float = 0.01
 const FEATURE_COLLISION_ALIGNMENT_TOLERANCE: float = 0.05
 const SCATTER_X_MIN: float = -2.8
@@ -457,6 +459,7 @@ func _inspect_camera_defaults(vehicle: Node, chase_camera: Camera3D, orbit_camer
 		_errors.append("ChaseCamera should start above the vehicle")
 	if chase_camera.global_position.z <= vehicle_position.z:
 		_errors.append("ChaseCamera should start behind the trailhead spawn")
+	_require_chase_camera_composition(state, chase_camera, "ChaseCamera")
 	if orbit_camera.global_position.y <= vehicle_position.y:
 		_errors.append("OrbitCamera should start above the vehicle")
 	if orbit_camera.global_position.distance_to(vehicle_position) <= GameConfig.orbit_cam_distance:
@@ -545,6 +548,7 @@ func _inspect_camera_reactivity(host: Node, vehicle: Node, chase_camera: Camera3
 		_errors.append("ChaseCamera FOV should widen at max speed")
 	if chase_camera.global_position.distance_to(chase_position_before) <= FLOAT_EPSILON:
 		_errors.append("ChaseCamera should move toward a changed vehicle state")
+	_require_camera_pitch(chase_camera, "ChaseCamera reactive update")
 
 	host.call("cycle_camera_mode")
 	var orbit_position_before: Vector3 = orbit_camera.global_position
@@ -563,6 +567,27 @@ func _inspect_camera_reactivity(host: Node, vehicle: Node, chase_camera: Camera3
 
 	host.call("cycle_camera_mode")
 	host.call("cycle_camera_mode")
+
+
+func _require_chase_camera_composition(state: RefCounted, chase_camera: Camera3D, context: String) -> void:
+	var vehicle_position: Vector3 = state.get("position")
+	var vehicle_basis: Basis = state.get("basis")
+	var back: Vector3 = vehicle_basis.z.normalized()
+	var offset: Vector3 = chase_camera.global_position - vehicle_position
+	var expected_offset_xz: Vector2 = Vector2(back.x, back.z) * GameConfig.cam_distance
+	var actual_offset_xz: Vector2 = Vector2(offset.x, offset.z)
+	if actual_offset_xz.distance_to(expected_offset_xz) > CAMERA_COMPOSITION_TOLERANCE:
+		_errors.append(context + " rear offset expected " + str(expected_offset_xz) + ", got " + str(actual_offset_xz))
+	if absf(offset.y - GameConfig.cam_height) > CAMERA_COMPOSITION_TOLERANCE:
+		_errors.append(context + " height offset expected " + str(GameConfig.cam_height) + ", got " + str(offset.y))
+	_require_camera_pitch(chase_camera, context)
+
+
+func _require_camera_pitch(camera: Camera3D, context: String) -> void:
+	var forward: Vector3 = -camera.global_transform.basis.z.normalized()
+	var pitch_degrees: float = rad_to_deg(asin(clampf(forward.y, -1.0, 1.0)))
+	if absf(pitch_degrees - GameConfig.cam_pitch_deg) > CAMERA_PITCH_TOLERANCE_DEG:
+		_errors.append(context + " pitch expected " + str(GameConfig.cam_pitch_deg) + ", got " + str(pitch_degrees))
 
 
 func _inspect_hud_defaults(hud: Node) -> void:
