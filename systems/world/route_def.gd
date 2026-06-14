@@ -24,24 +24,18 @@ extends Resource
 
 func validate() -> PackedStringArray:
 	var errors: PackedStringArray = PackedStringArray()
-	if spawn_positions.size() < spawn_ids.size():
-		errors.append("spawn_positions has fewer entries than spawn_ids")
-	if spawn_yaw_degrees.size() < spawn_ids.size():
-		errors.append("spawn_yaw_degrees has fewer entries than spawn_ids")
-	if landmark_display_names.size() < landmark_ids.size():
-		errors.append("landmark_display_names has fewer entries than landmark_ids")
-	if landmark_positions.size() < landmark_ids.size():
-		errors.append("landmark_positions has fewer entries than landmark_ids")
-	if landmark_radii.size() < landmark_ids.size():
-		errors.append("landmark_radii has fewer entries than landmark_ids")
-	if segment_spawn_ids.size() < segment_ids.size():
-		errors.append("segment_spawn_ids has fewer entries than segment_ids")
-	if segment_target_landmark_ids.size() < segment_ids.size():
-		errors.append("segment_target_landmark_ids has fewer entries than segment_ids")
-	if segment_waypoint_offsets.size() < segment_ids.size():
-		errors.append("segment_waypoint_offsets has fewer entries than segment_ids")
-	if segment_waypoint_counts.size() < segment_ids.size():
-		errors.append("segment_waypoint_counts has fewer entries than segment_ids")
+	_require_same_size(errors, spawn_positions.size(), spawn_ids.size(), "spawn_positions", "spawn_ids")
+	_require_same_size(errors, spawn_yaw_degrees.size(), spawn_ids.size(), "spawn_yaw_degrees", "spawn_ids")
+	_require_same_size(errors, landmark_display_names.size(), landmark_ids.size(), "landmark_display_names", "landmark_ids")
+	_require_same_size(errors, landmark_positions.size(), landmark_ids.size(), "landmark_positions", "landmark_ids")
+	_require_same_size(errors, landmark_radii.size(), landmark_ids.size(), "landmark_radii", "landmark_ids")
+	_require_same_size(errors, segment_spawn_ids.size(), segment_ids.size(), "segment_spawn_ids", "segment_ids")
+	_require_same_size(errors, segment_target_landmark_ids.size(), segment_ids.size(), "segment_target_landmark_ids", "segment_ids")
+	_require_same_size(errors, segment_waypoint_offsets.size(), segment_ids.size(), "segment_waypoint_offsets", "segment_ids")
+	_require_same_size(errors, segment_waypoint_counts.size(), segment_ids.size(), "segment_waypoint_counts", "segment_ids")
+	_require_same_size(errors, segment_max_ticks.size(), segment_ids.size(), "segment_max_ticks", "segment_ids")
+	_require_same_size(errors, segment_target_radii.size(), segment_ids.size(), "segment_target_radii", "segment_ids")
+	_require_same_size(errors, segment_rough_throttle.size(), segment_ids.size(), "segment_rough_throttle", "segment_ids")
 	for i in range(segment_ids.size()):
 		var spawn_id: StringName = segment_spawn_id(segment_ids[i], &"")
 		if spawn_id == &"" or not has_spawn(spawn_id):
@@ -157,3 +151,8 @@ func _array_int(values: Array[int], index: int, fallback: int) -> int:
 	if index < 0 or index >= values.size():
 		return fallback
 	return values[index]
+
+
+func _require_same_size(errors: PackedStringArray, actual: int, expected: int, actual_name: String, expected_name: String) -> void:
+	if actual != expected:
+		errors.append(actual_name + " must have the same length as " + expected_name)

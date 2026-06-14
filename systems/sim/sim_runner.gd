@@ -487,7 +487,6 @@ func _finish(passed: bool) -> void:
 		"telemetry": _telemetry
 	}
 	_write_json(path, result)
-	EventBus.sim_completed_run.emit(_target_id, bool(result["result"] == "pass"))
 	get_tree().quit(0 if result["result"] == "pass" else 1)
 
 
@@ -519,7 +518,6 @@ func _finish_runner_error(message: String) -> void:
 		"telemetry": _telemetry
 	}
 	_write_json(path, result)
-	EventBus.sim_completed_run.emit(_target_id, false)
 	get_tree().quit(2)
 
 
