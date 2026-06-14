@@ -2,7 +2,7 @@ class_name Landmarks
 extends Node
 
 var _route: Resource = null
-var _reached: Dictionary = {}
+var _reached: Dictionary[StringName, bool] = {}
 
 
 func configure(route: Resource) -> void:
@@ -13,7 +13,7 @@ func configure(route: Resource) -> void:
 func sample_position(position: Vector3) -> void:
 	if _route == null:
 		return
-	var landmark_ids: Array = _route.get("landmark_ids")
+	var landmark_ids: Array[StringName] = _route.get("landmark_ids")
 	for value in landmark_ids:
 		var landmark_id: StringName = StringName(value)
 		if _reached.has(landmark_id):

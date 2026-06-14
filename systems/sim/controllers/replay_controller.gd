@@ -3,10 +3,10 @@ extends RefCounted
 
 const VehicleInputScript: GDScript = preload("res://systems/vehicle/vehicle_input.gd")
 
-var _inputs: Array[Dictionary] = []
-var _expected_samples: Array = []
-var _expected_tolerances: Dictionary = {}
-var _expected_predicates: Dictionary = {}
+var _inputs: Array[Variant] = []
+var _expected_samples: Array[Variant] = []
+var _expected_tolerances: Dictionary[String, Variant] = {}
+var _expected_predicates: Dictionary[String, Variant] = {}
 var _expected_ticks: int = 0
 var _tick: int = 0
 var _done: bool = true
@@ -26,6 +26,10 @@ func configure_empty() -> void:
 
 func configure_from_file(path: String) -> bool:
 	_inputs.clear()
+	_expected_samples.clear()
+	_expected_tolerances.clear()
+	_expected_predicates.clear()
+	_expected_ticks = 0
 	_tick = 0
 	_done = false
 	_last_error = ""
@@ -41,26 +45,27 @@ func configure_from_file(path: String) -> bool:
 		_last_error = "replay file root is not a dictionary: " + path
 		_done = true
 		return false
-	var data: Dictionary = parsed
+	var data: Dictionary[String, Variant] = _string_key_dictionary(parsed)
 	if not data.has("inputs") or not (data["inputs"] is Array):
 		_last_error = "replay file missing inputs array: " + path
 		_done = true
 		return false
-	var raw_inputs: Array = data["inputs"]
-	for value in raw_inputs:
+	for value: Variant in data["inputs"]:
 		if value is Dictionary:
-			_inputs.append(value)
+			_inputs.append(_string_key_dictionary(value))
 	if _inputs.is_empty():
 		_last_error = "replay file has no input rows: " + path
 		_done = true
 		return false
 	_expected_ticks = int(data.get("ticks", _inputs.size()))
 	if data.has("samples") and data["samples"] is Array:
-		_expected_samples = data["samples"]
+		for value: Variant in data["samples"]:
+			if value is Dictionary:
+				_expected_samples.append(_string_key_dictionary(value))
 	if data.has("tolerances") and data["tolerances"] is Dictionary:
-		_expected_tolerances = data["tolerances"]
+		_expected_tolerances = _string_key_dictionary(data["tolerances"])
 	if data.has("predicates") and data["predicates"] is Dictionary:
-		_expected_predicates = data["predicates"]
+		_expected_predicates = _string_key_dictionary(data["predicates"])
 	return true
 
 
@@ -69,7 +74,7 @@ func next_input(_state: RefCounted) -> RefCounted:
 	if _tick >= _inputs.size():
 		_done = true
 		return input
-	var row: Dictionary = _inputs[_tick]
+	var row: Dictionary[String, Variant] = _string_key_dictionary(_inputs[_tick])
 	input.set("throttle", float(row.get("throttle", 0.0)))
 	input.set("steer", float(row.get("steer", 0.0)))
 	input.set("brake", float(row.get("brake", 0.0)))
@@ -93,15 +98,15 @@ func expected_ticks() -> int:
 	return _expected_ticks
 
 
-func expected_samples() -> Array:
+func expected_samples() -> Array[Variant]:
 	return _expected_samples
 
 
-func expected_tolerances() -> Dictionary:
+func expected_tolerances() -> Dictionary[String, Variant]:
 	return _expected_tolerances
 
 
-func expected_predicates() -> Dictionary:
+func expected_predicates() -> Dictionary[String, Variant]:
 	return _expected_predicates
 
 
@@ -109,3 +114,12 @@ func _resolve_path(path: String) -> String:
 	if path.begins_with("res://") or path.begins_with("user://") or path.begins_with("/"):
 		return path
 	return "res://" + path
+
+
+func _string_key_dictionary(value: Variant) -> Dictionary[String, Variant]:
+	var result: Dictionary[String, Variant] = {}
+	if not (value is Dictionary):
+		return result
+	for key: Variant in value:
+		result[String(key)] = value[key]
+	return result
