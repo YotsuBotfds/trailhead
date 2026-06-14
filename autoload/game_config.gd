@@ -50,6 +50,13 @@ var orbit_cam_look_height: float = 0.08
 var orbit_cam_fov: float = 54.0
 var orbit_cam_speed_deg: float = 18.0
 var orbit_cam_start_yaw_deg: float = 35.0
+var minimap_size: float = 132.0
+var minimap_margin: float = 16.0
+var minimap_inner_padding: float = 12.0
+var minimap_route_line_width: float = 1.5
+var minimap_dot_radius: float = 2.6
+var minimap_player_radius: float = 4.0
+var minimap_heading_length: float = 10.0
 
 var dusk_sun_rotation_degrees: Vector3 = Vector3(-34.0, -48.0, 0.0)
 var dusk_sun_energy: float = 2.8

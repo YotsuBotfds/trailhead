@@ -11,6 +11,7 @@ const PropVisualBuilderScript: GDScript = preload("res://systems/render/prop_vis
 const ScatterVisualBuilderScript: GDScript = preload("res://systems/render/scatter_visual_builder.gd")
 const ProceduralBuggyVisualScript: GDScript = preload("res://systems/render/procedural_buggy_visual.gd")
 const CedarAudioRigScript: GDScript = preload("res://systems/render/cedar_audio_rig.gd")
+const LandmarkHintHudScript: GDScript = preload("res://systems/render/landmark_hint_hud.gd")
 const SurfaceMapScript: GDScript = preload("res://systems/world/surface_map.gd")
 const CAMERA_MODE_CHASE: int = 0
 const CAMERA_MODE_ORBIT: int = 1
@@ -26,6 +27,7 @@ var _camera_mode: int = CAMERA_MODE_CHASE
 var _chase_camera_initialized: bool = false
 var _orbit_camera_initialized: bool = false
 var _orbit_yaw_degrees: float = 0.0
+var _landmark_hint_hud: CanvasLayer = null
 
 
 func _ready() -> void:
@@ -37,6 +39,7 @@ func _ready() -> void:
 	_setup_environment()
 	_setup_light()
 	_setup_camera()
+	_setup_hud()
 
 
 func _physics_process(delta: float) -> void:
@@ -143,6 +146,13 @@ func _setup_camera() -> void:
 	add_child(_orbit_camera)
 	_orbit_yaw_degrees = GameConfig.orbit_cam_start_yaw_deg
 	_update_camera(GameConfig.FIXED_DT)
+
+
+func _setup_hud() -> void:
+	_landmark_hint_hud = LandmarkHintHudScript.new() as CanvasLayer
+	_landmark_hint_hud.name = "LandmarkHintHud"
+	add_child(_landmark_hint_hud)
+	_landmark_hint_hud.call("configure", CedarRoute, _vehicle)
 
 
 func _update_vehicle_input() -> void:
