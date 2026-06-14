@@ -16,6 +16,11 @@ run_sim() {
 	"$godot_bin" --headless --fixed-fps 60 --path . res://scenes/sim_runner.tscn -- "$@" --out="$out_file"
 }
 
+assert_metrics() {
+	printf 'assert: %s\n' "$1"
+	./tools/assert_sim_metrics.py "$@"
+}
+
 printf 'run: project opens headless\n'
 "$godot_bin" --headless --path . --quit
 
@@ -155,6 +160,49 @@ run_sim "$out_dir/cedar_hollow_segment_overlook_to_old_cedar.json" \
 	--seed=12345 \
 	--stuck-window=60 \
 	--stuck-min-progress=0.03
+
+assert_metrics "$out_dir/cedar_hollow_log_ramp.json" \
+	--surface=wood_plank:20 \
+	--surface-sequence=wood_plank,tall_grass,wood_plank \
+	--metric-min=max_y_position:0.18 \
+	--metric-min=max_pitch_deg:4.0
+
+assert_metrics "$out_dir/cedar_hollow_old_cedar.json" \
+	--surface=packed_dirt:40 \
+	--landmark=old_cedar
+
+assert_metrics "$out_dir/cedar_hollow_overlook_ridge.json" \
+	--surface=loose_rock:20 \
+	--landmark=overlook_ridge
+
+assert_metrics "$out_dir/cedar_hollow_bog_bottom.json" \
+	--surface=mud:4 \
+	--landmark=bog_bottom
+
+assert_metrics "$out_dir/cedar_hollow_the_crossing.json" \
+	--surface=wood_plank:10 \
+	--surface=mud:30 \
+	--surface=wet_stone:2 \
+	--surface-sequence=wood_plank,mud,wet_stone \
+	--landmark=the_crossing
+
+assert_metrics "$out_dir/cedar_hollow_boardwalk_end.json" \
+	--surface=wood_plank:10 \
+	--landmark=boardwalk_end
+
+assert_metrics "$out_dir/cedar_hollow_culvert_mouth.json" \
+	--surface=packed_dirt:50 \
+	--landmark=culvert_mouth
+
+assert_metrics "$out_dir/cedar_hollow_segment_trailhead_to_culvert_mouth.json" \
+	--surface=tall_grass:20 \
+	--surface=packed_dirt:60 \
+	--landmark=culvert_mouth
+
+assert_metrics "$out_dir/cedar_hollow_segment_overlook_to_old_cedar.json" \
+	--surface=loose_rock:20 \
+	--surface=packed_dirt:300 \
+	--landmark=old_cedar
 
 run_sim "$out_dir/golden_flat_target.json" \
 	--scene=flat_plane \
