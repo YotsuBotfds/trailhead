@@ -11,6 +11,10 @@ TOLERANCES = {
     "position_m": 0.08,
     "velocity_mps": 0.25,
     "speed_mps": 0.20,
+    "slip_deg": 2.0,
+    "surface_ticks": 2,
+    "event_counts": 0,
+    "motor_rpm": 120.0,
 }
 
 GOLDENS = [
@@ -52,6 +56,8 @@ def sample_from_row(row):
         "position": [float(value) for value in row.get("position", [0.0, 0.0, 0.0])],
         "linear_velocity": [float(value) for value in row.get("linear_velocity", [0.0, 0.0, 0.0])],
         "speed": float(row.get("speed", 0.0)),
+        "slip_angle_deg": float(row.get("slip_angle_deg", 0.0)),
+        "motor_rpm": float(row.get("motor_rpm", 0.0)),
         "is_flipped": bool(row.get("is_flipped", False)),
     }
 
@@ -64,6 +70,18 @@ def sampled_telemetry(telemetry):
         if tick == 0 or tick == final_tick or tick % SAMPLE_STRIDE == 0:
             samples.append(sample_from_row(row))
     return samples
+
+
+def metric_block(metrics):
+    return {
+        "surface_contact_ticks": metrics.get("surface_contact_ticks", {}),
+        "surface_event_count": int(metrics.get("surface_event_count", 0)),
+        "landmark_event_count": int(metrics.get("landmark_event_count", 0)),
+        "flipped_event_count": int(metrics.get("flipped_event_count", 0)),
+        "self_righted_event_count": int(metrics.get("self_righted_event_count", 0)),
+        "max_abs_slip_angle_deg": float(metrics.get("max_abs_slip_angle_deg", 0.0)),
+        "max_abs_slip_angle_by_surface": metrics.get("max_abs_slip_angle_by_surface", {}),
+    }
 
 
 def build_replay(name, source_path):
@@ -87,6 +105,7 @@ def build_replay(name, source_path):
         "ticks": int(data.get("ticks", 0)),
         "tolerances": TOLERANCES,
         "predicates": data.get("predicates", {}),
+        "metrics": metric_block(data.get("metrics", {})),
         "samples": sampled_telemetry(telemetry),
         "inputs": [input_from_row(row) for row in telemetry[1:]],
     }

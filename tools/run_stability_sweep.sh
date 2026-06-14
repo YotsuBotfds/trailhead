@@ -42,6 +42,26 @@ run_log_ramp() {
 		--metric-min=max_pitch_deg:4.0
 }
 
+run_flat_flipped_yawed() {
+	seed="$1"
+	out_file="$out_dir/seed_${seed}_flat_flipped_yawed.json"
+	run_sim "$out_file" \
+		--scene=flat_plane \
+		--controller=pd \
+		--spawn=flat_flipped_yawed \
+		--target=-3,0,-3 \
+		--seed="$seed" \
+		--max-ticks=840 \
+		--stuck-window=120 \
+		--stuck-min-progress=0.05
+	assert_metrics "$out_file" \
+		--surface=packed_dirt:10 \
+		--predicate=self_right_heading_preserved \
+		--metric-min=flipped_event_count:1 \
+		--metric-min=self_righted_event_count:1 \
+		--metric-near=self_right_heading_error_deg:0.0:1.0
+}
+
 run_old_cedar() {
 	seed="$1"
 	out_file="$out_dir/seed_${seed}_cedar_hollow_old_cedar.json"
@@ -55,6 +75,7 @@ run_old_cedar() {
 		--stuck-window=120 \
 		--stuck-min-progress=0.05
 	assert_metrics "$out_file" \
+		--surface=packed_gravel:20 \
 		--surface=packed_dirt:40 \
 		--landmark=old_cedar
 }
@@ -185,6 +206,7 @@ run_overlook_to_old_cedar_segment() {
 
 for seed in $seeds; do
 	printf 'seed: %s\n' "$seed"
+	run_flat_flipped_yawed "$seed"
 	run_log_ramp "$seed"
 	run_old_cedar "$seed"
 	run_overlook_ridge "$seed"

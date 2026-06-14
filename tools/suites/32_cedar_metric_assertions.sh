@@ -5,6 +5,7 @@ assert_metrics "$out_dir/cedar_hollow_log_ramp.json" \
 	--metric-min=max_pitch_deg:4.0
 
 assert_metrics "$out_dir/cedar_hollow_old_cedar.json" \
+	--surface=packed_gravel:20 \
 	--surface=packed_dirt:40 \
 	--landmark=old_cedar
 

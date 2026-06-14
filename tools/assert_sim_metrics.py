@@ -75,6 +75,7 @@ def main():
     parser.add_argument("--surface", action="append", default=[], type=parse_minimum, metavar="SURFACE:MIN_TICKS")
     parser.add_argument("--surface-sequence", default="", metavar="SURFACE_A,SURFACE_B")
     parser.add_argument("--landmark", action="append", default=[])
+    parser.add_argument("--predicate", action="append", default=[])
     parser.add_argument("--metric-min", action="append", default=[], type=parse_minimum, metavar="METRIC:MIN_VALUE")
     parser.add_argument("--metric-near", action="append", default=[], type=parse_near, metavar="METRIC:EXPECTED:TOLERANCE")
     parser.add_argument("--source-min", action="append", default=[], type=parse_minimum, metavar="SOURCE:MIN_VALUE")
@@ -122,6 +123,18 @@ def main():
     for landmark_id in args.landmark:
         if landmark_id not in landmark_sequence:
             errors.append(f"missing landmark event {landmark_id}; saw {landmark_sequence}")
+
+    predicates = data.get("predicates", {})
+    if not isinstance(predicates, dict):
+        predicates = {}
+        errors.append("predicates is not an object")
+    for predicate_name in args.predicate:
+        if predicate_name not in predicates:
+            errors.append(f"missing predicate {predicate_name}")
+            continue
+        actual_predicate = predicates[predicate_name]
+        if actual_predicate is not True:
+            errors.append(f"predicate {predicate_name} was not true; got {actual_predicate!r}")
 
     for metric_name, minimum in args.metric_min:
         actual_value = nested_value(metrics, metric_name)
