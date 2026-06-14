@@ -51,37 +51,15 @@ check_dir() {
 	done
 }
 
-check_dir features \
-	boardwalk_segment.glb \
-	culvert_pipe.glb \
-	log_ramp.glb \
-	stepping_stone.glb
+check_manifest_dir() {
+	subdir="$1"
+	shift
+	set -- $(python3 tools/asset_manifest.py list-generated "$subdir")
+	check_dir "$subdir" "$@"
+}
 
-check_dir props \
-	bottle_cap.glb \
-	carabiner.glb \
-	fire_ring.glb \
-	hiking_boot.glb \
-	kiosk.glb \
-	mile_marker.glb \
-	old_cedar_stump.glb \
-	park_bench.glb \
-	picnic_table.glb \
-	trail_sign.glb \
-	water_bottle.glb
-
-check_dir scatter \
-	boulder_a.glb \
-	branch_a.glb \
-	cattail.glb \
-	fern_clump.glb \
-	grass_tuft.glb \
-	pinecone.glb \
-	trail_blaze.glb
-
-check_dir terrain \
-	cedar_hollow_heightmesh.glb \
-	cedar_hollow_surface_id.png
-
-check_dir vehicle \
-	rc_buggy.glb
+check_manifest_dir features
+check_manifest_dir props
+check_manifest_dir scatter
+check_manifest_dir terrain
+check_manifest_dir vehicle
