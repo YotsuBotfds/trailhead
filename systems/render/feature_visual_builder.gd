@@ -53,7 +53,8 @@ static func _add_stepping_stones(parent: Node3D) -> void:
 static func _instance_feature(parent: Node3D, scene: PackedScene, node_name: String, position: Vector3, rotation: Vector3, scale: Vector3) -> Node3D:
 	var instance: Node3D = scene.instantiate() as Node3D
 	if instance == null:
-		return parent
+		push_error("FeatureVisualBuilder: failed to instantiate " + node_name)
+		return null
 	instance.name = node_name
 	instance.position = position
 	instance.rotation_degrees = rotation
