@@ -6,6 +6,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 MODEL_ASSET_EXTENSIONS = {".glb", ".png"}
+FEATURE_MAX_PRIMITIVES = 16
+PROP_MAX_PRIMITIVES = 32
+SCATTER_MAX_PRIMITIVES = 16
+VEHICLE_MAX_PRIMITIVES = 32
 
 GENERATED_ASSETS = {
     "features": [
@@ -167,12 +171,19 @@ def check_assets():
         return 1
     check_heightmesh_if_present()
     run([sys.executable, "tools/check_godot_imports.py"])
-    check_glb("assets/models/vehicle/rc_buggy.glb", "--profile", "vehicle", "--max-dimension=1.0")
+    check_glb(
+        "assets/models/vehicle/rc_buggy.glb",
+        "--profile",
+        "vehicle",
+        "--max-dimension=1.0",
+        "--max-primitives=" + str(VEHICLE_MAX_PRIMITIVES),
+    )
     for filename in GENERATED_ASSETS["features"]:
         check_glb(
             "assets/models/features/" + filename,
             "--require-surface-tag",
             "--surface-id=" + FEATURE_SURFACES[filename],
+            "--max-primitives=" + str(FEATURE_MAX_PRIMITIVES),
         )
     for filename in GENERATED_ASSETS["props"]:
         min_dimension, max_dimension = PROP_BUDGETS[filename]
@@ -182,6 +193,7 @@ def check_assets():
             "prop",
             "--min-dimension=" + f"{min_dimension:.2f}",
             "--max-dimension=" + f"{max_dimension:.2f}",
+            "--max-primitives=" + str(PROP_MAX_PRIMITIVES),
         )
     for filename in GENERATED_ASSETS["scatter"]:
         min_dimension, max_dimension = SCATTER_BUDGETS[filename]
@@ -191,6 +203,7 @@ def check_assets():
             "scatter",
             "--min-dimension=" + f"{min_dimension:.2f}",
             "--max-dimension=" + f"{max_dimension:.2f}",
+            "--max-primitives=" + str(SCATTER_MAX_PRIMITIVES),
         )
     print("ok: asset GLB contracts passed")
     return 0
@@ -214,6 +227,7 @@ def check_candidate(subdir, filename, candidate_path, surface_id_map):
             str(candidate),
             "--require-surface-tag",
             "--surface-id=" + FEATURE_SURFACES[filename],
+            "--max-primitives=" + str(FEATURE_MAX_PRIMITIVES),
         )
     elif subdir == "props":
         min_dimension, max_dimension = PROP_BUDGETS[filename]
@@ -225,6 +239,7 @@ def check_candidate(subdir, filename, candidate_path, surface_id_map):
             target_stem,
             "--min-dimension=" + f"{min_dimension:.2f}",
             "--max-dimension=" + f"{max_dimension:.2f}",
+            "--max-primitives=" + str(PROP_MAX_PRIMITIVES),
         )
     elif subdir == "scatter":
         min_dimension, max_dimension = SCATTER_BUDGETS[filename]
@@ -236,9 +251,16 @@ def check_candidate(subdir, filename, candidate_path, surface_id_map):
             target_stem,
             "--min-dimension=" + f"{min_dimension:.2f}",
             "--max-dimension=" + f"{max_dimension:.2f}",
+            "--max-primitives=" + str(SCATTER_MAX_PRIMITIVES),
         )
     elif subdir == "vehicle":
-        check_glb(str(candidate), "--profile", "vehicle", "--max-dimension=1.0")
+        check_glb(
+            str(candidate),
+            "--profile",
+            "vehicle",
+            "--max-dimension=1.0",
+            "--max-primitives=" + str(VEHICLE_MAX_PRIMITIVES),
+        )
     elif subdir == "terrain" and filename.endswith(".glb"):
         if surface_id_map is None:
             fail("terrain GLB candidate requires --surface-id-map")

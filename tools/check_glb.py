@@ -391,6 +391,9 @@ def validate(args, stats, bin_chunk_count):
     if stats["triangle_count"] > args.max_triangles:
         ok = fail(f"triangle count {stats['triangle_count']} exceeds budget {args.max_triangles}") and ok
 
+    if args.max_primitives is not None and stats["primitive_count"] > args.max_primitives:
+        ok = fail(f"primitive count {stats['primitive_count']} exceeds budget {args.max_primitives}") and ok
+
     if args.max_dimension is not None and stats["dimensions"]:
         largest = max(stats["dimensions"])
         if largest > args.max_dimension:
@@ -439,6 +442,7 @@ def main():
     parser.add_argument("path", type=Path)
     parser.add_argument("--profile", choices=["generic", "vehicle", "heightmesh", "prop", "scatter"], default="generic")
     parser.add_argument("--max-triangles", type=int, default=200000)
+    parser.add_argument("--max-primitives", type=int)
     parser.add_argument("--max-dimension", type=float)
     parser.add_argument("--min-dimension", type=float)
     parser.add_argument("--expected-name")
