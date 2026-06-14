@@ -58,6 +58,31 @@ def cylinder(radius, height, segments, wobble):
     return vertices, indices
 
 
+def tapered_cylinder(bottom_radius, top_radius, height, segments, wobble):
+    vertices = []
+    for ring_index, y in enumerate((0.0, height)):
+        ring_radius = bottom_radius if ring_index == 0 else top_radius
+        for segment in range(segments):
+            angle = math.tau * float(segment) / float(segments)
+            ripple = 1.0 + math.sin(angle * 3.0 + float(ring_index) * 0.6) * wobble
+            vertices.append((math.cos(angle) * ring_radius * ripple, y, math.sin(angle) * ring_radius * ripple))
+    vertices.append((0.0, 0.0, 0.0))
+    vertices.append((0.0, height, 0.0))
+    bottom_center = len(vertices) - 2
+    top_center = len(vertices) - 1
+    indices = []
+    for segment in range(segments):
+        next_segment = (segment + 1) % segments
+        bottom_a = segment
+        bottom_b = next_segment
+        top_a = segment + segments
+        top_b = next_segment + segments
+        indices.extend([bottom_a, bottom_b, top_b, bottom_a, top_b, top_a])
+        indices.extend([bottom_center, bottom_a, bottom_b])
+        indices.extend([top_center, top_b, top_a])
+    return vertices, indices
+
+
 def transformed(mesh, offset, scale=(1.0, 1.0, 1.0), rotation=(0.0, 0.0, 0.0)):
     vertices, indices = mesh
     out = []
@@ -84,6 +109,23 @@ def transformed(mesh, offset, scale=(1.0, 1.0, 1.0), rotation=(0.0, 0.0, 0.0)):
             z + offset[2],
         ))
     return out, indices
+
+
+def radial_box(width, height, depth, radius, y_offset, angle):
+    return transformed(
+        box(width, height, depth),
+        (math.cos(angle) * radius, y_offset, math.sin(angle) * radius),
+        rotation=(0.0, math.pi * 0.5 - angle, 0.0),
+    )
+
+
+def radial_cylinder(radius, length, start_radius, y_offset, angle, scale=(1.0, 1.0, 1.0)):
+    return transformed(
+        cylinder(radius, length, 10, 0.08),
+        (math.cos(angle) * start_radius, y_offset, math.sin(angle) * start_radius),
+        scale=scale,
+        rotation=(0.0, -angle, -math.pi * 0.5),
+    )
 
 
 def merge(meshes):
@@ -331,33 +373,55 @@ def picnic_table_parts():
 
 
 def old_cedar_stump_parts():
-    branch_stubs = [
-        transformed(cylinder(0.055, 0.30, 10, 0.08), (0.36, 0.68, 0.05), rotation=(0.0, 0.25, math.pi * 0.5)),
-        transformed(cylinder(0.045, 0.22, 10, 0.08), (-0.34, 0.46, -0.11), rotation=(0.0, -0.45, math.pi * 0.5)),
-        transformed(box(0.18, 0.025, 0.06), (0.18, 0.88, -0.34), rotation=(0.0, -0.6, 0.25)),
+    shell_panels = []
+    bark_highlights = []
+    charred_interior = []
+    rim_chunks = []
+    panel_count = 18
+    front_angle = math.pi * 0.5
+    for index in range(panel_count):
+        angle = math.tau * float(index) / float(panel_count)
+        front_delta = abs(math.atan2(math.sin(angle - front_angle), math.cos(angle - front_angle)))
+        panel_height = 1.18 + math.sin(float(index) * 1.7) * 0.075
+        panel_width = 0.135 + float(index % 3) * 0.014
+        if front_delta < 0.36:
+            if index % 2 == 0:
+                charred_interior.append(radial_box(0.055, 0.74, 0.026, 0.265, 0.15, angle))
+            continue
+        shell_panels.append(radial_box(panel_width, panel_height, 0.062, 0.41, 0.0, angle))
+        if index % 2 == 0:
+            bark_highlights.append(radial_box(0.030, 0.58 + float(index % 4) * 0.08, 0.018, 0.447, 0.18, angle + 0.02))
+        if index % 3 == 0:
+            rim_chunks.append(radial_box(0.13, 0.060 + float(index % 2) * 0.025, 0.078, 0.405, panel_height - 0.02, angle))
+    roots = []
+    for index, angle in enumerate([-2.85, -2.15, -1.35, -0.48, 0.28, 1.05, 2.25, 2.85]):
+        root_length = 0.54 + float(index % 3) * 0.10
+        roots.append(radial_cylinder(0.055 + float(index % 2) * 0.010, root_length, 0.22, 0.055, angle, (1.0, 0.86, 1.0)))
+    broken_splinters = [
+        transformed(box(0.045, 0.58, 0.040), (-0.19, 0.70, 0.34), rotation=(0.0, 0.28, 0.16)),
+        transformed(box(0.040, 0.46, 0.035), (0.23, 0.76, 0.31), rotation=(0.0, -0.35, -0.12)),
+        transformed(box(0.035, 0.36, 0.030), (0.05, 0.83, -0.35), rotation=(0.0, 0.52, 0.10)),
     ]
-    bark_scars = [
-        transformed(box(0.030, 0.62, 0.014), (-0.24, 0.18, 0.407)),
-        transformed(box(0.024, 0.48, 0.014), (-0.08, 0.34, 0.421)),
-        transformed(box(0.028, 0.55, 0.014), (0.12, 0.24, 0.414)),
-        transformed(box(0.020, 0.36, 0.014), (0.27, 0.42, 0.378)),
-        transformed(box(0.11, 0.055, 0.016), (-0.19, 0.72, 0.398), rotation=(0.0, 0.0, 0.22)),
-        transformed(box(0.08, 0.045, 0.016), (0.18, 0.58, 0.398), rotation=(0.0, 0.0, -0.28)),
+    branch_stubs = [
+        radial_cylinder(0.052, 0.30, 0.40, 0.66, 0.16, (1.0, 0.88, 1.0)),
+        radial_cylinder(0.044, 0.24, 0.38, 0.48, 3.55, (1.0, 0.80, 1.0)),
+        radial_box(0.20, 0.032, 0.075, 0.39, 0.86, 5.18),
     ]
     return [
-        part(transformed(cylinder(0.42, 1.15, 18, 0.12), (0.0, 0.0, 0.0)), [0.34, 0.20, 0.10, 1.0], "old_cedar_stump_trunk"),
-        part(merge([
-            transformed(box(0.95, 0.12, 0.18), (0.0, 0.02, 0.44)),
-            transformed(box(0.8, 0.10, 0.16), (0.34, 0.02, -0.36)),
-            transformed(box(0.7, 0.10, 0.16), (-0.4, 0.02, -0.28)),
-        ]), [0.18, 0.11, 0.06, 1.0], "old_cedar_stump_roots"),
-        part(merge([
-            transformed(cylinder(0.38, 0.014, 20, 0.04), (0.0, 1.14, 0.0)),
-            transformed(cylinder(0.26, 0.012, 18, 0.03), (0.0, 1.155, 0.0)),
-            transformed(cylinder(0.12, 0.010, 14, 0.02), (0.0, 1.168, 0.0)),
-        ]), [0.58, 0.40, 0.22, 1.0], "old_cedar_stump_cut_rings"),
+        part(merge(shell_panels), [0.35, 0.20, 0.10, 1.0], "old_cedar_stump_bark_shell"),
+        part(merge(roots), [0.20, 0.115, 0.055, 1.0], "old_cedar_stump_root_flares"),
+        part(merge(rim_chunks), [0.57, 0.38, 0.19, 1.0], "old_cedar_stump_broken_rim"),
+        part(merge(charred_interior + [
+            transformed(box(0.46, 0.82, 0.030), (0.0, 0.18, 0.185)),
+            transformed(box(0.34, 0.52, 0.024), (0.0, 0.32, -0.20)),
+        ]), [0.060, 0.038, 0.024, 1.0], "old_cedar_stump_hollow_shadow"),
         part(merge(branch_stubs), [0.22, 0.13, 0.07, 1.0], "old_cedar_stump_branch_scars"),
-        part(merge(bark_scars), [0.16, 0.09, 0.045, 1.0], "old_cedar_stump_bark_scars"),
+        part(merge(bark_highlights + broken_splinters), [0.14, 0.078, 0.036, 1.0], "old_cedar_stump_bark_splits"),
+        part(merge([
+            radial_box(0.18, 0.032, 0.060, 0.32, 0.98, 3.95),
+            radial_box(0.13, 0.026, 0.050, 0.30, 1.03, 4.45),
+            radial_box(0.16, 0.026, 0.055, 0.31, 1.00, 5.05),
+        ]), [0.68, 0.49, 0.25, 1.0], "old_cedar_stump_inner_cut_edges"),
     ]
 
 
