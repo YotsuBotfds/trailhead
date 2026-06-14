@@ -52,6 +52,7 @@ const EXPECTED_BOUNDARY_BACK_VISUALS: int = 7
 const RESIDUE_MUD_OVERLAY: String = "residue_mud_overlay"
 const RESIDUE_DUST_OVERLAY: String = "residue_dust_overlay"
 const RESIDUE_WETNESS_OVERLAY: String = "residue_wetness_overlay"
+const TERRAIN_MATERIAL_PREFIX: String = "terrain_mat_"
 
 class BoundsAccumulator:
 	var has_bounds: bool = false
@@ -296,6 +297,69 @@ func _inspect_heightmesh_layout(heightmesh: Node) -> void:
 		_errors.append("heightmesh should cover route min Z within margin, got " + str(accumulator.bounds_min.z))
 	if accumulator.bounds_max.z < route_bounds_max.z - HEIGHTMESH_ROUTE_MARGIN:
 		_errors.append("heightmesh should cover route max Z within margin, got " + str(accumulator.bounds_max.z))
+	_require_heightmesh_surface_visuals(heightmesh)
+
+
+func _require_heightmesh_surface_visuals(parent: Node) -> void:
+	var observed_surface_ids: Array[StringName] = []
+	_collect_heightmesh_surface_visuals(parent, observed_surface_ids)
+	var expected_surface_ids: Array[StringName] = CedarSurfaceVisualCatalog.call("supported_surface_ids")
+	for surface_id in expected_surface_ids:
+		if not observed_surface_ids.has(surface_id):
+			_errors.append("cedar_hollow_heightmesh missing visual material override for " + String(surface_id))
+
+
+func _collect_heightmesh_surface_visuals(parent: Node, observed_surface_ids: Array[StringName]) -> void:
+	var mesh_instance: MeshInstance3D = parent as MeshInstance3D
+	if mesh_instance != null:
+		_inspect_heightmesh_mesh_materials(mesh_instance, observed_surface_ids)
+	for child in parent.get_children():
+		_collect_heightmesh_surface_visuals(child, observed_surface_ids)
+
+
+func _inspect_heightmesh_mesh_materials(mesh_instance: MeshInstance3D, observed_surface_ids: Array[StringName]) -> void:
+	var mesh: Mesh = mesh_instance.mesh
+	if mesh == null:
+		return
+	for surface_index in range(mesh.get_surface_count()):
+		var surface_id: StringName = _surface_id_for_terrain_surface(mesh, surface_index)
+		if surface_id == &"":
+			continue
+		if not observed_surface_ids.has(surface_id):
+			observed_surface_ids.append(surface_id)
+		var material: StandardMaterial3D = mesh_instance.get_surface_override_material(surface_index) as StandardMaterial3D
+		if material == null:
+			_errors.append("terrain surface " + String(surface_id) + " should have a StandardMaterial3D override")
+			continue
+		var visual_def: Resource = CedarSurfaceVisualCatalog.call("default_visual_for_surface_id", surface_id)
+		if visual_def == null:
+			_errors.append("missing SurfaceVisualDef for terrain surface " + String(surface_id))
+			continue
+		var expected_color: Color = visual_def.get("albedo_color")
+		var expected_roughness: float = float(visual_def.get("roughness"))
+		var expected_name: String = "terrain_visual_" + String(surface_id)
+		if material.resource_name != expected_name:
+			_errors.append("terrain surface " + String(surface_id) + " override name expected " + expected_name + ", got " + material.resource_name)
+		if not _colors_match(material.albedo_color, expected_color):
+			_errors.append("terrain surface " + String(surface_id) + " albedo should match SurfaceVisualCatalog")
+		if absf(material.roughness - expected_roughness) > FLOAT_EPSILON:
+			_errors.append("terrain surface " + String(surface_id) + " roughness expected " + str(expected_roughness) + ", got " + str(material.roughness))
+		if absf(material.metallic) > FLOAT_EPSILON:
+			_errors.append("terrain surface " + String(surface_id) + " metallic should be 0")
+
+
+func _surface_id_for_terrain_surface(mesh: Mesh, surface_index: int) -> StringName:
+	var material: Material = mesh.surface_get_material(surface_index)
+	if material == null:
+		return &""
+	var material_name: String = material.resource_name
+	if not material_name.begins_with(TERRAIN_MATERIAL_PREFIX):
+		return &""
+	return StringName(material_name.substr(TERRAIN_MATERIAL_PREFIX.length()))
+
+
+func _colors_match(actual: Color, expected: Color) -> bool:
+	return absf(actual.r - expected.r) <= FLOAT_EPSILON and absf(actual.g - expected.g) <= FLOAT_EPSILON and absf(actual.b - expected.b) <= FLOAT_EPSILON and absf(actual.a - expected.a) <= FLOAT_EPSILON
 
 
 func _collect_mesh_bounds(parent: Node, accumulator: BoundsAccumulator) -> void:

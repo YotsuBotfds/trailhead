@@ -189,7 +189,7 @@ func _require_position_inside_bounds(position: Vector3, bounds_min: Vector3, bou
 
 func _finish() -> void:
 	if _errors.is_empty():
-		print("ok: surface and Cedar route resources are valid")
+		print("ok: surface, surface visual, and Cedar route resources are valid")
 		get_tree().quit(0)
 		return
 	for error in _errors:
