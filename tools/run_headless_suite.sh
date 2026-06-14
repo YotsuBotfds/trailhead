@@ -145,4 +145,7 @@ run_sim "$out_dir/cedar_hollow_segment_overlook_to_old_cedar.json" \
 	--stuck-window=60 \
 	--stuck-min-progress=0.03
 
+printf 'run: cedar feature visuals\n'
+"$godot_bin" --headless --path . res://tools/cedar_visual_inspector.tscn
+
 ./tools/check.sh
