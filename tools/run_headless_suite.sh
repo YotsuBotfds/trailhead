@@ -97,6 +97,17 @@ run_sim "$out_dir/surface_sweep.json" \
 	--stuck-window=60 \
 	--stuck-min-progress=0.05
 
+run_sim "$out_dir/terrain_surface_map_probe.json" \
+	--scene=terrain_surface_map_probe \
+	--controller=pd \
+	--spawn=flat_spawn \
+	--target=5.0,0,-7.8 \
+	--target-radius=0.25 \
+	--seed=12345 \
+	--max-ticks=780 \
+	--stuck-window=60 \
+	--stuck-min-progress=0.05
+
 run_sim "$out_dir/cedar_hollow_log_ramp.json" \
 	--scene=cedar_hollow \
 	--controller=scripted \
@@ -221,6 +232,12 @@ assert_metrics "$out_dir/surface_sweep.json" \
 	--surface=wet_stone:8 \
 	--surface-sequence=packed_dirt,tall_grass,mud,wet_stone \
 	--metric-min=max_abs_slip_angle_deg:3.0
+
+assert_metrics "$out_dir/terrain_surface_map_probe.json" \
+	--surface=mud:10 \
+	--surface=wet_stone:5 \
+	--surface-sequence=packed_dirt,tall_grass,mud,wet_stone \
+	--source-min=terrain:100
 
 assert_metrics "$out_dir/cedar_hollow_log_ramp.json" \
 	--surface=wood_plank:20 \
@@ -384,6 +401,9 @@ printf 'run: audio output preview\n'
 
 printf 'run: terrain surface palette\n'
 "$godot_bin" --headless --path . res://tools/terrain_palette_inspector.tscn
+
+printf 'run: terrain surface sampler\n'
+"$godot_bin" --headless --path . res://tools/terrain_surface_sampler_inspector.tscn
 
 printf 'run: data resources\n'
 "$godot_bin" --headless --path . res://tools/data_resource_inspector.tscn

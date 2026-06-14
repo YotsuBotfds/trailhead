@@ -3,6 +3,7 @@ extends Node3D
 
 const CedarHollowSceneResource: PackedScene = preload("res://scenes/cedar_hollow.tscn")
 const CedarRoute: Resource = preload("res://data/routes/cedar_hollow.tres")
+const CEDAR_TERRAIN_PALETTE_PATH: String = "res://data/surface_palettes/cedar_hollow_terrain.tres"
 const VehicleScene: PackedScene = preload("res://scenes/vehicle.tscn")
 const VehicleInputScript: GDScript = preload("res://systems/vehicle/vehicle_input.gd")
 const TerrainVisualBuilderScript: GDScript = preload("res://systems/render/terrain_visual_builder.gd")
@@ -91,6 +92,8 @@ func _setup_surface_map() -> void:
 	var surface_map: Node = SurfaceMapScript.new()
 	surface_map.name = "SurfaceMap"
 	add_child(surface_map)
+	if not bool(surface_map.call("configure_terrain_palette", CEDAR_TERRAIN_PALETTE_PATH, GameConfig.cedar_surface_map_bounds_min, GameConfig.cedar_surface_map_bounds_max)):
+		push_error("CedarHollowHost failed to configure terrain surface map")
 
 
 func _setup_world() -> void:

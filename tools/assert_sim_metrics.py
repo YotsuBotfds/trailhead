@@ -32,6 +32,7 @@ def main():
     parser.add_argument("--surface-sequence", default="", metavar="SURFACE_A,SURFACE_B")
     parser.add_argument("--landmark", action="append", default=[])
     parser.add_argument("--metric-min", action="append", default=[], type=parse_minimum, metavar="METRIC:MIN_VALUE")
+    parser.add_argument("--source-min", action="append", default=[], type=parse_minimum, metavar="SOURCE:MIN_VALUE")
     args = parser.parse_args()
 
     data = json.loads(args.path.read_text())
@@ -65,6 +66,12 @@ def main():
         actual = float(actual_value)
         if actual < minimum:
             errors.append(f"metric {metric_name} {actual:g} < {minimum:g}")
+
+    source_counts = metrics.get("surface_source_counts", {})
+    for source_id, minimum in args.source_min:
+        actual = float(source_counts.get(source_id, 0.0))
+        if actual < minimum:
+            errors.append(f"surface source {source_id} count {actual:g} < {minimum:g}")
 
     if errors:
         print(f"fail: {args.path}")

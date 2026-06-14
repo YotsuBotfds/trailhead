@@ -140,7 +140,7 @@ func _apply_wheel_forces() -> void:
 		var max_damping_force: float = spring_force * GameConfig.susp_damping_force_ratio
 		var suspension_force: float = maxf(0.0, spring_force + clampf(damping_force, -max_damping_force, max_damping_force))
 		_body.apply_force(up * suspension_force, force_pos)
-		var surface_def: Resource = _resolve_surface_def(ray.get_collider())
+		var surface_def: Resource = _resolve_surface_def(ray.get_collider(), hit_point)
 		var surface_id: StringName = _surface_id(surface_def)
 		var wheel_surface: Array[StringName] = _state.get("wheel_surface")
 		wheel_surface[i] = surface_id
@@ -239,10 +239,10 @@ func _dominant_contact_surface() -> StringName:
 	return best_surface_id
 
 
-func _resolve_surface_def(collider: Object) -> Resource:
+func _resolve_surface_def(collider: Object, world_position: Vector3) -> Resource:
 	var surface_map: Node = GameManager.active_surface_map
 	if surface_map != null:
-		var resolved: Resource = surface_map.call("resolve_from_collider", collider) as Resource
+		var resolved: Resource = surface_map.call("resolve_from_collider_at", collider, world_position) as Resource
 		if resolved != null:
 			return resolved
 	return null

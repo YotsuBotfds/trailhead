@@ -3,6 +3,7 @@ extends Node
 
 const DEFAULT_TARGET: Vector3 = Vector3(3.0, 0.0, 0.0)
 const CEDAR_ROUTE_PATH: String = "res://data/routes/cedar_hollow.tres"
+const CEDAR_TERRAIN_PALETTE_PATH: String = "res://data/surface_palettes/cedar_hollow_terrain.tres"
 const CedarHollowSceneResource: PackedScene = preload("res://scenes/cedar_hollow.tscn")
 const VehicleScene: PackedScene = preload("res://scenes/vehicle.tscn")
 const VehicleInputScript: GDScript = preload("res://systems/vehicle/vehicle_input.gd")
@@ -17,6 +18,7 @@ const ScriptedFeelControllerScript: GDScript = preload("res://systems/sim/contro
 var _args: Dictionary = {}
 var _vehicle: Node = null
 var _controller: RefCounted = null
+var _surface_map: Node = null
 var _route: Resource = null
 var _landmarks: Node = null
 var _telemetry: Array[Dictionary] = []
@@ -127,7 +129,8 @@ func _ready() -> void:
 	_rng.seed = int(_args.get("seed", 0))
 	_connect_event_bus()
 	_configure_flat_bounds()
-	_setup_surface_map()
+	if not _setup_surface_map():
+		return
 	_setup_landmarks()
 	_setup_flat_scene()
 	call_deferred("_begin_run")
@@ -270,13 +273,25 @@ func _setup_flat_scene() -> void:
 	if _scene_id == "surface_strips":
 		FlatWorldBuilderScript.build_surface_strip_collision(self)
 		return
+	if _scene_id == FlatWorldBuilderScript.TERRAIN_SURFACE_MAP_PROBE_SCENE_ID:
+		FlatWorldBuilderScript.build_terrain_surface_map_probe_collision(self)
+		return
 	FlatWorldBuilderScript.build_collision(self)
 
 
-func _setup_surface_map() -> void:
-	var surface_map: Node = SurfaceMapScript.new()
-	surface_map.name = "SurfaceMap"
-	add_child(surface_map)
+func _setup_surface_map() -> bool:
+	_surface_map = SurfaceMapScript.new()
+	_surface_map.name = "SurfaceMap"
+	add_child(_surface_map)
+	if _uses_cedar_terrain_surface_map():
+		if not bool(_surface_map.call("configure_terrain_palette", CEDAR_TERRAIN_PALETTE_PATH, GameConfig.cedar_surface_map_bounds_min, GameConfig.cedar_surface_map_bounds_max)):
+			_finish_runner_error("Failed to configure Cedar terrain surface map")
+			return false
+	return true
+
+
+func _uses_cedar_terrain_surface_map() -> bool:
+	return _scene_id == TerrainBuilderScript.CEDAR_SCENE_ID or _scene_id == FlatWorldBuilderScript.TERRAIN_SURFACE_MAP_PROBE_SCENE_ID
 
 
 func _setup_landmarks() -> void:
@@ -506,6 +521,7 @@ func _finish(passed: bool) -> void:
 			"last_landmark_event": String(_last_landmark_event),
 			"landmark_event_sequence": _landmark_event_sequence,
 			"surface_contact_ticks": _surface_contact_ticks,
+			"surface_source_counts": _surface_source_counts(),
 			"avg_speed_by_surface": _surface_average_dictionary(_surface_speed_sum),
 			"avg_speed_delta_by_surface": _surface_average_dictionary(_surface_speed_delta_sum),
 			"max_abs_slip_angle_by_surface": _surface_max_abs_slip,
@@ -721,6 +737,12 @@ func _surface_average_dictionary(sums: Dictionary) -> Dictionary:
 		if ticks > 0:
 			out[key] = float(sums.get(key, 0.0)) / float(ticks)
 	return out
+
+
+func _surface_source_counts() -> Dictionary:
+	if _surface_map == null:
+		return {}
+	return _surface_map.call("source_counts")
 
 
 func _surface_sequence_contains(expected: Array[String]) -> bool:
