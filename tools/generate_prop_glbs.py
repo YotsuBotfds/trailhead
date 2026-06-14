@@ -58,14 +58,30 @@ def cylinder(radius, height, segments, wobble):
     return vertices, indices
 
 
-def transformed(mesh, offset, scale=(1.0, 1.0, 1.0)):
+def transformed(mesh, offset, scale=(1.0, 1.0, 1.0), rotation=(0.0, 0.0, 0.0)):
     vertices, indices = mesh
     out = []
+    rot_x, rot_y, rot_z = rotation
+    cos_x = math.cos(rot_x)
+    sin_x = math.sin(rot_x)
+    cos_y = math.cos(rot_y)
+    sin_y = math.sin(rot_y)
+    cos_z = math.cos(rot_z)
+    sin_z = math.sin(rot_z)
     for vertex in vertices:
+        x = vertex[0] * scale[0]
+        y = vertex[1] * scale[1]
+        z = vertex[2] * scale[2]
+        if rot_x != 0.0:
+            y, z = y * cos_x - z * sin_x, y * sin_x + z * cos_x
+        if rot_z != 0.0:
+            x, y = x * cos_z - y * sin_z, x * sin_z + y * cos_z
+        if rot_y != 0.0:
+            x, z = x * cos_y + z * sin_y, -x * sin_y + z * cos_y
         out.append((
-            vertex[0] * scale[0] + offset[0],
-            vertex[1] * scale[1] + offset[1],
-            vertex[2] * scale[2] + offset[2],
+            x + offset[0],
+            y + offset[1],
+            z + offset[2],
         ))
     return out, indices
 
@@ -206,16 +222,29 @@ def trail_sign_parts():
 
 
 def kiosk_parts():
+    map_pins = []
+    for x_offset, y_offset in [(-0.33, 0.75), (0.22, 0.66), (0.34, 0.45)]:
+        map_pins.append(transformed(box(0.035, 0.035, 0.014), (x_offset, y_offset, -0.046)))
     return [
         part(merge([
             transformed(box(0.08, 1.22, 0.08), (-0.46, 0.0, 0.0)),
             transformed(box(0.08, 1.22, 0.08), (0.46, 0.0, 0.0)),
         ]), [0.26, 0.16, 0.08, 1.0], "kiosk_posts"),
-        part(transformed(box(0.98, 0.58, 0.07), (0.0, 0.52, 0.0)), [0.45, 0.30, 0.16, 1.0], "kiosk_panel"),
         part(merge([
-            transformed(box(1.15, 0.08, 0.26), (0.0, 1.12, 0.0)),
+            transformed(box(0.98, 0.58, 0.07), (0.0, 0.52, 0.0)),
             transformed(box(0.86, 0.09, 0.06), (0.0, 0.20, -0.01)),
-        ]), [0.18, 0.12, 0.07, 1.0], "kiosk_roof_shelf"),
+        ]), [0.45, 0.30, 0.16, 1.0], "kiosk_panel_shelf"),
+        part(merge([
+            transformed(box(1.18, 0.08, 0.30), (0.0, 1.12, 0.0)),
+            transformed(box(1.02, 0.045, 0.045), (0.0, 1.075, -0.145)),
+            transformed(box(1.02, 0.045, 0.045), (0.0, 1.075, 0.145)),
+        ]), [0.18, 0.12, 0.07, 1.0], "kiosk_roof_trim"),
+        part(merge([
+            transformed(box(0.30, 0.18, 0.012), (-0.25, 0.66, -0.042)),
+            transformed(box(0.22, 0.13, 0.012), (0.24, 0.61, -0.043)),
+            transformed(box(0.38, 0.055, 0.012), (0.03, 0.42, -0.044)),
+        ]), [0.72, 0.66, 0.48, 1.0], "kiosk_map_cards"),
+        part(merge(map_pins), [0.62, 0.16, 0.10, 1.0], "kiosk_map_pins"),
     ]
 
 
@@ -259,34 +288,62 @@ def carabiner_parts():
 
 
 def bottle_cap_parts():
+    ridges = []
+    for index in range(16):
+        angle = math.tau * float(index) / 16.0
+        ridges.append(transformed(
+            box(0.017, 0.022, 0.030),
+            (math.cos(angle) * 0.074, 0.029, math.sin(angle) * 0.074),
+            rotation=(0.0, -angle, 0.0),
+        ))
     return [
         part(cylinder(0.075, 0.035, 20, 0.035), [0.56, 0.10, 0.08, 1.0], "bottle_cap_shell"),
-        part(merge([
-            transformed(box(0.018, 0.02, 0.018), (0.075, 0.035, 0.0)),
-            transformed(box(0.018, 0.02, 0.018), (-0.075, 0.035, 0.0)),
-            transformed(box(0.018, 0.02, 0.018), (0.0, 0.035, 0.075)),
-            transformed(box(0.018, 0.02, 0.018), (0.0, 0.035, -0.075)),
-        ]), [0.78, 0.68, 0.50, 1.0], "bottle_cap_ridges"),
+        part(merge(ridges), [0.78, 0.68, 0.50, 1.0], "bottle_cap_ridges"),
+        part(transformed(cylinder(0.052, 0.006, 16, 0.01), (0.0, 0.035, 0.0)), [0.86, 0.72, 0.46, 1.0], "bottle_cap_worn_top"),
     ]
 
 
 def picnic_table_parts():
+    top_planks = []
+    for z_offset in [-0.15, 0.0, 0.15]:
+        top_planks.append(transformed(box(1.25, 0.055, 0.115), (0.0, 0.54, z_offset)))
+    bench_planks = []
+    for z_offset in [-0.47, -0.36, 0.36, 0.47]:
+        bench_planks.append(transformed(box(1.12, 0.055, 0.08), (0.0, 0.33, z_offset)))
+    nail_heads = []
+    for x_offset in [-0.52, 0.52]:
+        for z_offset in [-0.15, 0.0, 0.15, -0.47, -0.36, 0.36, 0.47]:
+            y_offset = 0.598 if abs(z_offset) < 0.2 else 0.388
+            nail_heads.append(transformed(box(0.028, 0.008, 0.018), (x_offset, y_offset, z_offset)))
     return [
-        part(merge([
-            transformed(box(1.25, 0.08, 0.42), (0.0, 0.52, 0.0)),
-            transformed(box(1.12, 0.07, 0.18), (0.0, 0.32, -0.42)),
-            transformed(box(1.12, 0.07, 0.18), (0.0, 0.32, 0.42)),
-        ]), [0.48, 0.30, 0.16, 1.0], "picnic_table_planks"),
+        part(merge(top_planks + bench_planks), [0.48, 0.30, 0.16, 1.0], "picnic_table_planks"),
         part(merge([
             transformed(box(0.08, 0.52, 0.08), (-0.45, 0.0, -0.16)),
             transformed(box(0.08, 0.52, 0.08), (0.45, 0.0, -0.16)),
             transformed(box(0.08, 0.52, 0.08), (-0.45, 0.0, 0.16)),
             transformed(box(0.08, 0.52, 0.08), (0.45, 0.0, 0.16)),
+            transformed(box(1.05, 0.045, 0.055), (0.0, 0.45, 0.0)),
+            transformed(box(0.07, 0.045, 0.92), (-0.45, 0.28, 0.0)),
+            transformed(box(0.07, 0.045, 0.92), (0.45, 0.28, 0.0)),
         ]), [0.25, 0.16, 0.08, 1.0], "picnic_table_legs"),
+        part(merge(nail_heads), [0.16, 0.10, 0.06, 1.0], "picnic_table_nail_heads"),
     ]
 
 
 def old_cedar_stump_parts():
+    branch_stubs = [
+        transformed(cylinder(0.055, 0.30, 10, 0.08), (0.36, 0.68, 0.05), rotation=(0.0, 0.25, math.pi * 0.5)),
+        transformed(cylinder(0.045, 0.22, 10, 0.08), (-0.34, 0.46, -0.11), rotation=(0.0, -0.45, math.pi * 0.5)),
+        transformed(box(0.18, 0.025, 0.06), (0.18, 0.88, -0.34), rotation=(0.0, -0.6, 0.25)),
+    ]
+    bark_scars = [
+        transformed(box(0.030, 0.62, 0.014), (-0.24, 0.18, 0.407)),
+        transformed(box(0.024, 0.48, 0.014), (-0.08, 0.34, 0.421)),
+        transformed(box(0.028, 0.55, 0.014), (0.12, 0.24, 0.414)),
+        transformed(box(0.020, 0.36, 0.014), (0.27, 0.42, 0.378)),
+        transformed(box(0.11, 0.055, 0.016), (-0.19, 0.72, 0.398), rotation=(0.0, 0.0, 0.22)),
+        transformed(box(0.08, 0.045, 0.016), (0.18, 0.58, 0.398), rotation=(0.0, 0.0, -0.28)),
+    ]
     return [
         part(transformed(cylinder(0.42, 1.15, 18, 0.12), (0.0, 0.0, 0.0)), [0.34, 0.20, 0.10, 1.0], "old_cedar_stump_trunk"),
         part(merge([
@@ -294,6 +351,13 @@ def old_cedar_stump_parts():
             transformed(box(0.8, 0.10, 0.16), (0.34, 0.02, -0.36)),
             transformed(box(0.7, 0.10, 0.16), (-0.4, 0.02, -0.28)),
         ]), [0.18, 0.11, 0.06, 1.0], "old_cedar_stump_roots"),
+        part(merge([
+            transformed(cylinder(0.38, 0.014, 20, 0.04), (0.0, 1.14, 0.0)),
+            transformed(cylinder(0.26, 0.012, 18, 0.03), (0.0, 1.155, 0.0)),
+            transformed(cylinder(0.12, 0.010, 14, 0.02), (0.0, 1.168, 0.0)),
+        ]), [0.58, 0.40, 0.22, 1.0], "old_cedar_stump_cut_rings"),
+        part(merge(branch_stubs), [0.22, 0.13, 0.07, 1.0], "old_cedar_stump_branch_scars"),
+        part(merge(bark_scars), [0.16, 0.09, 0.045, 1.0], "old_cedar_stump_bark_scars"),
     ]
 
 
@@ -306,13 +370,26 @@ def fire_ring_parts():
             (math.cos(angle) * 0.36, 0.0, math.sin(angle) * 0.36),
             (1.0, 0.75, 1.0),
         ))
+    logs = [
+        transformed(cylinder(0.035, 0.52, 10, 0.05), (0.0, 0.045, 0.0), rotation=(0.0, 0.45, math.pi * 0.5)),
+        transformed(cylinder(0.032, 0.48, 10, 0.05), (0.0, 0.07, 0.0), rotation=(0.0, -0.55, math.pi * 0.5)),
+    ]
     return [
         part(merge(stones), [0.34, 0.33, 0.29, 1.0], "fire_ring_stones"),
         part(transformed(cylinder(0.24, 0.015, 14, 0.02), (0.0, 0.0, 0.0)), [0.12, 0.11, 0.10, 1.0], "fire_ring_ash"),
+        part(merge(logs), [0.20, 0.11, 0.05, 1.0], "fire_ring_charred_logs"),
+        part(transformed(cylinder(0.07, 0.01, 10, 0.03), (0.0, 0.082, 0.0)), [0.85, 0.27, 0.08, 1.0], "fire_ring_embers"),
     ]
 
 
 def hiking_boot_parts():
+    laces = []
+    for index, x_offset in enumerate([-0.11, -0.04, 0.03, 0.10]):
+        angle = -0.42 if index % 2 == 0 else 0.42
+        laces.append(transformed(box(0.12, 0.012, 0.014), (x_offset, 0.245, 0.0), rotation=(0.0, angle, 0.0)))
+    treads = []
+    for x_offset in [-0.18, -0.05, 0.08, 0.21]:
+        treads.append(transformed(box(0.055, 0.018, 0.205), (x_offset, 0.0, 0.0)))
     return [
         part(merge([
             transformed(box(0.46, 0.08, 0.18), (0.0, 0.0, 0.0)),
@@ -322,12 +399,16 @@ def hiking_boot_parts():
             transformed(box(0.34, 0.18, 0.17), (-0.03, 0.06, 0.0)),
             transformed(box(0.15, 0.24, 0.16), (-0.2, 0.16, 0.0)),
         ]), [0.28, 0.16, 0.08, 1.0], "hiking_boot_upper"),
+        part(merge(laces), [0.78, 0.67, 0.50, 1.0], "hiking_boot_laces"),
+        part(merge(treads), [0.035, 0.030, 0.025, 1.0], "hiking_boot_treads"),
     ]
 
 
 def water_bottle_parts():
     return [
         part(transformed(cylinder(0.08, 0.42, 16, 0.02), (0.0, 0.0, 0.0)), [0.16, 0.42, 0.58, 1.0], "water_bottle_body"),
+        part(transformed(cylinder(0.081, 0.105, 16, 0.01), (0.0, 0.17, 0.0)), [0.82, 0.88, 0.80, 1.0], "water_bottle_label"),
+        part(transformed(box(0.022, 0.34, 0.010), (0.058, 0.06, -0.058), rotation=(0.0, -0.78, 0.0)), [0.74, 0.91, 0.96, 1.0], "water_bottle_highlight"),
         part(transformed(cylinder(0.055, 0.08, 12, 0.01), (0.0, 0.42, 0.0)), [0.80, 0.86, 0.86, 1.0], "water_bottle_neck"),
         part(transformed(cylinder(0.06, 0.035, 12, 0.0), (0.0, 0.50, 0.0)), [0.08, 0.18, 0.26, 1.0], "water_bottle_cap"),
     ]
