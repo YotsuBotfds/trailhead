@@ -15,6 +15,7 @@ const EXPECTED_BOUNDARY_GRASS: int = 20
 const EXPECTED_BOUNDARY_BOULDERS: int = 8
 const EXPECTED_BOUNDARY_BRANCHES: int = 6
 const EXPECTED_TRAIL_BLAZES: int = 4
+const EXPECTED_WAYFINDER_SIGNS: int = 3
 const FLOAT_EPSILON: float = 0.001
 const FEATURE_TRANSFORM_TOLERANCE: float = 0.01
 const FEATURE_COLLISION_ALIGNMENT_TOLERANCE: float = 0.05
@@ -87,6 +88,7 @@ func _inspect() -> void:
 	var prop_root: Node = _require_node(_scene_root, "CedarHollow/PropVisuals")
 	if prop_root != null:
 		_require_named_count(prop_root, "trail_sign", 1)
+		_require_named_count(prop_root, "wayfinder_", EXPECTED_WAYFINDER_SIGNS)
 		_require_named_count(prop_root, "picnic_table", 1)
 		_require_named_count(prop_root, "old_cedar_stump", 1)
 		_require_named_count(prop_root, "fire_ring", 1)
@@ -94,6 +96,12 @@ func _inspect() -> void:
 		_require_named_count(prop_root, "water_bottle", 1)
 		_require_node_position(prop_root, "trail_sign", Vector3(0.72, 0.0, 0.25), FEATURE_TRANSFORM_TOLERANCE)
 		_require_node_rotation(prop_root, "trail_sign", Vector3(0.0, -24.0, 0.0), FLOAT_EPSILON)
+		_require_node_position(prop_root, "wayfinder_culvert", Vector3(-2.35, 0.0, -1.72), FEATURE_TRANSFORM_TOLERANCE)
+		_require_node_rotation(prop_root, "wayfinder_culvert", Vector3(0.0, 80.0, 0.0), FLOAT_EPSILON)
+		_require_node_position(prop_root, "wayfinder_overlook", Vector3(-0.7, 0.0, -5.95), FEATURE_TRANSFORM_TOLERANCE)
+		_require_node_rotation(prop_root, "wayfinder_overlook", Vector3(0.0, -58.0, 0.0), FLOAT_EPSILON)
+		_require_node_position(prop_root, "wayfinder_creek", Vector3(2.15, 0.0, -4.55), FEATURE_TRANSFORM_TOLERANCE)
+		_require_node_rotation(prop_root, "wayfinder_creek", Vector3(0.0, 38.0, 0.0), FLOAT_EPSILON)
 		_require_node_position(prop_root, "picnic_table", Vector3(-1.45, 0.0, 0.35), FEATURE_TRANSFORM_TOLERANCE)
 		_require_node_rotation(prop_root, "picnic_table", Vector3(0.0, 18.0, 0.0), FLOAT_EPSILON)
 		_require_node_position(prop_root, "old_cedar_stump", Vector3(0.0, 0.0, -5.25), FEATURE_TRANSFORM_TOLERANCE)
@@ -104,6 +112,12 @@ func _inspect() -> void:
 		_require_node_rotation(prop_root, "water_bottle", Vector3(0.0, 17.0, 78.0), FLOAT_EPSILON)
 		_require_label(prop_root, "trail_sign/label_old_cedar", "Old Cedar", 28)
 		_require_label(prop_root, "trail_sign/label_creek", "Creek", 22)
+		_require_label(prop_root, "wayfinder_culvert/label_primary", "Culvert", 22)
+		_require_label(prop_root, "wayfinder_culvert/label_secondary", "Spur", 18)
+		_require_label(prop_root, "wayfinder_overlook/label_primary", "Overlook", 22)
+		_require_label(prop_root, "wayfinder_overlook/label_secondary", "Ridge", 18)
+		_require_label(prop_root, "wayfinder_creek/label_primary", "Bog", 22)
+		_require_label(prop_root, "wayfinder_creek/label_secondary", "Crossing", 18)
 		var prop_collision_count: int = _count_collision_objects(prop_root)
 		if prop_collision_count > 0:
 			_errors.append("PropVisuals contains collision objects: " + str(prop_collision_count))
