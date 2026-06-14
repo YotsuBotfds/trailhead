@@ -1,0 +1,12 @@
+[gd_resource type="Resource" script_class="SurfaceDef" load_steps=2 format=3]
+[ext_resource type="Script" path="res://systems/world/surface_def.gd" id="1_script"]
+
+[resource]
+script = ExtResource("1_script")
+id = &"packed_dirt"
+display_name = "Packed Dirt"
+friction = 1.0
+rolling_drag = 0.08
+slip = 0.0
+bog_enabled = false
+bog_threshold = 0.2

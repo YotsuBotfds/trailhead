@@ -5,6 +5,7 @@ const DEFAULT_TARGET: Vector3 = Vector3(3.0, 0.0, 0.0)
 const VehicleScene: PackedScene = preload("res://scenes/vehicle.tscn")
 const VehicleInputScript: GDScript = preload("res://systems/vehicle/vehicle_input.gd")
 const FlatWorldBuilderScript: GDScript = preload("res://systems/world/flat_world_builder.gd")
+const SurfaceMapScript: GDScript = preload("res://systems/world/surface_map.gd")
 const PDWaypointControllerScript: GDScript = preload("res://systems/sim/controllers/pd_waypoint_controller.gd")
 const ReplayControllerScript: GDScript = preload("res://systems/sim/controllers/replay_controller.gd")
 const ScriptedFeelControllerScript: GDScript = preload("res://systems/sim/controllers/scripted_feel_controller.gd")
@@ -19,6 +20,7 @@ var _target: Vector3 = DEFAULT_TARGET
 var _target_radius: float = 0.35
 var _controller_id: String = "pd"
 var _scenario_id: String = ""
+var _scene_id: String = "flat_plane"
 var _spawn_id: String = "flat_spawn"
 var _stuck_window_ticks: int = 180
 var _stuck_min_progress: float = 0.05
@@ -41,12 +43,19 @@ var _max_pitch_deg: float = -999999.0
 var _max_abs_roll_deg: float = 0.0
 var _max_abs_yaw_rate: float = 0.0
 var _max_speed: float = 0.0
+var _previous_speed: float = 0.0
 var _ebrake_ticks: int = 0
 var _front_air_rear_contact_ticks: int = 0
 var _surface_event_count: int = 0
 var _flipped_event_count: int = 0
 var _self_righted_event_count: int = 0
 var _last_surface_event: StringName = &""
+var _surface_event_sequence: Array[String] = []
+var _surface_contact_ticks: Dictionary = {}
+var _surface_speed_sum: Dictionary = {}
+var _surface_speed_delta_sum: Dictionary = {}
+var _surface_abs_slip_sum: Dictionary = {}
+var _surface_max_abs_slip: Dictionary = {}
 
 
 func _ready() -> void:
@@ -55,6 +64,7 @@ func _ready() -> void:
 	_max_ticks = int(_args.get("max-ticks", 6000))
 	_controller_id = String(_args.get("controller", "pd"))
 	_scenario_id = String(_args.get("scenario", ""))
+	_scene_id = String(_args.get("scene", "flat_plane"))
 	_spawn_id = String(_args.get("spawn", "flat_spawn"))
 	_stuck_window_ticks = maxi(int(_args.get("stuck-window", GameConfig.stuck_window_ticks)), 1)
 	_stuck_min_progress = maxf(float(_args.get("stuck-min-progress", GameConfig.stuck_min_progress)), 0.0)
@@ -63,6 +73,7 @@ func _ready() -> void:
 	_rng.seed = int(_args.get("seed", 0))
 	_connect_event_bus()
 	_configure_flat_bounds()
+	_setup_surface_map()
 	_setup_flat_scene()
 	call_deferred("_begin_run")
 
@@ -143,7 +154,16 @@ func _spawn_transform(spawn_id: String) -> Transform3D:
 
 
 func _setup_flat_scene() -> void:
+	if _scene_id == "surface_strips":
+		FlatWorldBuilderScript.build_surface_strip_collision(self)
+		return
 	FlatWorldBuilderScript.build_collision(self)
+
+
+func _setup_surface_map() -> void:
+	var surface_map: Node = SurfaceMapScript.new()
+	surface_map.name = "SurfaceMap"
+	add_child(surface_map)
 
 
 func _record(state: RefCounted, input: RefCounted) -> void:
@@ -154,10 +174,12 @@ func _record(state: RefCounted, input: RefCounted) -> void:
 	var pitch_deg: float = _pitch_deg(state_basis)
 	var roll_deg: float = _roll_deg(state_basis)
 	var speed: float = state_velocity.length()
+	var speed_delta: float = speed - _previous_speed
 	var slip_angle_deg: float = _slip_angle_deg(state_basis, state_velocity)
 	var yaw_rate: float = state_angular_velocity.dot(Vector3.UP)
 	var wheel_contact: Array = state.get("wheel_contact")
 	var wheel_surface: Array = state.get("wheel_surface")
+	var surface_id: StringName = _dominant_surface_from_array(wheel_surface)
 	var front_contact_count: int = _contact_count(wheel_contact, 0, 2)
 	var rear_contact_count: int = _contact_count(wheel_contact, 2, 4)
 	var row: Dictionary = {
@@ -169,12 +191,14 @@ func _record(state: RefCounted, input: RefCounted) -> void:
 		"pitch_deg": pitch_deg,
 		"roll_deg": roll_deg,
 		"speed": speed,
+		"speed_delta": speed_delta,
 		"slip_angle_deg": slip_angle_deg,
 		"wheel_contact_count": front_contact_count + rear_contact_count,
 		"front_contact_count": front_contact_count,
 		"rear_contact_count": rear_contact_count,
 		"wheel_contact": _bool_array_to_array(wheel_contact),
 		"wheel_surface": _surface_array_to_array(wheel_surface),
+		"surface_id": String(surface_id),
 		"on_ground": bool(state.get("on_ground")),
 		"is_flipped": bool(state.get("is_flipped")),
 		"input": {
@@ -197,6 +221,9 @@ func _record(state: RefCounted, input: RefCounted) -> void:
 	_max_abs_roll_deg = maxf(_max_abs_roll_deg, absf(roll_deg))
 	_max_abs_yaw_rate = maxf(_max_abs_yaw_rate, absf(yaw_rate))
 	_max_speed = maxf(_max_speed, speed)
+	if surface_id != &"" and _tick >= GameConfig.surface_probe_warmup_ticks:
+		_record_surface_metrics(surface_id, speed, speed_delta, absf(slip_angle_deg))
+	_previous_speed = speed
 	_update_predicates(state_position, bool(state.get("is_flipped")))
 
 
@@ -248,6 +275,10 @@ func _has_reached_target(state: RefCounted) -> bool:
 
 
 func _configure_flat_bounds() -> void:
+	if _scene_id == "surface_strips":
+		_bounds_min = GameConfig.surface_probe_bounds_min
+		_bounds_max = GameConfig.surface_probe_bounds_max
+		return
 	if _uses_scenario_predicate():
 		_bounds_min = GameConfig.flat_probe_bounds_min
 		_bounds_max = GameConfig.flat_probe_bounds_max
@@ -281,7 +312,7 @@ func _finish(passed: bool) -> void:
 	var event_bus_contract_passed: bool = _event_bus_contract_passed()
 	var all_predicates_passed: bool = target_predicate_passed and scenario_predicate_passed and surface_event_observed and event_bus_contract_passed and _never_stuck and _upright_or_recovered and _stayed_in_bounds
 	var result: Dictionary = {
-		"scene": String(_args.get("scene", "flat_plane")),
+		"scene": _scene_id,
 		"controller": _controller_id,
 		"scenario": _scenario_id,
 		"spawn": _spawn_id,
@@ -315,6 +346,12 @@ func _finish(passed: bool) -> void:
 			"front_air_rear_contact_ticks": _front_air_rear_contact_ticks,
 			"surface_event_count": _surface_event_count,
 			"last_surface_event": String(_last_surface_event),
+			"surface_event_sequence": _surface_event_sequence,
+			"surface_contact_ticks": _surface_contact_ticks,
+			"avg_speed_by_surface": _surface_average_dictionary(_surface_speed_sum),
+			"avg_speed_delta_by_surface": _surface_average_dictionary(_surface_speed_delta_sum),
+			"max_abs_slip_angle_by_surface": _surface_max_abs_slip,
+			"avg_abs_slip_angle_by_surface": _surface_average_dictionary(_surface_abs_slip_sum),
 			"flipped_event_count": _flipped_event_count,
 			"self_righted_event_count": _self_righted_event_count,
 			"min_progress_window": _min_progress_window if _min_progress_window < 999998.0 else null,
@@ -332,7 +369,7 @@ func _finish_runner_error(message: String) -> void:
 	set_physics_process(false)
 	var path: String = String(_args.get("out", "tests/out/flat_target.json"))
 	var result: Dictionary = {
-		"scene": String(_args.get("scene", "flat_plane")),
+		"scene": _scene_id,
 		"controller": _controller_id,
 		"scenario": _scenario_id,
 		"spawn": _spawn_id,
@@ -386,7 +423,35 @@ func _scenario_predicate_passed() -> bool:
 		return _max_abs_slip_angle_deg >= GameConfig.drift_min_peak_slip_angle_deg and _max_abs_yaw_rate >= GameConfig.drift_min_yaw_rate and _ebrake_ticks >= GameConfig.drift_min_ebrake_ticks and _max_speed >= GameConfig.drift_min_speed
 	if _scenario_id == "launch_wheelie":
 		return _max_pitch_deg >= GameConfig.wheelie_min_peak_pitch_deg and _front_air_rear_contact_ticks >= GameConfig.wheelie_min_front_air_rear_contact_ticks and _max_flipped_ticks_seen == 0
+	if _scenario_id == "surface_sweep":
+		return _surface_sweep_predicate_passed()
 	return false
+
+
+func _surface_sweep_predicate_passed() -> bool:
+	var expected: Array[String] = ["packed_dirt", "tall_grass", "mud", "wet_stone"]
+	if not _surface_sequence_contains(expected):
+		return false
+	for surface_id in expected:
+		if int(_surface_contact_ticks.get(surface_id, 0)) < GameConfig.surface_probe_min_ticks_per_surface:
+			return false
+	var avg_speed: Dictionary = _surface_average_dictionary(_surface_speed_sum)
+	var avg_speed_delta: Dictionary = _surface_average_dictionary(_surface_speed_delta_sum)
+	var max_slip: Dictionary = _surface_max_abs_slip
+	var packed_delta: float = float(avg_speed_delta.get("packed_dirt", 0.0))
+	var grass_delta: float = float(avg_speed_delta.get("tall_grass", 0.0))
+	var mud_delta: float = float(avg_speed_delta.get("mud", 0.0))
+	var packed_slip: float = float(max_slip.get("packed_dirt", 0.0))
+	var wet_stone_slip: float = float(max_slip.get("wet_stone", 0.0))
+	if avg_speed.is_empty() or packed_delta <= 0.0:
+		return false
+	if grass_delta >= packed_delta or mud_delta >= grass_delta:
+		return false
+	if mud_delta > packed_delta - GameConfig.surface_probe_min_mud_speed_delta_drop:
+		return false
+	if wet_stone_slip < packed_slip + GameConfig.surface_probe_min_wet_stone_slip_gain:
+		return false
+	return true
 
 
 func _pitch_deg(basis: Basis) -> float:
@@ -433,6 +498,47 @@ func _surface_array_to_array(values: Array) -> Array[String]:
 	return out
 
 
+func _dominant_surface_from_array(values: Array) -> StringName:
+	var counts: Dictionary = {}
+	var best_surface_id: StringName = &""
+	var best_count: int = 0
+	for value in values:
+		var surface_id: StringName = StringName(value)
+		if surface_id != &"":
+			var current_count: int = int(counts.get(surface_id, 0)) + 1
+			counts[surface_id] = current_count
+			if current_count > best_count:
+				best_surface_id = surface_id
+				best_count = current_count
+	return best_surface_id
+
+
+func _record_surface_metrics(surface_id: StringName, speed: float, speed_delta: float, abs_slip_angle_deg: float) -> void:
+	var key: String = String(surface_id)
+	_surface_contact_ticks[key] = int(_surface_contact_ticks.get(key, 0)) + 1
+	_surface_speed_sum[key] = float(_surface_speed_sum.get(key, 0.0)) + speed
+	_surface_speed_delta_sum[key] = float(_surface_speed_delta_sum.get(key, 0.0)) + speed_delta
+	_surface_abs_slip_sum[key] = float(_surface_abs_slip_sum.get(key, 0.0)) + abs_slip_angle_deg
+	_surface_max_abs_slip[key] = maxf(float(_surface_max_abs_slip.get(key, 0.0)), abs_slip_angle_deg)
+
+
+func _surface_average_dictionary(sums: Dictionary) -> Dictionary:
+	var out: Dictionary = {}
+	for key in _surface_contact_ticks.keys():
+		var ticks: int = int(_surface_contact_ticks[key])
+		if ticks > 0:
+			out[key] = float(sums.get(key, 0.0)) / float(ticks)
+	return out
+
+
+func _surface_sequence_contains(expected: Array[String]) -> bool:
+	var expected_index: int = 0
+	for surface_id in _surface_event_sequence:
+		if expected_index < expected.size() and surface_id == expected[expected_index]:
+			expected_index += 1
+	return expected_index == expected.size()
+
+
 func _connect_event_bus() -> void:
 	if not EventBus.vehicle_changed_surface.is_connected(_on_vehicle_changed_surface):
 		EventBus.vehicle_changed_surface.connect(_on_vehicle_changed_surface)
@@ -451,6 +557,9 @@ func _event_bus_contract_passed() -> bool:
 func _on_vehicle_changed_surface(surface_id: StringName) -> void:
 	_surface_event_count += 1
 	_last_surface_event = surface_id
+	var surface_string: String = String(surface_id)
+	if _surface_event_sequence.is_empty() or _surface_event_sequence[_surface_event_sequence.size() - 1] != surface_string:
+		_surface_event_sequence.append(surface_string)
 
 
 func _on_vehicle_flipped_over() -> void:

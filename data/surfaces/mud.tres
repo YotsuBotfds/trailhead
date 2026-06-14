@@ -1,0 +1,12 @@
+[gd_resource type="Resource" script_class="SurfaceDef" load_steps=2 format=3]
+[ext_resource type="Script" path="res://systems/world/surface_def.gd" id="1_script"]
+
+[resource]
+script = ExtResource("1_script")
+id = &"mud"
+display_name = "Mud"
+friction = 0.65
+rolling_drag = 0.8
+slip = 0.12
+bog_enabled = true
+bog_threshold = 0.25

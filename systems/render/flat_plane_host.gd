@@ -5,6 +5,7 @@ const VehicleScene: PackedScene = preload("res://scenes/vehicle.tscn")
 const VehicleInputScript: GDScript = preload("res://systems/vehicle/vehicle_input.gd")
 const ProceduralBuggyVisualScript: GDScript = preload("res://systems/render/procedural_buggy_visual.gd")
 const FlatWorldBuilderScript: GDScript = preload("res://systems/world/flat_world_builder.gd")
+const SurfaceMapScript: GDScript = preload("res://systems/world/surface_map.gd")
 
 var _vehicle: Node = null
 var _vehicle_input: RefCounted = VehicleInputScript.new()
@@ -15,6 +16,7 @@ var _wheel_spin: float = 0.0
 
 func _ready() -> void:
 	_ensure_default_input_map()
+	_setup_surface_map()
 	_build_ground()
 	_spawn_vehicle()
 	_setup_light()
@@ -66,6 +68,12 @@ func _build_ground() -> void:
 	material.roughness = 0.9
 	mesh_instance.material_override = material
 	ground.add_child(mesh_instance)
+
+
+func _setup_surface_map() -> void:
+	var surface_map: Node = SurfaceMapScript.new()
+	surface_map.name = "SurfaceMap"
+	add_child(surface_map)
 
 
 func _spawn_vehicle() -> void:

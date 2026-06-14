@@ -11,6 +11,11 @@ var _pending_input: RefCounted = RaycastVehicleInputScript.new()
 var _state: RefCounted = RaycastVehicleStateScript.new()
 var _was_flipped: bool = false
 var _current_surface_id: StringName = &""
+var _surface_friction: float = 1.0
+var _surface_rolling_drag: float = 0.1
+var _surface_slip: float = 0.0
+var _surface_bog_enabled: bool = false
+var _surface_bog_threshold: float = 0.2
 
 
 func _ready() -> void:
@@ -102,6 +107,11 @@ func _apply_wheel_forces() -> void:
 	var up: Vector3 = _body.global_transform.basis.y.normalized()
 	var ray_length: float = GameConfig.susp_rest_length + GameConfig.susp_travel + GameConfig.wheel_radius
 	var contact_count: int = 0
+	var friction_sum: float = 0.0
+	var rolling_drag_sum: float = 0.0
+	var slip_sum: float = 0.0
+	var bog_threshold_sum: float = 0.0
+	var bog_enabled: bool = false
 	for i in range(_wheel_rays.size()):
 		var ray: RayCast3D = _wheel_rays[i]
 		ray.force_raycast_update()
@@ -121,10 +131,30 @@ func _apply_wheel_forces() -> void:
 		var spring_force: float = compression * GameConfig.susp_stiffness
 		var force_pos: Vector3 = hit_point - _body.global_position
 		_body.apply_force(up * spring_force, force_pos)
+		var surface_def: Resource = _resolve_surface_def(ray.get_collider())
+		var surface_id: StringName = _surface_id(surface_def)
 		var wheel_surface: Array[StringName] = _state.get("wheel_surface")
-		wheel_surface[i] = &"packed_dirt"
+		wheel_surface[i] = surface_id
 		_state.set("wheel_surface", wheel_surface)
+		friction_sum += _surface_float(surface_def, "friction", GameConfig.default_friction)
+		rolling_drag_sum += _surface_float(surface_def, "rolling_drag", GameConfig.default_rolling_drag)
+		slip_sum += _surface_float(surface_def, "slip", GameConfig.default_slip)
+		bog_threshold_sum += _surface_float(surface_def, "bog_threshold", 0.2)
+		if _surface_bool(surface_def, "bog_enabled", false):
+			bog_enabled = true
 	_state.set("on_ground", contact_count > 0)
+	if contact_count > 0:
+		_surface_friction = friction_sum / float(contact_count)
+		_surface_rolling_drag = rolling_drag_sum / float(contact_count)
+		_surface_slip = slip_sum / float(contact_count)
+		_surface_bog_enabled = bog_enabled
+		_surface_bog_threshold = bog_threshold_sum / float(contact_count)
+	else:
+		_surface_friction = GameConfig.default_friction
+		_surface_rolling_drag = GameConfig.default_rolling_drag
+		_surface_slip = GameConfig.default_slip
+		_surface_bog_enabled = false
+		_surface_bog_threshold = 0.2
 	_update_surface_event()
 
 
@@ -134,20 +164,34 @@ func _apply_drive_forces() -> void:
 	var throttle: float = float(_pending_input.get("throttle"))
 	var steer: float = float(_pending_input.get("steer"))
 	var brake: float = float(_pending_input.get("brake"))
-	var drive: Vector3 = forward * throttle * GameConfig.motor_torque
+	var drive: Vector3 = forward * throttle * GameConfig.motor_torque * _surface_friction
 	_body.apply_central_force(drive)
 	if brake > 0.0:
 		var brake_factor: float = clampf(1.0 - brake * GameConfig.brake_damping_per_tick, 0.0, 1.0)
 		_body.linear_velocity *= brake_factor
+	if bool(_state.get("on_ground")):
+		_apply_surface_drag()
 	var lateral_speed: float = _body.linear_velocity.dot(right)
-	var lateral_grip: float = GameConfig.default_friction
+	var surface_grip: float = _surface_friction * maxf(1.0 - _surface_slip, GameConfig.surface_min_lateral_grip)
+	var lateral_grip: float = GameConfig.default_friction * surface_grip
 	if bool(_pending_input.get("ebrake")):
 		lateral_grip *= GameConfig.ebrake_factor
 	_body.apply_central_force(-right * lateral_speed * lateral_grip * GameConfig.lateral_grip_force)
 	if bool(_state.get("on_ground")):
-		_body.apply_torque(Vector3.UP * steer * GameConfig.steer_yaw_torque)
+		_body.apply_torque(Vector3.UP * steer * GameConfig.steer_yaw_torque * surface_grip)
 	if bool(_state.get("on_ground")) and throttle >= GameConfig.launch_wheelie_min_throttle and absf(steer) <= GameConfig.launch_wheelie_max_steer and _body.linear_velocity.length() <= GameConfig.launch_wheelie_speed_max:
 		_body.apply_torque(right * GameConfig.launch_wheelie_torque)
+
+
+func _apply_surface_drag() -> void:
+	var velocity_flat: Vector3 = Vector3(_body.linear_velocity.x, 0.0, _body.linear_velocity.z)
+	var speed: float = velocity_flat.length()
+	if speed <= 0.001:
+		return
+	var drag: float = _surface_rolling_drag * GameConfig.surface_rolling_drag_force
+	if _surface_bog_enabled and speed <= _surface_bog_threshold:
+		drag += GameConfig.surface_bog_drag_force
+	_body.apply_central_force(-velocity_flat.normalized() * drag * speed)
 
 
 func _apply_speed_limit() -> void:
@@ -173,10 +217,47 @@ func _update_surface_event() -> void:
 
 func _dominant_contact_surface() -> StringName:
 	var wheel_surface: Array[StringName] = _state.get("wheel_surface")
+	var counts: Dictionary = {}
+	var best_surface_id: StringName = &""
+	var best_count: int = 0
 	for surface_id in wheel_surface:
 		if surface_id != &"":
-			return surface_id
-	return &""
+			var current_count: int = int(counts.get(surface_id, 0)) + 1
+			counts[surface_id] = current_count
+			if current_count > best_count:
+				best_surface_id = surface_id
+				best_count = current_count
+	return best_surface_id
+
+
+func _resolve_surface_def(collider: Object) -> Resource:
+	var surface_map: Node = GameManager.active_surface_map
+	if surface_map != null:
+		var resolved: Resource = surface_map.call("resolve_from_collider", collider) as Resource
+		if resolved != null:
+			return resolved
+	return null
+
+
+func _surface_id(surface_def: Resource) -> StringName:
+	if surface_def == null:
+		return &"packed_dirt"
+	var id_value: StringName = surface_def.get("id")
+	if id_value == &"":
+		return &"packed_dirt"
+	return id_value
+
+
+func _surface_float(surface_def: Resource, property_name: StringName, fallback: float) -> float:
+	if surface_def == null:
+		return fallback
+	return float(surface_def.get(property_name))
+
+
+func _surface_bool(surface_def: Resource, property_name: StringName, fallback: bool) -> bool:
+	if surface_def == null:
+		return fallback
+	return bool(surface_def.get(property_name))
 
 
 func _update_state() -> void:
