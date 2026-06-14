@@ -3,6 +3,7 @@ extends Node
 const CedarHollowPlayableScene: PackedScene = preload("res://scenes/cedar_hollow_playable.tscn")
 const CedarRoute: Resource = preload("res://data/routes/cedar_hollow.tres")
 const VehicleStateScript: GDScript = preload("res://systems/vehicle/vehicle_state.gd")
+const SURFACE_DIR_PATH: String = "res://data/surfaces"
 const EXPECTED_BOARDWALK_SEGMENTS: int = 9
 const EXPECTED_STEPPING_STONES: int = 5
 const EXPECTED_GRASS_TUFTS: int = 18
@@ -758,10 +759,7 @@ func _require_audio_generator(parent: Node, path: String) -> void:
 
 
 func _require_audio_reactivity(audio_rig: Node) -> void:
-	_require_audio_surface_response(audio_rig, &"packed_gravel", GameConfig.audio_tire_gain_gravel, GameConfig.audio_tire_pitch_gravel)
-	_require_audio_surface_response(audio_rig, &"mud", GameConfig.audio_tire_gain_mud, GameConfig.audio_tire_pitch_mud)
-	_require_audio_surface_response(audio_rig, &"wet_stone", GameConfig.audio_tire_gain_stone, GameConfig.audio_tire_pitch_stone)
-	_require_audio_surface_response(audio_rig, &"wood_plank", GameConfig.audio_tire_gain_wood, GameConfig.audio_tire_pitch_wood)
+	_require_audio_surface_catalog(audio_rig)
 	var center_volume: float = float(audio_rig.call("water_volume_for_position", GameConfig.audio_water_center))
 	if absf(center_volume - GameConfig.audio_water_volume) > FLOAT_EPSILON:
 		_errors.append("CedarAudioRig water volume should be max at creek center")
@@ -769,6 +767,84 @@ func _require_audio_reactivity(audio_rig: Node) -> void:
 	var far_volume: float = float(audio_rig.call("water_volume_for_position", far_position))
 	if absf(far_volume) > FLOAT_EPSILON:
 		_errors.append("CedarAudioRig water volume should be silent outside audible radius")
+
+
+func _require_audio_surface_catalog(audio_rig: Node) -> void:
+	var supported_ids: Array[StringName] = audio_rig.call("supported_audio_surface_ids")
+	var data_ids: Array[StringName] = _load_surface_resource_ids()
+	for surface_id in data_ids:
+		if not supported_ids.has(surface_id):
+			_errors.append("CedarAudioRig missing tire audio mapping for SurfaceDef: " + String(surface_id))
+			continue
+		_require_audio_surface_response(audio_rig, surface_id, _expected_audio_gain(surface_id), _expected_audio_pitch(surface_id))
+	for supported_id in supported_ids:
+		if not data_ids.has(supported_id):
+			_errors.append("CedarAudioRig supports non-existent SurfaceDef: " + String(supported_id))
+
+
+func _load_surface_resource_ids() -> Array[StringName]:
+	var ids: Array[StringName] = []
+	var dir: DirAccess = DirAccess.open(SURFACE_DIR_PATH)
+	if dir == null:
+		_errors.append("failed to open surface data directory: " + SURFACE_DIR_PATH)
+		return ids
+	dir.list_dir_begin()
+	var file_name: String = dir.get_next()
+	while file_name != "":
+		if not dir.current_is_dir() and file_name.ends_with(".tres"):
+			var resource_path: String = SURFACE_DIR_PATH.path_join(file_name)
+			var surface: Resource = load(resource_path)
+			if surface == null:
+				_errors.append("failed to load surface resource for audio inspection: " + resource_path)
+			else:
+				var surface_id: StringName = surface.get("id")
+				if surface_id == &"":
+					_errors.append(resource_path + " has an empty surface id")
+				else:
+					ids.append(surface_id)
+		file_name = dir.get_next()
+	dir.list_dir_end()
+	if ids.is_empty():
+		_errors.append("surface data directory has no .tres resources: " + SURFACE_DIR_PATH)
+	return ids
+
+
+func _expected_audio_gain(surface_id: StringName) -> float:
+	if surface_id == &"packed_gravel":
+		return GameConfig.audio_tire_gain_gravel
+	if surface_id == &"packed_dirt":
+		return GameConfig.audio_tire_gain_dirt
+	if surface_id == &"tall_grass":
+		return GameConfig.audio_tire_gain_grass
+	if surface_id == &"mud":
+		return GameConfig.audio_tire_gain_mud
+	if surface_id == &"loose_rock":
+		return GameConfig.audio_tire_gain_rock
+	if surface_id == &"wet_stone":
+		return GameConfig.audio_tire_gain_stone
+	if surface_id == &"wood_plank":
+		return GameConfig.audio_tire_gain_wood
+	_errors.append("missing inspector tire gain expectation for SurfaceDef: " + String(surface_id))
+	return GameConfig.audio_tire_gain_dirt
+
+
+func _expected_audio_pitch(surface_id: StringName) -> float:
+	if surface_id == &"packed_gravel":
+		return GameConfig.audio_tire_pitch_gravel
+	if surface_id == &"packed_dirt":
+		return GameConfig.audio_tire_pitch_dirt
+	if surface_id == &"tall_grass":
+		return GameConfig.audio_tire_pitch_grass
+	if surface_id == &"mud":
+		return GameConfig.audio_tire_pitch_mud
+	if surface_id == &"loose_rock":
+		return GameConfig.audio_tire_pitch_rock
+	if surface_id == &"wet_stone":
+		return GameConfig.audio_tire_pitch_stone
+	if surface_id == &"wood_plank":
+		return GameConfig.audio_tire_pitch_wood
+	_errors.append("missing inspector tire pitch expectation for SurfaceDef: " + String(surface_id))
+	return GameConfig.audio_tire_pitch_dirt
 
 
 func _require_audio_surface_response(audio_rig: Node, surface_id: StringName, expected_gain: float, expected_pitch: float) -> void:

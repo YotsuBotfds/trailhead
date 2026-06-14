@@ -1,6 +1,16 @@
 class_name CedarAudioRig
 extends Node
 
+const AUDIO_SURFACE_IDS: Array[StringName] = [
+	&"packed_gravel",
+	&"packed_dirt",
+	&"tall_grass",
+	&"mud",
+	&"loose_rock",
+	&"wet_stone",
+	&"wood_plank"
+]
+
 var _vehicle: Node = null
 var _motor_player: AudioStreamPlayer = null
 var _tire_player: AudioStreamPlayer = null
@@ -218,6 +228,13 @@ func surface_tire_gain_for(surface_id: StringName) -> float:
 	if surface_id == &"wood_plank":
 		return GameConfig.audio_tire_gain_wood
 	return GameConfig.audio_tire_gain_dirt
+
+
+func supported_audio_surface_ids() -> Array[StringName]:
+	var ids: Array[StringName] = []
+	for surface_id in AUDIO_SURFACE_IDS:
+		ids.append(surface_id)
+	return ids
 
 
 func surface_tire_pitch_for(surface_id: StringName) -> float:
