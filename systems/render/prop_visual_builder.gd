@@ -41,14 +41,8 @@ static func build_cedar_hollow(parent: Node3D) -> Node3D:
 static func _instance_prop(parent: Node3D, scene: PackedScene, node_name: String, position: Vector3, rotation: Vector3, scale: Vector3) -> Node3D:
 	var instance: Node3D = scene.instantiate() as Node3D
 	if instance == null:
-		push_warning("Failed to instantiate prop visual: " + node_name)
-		var fallback: Node3D = Node3D.new()
-		fallback.name = node_name
-		fallback.position = position
-		fallback.rotation_degrees = rotation
-		fallback.scale = scale
-		parent.add_child(fallback)
-		return fallback
+		push_error("PropVisualBuilder: failed to instantiate " + node_name)
+		return null
 	instance.name = node_name
 	instance.position = position
 	instance.rotation_degrees = rotation
@@ -78,6 +72,8 @@ static func _add_wayfinder_sign(parent: Node3D, node_name: String, position: Vec
 
 
 static func _add_sign_label(parent: Node3D, label_name: String, text: String, position: Vector3, rotation: Vector3, font_size: int) -> void:
+	if parent == null:
+		return
 	var label: Label3D = Label3D.new()
 	label.name = label_name
 	label.text = text
