@@ -10,6 +10,204 @@
 	"target": "old_cedar",
 	"seed": 12345,
 	"ticks": 106,
+	"tolerances": {
+		"ticks": 2,
+		"position_m": 0.08,
+		"velocity_mps": 0.25,
+		"speed_mps": 0.2
+	},
+	"predicates": {
+		"event_bus_contract": true,
+		"never_stuck": true,
+		"reached_target": true,
+		"scenario_passed": true,
+		"stayed_in_bounds": true,
+		"surface_event_observed": true,
+		"target_landmark_event_observed": true,
+		"upright_or_recovered": true
+	},
+	"samples": [
+		{
+			"tick": 0,
+			"position": [
+				0.0,
+				0.117277771234512,
+				0.75
+			],
+			"linear_velocity": [
+				0.0,
+				-0.163333356380463,
+				0.0
+			],
+			"speed": 0.163333356380463,
+			"is_flipped": false
+		},
+		{
+			"tick": 10,
+			"position": [
+				0.0,
+				0.142130613327026,
+				0.688034653663635
+			],
+			"linear_velocity": [
+				0.0,
+				-0.493588328361511,
+				-0.670298516750336
+			],
+			"speed": 0.83242392539978,
+			"is_flipped": false
+		},
+		{
+			"tick": 20,
+			"position": [
+				0.0,
+				0.157164931297302,
+				0.515862166881561
+			],
+			"linear_velocity": [
+				0.0,
+				0.00309155881404877,
+				-1.32832849025726
+			],
+			"speed": 1.32833206653595,
+			"is_flipped": false
+		},
+		{
+			"tick": 30,
+			"position": [
+				0.0,
+				0.148870840668678,
+				0.236235037446022
+			],
+			"linear_velocity": [
+				0.0,
+				0.466011643409729,
+				-1.96284675598145
+			],
+			"speed": 2.01740789413452,
+			"is_flipped": false
+		},
+		{
+			"tick": 40,
+			"position": [
+				0.0,
+				0.123937107622623,
+				-0.148132756352425
+			],
+			"linear_velocity": [
+				0.0,
+				0.28958261013031,
+				-2.57120013237
+			],
+			"speed": 2.5874559879303,
+			"is_flipped": false
+		},
+		{
+			"tick": 50,
+			"position": [
+				0.0,
+				0.128371462225914,
+				-0.631778061389923
+			],
+			"linear_velocity": [
+				0.0,
+				-0.390074342489243,
+				-3.1476833820343
+			],
+			"speed": 3.17176103591919,
+			"is_flipped": false
+		},
+		{
+			"tick": 60,
+			"position": [
+				0.0,
+				0.163761422038078,
+				-1.205806016922
+			],
+			"linear_velocity": [
+				0.0,
+				0.310648292303085,
+				-3.6214485168457
+			],
+			"speed": 3.63474774360657,
+			"is_flipped": false
+		},
+		{
+			"tick": 70,
+			"position": [
+				0.0,
+				0.133008792996407,
+				-1.86558723449707
+			],
+			"linear_velocity": [
+				0.0,
+				0.338951587677002,
+				-4.2301139831543
+			],
+			"speed": 4.24367189407349,
+			"is_flipped": false
+		},
+		{
+			"tick": 80,
+			"position": [
+				0.0,
+				0.150432243943214,
+				-2.61531496047974
+			],
+			"linear_velocity": [
+				0.0,
+				-0.391575127840042,
+				-4.72801685333252
+			],
+			"speed": 4.7442045211792,
+			"is_flipped": false
+		},
+		{
+			"tick": 90,
+			"position": [
+				0.0,
+				0.153019949793816,
+				-3.44850087165833
+			],
+			"linear_velocity": [
+				0.0,
+				0.444811046123505,
+				-5.23828125
+			],
+			"speed": 5.25713300704956,
+			"is_flipped": false
+		},
+		{
+			"tick": 100,
+			"position": [
+				0.0,
+				0.131499826908112,
+				-4.36295652389526
+			],
+			"linear_velocity": [
+				0.0,
+				-0.303111106157303,
+				-5.56580638885498
+			],
+			"speed": 5.57405376434326,
+			"is_flipped": false
+		},
+		{
+			"tick": 106,
+			"position": [
+				-0.0715600773692131,
+				0.141767501831055,
+				-4.88511753082275
+			],
+			"linear_velocity": [
+				-0.631650984287262,
+				0.248006954789162,
+				-5.09353590011597
+			],
+			"speed": 5.13854026794434,
+			"is_flipped": false
+		}
+	],
 	"inputs": [
 		{
 			"throttle": 1.0,

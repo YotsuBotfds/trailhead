@@ -4,6 +4,10 @@ extends RefCounted
 const VehicleInputScript: GDScript = preload("res://systems/vehicle/vehicle_input.gd")
 
 var _inputs: Array[Dictionary] = []
+var _expected_samples: Array = []
+var _expected_tolerances: Dictionary = {}
+var _expected_predicates: Dictionary = {}
+var _expected_ticks: int = 0
 var _tick: int = 0
 var _done: bool = true
 var _last_error: String = ""
@@ -11,6 +15,10 @@ var _last_error: String = ""
 
 func configure_empty() -> void:
 	_inputs.clear()
+	_expected_samples.clear()
+	_expected_tolerances.clear()
+	_expected_predicates.clear()
+	_expected_ticks = 0
 	_tick = 0
 	_done = true
 	_last_error = ""
@@ -46,6 +54,13 @@ func configure_from_file(path: String) -> bool:
 		_last_error = "replay file has no input rows: " + path
 		_done = true
 		return false
+	_expected_ticks = int(data.get("ticks", _inputs.size()))
+	if data.has("samples") and data["samples"] is Array:
+		_expected_samples = data["samples"]
+	if data.has("tolerances") and data["tolerances"] is Dictionary:
+		_expected_tolerances = data["tolerances"]
+	if data.has("predicates") and data["predicates"] is Dictionary:
+		_expected_predicates = data["predicates"]
 	return true
 
 
@@ -72,6 +87,22 @@ func is_done() -> bool:
 
 func last_error() -> String:
 	return _last_error
+
+
+func expected_ticks() -> int:
+	return _expected_ticks
+
+
+func expected_samples() -> Array:
+	return _expected_samples
+
+
+func expected_tolerances() -> Dictionary:
+	return _expected_tolerances
+
+
+func expected_predicates() -> Dictionary:
+	return _expected_predicates
 
 
 func _resolve_path(path: String) -> String:

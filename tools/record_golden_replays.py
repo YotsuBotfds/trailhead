@@ -5,6 +5,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 OUT_DIR = ROOT / "tests" / "out"
 GOLDEN_DIR = ROOT / "tests" / "golden"
+SAMPLE_STRIDE = 10
+TOLERANCES = {
+    "ticks": 2,
+    "position_m": 0.08,
+    "velocity_mps": 0.25,
+    "speed_mps": 0.20,
+}
 
 GOLDENS = [
     ("flat_target", "flat_target.json", "flat_target_replay.json"),
@@ -34,6 +41,26 @@ def input_from_row(row):
     }
 
 
+def sample_from_row(row):
+    return {
+        "tick": int(row.get("tick", 0)),
+        "position": [float(value) for value in row.get("position", [0.0, 0.0, 0.0])],
+        "linear_velocity": [float(value) for value in row.get("linear_velocity", [0.0, 0.0, 0.0])],
+        "speed": float(row.get("speed", 0.0)),
+        "is_flipped": bool(row.get("is_flipped", False)),
+    }
+
+
+def sampled_telemetry(telemetry):
+    samples = []
+    final_tick = int(telemetry[-1].get("tick", len(telemetry) - 1))
+    for row in telemetry:
+        tick = int(row.get("tick", 0))
+        if tick == 0 or tick == final_tick or tick % SAMPLE_STRIDE == 0:
+            samples.append(sample_from_row(row))
+    return samples
+
+
 def build_replay(name, source_path):
     data = json.loads(source_path.read_text())
     if data.get("result") != "pass":
@@ -53,6 +80,9 @@ def build_replay(name, source_path):
         "target": data.get("target", ""),
         "seed": int(data.get("seed", 0)),
         "ticks": int(data.get("ticks", 0)),
+        "tolerances": TOLERANCES,
+        "predicates": data.get("predicates", {}),
+        "samples": sampled_telemetry(telemetry),
         "inputs": [input_from_row(row) for row in telemetry[1:]],
     }
 

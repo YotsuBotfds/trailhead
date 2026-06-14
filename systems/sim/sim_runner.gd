@@ -422,7 +422,20 @@ func _finish(passed: bool) -> void:
 	var surface_event_observed: bool = _surface_event_count > 0
 	var target_landmark_event_observed: bool = _target_landmark_event_observed()
 	var event_bus_contract_passed: bool = _event_bus_contract_passed()
-	var all_predicates_passed: bool = target_predicate_passed and scenario_predicate_passed and surface_event_observed and target_landmark_event_observed and event_bus_contract_passed and _never_stuck and _upright_or_recovered and _stayed_in_bounds
+	var predicates: Dictionary = {
+		"reached_target": target_predicate_passed,
+		"scenario_passed": scenario_predicate_passed,
+		"surface_event_observed": surface_event_observed,
+		"target_landmark_event_observed": target_landmark_event_observed,
+		"event_bus_contract": event_bus_contract_passed,
+		"never_stuck": _never_stuck,
+		"upright_or_recovered": _upright_or_recovered,
+		"stayed_in_bounds": _stayed_in_bounds
+	}
+	var golden_replay: Dictionary = _golden_replay_result(predicates)
+	var golden_replay_matched: bool = bool(golden_replay.get("matched", true))
+	predicates["golden_replay_matched"] = golden_replay_matched
+	var all_predicates_passed: bool = target_predicate_passed and scenario_predicate_passed and surface_event_observed and target_landmark_event_observed and event_bus_contract_passed and _never_stuck and _upright_or_recovered and _stayed_in_bounds and golden_replay_matched
 	var result: Dictionary = {
 		"scene": _scene_id,
 		"controller": _controller_id,
@@ -433,16 +446,7 @@ func _finish(passed: bool) -> void:
 		"seed": int(_args.get("seed", 0)),
 		"ticks": _tick,
 		"result": "pass" if (passed and all_predicates_passed) else "fail",
-		"predicates": {
-			"reached_target": target_predicate_passed,
-			"scenario_passed": scenario_predicate_passed,
-			"surface_event_observed": surface_event_observed,
-			"target_landmark_event_observed": target_landmark_event_observed,
-			"event_bus_contract": event_bus_contract_passed,
-			"never_stuck": _never_stuck,
-			"upright_or_recovered": _upright_or_recovered,
-			"stayed_in_bounds": _stayed_in_bounds
-		},
+		"predicates": predicates,
 		"metrics": {
 			"target": _vec3_to_array(_target),
 			"target_radius": _target_radius,
@@ -474,7 +478,8 @@ func _finish(passed: bool) -> void:
 			"self_righted_event_count": _self_righted_event_count,
 			"min_progress_window": _min_progress_window if _min_progress_window < 999998.0 else null,
 			"stuck_window_ticks": _stuck_window_ticks,
-			"stuck_min_progress": _stuck_min_progress
+			"stuck_min_progress": _stuck_min_progress,
+			"golden_replay": golden_replay
 		},
 		"telemetry": _telemetry
 	}
@@ -657,6 +662,96 @@ func _surface_sequence_contains(expected: Array[String]) -> bool:
 		if expected_index < expected.size() and surface_id == expected[expected_index]:
 			expected_index += 1
 	return expected_index == expected.size()
+
+
+func _golden_replay_result(predicates: Dictionary) -> Dictionary:
+	var failures: Array[String] = []
+	var result: Dictionary = {
+		"matched": true,
+		"expected_ticks": null,
+		"tick_delta": 0,
+		"compared_samples": 0,
+		"max_position_error": 0.0,
+		"max_velocity_error": 0.0,
+		"max_speed_error": 0.0,
+		"failures": failures
+	}
+	if _controller_id != "replay" or _controller == null:
+		return result
+	var expected_ticks: int = int(_controller.call("expected_ticks"))
+	var tolerances: Dictionary = _controller.call("expected_tolerances")
+	var expected_samples: Array = _controller.call("expected_samples")
+	var expected_predicates: Dictionary = _controller.call("expected_predicates")
+	var tick_tolerance: int = int(tolerances.get("ticks", 0))
+	var position_tolerance: float = float(tolerances.get("position_m", 0.0))
+	var velocity_tolerance: float = float(tolerances.get("velocity_mps", 0.0))
+	var speed_tolerance: float = float(tolerances.get("speed_mps", 0.0))
+	var tick_delta: int = absi(_tick - expected_ticks)
+	result["expected_ticks"] = expected_ticks
+	result["tick_delta"] = tick_delta
+	if tick_delta > tick_tolerance:
+		failures.append("tick delta " + str(tick_delta) + " exceeded tolerance " + str(tick_tolerance))
+	for key in expected_predicates.keys():
+		if key == "golden_replay_matched":
+			continue
+		if not predicates.has(key):
+			failures.append("missing expected predicate: " + String(key))
+			continue
+		var expected_predicate: bool = bool(expected_predicates[key])
+		var actual_predicate: bool = bool(predicates[key])
+		if actual_predicate != expected_predicate:
+			failures.append("predicate " + String(key) + " expected " + str(expected_predicate) + " got " + str(actual_predicate))
+	for value in expected_samples:
+		if not (value is Dictionary):
+			continue
+		var sample: Dictionary = value
+		var sample_tick: int = int(sample.get("tick", -1))
+		var row: Dictionary = _telemetry_row_for_tick(sample_tick)
+		if row.is_empty():
+			failures.append("missing telemetry row for golden sample tick " + str(sample_tick))
+			continue
+		var position_error: float = _vec3_array_distance(sample.get("position", []), row.get("position", []))
+		var velocity_error: float = _vec3_array_distance(sample.get("linear_velocity", []), row.get("linear_velocity", []))
+		var speed_error: float = absf(float(sample.get("speed", 0.0)) - float(row.get("speed", 0.0)))
+		result["compared_samples"] = int(result["compared_samples"]) + 1
+		result["max_position_error"] = maxf(float(result["max_position_error"]), position_error)
+		result["max_velocity_error"] = maxf(float(result["max_velocity_error"]), velocity_error)
+		result["max_speed_error"] = maxf(float(result["max_speed_error"]), speed_error)
+		if position_error > position_tolerance:
+			failures.append("position error at tick " + str(sample_tick) + " was " + str(position_error))
+		if velocity_error > velocity_tolerance:
+			failures.append("velocity error at tick " + str(sample_tick) + " was " + str(velocity_error))
+		if speed_error > speed_tolerance:
+			failures.append("speed error at tick " + str(sample_tick) + " was " + str(speed_error))
+	if expected_samples.size() > 0 and int(result["compared_samples"]) <= 0:
+		failures.append("no golden samples were compared")
+	result["matched"] = failures.is_empty()
+	result["failures"] = failures
+	return result
+
+
+func _telemetry_row_for_tick(tick: int) -> Dictionary:
+	if tick >= 0 and tick < _telemetry.size():
+		var row: Dictionary = _telemetry[tick]
+		if int(row.get("tick", -1)) == tick:
+			return row
+	for value in _telemetry:
+		var row: Dictionary = value
+		if int(row.get("tick", -1)) == tick:
+			return row
+	return {}
+
+
+func _vec3_array_distance(expected_value: Variant, actual_value: Variant) -> float:
+	if not (expected_value is Array) or not (actual_value is Array):
+		return INF
+	var expected: Array = expected_value
+	var actual: Array = actual_value
+	if expected.size() < 3 or actual.size() < 3:
+		return INF
+	var expected_vector: Vector3 = Vector3(float(expected[0]), float(expected[1]), float(expected[2]))
+	var actual_vector: Vector3 = Vector3(float(actual[0]), float(actual[1]), float(actual[2]))
+	return expected_vector.distance_to(actual_vector)
 
 
 func _connect_event_bus() -> void:
