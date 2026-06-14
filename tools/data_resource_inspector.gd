@@ -69,7 +69,7 @@ func _inspect_surface_visuals() -> void:
 
 
 func _inspect_surface_visual_texture_paths() -> void:
-	var visual_defs: Array = CedarSurfaceVisualCatalog.get("visual_defs")
+	var visual_defs: Array[Resource] = CedarSurfaceVisualCatalog.get("visual_defs")
 	for i in range(visual_defs.size()):
 		var visual_def: Resource = visual_defs[i]
 		if visual_def == null:

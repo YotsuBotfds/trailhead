@@ -1,6 +1,6 @@
 extends Node
 
-const REQUIRED_ACTIONS: Dictionary = {
+const REQUIRED_ACTIONS: Dictionary[StringName, Variant] = {
 	&"throttle": [KEY_W, KEY_UP],
 	&"brake": [KEY_S, KEY_DOWN],
 	&"reverse": [KEY_S, KEY_DOWN],
@@ -23,12 +23,12 @@ func _ready() -> void:
 func _inspect() -> void:
 	for action_key in REQUIRED_ACTIONS.keys():
 		var action_name: StringName = action_key
-		var expected_keycodes: Array = REQUIRED_ACTIONS[action_name]
+		var expected_keycodes: Array[int] = _keycodes_from_variant(REQUIRED_ACTIONS[action_name])
 		_require_input_action_keys(action_name, expected_keycodes)
 	_finish()
 
 
-func _require_input_action_keys(action_name: StringName, expected_keycodes: Array) -> void:
+func _require_input_action_keys(action_name: StringName, expected_keycodes: Array[int]) -> void:
 	var action_string: String = String(action_name)
 	if not InputMap.has_action(action_string):
 		_errors.append("InputMap missing project action: " + action_string)
@@ -50,6 +50,15 @@ func _require_input_action_keys(action_name: StringName, expected_keycodes: Arra
 		var keycode: int = int(keycode_value)
 		if not observed_keycodes.has(keycode):
 			_errors.append("InputMap action " + action_string + " missing default keycode " + str(keycode))
+
+
+func _keycodes_from_variant(value: Variant) -> Array[int]:
+	var keycodes: Array[int] = []
+	if not (value is Array):
+		return keycodes
+	for keycode_value: Variant in value:
+		keycodes.append(int(keycode_value))
+	return keycodes
 
 
 func _finish() -> void:
