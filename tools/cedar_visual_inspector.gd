@@ -98,10 +98,11 @@ func _inspect() -> void:
 		if boundary_mesh_count <= 0:
 			_errors.append("BoundaryVisuals contains no mesh instances")
 	_require_node(_scene_root, "CedarHollow")
-	_require_node(_scene_root, "Vehicle")
-	_require_node(_scene_root, "ChaseCamera")
-	_require_node(_scene_root, "OrbitCamera")
-	_require_node(_scene_root, "FpvCamera")
+	var vehicle: Node = _require_node(_scene_root, "Vehicle")
+	var chase_camera: Camera3D = _require_node(_scene_root, "ChaseCamera") as Camera3D
+	var orbit_camera: Camera3D = _require_node(_scene_root, "OrbitCamera") as Camera3D
+	var fpv_camera: Camera3D = _require_node(_scene_root, "FpvCamera") as Camera3D
+	_inspect_camera_defaults(vehicle, chase_camera, orbit_camera, fpv_camera)
 	_require_node(_scene_root, "SurfaceMap")
 	var world_environment: WorldEnvironment = _require_node(_scene_root, "GoldenHourEnvironment") as WorldEnvironment
 	if world_environment != null:
@@ -116,9 +117,8 @@ func _inspect() -> void:
 	_require_node(_scene_root, "CedarAudioRig/CreekBed")
 	_require_node(_scene_root, "CedarAudioRig/PlankKnock")
 	var hud: Node = _require_node(_scene_root, "LandmarkHintHud")
-	if hud != null and hud.visible:
-		_errors.append("LandmarkHintHud should be hidden by default")
-	_require_node(_scene_root, "LandmarkHintHud/MinimapView")
+	if hud != null:
+		_inspect_hud_defaults(hud)
 	_finish()
 
 
@@ -179,6 +179,51 @@ func _inspect_default_sun(sun: DirectionalLight3D) -> void:
 		_errors.append("GoldenHourSun should start in dusk color")
 	if absf(sun.light_energy - GameConfig.dusk_sun_energy) > FLOAT_EPSILON:
 		_errors.append("GoldenHourSun should start in dusk energy")
+
+
+func _inspect_camera_defaults(vehicle: Node, chase_camera: Camera3D, orbit_camera: Camera3D, fpv_camera: Camera3D) -> void:
+	if vehicle == null or chase_camera == null or orbit_camera == null or fpv_camera == null:
+		return
+	var state: RefCounted = vehicle.call("get_state")
+	var vehicle_position: Vector3 = state.get("position")
+	if not chase_camera.current:
+		_errors.append("ChaseCamera should be current by default")
+	if orbit_camera.current:
+		_errors.append("OrbitCamera should not be current by default")
+	if fpv_camera.current:
+		_errors.append("FpvCamera should not be current by default")
+	if absf(chase_camera.fov - GameConfig.cam_fov_base) > FLOAT_EPSILON:
+		_errors.append("ChaseCamera should start at base FOV")
+	if absf(orbit_camera.fov - GameConfig.orbit_cam_fov) > FLOAT_EPSILON:
+		_errors.append("OrbitCamera should start at orbit FOV")
+	if absf(fpv_camera.fov - GameConfig.fpv_cam_fov) > FLOAT_EPSILON:
+		_errors.append("FpvCamera should start at FPV FOV")
+	if chase_camera.global_position.y <= vehicle_position.y:
+		_errors.append("ChaseCamera should start above the vehicle")
+	if chase_camera.global_position.z <= vehicle_position.z:
+		_errors.append("ChaseCamera should start behind the trailhead spawn")
+	if orbit_camera.global_position.y <= vehicle_position.y:
+		_errors.append("OrbitCamera should start above the vehicle")
+	if orbit_camera.global_position.distance_to(vehicle_position) <= GameConfig.orbit_cam_distance:
+		_errors.append("OrbitCamera should start outside its horizontal orbit radius")
+	if fpv_camera.global_position.y <= vehicle_position.y:
+		_errors.append("FpvCamera should start above the vehicle")
+	if fpv_camera.global_position.z >= vehicle_position.z:
+		_errors.append("FpvCamera should start ahead of the trailhead spawn")
+
+
+func _inspect_hud_defaults(hud: Node) -> void:
+	if hud.visible:
+		_errors.append("LandmarkHintHud should be hidden by default")
+	var minimap: Control = _require_node(hud, "MinimapView") as Control
+	if minimap == null:
+		return
+	var expected_position: Vector2 = Vector2(GameConfig.minimap_margin, GameConfig.minimap_margin)
+	var expected_size: Vector2 = Vector2(GameConfig.minimap_size, GameConfig.minimap_size)
+	if minimap.position.distance_to(expected_position) > FLOAT_EPSILON:
+		_errors.append("MinimapView position expected " + str(expected_position) + ", got " + str(minimap.position))
+	if minimap.size.distance_to(expected_size) > FLOAT_EPSILON:
+		_errors.append("MinimapView size expected " + str(expected_size) + ", got " + str(minimap.size))
 
 
 func _count_collision_objects(parent: Node) -> int:
