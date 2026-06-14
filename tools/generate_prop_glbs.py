@@ -211,16 +211,6 @@ def picnic_table():
     ])
 
 
-def old_cedar_stump():
-    trunk = transformed(cylinder(0.42, 1.15, 18, 0.12), (0.0, 0.0, 0.0))
-    return merge([
-        trunk,
-        transformed(box(0.95, 0.12, 0.18), (0.0, 0.02, 0.44)),
-        transformed(box(0.8, 0.10, 0.16), (0.34, 0.02, -0.36)),
-        transformed(box(0.7, 0.10, 0.16), (-0.4, 0.02, -0.28)),
-    ])
-
-
 def fire_ring():
     stones = []
     for index in range(12):
@@ -372,55 +362,127 @@ def picnic_table_parts():
     ]
 
 
+def old_cedar_outer_shell():
+    segment_count = 28
+    front_angle = math.pi * 0.5
+    front_gap = 0.35
+    ring_data = [
+        (0.18, 0.61),
+        (0.43, 0.54),
+        (0.76, 0.45),
+        (1.0, 0.36),
+    ]
+    vertices = []
+    active_segments = []
+    top_heights = []
+    for segment in range(segment_count):
+        angle = math.tau * float(segment) / float(segment_count)
+        front_delta = abs(math.atan2(math.sin(angle - front_angle), math.cos(angle - front_angle)))
+        active_segments.append(front_delta > front_gap)
+        top_heights.append(
+            0.98
+            + math.sin(float(segment) * 1.37) * 0.105
+            + math.sin(float(segment) * 2.71) * 0.045
+        )
+    for ring_index, ring in enumerate(ring_data):
+        ring_y, ring_radius = ring
+        for segment in range(segment_count):
+            angle = math.tau * float(segment) / float(segment_count)
+            wobble = 1.0 + math.sin(angle * 3.0) * 0.055 + math.sin(angle * 7.0 + 0.4) * 0.025
+            y = top_heights[segment] if ring_index == len(ring_data) - 1 else ring_y
+            radius = ring_radius * wobble
+            vertices.append((math.cos(angle) * radius * 1.08, y, math.sin(angle) * radius * 0.96))
+    indices = []
+    for ring_index in range(len(ring_data) - 1):
+        for segment in range(segment_count):
+            next_segment = (segment + 1) % segment_count
+            if not active_segments[segment] or not active_segments[next_segment]:
+                continue
+            bottom_a = ring_index * segment_count + segment
+            bottom_b = ring_index * segment_count + next_segment
+            top_a = (ring_index + 1) * segment_count + segment
+            top_b = (ring_index + 1) * segment_count + next_segment
+            indices.extend([bottom_a, bottom_b, top_b, bottom_a, top_b, top_a])
+    return vertices, indices
+
+
+def splinter_prism(width, height, depth, tip_offset):
+    half_width = width * 0.5
+    half_depth = depth * 0.5
+    vertices = [
+        (-half_width, 0.0, -half_depth),
+        (half_width, 0.0, -half_depth),
+        (half_width, 0.0, half_depth),
+        (-half_width, 0.0, half_depth),
+        (tip_offset, height, -half_depth),
+        (tip_offset, height, half_depth),
+    ]
+    indices = [
+        0, 3, 2, 0, 2, 1,
+        0, 1, 4,
+        3, 5, 2,
+        0, 4, 5, 0, 5, 3,
+        1, 2, 5, 1, 5, 4,
+    ]
+    return vertices, indices
+
+
 def old_cedar_stump_parts():
     shell_panels = []
     bark_highlights = []
     charred_interior = []
     rim_chunks = []
-    panel_count = 18
+    panel_count = 28
     front_angle = math.pi * 0.5
+    shell_panels.append(old_cedar_outer_shell())
     for index in range(panel_count):
         angle = math.tau * float(index) / float(panel_count)
         front_delta = abs(math.atan2(math.sin(angle - front_angle), math.cos(angle - front_angle)))
-        panel_height = 1.18 + math.sin(float(index) * 1.7) * 0.075
-        panel_width = 0.135 + float(index % 3) * 0.014
+        panel_height = 0.96 + math.sin(float(index) * 1.37) * 0.105 + math.sin(float(index) * 2.71) * 0.045
         if front_delta < 0.36:
             if index % 2 == 0:
-                charred_interior.append(radial_box(0.055, 0.74, 0.026, 0.265, 0.15, angle))
+                charred_interior.append(radial_box(0.050, 0.68, 0.024, 0.300, 0.18, angle))
             continue
-        shell_panels.append(radial_box(panel_width, panel_height, 0.062, 0.41, 0.0, angle))
         if index % 2 == 0:
-            bark_highlights.append(radial_box(0.030, 0.58 + float(index % 4) * 0.08, 0.018, 0.447, 0.18, angle + 0.02))
+            bark_highlights.append(radial_box(0.035, 0.42 + float(index % 4) * 0.075, 0.022, 0.525, 0.20, angle + 0.018))
         if index % 3 == 0:
-            rim_chunks.append(radial_box(0.13, 0.060 + float(index % 2) * 0.025, 0.078, 0.405, panel_height - 0.02, angle))
+            rim_chunks.append(radial_box(0.145, 0.050 + float(index % 2) * 0.030, 0.090, 0.405, panel_height - 0.015, angle))
+    broad_base = transformed(tapered_cylinder(0.70, 0.54, 0.30, 28, 0.075), (0.0, 0.0, 0.0), scale=(1.08, 1.0, 0.96))
     roots = []
     for index, angle in enumerate([-2.85, -2.15, -1.35, -0.48, 0.28, 1.05, 2.25, 2.85]):
-        root_length = 0.54 + float(index % 3) * 0.10
-        roots.append(radial_cylinder(0.055 + float(index % 2) * 0.010, root_length, 0.22, 0.055, angle, (1.0, 0.86, 1.0)))
+        root_length = 0.38 + float(index % 3) * 0.055
+        roots.append(radial_cylinder(0.055 + float(index % 2) * 0.010, root_length, 0.46, 0.076, angle, (1.0, 0.82, 1.0)))
+        if index % 2 == 0:
+            roots.append(radial_box(0.24, 0.17, 0.10, 0.43, 0.015, angle + 0.06))
     broken_splinters = [
-        transformed(box(0.045, 0.58, 0.040), (-0.19, 0.70, 0.34), rotation=(0.0, 0.28, 0.16)),
-        transformed(box(0.040, 0.46, 0.035), (0.23, 0.76, 0.31), rotation=(0.0, -0.35, -0.12)),
-        transformed(box(0.035, 0.36, 0.030), (0.05, 0.83, -0.35), rotation=(0.0, 0.52, 0.10)),
+        transformed(splinter_prism(0.090, 0.42, 0.045, -0.020), (-0.28, 0.88, 0.31), rotation=(0.10, 0.62, 0.22)),
+        transformed(splinter_prism(0.072, 0.50, 0.040, 0.018), (0.17, 0.82, 0.36), rotation=(-0.08, -0.34, -0.18)),
+        transformed(splinter_prism(0.066, 0.36, 0.034, -0.016), (0.35, 0.84, -0.02), rotation=(0.02, -1.52, -0.15)),
+        transformed(splinter_prism(0.078, 0.32, 0.038, 0.024), (-0.38, 0.80, -0.11), rotation=(0.04, 1.92, 0.18)),
+        transformed(splinter_prism(0.060, 0.44, 0.032, -0.010), (0.03, 0.90, -0.36), rotation=(-0.08, 3.03, 0.12)),
+        transformed(splinter_prism(0.050, 0.28, 0.030, 0.012), (-0.05, 0.96, 0.39), rotation=(0.08, 0.04, -0.10)),
     ]
     branch_stubs = [
-        radial_cylinder(0.052, 0.30, 0.40, 0.66, 0.16, (1.0, 0.88, 1.0)),
-        radial_cylinder(0.044, 0.24, 0.38, 0.48, 3.55, (1.0, 0.80, 1.0)),
-        radial_box(0.20, 0.032, 0.075, 0.39, 0.86, 5.18),
+        radial_cylinder(0.060, 0.32, 0.50, 0.56, 0.16, (1.0, 0.86, 1.0)),
+        radial_cylinder(0.048, 0.27, 0.46, 0.45, 3.55, (1.0, 0.80, 1.0)),
+        radial_box(0.22, 0.036, 0.082, 0.43, 0.82, 5.18),
     ]
     return [
+        part(broad_base, [0.27, 0.145, 0.070, 1.0], "old_cedar_stump_broad_base"),
         part(merge(shell_panels), [0.35, 0.20, 0.10, 1.0], "old_cedar_stump_bark_shell"),
         part(merge(roots), [0.20, 0.115, 0.055, 1.0], "old_cedar_stump_root_flares"),
         part(merge(rim_chunks), [0.57, 0.38, 0.19, 1.0], "old_cedar_stump_broken_rim"),
         part(merge(charred_interior + [
-            transformed(box(0.46, 0.82, 0.030), (0.0, 0.18, 0.185)),
-            transformed(box(0.34, 0.52, 0.024), (0.0, 0.32, -0.20)),
+            transformed(box(0.56, 0.72, 0.034), (0.0, 0.20, 0.225)),
+            transformed(box(0.36, 0.44, 0.026), (0.0, 0.32, -0.19)),
         ]), [0.060, 0.038, 0.024, 1.0], "old_cedar_stump_hollow_shadow"),
         part(merge(branch_stubs), [0.22, 0.13, 0.07, 1.0], "old_cedar_stump_branch_scars"),
         part(merge(bark_highlights + broken_splinters), [0.14, 0.078, 0.036, 1.0], "old_cedar_stump_bark_splits"),
         part(merge([
-            radial_box(0.18, 0.032, 0.060, 0.32, 0.98, 3.95),
-            radial_box(0.13, 0.026, 0.050, 0.30, 1.03, 4.45),
-            radial_box(0.16, 0.026, 0.055, 0.31, 1.00, 5.05),
+            radial_box(0.21, 0.034, 0.062, 0.31, 0.94, 3.85),
+            radial_box(0.14, 0.028, 0.052, 0.28, 1.02, 4.42),
+            radial_box(0.18, 0.028, 0.056, 0.30, 0.98, 5.08),
+            radial_box(0.12, 0.026, 0.046, 0.24, 1.06, 5.65),
         ]), [0.68, 0.49, 0.25, 1.0], "old_cedar_stump_inner_cut_edges"),
     ]
 
