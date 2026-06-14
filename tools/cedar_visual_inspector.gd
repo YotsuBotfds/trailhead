@@ -1,6 +1,7 @@
 extends Node
 
 const CedarHollowPlayableScene: PackedScene = preload("res://scenes/cedar_hollow_playable.tscn")
+const VehicleStateScript: GDScript = preload("res://systems/vehicle/vehicle_state.gd")
 const EXPECTED_BOARDWALK_SEGMENTS: int = 9
 const EXPECTED_STEPPING_STONES: int = 5
 const EXPECTED_TERRAIN_PATCHES: int = 20
@@ -128,6 +129,7 @@ func _inspect() -> void:
 	var orbit_camera: Camera3D = _require_node(_scene_root, "OrbitCamera") as Camera3D
 	var fpv_camera: Camera3D = _require_node(_scene_root, "FpvCamera") as Camera3D
 	_inspect_camera_defaults(vehicle, chase_camera, orbit_camera, fpv_camera)
+	_inspect_camera_reactivity(_scene_root, vehicle, chase_camera, orbit_camera, fpv_camera)
 	_require_node(_scene_root, "SurfaceMap")
 	var world_environment: WorldEnvironment = _require_node(_scene_root, "GoldenHourEnvironment") as WorldEnvironment
 	if world_environment != null:
@@ -342,6 +344,44 @@ func _inspect_camera_defaults(vehicle: Node, chase_camera: Camera3D, orbit_camer
 		_errors.append("FpvCamera should start above the vehicle")
 	if fpv_camera.global_position.z >= vehicle_position.z:
 		_errors.append("FpvCamera should start ahead of the trailhead spawn")
+
+
+func _inspect_camera_reactivity(host: Node, vehicle: Node, chase_camera: Camera3D, orbit_camera: Camera3D, fpv_camera: Camera3D) -> void:
+	if host == null or vehicle == null or chase_camera == null or orbit_camera == null or fpv_camera == null:
+		return
+	var live_state: RefCounted = vehicle.call("get_state")
+	var live_position: Vector3 = live_state.get("position")
+	var test_position: Vector3 = live_position + Vector3(0.0, 0.0, -1.0)
+	var test_state: RefCounted = VehicleStateScript.new()
+	test_state.set("position", test_position)
+	test_state.set("basis", Basis.IDENTITY)
+	test_state.set("linear_velocity", Vector3(0.0, 0.0, -GameConfig.max_speed))
+
+	var chase_position_before: Vector3 = chase_camera.global_position
+	host.call("_update_chase_camera", GameConfig.FIXED_DT, test_state)
+	var expected_chase_fov: float = GameConfig.get_fov_for_speed(GameConfig.max_speed)
+	if absf(chase_camera.fov - expected_chase_fov) > FLOAT_EPSILON:
+		_errors.append("ChaseCamera FOV should widen at max speed")
+	if chase_camera.global_position.distance_to(chase_position_before) <= FLOAT_EPSILON:
+		_errors.append("ChaseCamera should move toward a changed vehicle state")
+
+	host.call("cycle_camera_mode")
+	var orbit_position_before: Vector3 = orbit_camera.global_position
+	host.call("_update_orbit_camera", GameConfig.FIXED_DT, test_state)
+	if orbit_camera.global_position.distance_to(orbit_position_before) <= FLOAT_EPSILON:
+		_errors.append("OrbitCamera should move while orbit mode is active")
+	if absf(orbit_camera.fov - GameConfig.orbit_cam_fov) > FLOAT_EPSILON:
+		_errors.append("OrbitCamera should keep orbit FOV during reactive update")
+
+	host.call("_update_fpv_camera", test_state)
+	var expected_fpv_position: Vector3 = test_position + Vector3.FORWARD * GameConfig.fpv_cam_forward + Vector3.UP * GameConfig.fpv_cam_height
+	if fpv_camera.global_position.distance_to(expected_fpv_position) > FEATURE_TRANSFORM_TOLERANCE:
+		_errors.append("FpvCamera should attach to the synthetic vehicle state")
+	if absf(fpv_camera.fov - GameConfig.fpv_cam_fov) > FLOAT_EPSILON:
+		_errors.append("FpvCamera should keep FPV FOV during reactive update")
+
+	host.call("cycle_camera_mode")
+	host.call("cycle_camera_mode")
 
 
 func _inspect_hud_defaults(hud: Node) -> void:
