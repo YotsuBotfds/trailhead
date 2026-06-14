@@ -14,7 +14,7 @@ TOLERANCES = {
     "slip_deg": 2.0,
     "surface_ticks": 2,
     "event_counts": 0,
-    "motor_rpm": 120.0,
+    "motor_rpm": 10.0,
 }
 
 GOLDENS = [
@@ -79,6 +79,7 @@ def metric_block(metrics):
         "landmark_event_count": int(metrics.get("landmark_event_count", 0)),
         "flipped_event_count": int(metrics.get("flipped_event_count", 0)),
         "self_righted_event_count": int(metrics.get("self_righted_event_count", 0)),
+        "recovered_to_trail_event_count": int(metrics.get("recovered_to_trail_event_count", 0)),
         "max_abs_slip_angle_deg": float(metrics.get("max_abs_slip_angle_deg", 0.0)),
         "max_abs_slip_angle_by_surface": metrics.get("max_abs_slip_angle_by_surface", {}),
     }

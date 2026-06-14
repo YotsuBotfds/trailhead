@@ -22,6 +22,12 @@ func next_input(state: RefCounted) -> RefCounted:
 		_fill_launch_wheelie(input)
 	elif scenario_id == "reverse_drive":
 		_fill_reverse_drive(input)
+	elif scenario_id == "standstill_yaw_rate":
+		_fill_standstill_yaw_rate(input)
+	elif scenario_id == "offtrail_escape":
+		_fill_offtrail_escape(input)
+	elif scenario_id == "recover_to_trail":
+		_fill_recover_to_trail(input)
 	elif scenario_id == "surface_sweep":
 		_fill_surface_sweep(input)
 	elif scenario_id == "log_ramp":
@@ -66,6 +72,34 @@ func _fill_launch_wheelie(input: RefCounted) -> void:
 func _fill_reverse_drive(input: RefCounted) -> void:
 	if _tick < GameConfig.reverse_probe_ticks:
 		input.set("throttle", GameConfig.reverse_probe_throttle)
+	else:
+		input.set("brake", GameConfig.scripted_stop_brake)
+		_done = true
+
+
+func _fill_standstill_yaw_rate(input: RefCounted) -> void:
+	if _tick < GameConfig.standstill_yaw_probe_ticks:
+		input.set("steer", GameConfig.standstill_yaw_probe_steer)
+	else:
+		input.set("brake", GameConfig.scripted_stop_brake)
+		_done = true
+
+
+func _fill_offtrail_escape(input: RefCounted) -> void:
+	if _tick < GameConfig.offtrail_escape_probe_ticks:
+		input.set("throttle", GameConfig.offtrail_escape_probe_throttle)
+	else:
+		input.set("brake", GameConfig.scripted_stop_brake)
+		_done = true
+
+
+func _fill_recover_to_trail(input: RefCounted) -> void:
+	var request_end_tick: int = GameConfig.recovery_probe_drive_ticks + GameConfig.recovery_probe_request_ticks
+	if _tick < GameConfig.recovery_probe_drive_ticks:
+		input.set("throttle", GameConfig.recovery_probe_throttle)
+	elif _tick < request_end_tick:
+		input.set("throttle", GameConfig.recovery_probe_throttle)
+		input.set("self_right", true)
 	else:
 		input.set("brake", GameConfig.scripted_stop_brake)
 		_done = true

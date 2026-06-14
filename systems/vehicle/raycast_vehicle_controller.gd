@@ -14,9 +14,14 @@ var _current_surface_id: StringName = &""
 var _surface_friction: float = 0.0
 var _surface_rolling_drag: float = 0.0
 var _surface_slip: float = 0.0
+var _surface_normal_load: float = 0.0
 var _surface_bog_enabled: bool = false
 var _surface_bog_threshold: float = 0.0
 var _last_stable_forward: Vector3 = Vector3.FORWARD
+var _last_recovery_transform: Transform3D = Transform3D.IDENTITY
+var _recovery_position_history: Array[Vector3] = []
+var _recovery_transform_history: Array[Transform3D] = []
+var _recovery_stuck: bool = false
 
 
 func _ready() -> void:
@@ -48,6 +53,10 @@ func reset_to(spawn: Transform3D) -> void:
 	_was_flipped = false
 	_current_surface_id = &""
 	_last_stable_forward = _horizontal_forward(spawn.basis)
+	_last_recovery_transform = _upright_transform(spawn.origin, _last_stable_forward)
+	_recovery_position_history.clear()
+	_recovery_transform_history.clear()
+	_recovery_stuck = false
 	_vehicle_contamination().call("reset")
 	_update_state()
 
@@ -55,10 +64,9 @@ func reset_to(spawn: Transform3D) -> void:
 func self_right() -> void:
 	if _body == null:
 		return
-	var t: Transform3D = _body.global_transform
+	var from_position: Vector3 = _body.global_position
 	var forward: Vector3 = _last_stable_forward
-	var right: Vector3 = forward.cross(Vector3.UP).normalized()
-	t.basis = Basis(right, Vector3.UP, -forward)
+	var t: Transform3D = _upright_transform(from_position, forward)
 	t.origin.y += GameConfig.self_right_lift
 	_body.global_transform = t
 	_body.linear_velocity *= GameConfig.self_right_velocity_retention
@@ -66,12 +74,36 @@ func self_right() -> void:
 	EventBus.vehicle_self_righted.emit()
 
 
+func recover_to_trail() -> void:
+	if _body == null or not GameConfig.recover_to_trail_enabled:
+		return
+	var from_position: Vector3 = _body.global_position
+	var anchor: Transform3D = _last_recovery_transform
+	var forward: Vector3 = _horizontal_forward(anchor.basis)
+	var t: Transform3D = _upright_transform(anchor.origin, forward)
+	t.origin.y += GameConfig.recover_lift
+	_body.global_transform = t
+	_body.linear_velocity *= GameConfig.recover_speed_retention
+	_body.angular_velocity = Vector3.ZERO
+	_last_stable_forward = forward
+	_last_recovery_transform = _upright_transform(anchor.origin, forward)
+	_recovery_position_history.clear()
+	_recovery_transform_history.clear()
+	_recovery_stuck = false
+	EventBus.vehicle_recovered_to_trail.emit(from_position, t.origin)
+	_update_state()
+
+
 func _physics_process(_delta: float) -> void:
 	if _body == null:
 		return
 	_update_flip_events()
-	if bool(_pending_input.get("self_right")) and _is_flipped():
-		self_right()
+	_update_recovery_tracking()
+	if bool(_pending_input.get("self_right")):
+		if _is_flipped():
+			self_right()
+		elif _recovery_stuck:
+			recover_to_trail()
 	_apply_wheel_forces()
 	_apply_drive_forces()
 	_apply_speed_limit()
@@ -88,14 +120,14 @@ func _build_physics_body() -> void:
 	var collision: CollisionShape3D = CollisionShape3D.new()
 	collision.name = "Collision"
 	var box: BoxShape3D = BoxShape3D.new()
-	box.size = Vector3(0.18, 0.06, 0.30)
+	box.size = GameConfig.chassis_collision_size
 	collision.shape = box
 	_body.add_child(collision)
 
-	_add_wheel_ray(&"wheel_fl", Vector3(-0.08, 0.0, -0.10))
-	_add_wheel_ray(&"wheel_fr", Vector3(0.08, 0.0, -0.10))
-	_add_wheel_ray(&"wheel_rl", Vector3(-0.08, 0.0, 0.10))
-	_add_wheel_ray(&"wheel_rr", Vector3(0.08, 0.0, 0.10))
+	_add_wheel_ray(&"wheel_fl", Vector3(-GameConfig.wheel_half_track, 0.0, -GameConfig.wheel_half_base))
+	_add_wheel_ray(&"wheel_fr", Vector3(GameConfig.wheel_half_track, 0.0, -GameConfig.wheel_half_base))
+	_add_wheel_ray(&"wheel_rl", Vector3(-GameConfig.wheel_half_track, 0.0, GameConfig.wheel_half_base))
+	_add_wheel_ray(&"wheel_rr", Vector3(GameConfig.wheel_half_track, 0.0, GameConfig.wheel_half_base))
 
 
 func _add_wheel_ray(wheel_name: StringName, local_position: Vector3) -> void:
@@ -115,6 +147,7 @@ func _apply_wheel_forces() -> void:
 	var friction_sum: float = 0.0
 	var rolling_drag_sum: float = 0.0
 	var slip_sum: float = 0.0
+	var normal_load_sum: float = 0.0
 	var bog_threshold_sum: float = 0.0
 	var mud_residue_sum: float = 0.0
 	var dust_residue_sum: float = 0.0
@@ -146,6 +179,7 @@ func _apply_wheel_forces() -> void:
 		var max_damping_force: float = spring_force * GameConfig.susp_damping_force_ratio
 		var suspension_force: float = maxf(0.0, spring_force + clampf(damping_force, -max_damping_force, max_damping_force))
 		_body.apply_force(up * suspension_force, force_pos)
+		normal_load_sum += suspension_force
 		var surface_def: Resource = _resolve_surface_def(ray.get_collider(), hit_point)
 		var surface_id: StringName = _surface_id(surface_def)
 		var wheel_surface: Array[StringName] = _state.get("wheel_surface")
@@ -165,12 +199,14 @@ func _apply_wheel_forces() -> void:
 		_surface_friction = friction_sum / float(contact_count)
 		_surface_rolling_drag = rolling_drag_sum / float(contact_count)
 		_surface_slip = slip_sum / float(contact_count)
+		_surface_normal_load = normal_load_sum
 		_surface_bog_enabled = bog_enabled
 		_surface_bog_threshold = bog_threshold_sum / float(contact_count)
 	else:
 		_surface_friction = GameConfig.default_friction
 		_surface_rolling_drag = GameConfig.default_rolling_drag
 		_surface_slip = GameConfig.default_slip
+		_surface_normal_load = 0.0
 		_surface_bog_enabled = false
 		_surface_bog_threshold = GameConfig.default_bog_threshold
 	_update_contamination(contact_count, mud_residue_sum, dust_residue_sum, wetness_residue_sum)
@@ -183,8 +219,7 @@ func _apply_drive_forces() -> void:
 	var throttle: float = float(_pending_input.get("throttle"))
 	var steer: float = float(_pending_input.get("steer"))
 	var brake: float = float(_pending_input.get("brake"))
-	var drive: Vector3 = forward * throttle * GameConfig.motor_torque * _surface_friction
-	_body.apply_central_force(drive)
+	_apply_traction_force(forward, throttle)
 	if brake > 0.0:
 		var brake_factor: float = clampf(1.0 - brake * GameConfig.brake_damping_per_second * GameConfig.FIXED_DT, 0.0, 1.0)
 		_body.linear_velocity *= brake_factor
@@ -197,9 +232,44 @@ func _apply_drive_forces() -> void:
 		lateral_grip *= GameConfig.ebrake_factor
 	_body.apply_central_force(-right * lateral_speed * lateral_grip * GameConfig.lateral_grip_force)
 	if bool(_state.get("on_ground")):
-		_body.apply_torque(Vector3.UP * steer * GameConfig.steer_yaw_torque * surface_grip)
+		_apply_steering_torque(steer, surface_grip)
 	if bool(_state.get("on_ground")) and throttle >= GameConfig.launch_wheelie_min_throttle and absf(steer) <= GameConfig.launch_wheelie_max_steer and _body.linear_velocity.length() <= GameConfig.launch_wheelie_speed_max:
 		_body.apply_torque(right * GameConfig.launch_wheelie_torque)
+
+
+func _apply_traction_force(forward: Vector3, throttle: float) -> void:
+	if not bool(_state.get("on_ground")) or absf(throttle) <= GameConfig.self_right_forward_epsilon:
+		return
+	var requested_force: float = absf(throttle) * maxf(GameConfig.motor_torque, GameConfig.traction_base_force)
+	var traction_ceiling: float = maxf(0.0, _surface_friction * _surface_normal_load * GameConfig.traction_grip_force_ceiling_scale)
+	var delivered_force: float = minf(requested_force, traction_ceiling)
+	if delivered_force <= 0.0:
+		return
+	_body.apply_central_force(forward * signf(throttle) * delivered_force)
+
+
+func _apply_steering_torque(steer: float, surface_grip: float) -> void:
+	if absf(steer) <= GameConfig.self_right_forward_epsilon and absf(_body.angular_velocity.dot(Vector3.UP)) <= GameConfig.self_right_forward_epsilon:
+		return
+	var speed: float = Vector3(_body.linear_velocity.x, 0.0, _body.linear_velocity.z).length()
+	var speed_scale: float = _steer_yaw_speed_scale(speed)
+	var current_yaw_rate: float = _body.angular_velocity.dot(Vector3.UP)
+	var target_yaw_rate: float = steer * GameConfig.steer_max_yaw_rate * speed_scale
+	var grip_scale: float = maxf(surface_grip, GameConfig.surface_min_lateral_grip)
+	var corrective_torque: float = (target_yaw_rate - current_yaw_rate) * GameConfig.steer_yaw_torque
+	var damping_torque: float = -current_yaw_rate * GameConfig.steer_yaw_damping
+	var max_yaw_torque: float = GameConfig.steer_yaw_torque * grip_scale
+	var yaw_torque: float = clampf((corrective_torque + damping_torque) * grip_scale, -max_yaw_torque, max_yaw_torque)
+	_body.apply_torque(Vector3.UP * yaw_torque)
+
+
+func _steer_yaw_speed_scale(speed: float) -> float:
+	var max_speed: float = maxf(GameConfig.max_speed, GameConfig.self_right_forward_epsilon)
+	var falloff: float = maxf(GameConfig.steer_yaw_rate_speed_falloff, GameConfig.self_right_forward_epsilon)
+	var low_speed_blend: float = clampf((speed / max_speed) / falloff, 0.0, 1.0)
+	var pivot_scale: float = lerpf(GameConfig.steer_low_speed_pivot_scale, 1.0, low_speed_blend)
+	var high_speed_scale: float = 1.0 / (1.0 + speed * falloff)
+	return clampf(pivot_scale * high_speed_scale, 0.0, 1.0)
 
 
 func _apply_surface_drag() -> void:
@@ -208,9 +278,20 @@ func _apply_surface_drag() -> void:
 	if speed <= 0.001:
 		return
 	var drag: float = _surface_rolling_drag * GameConfig.surface_rolling_drag_force
+	var relief_scale: float = _surface_drag_relief_scale()
+	drag *= relief_scale
 	if _surface_bog_enabled and speed <= _surface_bog_threshold:
-		drag += GameConfig.surface_bog_drag_force
+		drag += GameConfig.surface_bog_drag_force * relief_scale
 	_body.apply_central_force(-velocity_flat.normalized() * drag * speed)
+
+
+func _surface_drag_relief_scale() -> float:
+	if _surface_friction >= GameConfig.default_friction:
+		return 1.0
+	var default_friction: float = maxf(GameConfig.default_friction, GameConfig.self_right_forward_epsilon)
+	var friction_scale: float = clampf(_surface_friction / default_friction, 0.0, 1.0)
+	var relief_strength: float = clampf(GameConfig.offtrail_drag_relief, 0.0, 1.0)
+	return lerpf(1.0, friction_scale, relief_strength)
 
 
 func _apply_speed_limit() -> void:
@@ -232,6 +313,36 @@ func _update_surface_event() -> void:
 		return
 	_current_surface_id = surface_id
 	EventBus.vehicle_changed_surface.emit(surface_id)
+
+
+func _update_recovery_tracking() -> void:
+	if not GameConfig.recover_to_trail_enabled:
+		_recovery_stuck = false
+		return
+	var current_transform: Transform3D = _body.global_transform
+	_recovery_position_history.append(current_transform.origin)
+	_recovery_transform_history.append(current_transform)
+	var window_ticks: int = maxi(GameConfig.recover_stuck_window_ticks, 1)
+	while _recovery_position_history.size() > window_ticks + 1:
+		_recovery_position_history.pop_front()
+	while _recovery_transform_history.size() > window_ticks + 1:
+		_recovery_transform_history.pop_front()
+	_recovery_stuck = false
+	if _recovery_position_history.size() <= window_ticks:
+		return
+	var previous_position: Vector3 = _recovery_position_history[0]
+	var current_position: Vector3 = current_transform.origin
+	var current_flat: Vector3 = Vector3(current_position.x, 0.0, current_position.z)
+	var previous_flat: Vector3 = Vector3(previous_position.x, 0.0, previous_position.z)
+	var progress: float = current_flat.distance_to(previous_flat)
+	var stable: bool = _stable_wheel_contact_count() >= GameConfig.self_right_stable_contact_count and current_transform.basis.y.dot(Vector3.UP) >= GameConfig.self_right_stable_upright_dot
+	if stable and progress >= GameConfig.recover_min_progress:
+		var anchor_transform: Transform3D = _recovery_transform_history[0]
+		var forward: Vector3 = _horizontal_forward(anchor_transform.basis)
+		_last_recovery_transform = _upright_transform(anchor_transform.origin, forward)
+	var throttle: float = absf(float(_pending_input.get("throttle")))
+	if bool(_state.get("on_ground")) and throttle >= GameConfig.recover_min_throttle and progress < GameConfig.recover_min_progress:
+		_recovery_stuck = true
 
 
 func _dominant_contact_surface() -> StringName:
@@ -338,6 +449,16 @@ func _horizontal_forward(basis: Basis) -> Vector3:
 	return forward.normalized()
 
 
+func _upright_transform(origin: Vector3, forward: Vector3) -> Transform3D:
+	var safe_forward: Vector3 = forward
+	safe_forward.y = 0.0
+	if safe_forward.length() <= GameConfig.self_right_forward_epsilon:
+		safe_forward = Vector3.FORWARD
+	safe_forward = safe_forward.normalized()
+	var right: Vector3 = safe_forward.cross(Vector3.UP).normalized()
+	return Transform3D(Basis(right, Vector3.UP, -safe_forward), origin)
+
+
 func _stable_wheel_contact_count() -> int:
 	var wheel_contact: Array[bool] = _state.get("wheel_contact")
 	var count: int = 0
@@ -351,5 +472,6 @@ func _reset_surface_cache() -> void:
 	_surface_friction = GameConfig.default_friction
 	_surface_rolling_drag = GameConfig.default_rolling_drag
 	_surface_slip = GameConfig.default_slip
+	_surface_normal_load = 0.0
 	_surface_bog_enabled = false
 	_surface_bog_threshold = GameConfig.default_bog_threshold
