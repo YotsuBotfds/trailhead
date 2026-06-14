@@ -2,6 +2,7 @@ extends Node
 
 const CedarPalette: Resource = preload("res://data/surface_palettes/cedar_hollow_terrain.tres")
 const PNG_SIGNATURE: PackedByteArray = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
+const PNG_IDAT_COMPRESSION_ZLIB: int = FileAccess.COMPRESSION_DEFLATE # Godot 4.6 has no COMPRESSION_ZLIB enum.
 
 var _errors: PackedStringArray = PackedStringArray()
 
@@ -102,7 +103,7 @@ func _read_png_unique_samples(bytes: PackedByteArray) -> Array[int]:
 	if channels <= 0:
 		_errors.append("surface-ID PNG has unsupported color type: " + str(color_type))
 		return ids
-	var raw: PackedByteArray = idat.decompress_dynamic(-1, FileAccess.COMPRESSION_DEFLATE)
+	var raw: PackedByteArray = idat.decompress_dynamic(-1, PNG_IDAT_COMPRESSION_ZLIB)
 	var expected_size: int = (width * channels + 1) * height
 	if raw.size() != expected_size:
 		_errors.append("surface-ID PNG payload size expected " + str(expected_size) + ", got " + str(raw.size()))
