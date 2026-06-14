@@ -3,8 +3,10 @@ import argparse
 import hashlib
 import html
 import json
+import math
 import struct
 import sys
+import zlib
 from pathlib import Path
 
 EXPECTED_CAPTURE_NAMES = [
@@ -46,6 +48,19 @@ CAPTURE_REVIEW_FOCUS = {
     "old_cedar_dusk_chase": "Destination landmark scale, final approach readability, and vehicle silhouette.",
 }
 
+PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+PNG_COLOR_CHANNELS = {
+    0: 1,
+    2: 3,
+    6: 4,
+}
+STATS_SAMPLE_STEP = 16
+EXPECTED_CAPTURE_WIDTH = 1280
+EXPECTED_CAPTURE_HEIGHT = 720
+MIN_LUMA_RANGE = 0.15
+MIN_LUMA_STDDEV = 0.03
+MIN_CHROMA_MEAN = 0.04
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Build an HTML review sheet for Trailhead visual QA captures.")
@@ -58,9 +73,158 @@ def parse_args():
 def png_dimensions(path):
     with path.open("rb") as file:
         header = file.read(24)
-    if len(header) < 24 or header[:8] != b"\x89PNG\r\n\x1a\n" or header[12:16] != b"IHDR":
+    if len(header) < 24 or header[:8] != PNG_SIGNATURE or header[12:16] != b"IHDR":
         raise ValueError("not a valid PNG with IHDR header")
     return struct.unpack(">II", header[16:24])
+
+
+def png_stats(path):
+    width, height, bit_depth, color_type, compressed = _read_png_payload(path)
+    if bit_depth != 8:
+        raise ValueError("unsupported PNG bit depth for stats: " + str(bit_depth))
+    if color_type not in PNG_COLOR_CHANNELS:
+        raise ValueError("unsupported PNG color type for stats: " + str(color_type))
+    channels = PNG_COLOR_CHANNELS[color_type]
+    row_bytes = width * channels
+    raw = zlib.decompress(compressed)
+    expected_size = height * (row_bytes + 1)
+    if len(raw) != expected_size:
+        raise ValueError("unexpected PNG decompressed size")
+
+    previous = bytearray(row_bytes)
+    count = 0
+    luma_sum = 0.0
+    luma_sum_sq = 0.0
+    luma_min = 999999.0
+    luma_max = -999999.0
+    chroma_sum = 0.0
+    for y in range(height):
+        offset = y * (row_bytes + 1)
+        filter_type = raw[offset]
+        row = bytearray(raw[offset + 1:offset + 1 + row_bytes])
+        _unfilter_png_row(row, previous, channels, filter_type)
+        if y % STATS_SAMPLE_STEP == 0:
+            for x in range(0, width, STATS_SAMPLE_STEP):
+                pixel_index = x * channels
+                if color_type == 0:
+                    r = row[pixel_index]
+                    g = r
+                    b = r
+                else:
+                    r = row[pixel_index]
+                    g = row[pixel_index + 1]
+                    b = row[pixel_index + 2]
+                luma = (
+                    float(r) * 0.2126
+                    + float(g) * 0.7152
+                    + float(b) * 0.0722
+                ) / 255.0
+                chroma = float(max(r, g, b) - min(r, g, b)) / 255.0
+                luma_sum += luma
+                luma_sum_sq += luma * luma
+                luma_min = min(luma_min, luma)
+                luma_max = max(luma_max, luma)
+                chroma_sum += chroma
+                count += 1
+        previous = row
+    if count == 0:
+        raise ValueError("PNG has no pixels to sample")
+    luma_mean = luma_sum / float(count)
+    luma_variance = max(luma_sum_sq / float(count) - luma_mean * luma_mean, 0.0)
+    return {
+        "sample_step": STATS_SAMPLE_STEP,
+        "sample_count": count,
+        "luma_mean": round(luma_mean, 4),
+        "luma_min": round(luma_min, 4),
+        "luma_max": round(luma_max, 4),
+        "luma_range": round(luma_max - luma_min, 4),
+        "luma_stddev": round(math.sqrt(luma_variance), 4),
+        "chroma_mean": round(chroma_sum / float(count), 4),
+    }
+
+
+def _read_png_payload(path):
+    with path.open("rb") as file:
+        signature = file.read(8)
+        if signature != PNG_SIGNATURE:
+            raise ValueError("not a valid PNG signature")
+        width = 0
+        height = 0
+        bit_depth = 0
+        color_type = 0
+        idat_chunks = []
+        while True:
+            length_bytes = file.read(4)
+            if len(length_bytes) == 0:
+                break
+            if len(length_bytes) != 4:
+                raise ValueError("truncated PNG chunk length")
+            length = struct.unpack(">I", length_bytes)[0]
+            chunk_type = file.read(4)
+            if len(chunk_type) != 4:
+                raise ValueError("truncated PNG chunk type")
+            chunk_data = file.read(length)
+            if len(chunk_data) != length:
+                raise ValueError("truncated PNG chunk data")
+            crc = file.read(4)
+            if len(crc) != 4:
+                raise ValueError("truncated PNG chunk checksum")
+            if chunk_type == b"IHDR":
+                width, height, bit_depth, color_type, compression, filter_method, interlace = struct.unpack(
+                    ">IIBBBBB",
+                    chunk_data,
+                )
+                if compression != 0 or filter_method != 0 or interlace != 0:
+                    raise ValueError("unsupported PNG compression/filter/interlace mode")
+            elif chunk_type == b"IDAT":
+                idat_chunks.append(chunk_data)
+            elif chunk_type == b"IEND":
+                break
+        if width <= 0 or height <= 0:
+            raise ValueError("PNG missing IHDR dimensions")
+        if not idat_chunks:
+            raise ValueError("PNG missing IDAT image data")
+        return width, height, bit_depth, color_type, b"".join(idat_chunks)
+
+
+def _unfilter_png_row(row, previous, channels, filter_type):
+    if filter_type == 0:
+        return
+    if filter_type == 1:
+        for i in range(len(row)):
+            left = row[i - channels] if i >= channels else 0
+            row[i] = (row[i] + left) & 0xff
+        return
+    if filter_type == 2:
+        for i in range(len(row)):
+            row[i] = (row[i] + previous[i]) & 0xff
+        return
+    if filter_type == 3:
+        for i in range(len(row)):
+            left = row[i - channels] if i >= channels else 0
+            up = previous[i]
+            row[i] = (row[i] + ((left + up) // 2)) & 0xff
+        return
+    if filter_type == 4:
+        for i in range(len(row)):
+            left = row[i - channels] if i >= channels else 0
+            up = previous[i]
+            up_left = previous[i - channels] if i >= channels else 0
+            row[i] = (row[i] + _paeth_predictor(left, up, up_left)) & 0xff
+        return
+    raise ValueError("unsupported PNG filter type: " + str(filter_type))
+
+
+def _paeth_predictor(left, up, up_left):
+    estimate = left + up - up_left
+    left_distance = abs(estimate - left)
+    up_distance = abs(estimate - up)
+    up_left_distance = abs(estimate - up_left)
+    if left_distance <= up_distance and left_distance <= up_left_distance:
+        return left
+    if up_distance <= up_left_distance:
+        return up
+    return up_left
 
 
 def sha256_digest(path):
@@ -97,7 +261,7 @@ def capture_manifest(capture_dir):
             errors.append(str(path) + " " + str(exc))
             continue
         size_bytes = path.stat().st_size
-        captures.append({
+        capture = {
             "name": capture_name,
             "label": CAPTURE_LABELS[capture_name],
             "review_focus": CAPTURE_REVIEW_FOCUS[capture_name],
@@ -106,8 +270,27 @@ def capture_manifest(capture_dir):
             "height": height,
             "size_bytes": size_bytes,
             "sha256": sha256_digest(path),
-        })
+            "image_stats": png_stats(path),
+        }
+        _validate_capture_sanity(capture, errors)
+        captures.append(capture)
     return captures, errors
+
+
+def _validate_capture_sanity(capture, errors):
+    name = capture["name"]
+    if capture["width"] != EXPECTED_CAPTURE_WIDTH or capture["height"] != EXPECTED_CAPTURE_HEIGHT:
+        errors.append(
+            f"{name} expected {EXPECTED_CAPTURE_WIDTH}x{EXPECTED_CAPTURE_HEIGHT}, "
+            f"got {capture['width']}x{capture['height']}"
+        )
+    stats = capture["image_stats"]
+    if stats["luma_range"] < MIN_LUMA_RANGE:
+        errors.append(f"{name} luma range {stats['luma_range']} < {MIN_LUMA_RANGE}")
+    if stats["luma_stddev"] < MIN_LUMA_STDDEV:
+        errors.append(f"{name} luma stddev {stats['luma_stddev']} < {MIN_LUMA_STDDEV}")
+    if stats["chroma_mean"] < MIN_CHROMA_MEAN:
+        errors.append(f"{name} chroma mean {stats['chroma_mean']} < {MIN_CHROMA_MEAN}")
 
 
 def write_manifest(path, captures):
@@ -124,7 +307,15 @@ def write_html(path, captures):
     for capture in captures:
         label = html.escape(capture["label"])
         filename = html.escape(capture["filename"])
-        details = f'{capture["width"]}x{capture["height"]} - {capture["size_bytes"]} bytes - sha256 {capture["sha256"][:12]}'
+        details = (
+            f'{capture["width"]}x{capture["height"]} - {capture["size_bytes"]} bytes '
+            f'- sha256 {capture["sha256"][:12]}'
+        )
+        stats = capture["image_stats"]
+        stat_details = (
+            f'luma mean {stats["luma_mean"]} - luma range {stats["luma_range"]} '
+            f'- chroma mean {stats["chroma_mean"]}'
+        )
         focus = html.escape(capture["review_focus"])
         cards.append(
             f"""
@@ -132,6 +323,7 @@ def write_html(path, captures):
         <a href="{filename}"><img src="{filename}" alt="{label}"></a>
         <h2>{label}</h2>
         <p class="meta">{html.escape(details)}</p>
+        <p class="meta">{html.escape(stat_details)}</p>
         <p>{focus}</p>
       </article>"""
         )
@@ -233,7 +425,7 @@ def write_html(path, captures):
     <div class="summary">
       <span>{len(captures)} captures</span>
       <span>1280x720 target</span>
-      <span>hashes in manifest</span>
+      <span>hashes + stats gates</span>
     </div>
   </header>
   <main>{"".join(cards)}
