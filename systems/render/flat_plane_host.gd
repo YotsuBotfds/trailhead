@@ -12,6 +12,7 @@ var _vehicle_input: RefCounted = VehicleInputScript.new()
 var _camera: Camera3D = null
 var _wheel_sockets: Array[Node3D] = []
 var _wheel_spin: float = 0.0
+var _camera_initialized: bool = false
 
 
 func _ready() -> void:
@@ -174,6 +175,10 @@ func _update_camera(delta: float) -> void:
 	var forward: Vector3 = -vehicle_basis.z.normalized()
 	var desired_position: Vector3 = vehicle_position + back * GameConfig.cam_distance + Vector3.UP * GameConfig.cam_height
 	var follow_alpha: float = clampf(GameConfig.cam_spring * delta, 0.0, 1.0)
-	_camera.global_position = _camera.global_position.lerp(desired_position, follow_alpha)
+	if not _camera_initialized:
+		_camera.global_position = desired_position
+		_camera_initialized = true
+	else:
+		_camera.global_position = _camera.global_position.lerp(desired_position, follow_alpha)
 	_camera.look_at(vehicle_position + forward * GameConfig.cam_look_ahead, Vector3.UP)
 	_camera.fov = GameConfig.get_fov_for_speed(float(state.call("speed")))
