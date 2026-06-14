@@ -43,6 +43,10 @@ var _max_abs_yaw_rate: float = 0.0
 var _max_speed: float = 0.0
 var _ebrake_ticks: int = 0
 var _front_air_rear_contact_ticks: int = 0
+var _surface_event_count: int = 0
+var _flipped_event_count: int = 0
+var _self_righted_event_count: int = 0
+var _last_surface_event: StringName = &""
 
 
 func _ready() -> void:
@@ -57,6 +61,7 @@ func _ready() -> void:
 	_target = _parse_target(String(_args.get("target", "flat_target")))
 	_target_radius = float(_args.get("target-radius", 0.35))
 	_rng.seed = int(_args.get("seed", 0))
+	_connect_event_bus()
 	_configure_flat_bounds()
 	_setup_flat_scene()
 	call_deferred("_begin_run")
@@ -272,7 +277,9 @@ func _finish(passed: bool) -> void:
 		reached_target = target_delta.length() <= _target_radius
 	var target_predicate_passed: bool = reached_target if _requires_target() else true
 	var scenario_predicate_passed: bool = _scenario_predicate_passed()
-	var all_predicates_passed: bool = target_predicate_passed and scenario_predicate_passed and _never_stuck and _upright_or_recovered and _stayed_in_bounds
+	var surface_event_observed: bool = _surface_event_count > 0
+	var event_bus_contract_passed: bool = _event_bus_contract_passed()
+	var all_predicates_passed: bool = target_predicate_passed and scenario_predicate_passed and surface_event_observed and event_bus_contract_passed and _never_stuck and _upright_or_recovered and _stayed_in_bounds
 	var result: Dictionary = {
 		"scene": String(_args.get("scene", "flat_plane")),
 		"controller": _controller_id,
@@ -285,6 +292,8 @@ func _finish(passed: bool) -> void:
 		"predicates": {
 			"reached_target": target_predicate_passed,
 			"scenario_passed": scenario_predicate_passed,
+			"surface_event_observed": surface_event_observed,
+			"event_bus_contract": event_bus_contract_passed,
 			"never_stuck": _never_stuck,
 			"upright_or_recovered": _upright_or_recovered,
 			"stayed_in_bounds": _stayed_in_bounds
@@ -304,6 +313,10 @@ func _finish(passed: bool) -> void:
 			"max_speed": _max_speed,
 			"ebrake_ticks": _ebrake_ticks,
 			"front_air_rear_contact_ticks": _front_air_rear_contact_ticks,
+			"surface_event_count": _surface_event_count,
+			"last_surface_event": String(_last_surface_event),
+			"flipped_event_count": _flipped_event_count,
+			"self_righted_event_count": _self_righted_event_count,
 			"min_progress_window": _min_progress_window if _min_progress_window < 999998.0 else null,
 			"stuck_window_ticks": _stuck_window_ticks,
 			"stuck_min_progress": _stuck_min_progress
@@ -330,6 +343,8 @@ func _finish_runner_error(message: String) -> void:
 		"error": message,
 		"predicates": {
 			"reached_target": false,
+			"surface_event_observed": false,
+			"event_bus_contract": false,
 			"never_stuck": false,
 			"upright_or_recovered": false,
 			"stayed_in_bounds": false
@@ -416,3 +431,31 @@ func _surface_array_to_array(values: Array) -> Array[String]:
 	for value in values:
 		out.append(String(value))
 	return out
+
+
+func _connect_event_bus() -> void:
+	if not EventBus.vehicle_changed_surface.is_connected(_on_vehicle_changed_surface):
+		EventBus.vehicle_changed_surface.connect(_on_vehicle_changed_surface)
+	if not EventBus.vehicle_flipped_over.is_connected(_on_vehicle_flipped_over):
+		EventBus.vehicle_flipped_over.connect(_on_vehicle_flipped_over)
+	if not EventBus.vehicle_self_righted.is_connected(_on_vehicle_self_righted):
+		EventBus.vehicle_self_righted.connect(_on_vehicle_self_righted)
+
+
+func _event_bus_contract_passed() -> bool:
+	if _spawn_id == "flat_flipped":
+		return _flipped_event_count > 0 and _self_righted_event_count > 0
+	return true
+
+
+func _on_vehicle_changed_surface(surface_id: StringName) -> void:
+	_surface_event_count += 1
+	_last_surface_event = surface_id
+
+
+func _on_vehicle_flipped_over() -> void:
+	_flipped_event_count += 1
+
+
+func _on_vehicle_self_righted() -> void:
+	_self_righted_event_count += 1

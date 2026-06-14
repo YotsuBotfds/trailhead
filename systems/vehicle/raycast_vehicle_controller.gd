@@ -10,6 +10,7 @@ var _wheel_rays: Array[RayCast3D] = []
 var _pending_input: RefCounted = RaycastVehicleInputScript.new()
 var _state: RefCounted = RaycastVehicleStateScript.new()
 var _was_flipped: bool = false
+var _current_surface_id: StringName = &""
 
 
 func _ready() -> void:
@@ -38,6 +39,7 @@ func reset_to(spawn: Transform3D) -> void:
 	_body.angular_velocity = Vector3.ZERO
 	_pending_input.call("clear")
 	_was_flipped = false
+	_current_surface_id = &""
 	_update_state()
 
 
@@ -56,6 +58,7 @@ func self_right() -> void:
 func _physics_process(_delta: float) -> void:
 	if _body == null:
 		return
+	_update_flip_events()
 	if bool(_pending_input.get("self_right")) and _is_flipped():
 		self_right()
 	_apply_wheel_forces()
@@ -122,6 +125,7 @@ func _apply_wheel_forces() -> void:
 		wheel_surface[i] = &"packed_dirt"
 		_state.set("wheel_surface", wheel_surface)
 	_state.set("on_ground", contact_count > 0)
+	_update_surface_event()
 
 
 func _apply_drive_forces() -> void:
@@ -157,6 +161,22 @@ func _update_flip_events() -> void:
 	if flipped and not _was_flipped:
 		EventBus.vehicle_flipped_over.emit()
 	_was_flipped = flipped
+
+
+func _update_surface_event() -> void:
+	var surface_id: StringName = _dominant_contact_surface()
+	if surface_id == &"" or surface_id == _current_surface_id:
+		return
+	_current_surface_id = surface_id
+	EventBus.vehicle_changed_surface.emit(surface_id)
+
+
+func _dominant_contact_surface() -> StringName:
+	var wheel_surface: Array[StringName] = _state.get("wheel_surface")
+	for surface_id in wheel_surface:
+		if surface_id != &"":
+			return surface_id
+	return &""
 
 
 func _update_state() -> void:
