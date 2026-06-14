@@ -54,6 +54,8 @@ func _inspect() -> void:
 		_require_named_count(prop_root, "fire_ring", 1)
 		_require_named_count(prop_root, "hiking_boot", 1)
 		_require_named_count(prop_root, "water_bottle", 1)
+		_require_node(prop_root, "trail_sign/label_old_cedar")
+		_require_node(prop_root, "trail_sign/label_creek")
 		var prop_collision_count: int = _count_collision_objects(prop_root)
 		if prop_collision_count > 0:
 			_errors.append("PropVisuals contains collision objects: " + str(prop_collision_count))
