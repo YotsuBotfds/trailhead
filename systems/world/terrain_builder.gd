@@ -7,7 +7,9 @@ const CEDAR_SCENE_ID: String = "cedar_hollow"
 static func build_cedar_hollow(parent: Node) -> Array[StaticBody3D]:
 	var bodies: Array[StaticBody3D] = []
 	bodies.append(_build_surface_box(parent, "trailhead_gravel", &"packed_gravel", Vector3(0.0, -0.05, 0.75), Vector3(2.0, 0.1, 1.5)))
+	bodies.append(_build_surface_box(parent, "log_ramp_apron", &"tall_grass", Vector3(1.78, -0.05, 0.62), Vector3(1.6, 0.1, 1.1)))
 	bodies.append(_build_surface_box(parent, "main_trail_00", &"packed_dirt", Vector3(0.0, -0.05, -2.4), Vector3(1.2, 0.1, 4.8)))
+	bodies.append(_build_oriented_surface_box(parent, "log_ramp", &"wood_plank", Vector3(1.3, 0.06, 0.16), Vector3(0.55, 0.12, 1.15), -65.0, 10.0))
 	bodies.append(_build_surface_box(parent, "old_cedar_pad", &"packed_dirt", Vector3(0.0, -0.05, -5.3), Vector3(2.0, 0.1, 1.2)))
 	bodies.append(_build_surface_box(parent, "meadow_left", &"tall_grass", Vector3(-1.7, -0.05, -2.5), Vector3(2.0, 0.1, 5.5)))
 	bodies.append(_build_surface_box(parent, "meadow_right", &"tall_grass", Vector3(1.7, -0.05, -2.0), Vector3(2.0, 0.1, 4.4)))

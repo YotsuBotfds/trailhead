@@ -14,7 +14,7 @@ func configure(id: String) -> void:
 	_done = false
 
 
-func next_input(_state: RefCounted) -> RefCounted:
+func next_input(state: RefCounted) -> RefCounted:
 	var input: RefCounted = VehicleInputScript.new()
 	if scenario_id == "ebrake_drift":
 		_fill_ebrake_drift(input)
@@ -22,9 +22,11 @@ func next_input(_state: RefCounted) -> RefCounted:
 		_fill_launch_wheelie(input)
 	elif scenario_id == "surface_sweep":
 		_fill_surface_sweep(input)
+	elif scenario_id == "log_ramp":
+		_fill_log_ramp(input, state)
 	else:
 		_done = true
-		input.set("brake", 1.0)
+		input.set("brake", GameConfig.scripted_stop_brake)
 	_tick += 1
 	return input
 
@@ -47,7 +49,7 @@ func _fill_ebrake_drift(input: RefCounted) -> void:
 		input.set("throttle", GameConfig.drift_probe_recover_throttle)
 		input.set("brake", GameConfig.drift_probe_recover_brake)
 	else:
-		input.set("brake", 1.0)
+		input.set("brake", GameConfig.scripted_stop_brake)
 		_done = true
 
 
@@ -55,7 +57,7 @@ func _fill_launch_wheelie(input: RefCounted) -> void:
 	if _tick < GameConfig.wheelie_probe_ticks:
 		input.set("throttle", GameConfig.wheelie_probe_throttle)
 	else:
-		input.set("brake", 1.0)
+		input.set("brake", GameConfig.scripted_stop_brake)
 		_done = true
 
 
@@ -65,5 +67,27 @@ func _fill_surface_sweep(input: RefCounted) -> void:
 		if _tick >= GameConfig.surface_probe_steer_start_tick:
 			input.set("steer", GameConfig.surface_probe_steer)
 	else:
-		input.set("brake", 1.0)
+		input.set("brake", GameConfig.scripted_stop_brake)
 		_done = true
+
+
+func _fill_log_ramp(input: RefCounted, state: RefCounted) -> void:
+	if _tick >= GameConfig.log_ramp_probe_ticks:
+		input.set("brake", GameConfig.scripted_stop_brake)
+		_done = true
+		return
+	var state_position: Vector3 = state.get("position")
+	var state_basis: Basis = state.get("basis")
+	var to_target: Vector3 = GameConfig.log_ramp_probe_target - state_position
+	to_target.y = 0.0
+	var fwd: Vector3 = -state_basis.z
+	fwd.y = 0.0
+	if fwd.length() <= GameConfig.log_ramp_probe_forward_epsilon:
+		fwd = Vector3.FORWARD
+	fwd = fwd.normalized()
+	var desired: Vector3 = Vector3.FORWARD
+	if to_target.length() > GameConfig.log_ramp_probe_forward_epsilon:
+		desired = to_target.normalized()
+	var heading_error: float = signf(fwd.cross(desired).y) * fwd.angle_to(desired)
+	input.set("steer", clampf(heading_error * GameConfig.log_ramp_probe_steer_gain, -1.0, 1.0))
+	input.set("throttle", GameConfig.log_ramp_probe_throttle)

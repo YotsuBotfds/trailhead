@@ -3,7 +3,7 @@ extends Node
 const CedarHollowPlayableScene: PackedScene = preload("res://scenes/cedar_hollow_playable.tscn")
 const EXPECTED_BOARDWALK_SEGMENTS: int = 9
 const EXPECTED_STEPPING_STONES: int = 5
-const EXPECTED_TERRAIN_PATCHES: int = 18
+const EXPECTED_TERRAIN_PATCHES: int = 20
 const EXPECTED_GRASS_TUFTS: int = 18
 const EXPECTED_BOULDERS: int = 5
 const EXPECTED_BRANCHES: int = 5
@@ -42,7 +42,7 @@ func _inspect() -> void:
 		_require_named_count(feature_root, "boardwalk_segment_", EXPECTED_BOARDWALK_SEGMENTS)
 		_require_named_count(feature_root, "stepping_stone_", EXPECTED_STEPPING_STONES)
 		_require_named_count(feature_root, "culvert_pipe", 1)
-		_require_named_count(feature_root, "log_ramp", 0)
+		_require_named_count(feature_root, "log_ramp", 1)
 		var collision_count: int = _count_collision_objects(feature_root)
 		if collision_count > 0:
 			_errors.append("FeatureVisuals contains collision objects: " + str(collision_count))

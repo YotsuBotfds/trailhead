@@ -49,6 +49,7 @@ var _min_progress_window: float = 999999.0
 var _started_flipped: bool = false
 var _self_right_input_count: int = 0
 var _max_abs_slip_angle_deg: float = 0.0
+var _max_y_position: float = -999999.0
 var _max_pitch_deg: float = -999999.0
 var _max_abs_roll_deg: float = 0.0
 var _max_abs_yaw_rate: float = 0.0
@@ -324,6 +325,7 @@ func _record(state: RefCounted, input: RefCounted) -> void:
 	if front_contact_count == 0 and rear_contact_count > 0:
 		_front_air_rear_contact_ticks += 1
 	_max_abs_slip_angle_deg = maxf(_max_abs_slip_angle_deg, absf(slip_angle_deg))
+	_max_y_position = maxf(_max_y_position, state_position.y)
 	_max_pitch_deg = maxf(_max_pitch_deg, pitch_deg)
 	_max_abs_roll_deg = maxf(_max_abs_roll_deg, absf(roll_deg))
 	_max_abs_yaw_rate = maxf(_max_abs_yaw_rate, absf(yaw_rate))
@@ -457,6 +459,7 @@ func _finish(passed: bool) -> void:
 			"started_flipped": _started_flipped,
 			"self_right_input_count": _self_right_input_count,
 			"max_abs_slip_angle_deg": _max_abs_slip_angle_deg,
+			"max_y_position": _max_y_position,
 			"max_pitch_deg": _max_pitch_deg,
 			"max_abs_roll_deg": _max_abs_roll_deg,
 			"max_abs_yaw_rate": _max_abs_yaw_rate,
@@ -504,6 +507,7 @@ func _finish_runner_error(message: String) -> void:
 		"error": message,
 		"predicates": {
 			"reached_target": false,
+			"scenario_passed": false,
 			"surface_event_observed": false,
 			"target_landmark_event_observed": false,
 			"event_bus_contract": false,
@@ -550,6 +554,8 @@ func _scenario_predicate_passed() -> bool:
 		return _max_pitch_deg >= GameConfig.wheelie_min_peak_pitch_deg and _front_air_rear_contact_ticks >= GameConfig.wheelie_min_front_air_rear_contact_ticks and _max_flipped_ticks_seen == 0
 	if _scenario_id == "surface_sweep":
 		return _surface_sweep_predicate_passed()
+	if _scenario_id == "log_ramp":
+		return _log_ramp_predicate_passed()
 	return false
 
 
@@ -577,6 +583,11 @@ func _surface_sweep_predicate_passed() -> bool:
 	if wet_stone_slip < packed_slip + GameConfig.surface_probe_min_wet_stone_slip_gain:
 		return false
 	return true
+
+
+func _log_ramp_predicate_passed() -> bool:
+	var wood_ticks: int = int(_surface_contact_ticks.get("wood_plank", 0))
+	return wood_ticks >= GameConfig.log_ramp_min_wood_ticks and _max_y_position >= GameConfig.log_ramp_min_peak_y and _max_pitch_deg >= GameConfig.log_ramp_min_peak_pitch_deg
 
 
 func _pitch_deg(basis: Basis) -> float:
@@ -772,6 +783,8 @@ func _event_bus_contract_passed() -> bool:
 
 
 func _target_landmark_event_observed() -> bool:
+	if _uses_scenario_predicate():
+		return true
 	if _route == null:
 		return true
 	return _landmark_event_sequence.has(_target_id)

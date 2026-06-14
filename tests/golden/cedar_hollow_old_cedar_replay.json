@@ -18,6 +18,7 @@
 	},
 	"predicates": {
 		"event_bus_contract": true,
+		"golden_replay_matched": true,
 		"never_stuck": true,
 		"reached_target": true,
 		"scenario_passed": true,
