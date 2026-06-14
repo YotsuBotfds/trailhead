@@ -183,6 +183,31 @@ def pinecone():
     return cylinder(0.08, 0.18, 9, 0.1)
 
 
+def fern_clump():
+    leaf = box(0.06, 0.018, 0.34)
+    return merge([
+        transformed(leaf, (-0.10, 0.03, 0.00), (1.0, 1.0, 1.0)),
+        transformed(leaf, (0.10, 0.03, 0.00), (1.0, 1.0, 1.0)),
+        transformed(leaf, (0.00, 0.04, -0.10), (0.9, 1.0, 1.0)),
+        transformed(leaf, (0.00, 0.04, 0.10), (0.9, 1.0, 1.0)),
+        transformed(box(0.05, 0.07, 0.05), (0.0, 0.0, 0.0)),
+    ])
+
+
+def cattail():
+    return merge([
+        transformed(cylinder(0.012, 0.58, 8, 0.02), (0.0, 0.0, 0.0)),
+        transformed(cylinder(0.035, 0.16, 10, 0.04), (0.0, 0.47, 0.0)),
+    ])
+
+
+def trail_blaze():
+    return merge([
+        transformed(box(0.08, 0.52, 0.045), (0.0, 0.0, 0.0)),
+        transformed(box(0.13, 0.08, 0.055), (0.0, 0.33, -0.004)),
+    ])
+
+
 def main():
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     assets = [
@@ -190,6 +215,9 @@ def main():
         ("boulder_a", boulder_a(), [0.36, 0.36, 0.33, 1.0]),
         ("branch_a", branch_a(), [0.28, 0.17, 0.09, 1.0]),
         ("pinecone", pinecone(), [0.26, 0.15, 0.08, 1.0]),
+        ("fern_clump", fern_clump(), [0.12, 0.33, 0.16, 1.0]),
+        ("cattail", cattail(), [0.30, 0.22, 0.10, 1.0]),
+        ("trail_blaze", trail_blaze(), [0.55, 0.32, 0.12, 1.0]),
     ]
     for asset_name, mesh, color in assets:
         vertices, indices = mesh

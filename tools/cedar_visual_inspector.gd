@@ -9,9 +9,12 @@ const EXPECTED_GRASS_TUFTS: int = 18
 const EXPECTED_BOULDERS: int = 5
 const EXPECTED_BRANCHES: int = 5
 const EXPECTED_PINECONES: int = 8
+const EXPECTED_FERN_CLUMPS: int = 6
+const EXPECTED_CATTAILS: int = 5
 const EXPECTED_BOUNDARY_GRASS: int = 20
 const EXPECTED_BOUNDARY_BOULDERS: int = 8
 const EXPECTED_BOUNDARY_BRANCHES: int = 6
+const EXPECTED_TRAIL_BLAZES: int = 4
 const FLOAT_EPSILON: float = 0.001
 const FEATURE_TRANSFORM_TOLERANCE: float = 0.01
 const FEATURE_COLLISION_ALIGNMENT_TOLERANCE: float = 0.05
@@ -22,8 +25,8 @@ const SCATTER_Z_MAX: float = -0.3
 const BOUNDARY_EDGE_X: float = 4.5
 const BOUNDARY_BACK_Z: float = -9.8
 const HEIGHTMESH_ROUTE_MARGIN: float = 0.35
-const EXPECTED_BOUNDARY_LEFT_VISUALS: int = 13
-const EXPECTED_BOUNDARY_RIGHT_VISUALS: int = 14
+const EXPECTED_BOUNDARY_LEFT_VISUALS: int = 15
+const EXPECTED_BOUNDARY_RIGHT_VISUALS: int = 16
 const EXPECTED_BOUNDARY_BACK_VISUALS: int = 7
 
 class BoundsAccumulator:
@@ -113,6 +116,8 @@ func _inspect() -> void:
 		_require_named_count(scatter_root, "boulder_", EXPECTED_BOULDERS)
 		_require_named_count(scatter_root, "branch_", EXPECTED_BRANCHES)
 		_require_named_count(scatter_root, "pinecone_", EXPECTED_PINECONES)
+		_require_named_count(scatter_root, "fern_clump_", EXPECTED_FERN_CLUMPS)
+		_require_named_count(scatter_root, "cattail_", EXPECTED_CATTAILS)
 		_inspect_scatter_layout(scatter_root)
 		var scatter_collision_count: int = _count_collision_objects(scatter_root)
 		if scatter_collision_count > 0:
@@ -125,6 +130,7 @@ func _inspect() -> void:
 		_require_named_count(boundary_root, "boundary_grass_", EXPECTED_BOUNDARY_GRASS)
 		_require_named_count(boundary_root, "boundary_boulder_", EXPECTED_BOUNDARY_BOULDERS)
 		_require_named_count(boundary_root, "boundary_branch_", EXPECTED_BOUNDARY_BRANCHES)
+		_require_named_count(boundary_root, "trail_blaze_", EXPECTED_TRAIL_BLAZES)
 		_inspect_boundary_layout(boundary_root)
 		var boundary_collision_count: int = _count_collision_objects(boundary_root)
 		if boundary_collision_count > 0:
@@ -278,6 +284,10 @@ func _inspect_scatter_layout(scatter_root: Node) -> void:
 	_require_node_position(scatter_root, "boulder_5", Vector3(3.55, 0.0, -6.55), FEATURE_TRANSFORM_TOLERANCE)
 	_require_node_position(scatter_root, "branch_5", Vector3(-0.9, 0.02, -9.45), FEATURE_TRANSFORM_TOLERANCE)
 	_require_node_position(scatter_root, "pinecone_8", Vector3(-1.9, 0.24, -8.9), FEATURE_TRANSFORM_TOLERANCE)
+	_require_node_position(scatter_root, "fern_clump_1", Vector3(2.2, 0.0, -4.65), FEATURE_TRANSFORM_TOLERANCE)
+	_require_node_position(scatter_root, "fern_clump_6", Vector3(3.05, 0.0, -7.65), FEATURE_TRANSFORM_TOLERANCE)
+	_require_node_position(scatter_root, "cattail_1", Vector3(3.95, 0.0, -6.25), FEATURE_TRANSFORM_TOLERANCE)
+	_require_node_position(scatter_root, "cattail_5", Vector3(4.45, 0.0, -7.55), FEATURE_TRANSFORM_TOLERANCE)
 	_require_direct_children_inside_xz(scatter_root, "ScatterVisuals", SCATTER_X_MIN, SCATTER_X_MAX, SCATTER_Z_MIN, SCATTER_Z_MAX)
 
 
@@ -289,6 +299,8 @@ func _inspect_boundary_layout(boundary_root: Node) -> void:
 	_require_node_position(boundary_root, "boundary_boulder_8", Vector3(0.15, 0.18, -10.05), FEATURE_TRANSFORM_TOLERANCE)
 	_require_node_position(boundary_root, "boundary_branch_1", Vector3(-4.9, 0.02, -2.2), FEATURE_TRANSFORM_TOLERANCE)
 	_require_node_position(boundary_root, "boundary_branch_6", Vector3(-1.55, 0.31, -10.05), FEATURE_TRANSFORM_TOLERANCE)
+	_require_node_position(boundary_root, "trail_blaze_1", Vector3(-5.18, 0.0, -2.85), FEATURE_TRANSFORM_TOLERANCE)
+	_require_node_position(boundary_root, "trail_blaze_4", Vector3(5.08, 0.0, -7.25), FEATURE_TRANSFORM_TOLERANCE)
 	_require_boundary_bands(boundary_root)
 
 
