@@ -4,6 +4,7 @@ const CedarHollowPlayableScene: PackedScene = preload("res://scenes/cedar_hollow
 const DEFAULT_OUT_DIR: String = "tests/out/visual_qa"
 const WINDOW_SIZE: Vector2i = Vector2i(1280, 720)
 const WAIT_FRAMES: int = 8
+const SHUTDOWN_FRAMES: int = 8
 const VARIANCE_SAMPLE_STEP: int = 32
 const MIN_LUMA_VARIANCE: float = 0.05
 const CAMERA_MODE_CHASE: int = 0
@@ -166,5 +167,5 @@ func _cleanup_host() -> void:
 
 
 func _wait_for_shutdown() -> void:
-	for _i in range(2):
+	for _i in range(SHUTDOWN_FRAMES):
 		await get_tree().process_frame

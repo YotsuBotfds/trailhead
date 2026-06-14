@@ -37,6 +37,7 @@ const CROSSING_CHASE_QA_POSITION: Vector3 = Vector3(4.25, 0.0, -6.55)
 const CROSSING_CHASE_QA_YAW_DEGREES: float = -70.0
 const CHASE_CLEAR_CORRIDOR_LENGTH: float = 0.7
 const CHASE_CLEAR_CORRIDOR_HALF_WIDTH: float = 0.18
+const CAMERA_PROP_CLEARANCE_MARGIN: float = 0.025
 const BOUNDARY_EDGE_X: float = 4.5
 const BOUNDARY_BACK_Z: float = -9.8
 const HEIGHTMESH_ROUTE_MARGIN: float = 0.35
@@ -116,8 +117,8 @@ func _inspect() -> void:
 		_require_named_count(prop_root, "water_bottle", 1)
 		_require_node_position(prop_root, "trail_sign", Vector3(0.72, 0.0, 0.25), FEATURE_TRANSFORM_TOLERANCE)
 		_require_node_rotation(prop_root, "trail_sign", Vector3(0.0, -24.0, 0.0), FLOAT_EPSILON)
-		_require_node_position(prop_root, "kiosk", Vector3(-0.18, 0.0, 1.18), FEATURE_TRANSFORM_TOLERANCE)
-		_require_node_rotation(prop_root, "kiosk", Vector3(0.0, 6.0, 0.0), FLOAT_EPSILON)
+		_require_node_position(prop_root, "kiosk", Vector3(-1.18, 0.0, 1.18), FEATURE_TRANSFORM_TOLERANCE)
+		_require_node_rotation(prop_root, "kiosk", Vector3(0.0, 12.0, 0.0), FLOAT_EPSILON)
 		_require_node_position(prop_root, "mile_marker", Vector3(1.12, 0.0, -2.35), FEATURE_TRANSFORM_TOLERANCE)
 		_require_node_rotation(prop_root, "mile_marker", Vector3(0.0, -8.0, 0.0), FLOAT_EPSILON)
 		_require_node_position(prop_root, "park_bench", Vector3(-2.0, 0.0, 0.9), FEATURE_TRANSFORM_TOLERANCE)
@@ -194,6 +195,9 @@ func _inspect() -> void:
 	var orbit_camera: Camera3D = _require_node(_scene_root, "OrbitCamera") as Camera3D
 	var fpv_camera: Camera3D = _require_node(_scene_root, "FpvCamera") as Camera3D
 	_inspect_camera_defaults(vehicle, chase_camera, orbit_camera, fpv_camera)
+	var prop_visual_root: Node = _scene_root.get_node_or_null("CedarHollow/PropVisuals")
+	if prop_visual_root != null:
+		_inspect_chase_camera_prop_clearance(prop_visual_root, chase_camera)
 	_inspect_camera_reactivity(_scene_root, vehicle, chase_camera, orbit_camera, fpv_camera)
 	_require_node(_scene_root, "SurfaceMap")
 	var world_environment: WorldEnvironment = _require_node(_scene_root, "GoldenHourEnvironment") as WorldEnvironment
@@ -747,6 +751,32 @@ func _require_camera_look_target(camera: Camera3D, target: Vector3, context: Str
 	var actual_forward: Vector3 = -camera.global_transform.basis.z.normalized()
 	if actual_forward.distance_to(expected_forward) > CAMERA_LOOK_TOLERANCE:
 		_errors.append(context + " forward vector should look at " + str(target))
+
+
+func _inspect_chase_camera_prop_clearance(prop_root: Node, chase_camera: Camera3D) -> void:
+	if chase_camera == null:
+		return
+	for child in prop_root.get_children():
+		var node: Node3D = child as Node3D
+		if node == null:
+			continue
+		var accumulator: BoundsAccumulator = BoundsAccumulator.new()
+		_collect_mesh_bounds(node, accumulator)
+		if not accumulator.has_bounds:
+			continue
+		if _point_inside_bounds(chase_camera.global_position, accumulator, CAMERA_PROP_CLEARANCE_MARGIN):
+			_errors.append("ChaseCamera starts inside PropVisuals/" + String(child.name) + " bounds")
+
+
+func _point_inside_bounds(point: Vector3, accumulator: BoundsAccumulator, margin: float) -> bool:
+	return (
+		point.x >= accumulator.bounds_min.x - margin
+		and point.x <= accumulator.bounds_max.x + margin
+		and point.y >= accumulator.bounds_min.y - margin
+		and point.y <= accumulator.bounds_max.y + margin
+		and point.z >= accumulator.bounds_min.z - margin
+		and point.z <= accumulator.bounds_max.z + margin
+	)
 
 
 func _inspect_input_map() -> void:

@@ -20,7 +20,7 @@ static func build_cedar_hollow(parent: Node3D) -> Node3D:
 	parent.add_child(root)
 	var trail_sign: Node3D = _instance_prop(root, TrailSignScene, "trail_sign", Vector3(0.72, 0.0, 0.25), Vector3(0.0, -24.0, 0.0), Vector3.ONE)
 	_add_trail_sign_labels(trail_sign)
-	var kiosk: Node3D = _instance_prop(root, KioskScene, "kiosk", Vector3(-0.18, 0.0, 1.18), Vector3(0.0, 6.0, 0.0), Vector3.ONE)
+	var kiosk: Node3D = _instance_prop(root, KioskScene, "kiosk", Vector3(-1.18, 0.0, 1.18), Vector3(0.0, 12.0, 0.0), Vector3.ONE)
 	_add_kiosk_labels(kiosk)
 	var mile_marker: Node3D = _instance_prop(root, MileMarkerScene, "mile_marker", Vector3(1.12, 0.0, -2.35), Vector3(0.0, -8.0, 0.0), Vector3.ONE)
 	_add_mile_marker_label(mile_marker)
