@@ -196,6 +196,68 @@ def check_assets():
     return 0
 
 
+def check_candidate(subdir, filename, candidate_path, surface_id_map):
+    if subdir not in GENERATED_ASSETS:
+        fail("unknown asset manifest subdir: " + subdir)
+        return 1
+    if filename not in GENERATED_ASSETS[subdir]:
+        fail("target asset is not in manifest: assets/models/" + subdir + "/" + filename)
+        return 1
+    candidate = Path(candidate_path)
+    if not candidate.is_file():
+        fail("candidate asset does not exist: " + str(candidate))
+        return 1
+    target_path = "assets/models/" + subdir + "/" + filename
+    target_stem = Path(filename).stem
+    if subdir == "features":
+        check_glb(
+            str(candidate),
+            "--require-surface-tag",
+            "--surface-id=" + FEATURE_SURFACES[filename],
+        )
+    elif subdir == "props":
+        min_dimension, max_dimension = PROP_BUDGETS[filename]
+        check_glb(
+            str(candidate),
+            "--profile",
+            "prop",
+            "--expected-name",
+            target_stem,
+            "--min-dimension=" + f"{min_dimension:.2f}",
+            "--max-dimension=" + f"{max_dimension:.2f}",
+        )
+    elif subdir == "scatter":
+        min_dimension, max_dimension = SCATTER_BUDGETS[filename]
+        check_glb(
+            str(candidate),
+            "--profile",
+            "scatter",
+            "--expected-name",
+            target_stem,
+            "--min-dimension=" + f"{min_dimension:.2f}",
+            "--max-dimension=" + f"{max_dimension:.2f}",
+        )
+    elif subdir == "vehicle":
+        check_glb(str(candidate), "--profile", "vehicle", "--max-dimension=1.0")
+    elif subdir == "terrain" and filename.endswith(".glb"):
+        if surface_id_map is None:
+            fail("terrain GLB candidate requires --surface-id-map")
+            return 1
+        check_glb(
+            str(candidate),
+            "--profile",
+            "heightmesh",
+            "--surface-id-map",
+            surface_id_map,
+            "--max-triangles=200000",
+        )
+    else:
+        fail("candidate checks do not support target: " + target_path)
+        return 1
+    print("ok: candidate satisfies manifest contract for " + target_path)
+    return 0
+
+
 def list_generated(subdir):
     for filename in GENERATED_ASSETS[subdir]:
         print(filename)
@@ -205,11 +267,18 @@ def main():
     parser = argparse.ArgumentParser(description="Trailhead asset manifest helper.")
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("check-assets")
+    candidate_parser = subparsers.add_parser("check-candidate")
+    candidate_parser.add_argument("subdir", choices=sorted(GENERATED_ASSETS.keys()))
+    candidate_parser.add_argument("filename")
+    candidate_parser.add_argument("candidate_path")
+    candidate_parser.add_argument("--surface-id-map")
     list_parser = subparsers.add_parser("list-generated")
     list_parser.add_argument("subdir", choices=sorted(GENERATED_ASSETS.keys()))
     args = parser.parse_args()
     if args.command == "check-assets":
         return check_assets()
+    if args.command == "check-candidate":
+        return check_candidate(args.subdir, args.filename, args.candidate_path, args.surface_id_map)
     if args.command == "list-generated":
         list_generated(args.subdir)
         return 0
