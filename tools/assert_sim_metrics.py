@@ -17,6 +17,19 @@ def parse_minimum(spec):
         raise argparse.ArgumentTypeError(f"invalid minimum in {spec}") from exc
 
 
+def parse_near(spec):
+    parts = spec.split(":", 2)
+    if len(parts) != 3:
+        raise argparse.ArgumentTypeError(f"expected name:expected:tolerance, got {spec}")
+    name, expected, tolerance = parts
+    if not name:
+        raise argparse.ArgumentTypeError(f"missing name in {spec}")
+    try:
+        return name, float(expected), float(tolerance)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"invalid expected/tolerance in {spec}") from exc
+
+
 def sequence_contains(actual, expected):
     expected_index = 0
     for value in actual:
@@ -34,6 +47,28 @@ def nested_value(values, dotted_name):
     return current
 
 
+def load_json(path):
+    try:
+        text = path.read_text()
+    except OSError as exc:
+        raise ValueError(f"missing or unreadable input: {exc}") from exc
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"bad JSON at line {exc.lineno} column {exc.colno}: {exc.msg}") from exc
+    if not isinstance(data, dict):
+        raise ValueError("JSON root must be an object")
+    return data
+
+
+def as_number(value, label, errors):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        errors.append(f"{label} is not numeric: {value!r}")
+        return None
+
+
 def main():
     parser = argparse.ArgumentParser(description="Assert selected metrics from a Trailhead sim JSON output.")
     parser.add_argument("path", type=Path)
@@ -41,28 +76,49 @@ def main():
     parser.add_argument("--surface-sequence", default="", metavar="SURFACE_A,SURFACE_B")
     parser.add_argument("--landmark", action="append", default=[])
     parser.add_argument("--metric-min", action="append", default=[], type=parse_minimum, metavar="METRIC:MIN_VALUE")
+    parser.add_argument("--metric-near", action="append", default=[], type=parse_near, metavar="METRIC:EXPECTED:TOLERANCE")
     parser.add_argument("--source-min", action="append", default=[], type=parse_minimum, metavar="SOURCE:MIN_VALUE")
     args = parser.parse_args()
 
-    data = json.loads(args.path.read_text())
     errors = []
+    try:
+        data = load_json(args.path)
+    except ValueError as exc:
+        print(f"fail: {args.path}")
+        print(f"- {exc}")
+        return 1
+
     if data.get("result") != "pass":
         errors.append(f"expected result pass, got {data.get('result')}")
 
     metrics = data.get("metrics", {})
+    if not isinstance(metrics, dict):
+        errors.append("metrics is not an object")
+        metrics = {}
     surface_ticks = metrics.get("surface_contact_ticks", {})
+    if not isinstance(surface_ticks, dict):
+        errors.append("metrics.surface_contact_ticks is not an object")
+        surface_ticks = {}
     for surface_id, minimum in args.surface:
-        actual = float(surface_ticks.get(surface_id, 0.0))
+        actual = as_number(surface_ticks.get(surface_id, 0.0), f"surface {surface_id} ticks", errors)
+        if actual is None:
+            continue
         if actual < minimum:
             errors.append(f"surface {surface_id} ticks {actual:g} < {minimum:g}")
 
     if args.surface_sequence:
         expected = [value for value in args.surface_sequence.split(",") if value]
         actual_sequence = metrics.get("surface_event_sequence", [])
+        if not isinstance(actual_sequence, list):
+            actual_sequence = []
+            errors.append("metrics.surface_event_sequence is not an array")
         if not sequence_contains(actual_sequence, expected):
             errors.append(f"surface sequence {actual_sequence} does not contain {expected}")
 
     landmark_sequence = metrics.get("landmark_event_sequence", [])
+    if not isinstance(landmark_sequence, list):
+        landmark_sequence = []
+        errors.append("metrics.landmark_event_sequence is not an array")
     for landmark_id in args.landmark:
         if landmark_id not in landmark_sequence:
             errors.append(f"missing landmark event {landmark_id}; saw {landmark_sequence}")
@@ -72,13 +128,32 @@ def main():
         if actual_value is None:
             errors.append(f"missing metric {metric_name}")
             continue
-        actual = float(actual_value)
+        actual = as_number(actual_value, f"metric {metric_name}", errors)
+        if actual is None:
+            continue
         if actual < minimum:
             errors.append(f"metric {metric_name} {actual:g} < {minimum:g}")
 
+    for metric_name, expected, tolerance in args.metric_near:
+        actual_value = nested_value(metrics, metric_name)
+        if actual_value is None:
+            errors.append(f"missing metric {metric_name}")
+            continue
+        actual = as_number(actual_value, f"metric {metric_name}", errors)
+        if actual is None:
+            continue
+        delta = abs(actual - expected)
+        if delta > tolerance:
+            errors.append(f"metric {metric_name} delta {delta:g} > {tolerance:g} (expected {expected:g}, got {actual:g})")
+
     source_counts = metrics.get("surface_source_counts", {})
+    if not isinstance(source_counts, dict):
+        errors.append("metrics.surface_source_counts is not an object")
+        source_counts = {}
     for source_id, minimum in args.source_min:
-        actual = float(source_counts.get(source_id, 0.0))
+        actual = as_number(source_counts.get(source_id, 0.0), f"surface source {source_id} count", errors)
+        if actual is None:
+            continue
         if actual < minimum:
             errors.append(f"surface source {source_id} count {actual:g} < {minimum:g}")
 
