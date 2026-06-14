@@ -9,6 +9,7 @@ var center_of_mass_offset: Vector3 = Vector3(0.0, -0.02, 0.0)
 var motor_torque: float = 6.0
 var max_speed: float = 8.0
 var brake_damping_per_tick: float = 0.08
+var brake_damping_per_second: float = 4.8
 var ebrake_factor: float = 0.4
 var lateral_grip_force: float = 3.0
 var steer_limit_deg: float = 28.0
@@ -32,6 +33,7 @@ var susp_travel: float = 0.05
 var susp_stiffness: float = 30.0
 var susp_damping: float = 0.2
 var susp_damping_force_ratio: float = 0.1
+var susp_contact_angular_velocity_weight: float = 1.0
 var wheel_radius: float = 0.03
 
 var default_friction: float = 1.0
@@ -43,6 +45,8 @@ var surface_min_lateral_grip: float = 0.15
 var default_bog_threshold: float = 0.2
 var vehicle_contamination_pickup_rate: float = 0.08
 var vehicle_contamination_decay_rate: float = 0.012
+var vehicle_contamination_pickup_per_second: float = 4.8
+var vehicle_contamination_decay_per_second: float = 0.72
 var vehicle_residue_visible_epsilon: float = 0.001
 var vehicle_residue_mud_visual_alpha: float = 0.58
 var vehicle_residue_dust_visual_alpha: float = 0.34
@@ -50,6 +54,20 @@ var vehicle_residue_wetness_visual_alpha: float = 0.42
 var vehicle_residue_mud_color: Color = Color(0.17, 0.10, 0.05)
 var vehicle_residue_dust_color: Color = Color(0.66, 0.55, 0.36)
 var vehicle_residue_wetness_color: Color = Color(0.52, 0.62, 0.66)
+
+var grass_clump_count: int = 72
+var grass_blades_per_clump: int = 5
+var grass_clump_radius: float = 0.22
+var grass_occluder_band_count: int = 16
+
+var golden_tick_tolerance: int = 2
+var golden_position_tolerance_m: float = 0.08
+var golden_velocity_tolerance_mps: float = 0.25
+var golden_speed_tolerance_mps: float = 0.20
+var golden_slip_tolerance_deg: float = 2.0
+var golden_surface_tick_tolerance: int = 2
+var golden_event_count_tolerance: int = 0
+var golden_motor_rpm_tolerance: float = 120.0
 
 var cam_height: float = 0.18
 var cam_distance: float = 0.62
@@ -119,8 +137,10 @@ var audio_plank_speed_hz_gain: float = 2.4
 var audio_plank_decay: float = 0.993
 
 var stuck_window_ticks: int = 180
+var stuck_window_seconds: float = 3.0
 var stuck_min_progress: float = 0.05
 var max_flipped_ticks: int = 300
+var max_flipped_seconds: float = 5.0
 var flat_spawn_height: float = 0.12
 var flat_target_bounds_y_min: float = -1.0
 var flat_target_bounds_y_max: float = 2.0
