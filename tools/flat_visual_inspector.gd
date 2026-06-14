@@ -26,6 +26,7 @@ func _inspect() -> void:
 	var chase_camera: Camera3D = _require_node(_scene_root, "ChaseCamera") as Camera3D
 	_inspect_chase_camera(vehicle, chase_camera)
 	_inspect_input_map()
+	_inspect_reverse_input_output(_scene_root, "flat host")
 	_require_node(_scene_root, "SurfaceMap")
 	_require_node(_scene_root, "Sun")
 	_finish()
@@ -133,6 +134,7 @@ func _require_camera_pitch(camera: Camera3D, context: String) -> void:
 func _inspect_input_map() -> void:
 	_require_input_action_keys(&"throttle", [KEY_W, KEY_UP])
 	_require_input_action_keys(&"brake", [KEY_S, KEY_DOWN])
+	_require_input_action_keys(&"reverse", [KEY_S, KEY_DOWN])
 	_require_input_action_keys(&"steer_left", [KEY_A, KEY_LEFT])
 	_require_input_action_keys(&"steer_right", [KEY_D, KEY_RIGHT])
 	_require_input_action_keys(&"ebrake", [KEY_SPACE])
@@ -149,10 +151,46 @@ func _require_input_action_keys(action_name: StringName, expected_keycodes: Arra
 	for event in InputMap.action_get_events(action_string):
 		var key_event: InputEventKey = event as InputEventKey
 		if key_event != null:
-			observed_keycodes.append(key_event.physical_keycode)
+			if key_event.physical_keycode != 0:
+				observed_keycodes.append(key_event.physical_keycode)
+			if key_event.keycode != 0:
+				observed_keycodes.append(key_event.keycode)
 	for keycode in expected_keycodes:
 		if not observed_keycodes.has(keycode):
 			_errors.append("InputMap action " + action_string + " missing keycode " + str(keycode))
+
+
+func _inspect_reverse_input_output(host: Node, context: String) -> void:
+	if host == null:
+		return
+	var vehicle_input: RefCounted = host.get("_vehicle_input") as RefCounted
+	if vehicle_input == null:
+		_errors.append(context + " should expose vehicle input for reverse inspection")
+		return
+	Input.action_press(&"brake", 1.0)
+	Input.action_press(&"reverse", 1.0)
+	host.call("_update_vehicle_input")
+	var reverse_throttle: float = float(vehicle_input.get("throttle"))
+	var reverse_brake: float = float(vehicle_input.get("brake"))
+	Input.action_release(&"reverse")
+	Input.action_release(&"brake")
+	if reverse_throttle >= -0.99:
+		_errors.append(context + " reverse action should produce negative throttle, got " + str(reverse_throttle))
+	if reverse_brake > FLOAT_EPSILON:
+		_errors.append(context + " should not apply brake damping during pure reverse, got " + str(reverse_brake))
+	Input.action_press(&"throttle", 1.0)
+	Input.action_press(&"brake", 1.0)
+	Input.action_press(&"reverse", 1.0)
+	host.call("_update_vehicle_input")
+	var opposed_throttle: float = float(vehicle_input.get("throttle"))
+	var opposed_brake: float = float(vehicle_input.get("brake"))
+	Input.action_release(&"reverse")
+	Input.action_release(&"brake")
+	Input.action_release(&"throttle")
+	if absf(opposed_throttle) > FLOAT_EPSILON:
+		_errors.append(context + " opposed forward/reverse should neutralize throttle, got " + str(opposed_throttle))
+	if opposed_brake < 0.99:
+		_errors.append(context + " opposed forward/reverse should apply brake, got " + str(opposed_brake))
 
 
 func _require_node(parent: Node, path: String) -> Node:

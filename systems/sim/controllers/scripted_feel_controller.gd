@@ -20,6 +20,8 @@ func next_input(state: RefCounted) -> RefCounted:
 		_fill_ebrake_drift(input)
 	elif scenario_id == "launch_wheelie":
 		_fill_launch_wheelie(input)
+	elif scenario_id == "reverse_drive":
+		_fill_reverse_drive(input)
 	elif scenario_id == "surface_sweep":
 		_fill_surface_sweep(input)
 	elif scenario_id == "log_ramp":
@@ -56,6 +58,14 @@ func _fill_ebrake_drift(input: RefCounted) -> void:
 func _fill_launch_wheelie(input: RefCounted) -> void:
 	if _tick < GameConfig.wheelie_probe_ticks:
 		input.set("throttle", GameConfig.wheelie_probe_throttle)
+	else:
+		input.set("brake", GameConfig.scripted_stop_brake)
+		_done = true
+
+
+func _fill_reverse_drive(input: RefCounted) -> void:
+	if _tick < GameConfig.reverse_probe_ticks:
+		input.set("throttle", GameConfig.reverse_probe_throttle)
 	else:
 		input.set("brake", GameConfig.scripted_stop_brake)
 		_done = true

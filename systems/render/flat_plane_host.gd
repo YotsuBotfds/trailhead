@@ -36,6 +36,7 @@ func _physics_process(delta: float) -> void:
 func _ensure_default_input_map() -> void:
 	_ensure_action(&"throttle", [KEY_W, KEY_UP])
 	_ensure_action(&"brake", [KEY_S, KEY_DOWN])
+	_ensure_action(&"reverse", [KEY_S, KEY_DOWN])
 	_ensure_action(&"steer_left", [KEY_A, KEY_LEFT])
 	_ensure_action(&"steer_right", [KEY_D, KEY_RIGHT])
 	_ensure_action(&"ebrake", [KEY_SPACE])
@@ -104,10 +105,15 @@ func _setup_camera() -> void:
 
 
 func _update_vehicle_input() -> void:
-	var throttle: float = Input.get_action_strength("throttle")
-	var brake: float = Input.get_action_strength("brake")
+	var forward_throttle: float = Input.get_action_strength("throttle")
+	var reverse_throttle: float = Input.get_action_strength("reverse")
+	var brake_action: float = Input.get_action_strength("brake")
+	var throttle: float = forward_throttle - reverse_throttle
+	var brake: float = 0.0
+	if forward_throttle > 0.0 or reverse_throttle <= 0.0:
+		brake = brake_action
 	var steer: float = Input.get_action_strength("steer_right") - Input.get_action_strength("steer_left")
-	_vehicle_input.set("throttle", throttle)
+	_vehicle_input.set("throttle", clampf(throttle, -1.0, 1.0))
 	_vehicle_input.set("brake", brake)
 	_vehicle_input.set("steer", clampf(steer, -1.0, 1.0))
 	_vehicle_input.set("ebrake", Input.is_action_pressed("ebrake"))

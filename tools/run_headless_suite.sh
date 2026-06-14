@@ -74,6 +74,16 @@ run_sim "$out_dir/launch_wheelie.json" \
 	--stuck-window=60 \
 	--stuck-min-progress=0.05
 
+run_sim "$out_dir/reverse_drive.json" \
+	--scene=flat_plane \
+	--controller=scripted \
+	--scenario=reverse_drive \
+	--spawn=flat_spawn \
+	--seed=12345 \
+	--max-ticks=160 \
+	--stuck-window=60 \
+	--stuck-min-progress=0.05
+
 run_sim "$out_dir/surface_sweep.json" \
 	--scene=surface_strips \
 	--controller=scripted \
@@ -195,6 +205,11 @@ assert_metrics "$out_dir/launch_wheelie.json" \
 	--metric-min=front_air_rear_contact_ticks:8 \
 	--metric-min=max_pitch_deg:8.0 \
 	--metric-min=max_speed:3.0
+
+assert_metrics "$out_dir/reverse_drive.json" \
+	--surface=packed_dirt:25 \
+	--metric-min=reverse_ticks:70 \
+	--metric-min=max_reverse_distance:0.45
 
 assert_metrics "$out_dir/surface_sweep.json" \
 	--surface=packed_dirt:8 \

@@ -48,6 +48,8 @@ var _max_flipped_ticks_seen: int = 0
 var _min_progress_window: float = 999999.0
 var _started_flipped: bool = false
 var _self_right_input_count: int = 0
+var _initial_position: Vector3 = Vector3.ZERO
+var _initial_forward: Vector3 = Vector3.FORWARD
 var _initial_heading_deg: float = 0.0
 var _self_right_heading_error_deg: float = 999999.0
 var _self_right_heading_captured: bool = false
@@ -59,6 +61,9 @@ var _max_abs_yaw_rate: float = 0.0
 var _max_speed: float = 0.0
 var _previous_speed: float = 0.0
 var _ebrake_ticks: int = 0
+var _reverse_ticks: int = 0
+var _min_initial_forward_displacement: float = 999999.0
+var _max_reverse_distance: float = 0.0
 var _front_air_rear_contact_ticks: int = 0
 var _surface_event_count: int = 0
 var _landmark_event_count: int = 0
@@ -134,7 +139,10 @@ func _begin_run() -> void:
 	_vehicle.call("reset_to", _spawn_transform(_spawn_id))
 	var initial_state: RefCounted = _vehicle.call("get_state")
 	_started_flipped = bool(initial_state.get("is_flipped"))
-	_initial_heading_deg = _heading_deg(initial_state.get("basis"))
+	var initial_basis: Basis = initial_state.get("basis")
+	_initial_position = initial_state.get("position")
+	_initial_forward = _horizontal_forward(initial_basis)
+	_initial_heading_deg = _heading_deg(initial_basis)
 	_controller = _make_controller(_controller_id)
 	if _controller == null:
 		if _controller_config_error != "":
@@ -293,11 +301,13 @@ func _record(state: RefCounted, input: RefCounted) -> void:
 	var speed_delta: float = speed - _previous_speed
 	var slip_angle_deg: float = _slip_angle_deg(state_basis, state_velocity)
 	var yaw_rate: float = state_angular_velocity.dot(Vector3.UP)
+	var input_throttle: float = float(input.get("throttle"))
 	var wheel_contact: Array = state.get("wheel_contact")
 	var wheel_surface: Array = state.get("wheel_surface")
 	var surface_id: StringName = _dominant_surface_from_array(wheel_surface)
 	var front_contact_count: int = _contact_count(wheel_contact, 0, 2)
 	var rear_contact_count: int = _contact_count(wheel_contact, 2, 4)
+	var initial_forward_displacement: float = (state_position - _initial_position).dot(_initial_forward)
 	var row: Dictionary = {
 		"tick": _tick,
 		"position": _vec3_to_array(state_position),
@@ -308,6 +318,7 @@ func _record(state: RefCounted, input: RefCounted) -> void:
 		"roll_deg": roll_deg,
 		"speed": speed,
 		"speed_delta": speed_delta,
+		"initial_forward_displacement": initial_forward_displacement,
 		"slip_angle_deg": slip_angle_deg,
 		"wheel_contact_count": front_contact_count + rear_contact_count,
 		"front_contact_count": front_contact_count,
@@ -318,7 +329,7 @@ func _record(state: RefCounted, input: RefCounted) -> void:
 		"on_ground": bool(state.get("on_ground")),
 		"is_flipped": bool(state.get("is_flipped")),
 		"input": {
-			"throttle": float(input.get("throttle")),
+			"throttle": input_throttle,
 			"steer": float(input.get("steer")),
 			"brake": float(input.get("brake")),
 			"ebrake": bool(input.get("ebrake")),
@@ -333,6 +344,10 @@ func _record(state: RefCounted, input: RefCounted) -> void:
 		_self_right_heading_captured = true
 	if bool(input.get("ebrake")):
 		_ebrake_ticks += 1
+	if input_throttle < 0.0:
+		_reverse_ticks += 1
+	_min_initial_forward_displacement = minf(_min_initial_forward_displacement, initial_forward_displacement)
+	_max_reverse_distance = maxf(_max_reverse_distance, -initial_forward_displacement)
 	if front_contact_count == 0 and rear_contact_count > 0:
 		_front_air_rear_contact_ticks += 1
 	_max_abs_slip_angle_deg = maxf(_max_abs_slip_angle_deg, absf(slip_angle_deg))
@@ -480,6 +495,9 @@ func _finish(passed: bool) -> void:
 			"max_abs_yaw_rate": _max_abs_yaw_rate,
 			"max_speed": _max_speed,
 			"ebrake_ticks": _ebrake_ticks,
+			"reverse_ticks": _reverse_ticks,
+			"min_initial_forward_displacement": _min_initial_forward_displacement if _min_initial_forward_displacement < 999998.0 else null,
+			"max_reverse_distance": _max_reverse_distance,
 			"front_air_rear_contact_ticks": _front_air_rear_contact_ticks,
 			"surface_event_count": _surface_event_count,
 			"last_surface_event": String(_last_surface_event),
@@ -566,6 +584,8 @@ func _scenario_predicate_passed() -> bool:
 		return _max_abs_slip_angle_deg >= GameConfig.drift_min_peak_slip_angle_deg and _max_abs_yaw_rate >= GameConfig.drift_min_yaw_rate and _ebrake_ticks >= GameConfig.drift_min_ebrake_ticks and _max_speed >= GameConfig.drift_min_speed
 	if _scenario_id == "launch_wheelie":
 		return _max_pitch_deg >= GameConfig.wheelie_min_peak_pitch_deg and _front_air_rear_contact_ticks >= GameConfig.wheelie_min_front_air_rear_contact_ticks and _max_flipped_ticks_seen == 0
+	if _scenario_id == "reverse_drive":
+		return _reverse_ticks >= GameConfig.reverse_min_ticks and _max_reverse_distance >= GameConfig.reverse_min_distance
 	if _scenario_id == "surface_sweep":
 		return _surface_sweep_predicate_passed()
 	if _scenario_id == "log_ramp":
@@ -626,12 +646,16 @@ func _slip_angle_deg(basis: Basis, velocity: Vector3) -> float:
 	return rad_to_deg(forward_flat.angle_to(velocity_flat)) * sign
 
 
-func _heading_deg(basis: Basis) -> float:
+func _horizontal_forward(basis: Basis) -> Vector3:
 	var forward: Vector3 = -basis.z
 	forward.y = 0.0
-	if forward.length() <= 0.001:
-		return 0.0
-	forward = forward.normalized()
+	if forward.length() <= GameConfig.reverse_probe_forward_epsilon:
+		return Vector3.FORWARD
+	return forward.normalized()
+
+
+func _heading_deg(basis: Basis) -> float:
+	var forward: Vector3 = _horizontal_forward(basis)
 	return rad_to_deg(atan2(forward.x, -forward.z))
 
 
