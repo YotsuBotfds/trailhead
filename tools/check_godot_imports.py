@@ -6,6 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 ASSET_ROOT = ROOT / "assets" / "models"
 CHECKED_SUFFIXES = {".glb", ".png"}
+SURFACE_ID_PNG_NAME = "cedar_hollow_surface_id.png"
 
 
 def unquote(value):
@@ -50,7 +51,45 @@ def validate_asset(path):
     uid = values.get("uid", "")
     if not uid.startswith("uid://"):
         errors.append(str(import_path.relative_to(ROOT)) + " should include a Godot uid")
+    if path.suffix == ".glb":
+        validate_glb_import(path, import_path, values, errors)
+    if path.suffix == ".png":
+        validate_png_import(path, import_path, values, errors)
     return errors
+
+
+def validate_glb_import(path, import_path, values, errors):
+    label = str(import_path.relative_to(ROOT))
+    if values.get("importer", "") != "scene":
+        errors.append(label + " importer should be scene for GLB asset")
+    if values.get("nodes/root_scale", "") != "1.0":
+        errors.append(label + " nodes/root_scale should stay 1.0 for real-meter assets")
+    if values.get("nodes/apply_root_scale", "") != "true":
+        errors.append(label + " nodes/apply_root_scale should stay true with root_scale=1.0")
+    if values.get("nodes/use_name_suffixes", "") != "true":
+        errors.append(label + " nodes/use_name_suffixes should stay true for imported node contract checks")
+
+
+def validate_png_import(path, import_path, values, errors):
+    label = str(import_path.relative_to(ROOT))
+    if values.get("importer", "") != "texture":
+        errors.append(label + " importer should be texture for PNG asset")
+    if path.name != SURFACE_ID_PNG_NAME:
+        return
+    expected_values = {
+        "compress/mode": "0",
+        "mipmaps/generate": "false",
+        "process/channel_remap/red": "0",
+        "process/channel_remap/green": "1",
+        "process/channel_remap/blue": "2",
+        "process/channel_remap/alpha": "3",
+        "process/hdr_as_srgb": "false",
+        "detect_3d/compress_to": "1",
+    }
+    for key, expected_value in expected_values.items():
+        actual_value = values.get(key, "")
+        if actual_value != expected_value:
+            errors.append(label + " " + key + " expected " + expected_value + ", got " + actual_value)
 
 
 def main():
