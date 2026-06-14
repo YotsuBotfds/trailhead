@@ -35,43 +35,35 @@ def bounds(vertices):
     return mins, maxs
 
 
-def write_glb(path, asset_name, vertices, indices, color):
-    position_data = pack_positions(vertices)
-    index_data = pack_indices(indices)
-    position_offset = 0
-    index_offset = len(position_data)
-    bin_chunk = pad4(position_data + index_data, b"\0")
-    mins, maxs = bounds(vertices)
-    gltf = {
-        "asset": {"version": "2.0", "generator": "Trailhead generate_prop_glbs.py"},
-        "scene": 0,
-        "scenes": [{"nodes": [0]}],
-        "nodes": [{"name": asset_name, "mesh": 0}],
-        "meshes": [{
-            "name": asset_name,
-            "primitives": [{
-                "attributes": {"POSITION": 0},
-                "indices": 1,
-                "mode": 4,
-                "material": 0,
-            }],
-        }],
-        "materials": [{
-            "name": asset_name + "_mat",
-            "pbrMetallicRoughness": {
-                "baseColorFactor": color,
-                "roughnessFactor": 0.88,
-                "metallicFactor": 0.0,
-            },
-        }],
-        "buffers": [{"byteLength": len(bin_chunk)}],
-        "bufferViews": [
+def write_glb_parts(path, asset_name, parts):
+    bin_data = bytearray()
+    buffer_views = []
+    accessors = []
+    primitives = []
+    materials = []
+    for part_index, mesh_part in enumerate(parts):
+        vertices, indices, color, part_name = mesh_part
+        position_data = pack_positions(vertices)
+        index_data = pack_indices(indices)
+        position_offset = len(bin_data)
+        bin_data.extend(position_data)
+        index_offset = len(bin_data)
+        bin_data.extend(index_data)
+        padding = (-len(bin_data)) % 4
+        if padding:
+            bin_data.extend(b"\0" * padding)
+        mins, maxs = bounds(vertices)
+        position_view = len(buffer_views)
+        index_view = position_view + 1
+        position_accessor = len(accessors)
+        index_accessor = position_accessor + 1
+        buffer_views.extend([
             {"buffer": 0, "byteOffset": position_offset, "byteLength": len(position_data), "target": 34962},
             {"buffer": 0, "byteOffset": index_offset, "byteLength": len(index_data), "target": 34963},
-        ],
-        "accessors": [
+        ])
+        accessors.extend([
             {
-                "bufferView": 0,
+                "bufferView": position_view,
                 "byteOffset": 0,
                 "componentType": 5126,
                 "count": len(vertices),
@@ -80,7 +72,7 @@ def write_glb(path, asset_name, vertices, indices, color):
                 "max": maxs,
             },
             {
-                "bufferView": 1,
+                "bufferView": index_view,
                 "byteOffset": 0,
                 "componentType": 5123,
                 "count": len(indices),
@@ -88,7 +80,35 @@ def write_glb(path, asset_name, vertices, indices, color):
                 "min": [min(indices)],
                 "max": [max(indices)],
             },
-        ],
+        ])
+        primitives.append({
+            "attributes": {"POSITION": position_accessor},
+            "indices": index_accessor,
+            "mode": 4,
+            "material": part_index,
+        })
+        materials.append({
+            "name": part_name + "_mat",
+            "pbrMetallicRoughness": {
+                "baseColorFactor": color,
+                "roughnessFactor": 0.88,
+                "metallicFactor": 0.0,
+            },
+        })
+    bin_chunk = pad4(bytes(bin_data), b"\0")
+    gltf = {
+        "asset": {"version": "2.0", "generator": "Trailhead generate_prop_glbs.py"},
+        "scene": 0,
+        "scenes": [{"nodes": [0]}],
+        "nodes": [{"name": asset_name, "mesh": 0}],
+        "meshes": [{
+            "name": asset_name,
+            "primitives": primitives,
+        }],
+        "materials": materials,
+        "buffers": [{"byteLength": len(bin_chunk)}],
+        "bufferViews": buffer_views,
+        "accessors": accessors,
     }
     json_chunk = pad4(json.dumps(gltf, separators=(",", ":")).encode("utf-8"), b" ")
     total_length = 12 + 8 + len(json_chunk) + 8 + len(bin_chunk)
@@ -98,6 +118,15 @@ def write_glb(path, asset_name, vertices, indices, color):
         file.write(json_chunk)
         file.write(struct.pack("<II", len(bin_chunk), 0x004E4942))
         file.write(bin_chunk)
+
+
+def write_glb(path, asset_name, vertices, indices, color):
+    write_glb_parts(path, asset_name, [part((vertices, indices), color, asset_name)])
+
+
+def part(mesh, color, part_name):
+    vertices, indices = mesh
+    return vertices, indices, color, part_name
 
 
 def box(width, height, depth):
@@ -276,27 +305,167 @@ def water_bottle():
     ])
 
 
+def trail_sign_parts():
+    return [
+        part(merge([
+            transformed(box(0.08, 1.0, 0.08), (-0.38, 0.0, 0.0)),
+            transformed(box(0.08, 1.0, 0.08), (0.38, 0.0, 0.0)),
+        ]), [0.28, 0.17, 0.09, 1.0], "trail_sign_posts"),
+        part(merge([
+            transformed(box(0.9, 0.26, 0.08), (0.0, 0.68, 0.0)),
+            transformed(box(0.75, 0.18, 0.06), (0.0, 0.38, 0.01)),
+        ]), [0.55, 0.38, 0.20, 1.0], "trail_sign_boards"),
+    ]
+
+
+def kiosk_parts():
+    return [
+        part(merge([
+            transformed(box(0.08, 1.22, 0.08), (-0.46, 0.0, 0.0)),
+            transformed(box(0.08, 1.22, 0.08), (0.46, 0.0, 0.0)),
+        ]), [0.26, 0.16, 0.08, 1.0], "kiosk_posts"),
+        part(transformed(box(0.98, 0.58, 0.07), (0.0, 0.52, 0.0)), [0.45, 0.30, 0.16, 1.0], "kiosk_panel"),
+        part(merge([
+            transformed(box(1.15, 0.08, 0.26), (0.0, 1.12, 0.0)),
+            transformed(box(0.86, 0.09, 0.06), (0.0, 0.20, -0.01)),
+        ]), [0.18, 0.12, 0.07, 1.0], "kiosk_roof_shelf"),
+    ]
+
+
+def mile_marker_parts():
+    return [
+        part(transformed(cylinder(0.045, 0.58, 12, 0.02), (0.0, 0.0, 0.0)), [0.34, 0.27, 0.18, 1.0], "mile_marker_post"),
+        part(merge([
+            transformed(box(0.22, 0.18, 0.055), (0.0, 0.48, 0.0)),
+            transformed(box(0.16, 0.045, 0.06), (0.0, 0.66, 0.0)),
+        ]), [0.64, 0.54, 0.36, 1.0], "mile_marker_face"),
+    ]
+
+
+def park_bench_parts():
+    return [
+        part(merge([
+            transformed(box(1.15, 0.055, 0.18), (0.0, 0.42, -0.12)),
+            transformed(box(1.15, 0.055, 0.18), (0.0, 0.42, 0.12)),
+            transformed(box(1.15, 0.06, 0.14), (0.0, 0.72, 0.28)),
+            transformed(box(1.15, 0.06, 0.14), (0.0, 0.54, 0.32)),
+        ]), [0.43, 0.27, 0.15, 1.0], "park_bench_planks"),
+        part(merge([
+            transformed(box(0.075, 0.42, 0.075), (-0.44, 0.0, -0.20)),
+            transformed(box(0.075, 0.42, 0.075), (0.44, 0.0, -0.20)),
+            transformed(box(0.075, 0.56, 0.075), (-0.44, 0.0, 0.32)),
+            transformed(box(0.075, 0.56, 0.075), (0.44, 0.0, 0.32)),
+        ]), [0.18, 0.13, 0.09, 1.0], "park_bench_legs"),
+    ]
+
+
+def carabiner_parts():
+    return [
+        part(merge([
+            transformed(box(0.035, 0.012, 0.22), (-0.06, 0.0, 0.0)),
+            transformed(box(0.035, 0.012, 0.22), (0.06, 0.0, 0.0)),
+            transformed(box(0.16, 0.012, 0.035), (0.0, 0.0, -0.095)),
+            transformed(box(0.16, 0.012, 0.035), (0.0, 0.0, 0.095)),
+        ]), [0.08, 0.09, 0.09, 1.0], "carabiner_frame"),
+        part(transformed(box(0.024, 0.018, 0.15), (0.028, 0.018, 0.0)), [0.56, 0.50, 0.38, 1.0], "carabiner_gate"),
+    ]
+
+
+def bottle_cap_parts():
+    return [
+        part(cylinder(0.075, 0.035, 20, 0.035), [0.56, 0.10, 0.08, 1.0], "bottle_cap_shell"),
+        part(merge([
+            transformed(box(0.018, 0.02, 0.018), (0.075, 0.035, 0.0)),
+            transformed(box(0.018, 0.02, 0.018), (-0.075, 0.035, 0.0)),
+            transformed(box(0.018, 0.02, 0.018), (0.0, 0.035, 0.075)),
+            transformed(box(0.018, 0.02, 0.018), (0.0, 0.035, -0.075)),
+        ]), [0.78, 0.68, 0.50, 1.0], "bottle_cap_ridges"),
+    ]
+
+
+def picnic_table_parts():
+    return [
+        part(merge([
+            transformed(box(1.25, 0.08, 0.42), (0.0, 0.52, 0.0)),
+            transformed(box(1.12, 0.07, 0.18), (0.0, 0.32, -0.42)),
+            transformed(box(1.12, 0.07, 0.18), (0.0, 0.32, 0.42)),
+        ]), [0.48, 0.30, 0.16, 1.0], "picnic_table_planks"),
+        part(merge([
+            transformed(box(0.08, 0.52, 0.08), (-0.45, 0.0, -0.16)),
+            transformed(box(0.08, 0.52, 0.08), (0.45, 0.0, -0.16)),
+            transformed(box(0.08, 0.52, 0.08), (-0.45, 0.0, 0.16)),
+            transformed(box(0.08, 0.52, 0.08), (0.45, 0.0, 0.16)),
+        ]), [0.25, 0.16, 0.08, 1.0], "picnic_table_legs"),
+    ]
+
+
+def old_cedar_stump_parts():
+    return [
+        part(transformed(cylinder(0.42, 1.15, 18, 0.12), (0.0, 0.0, 0.0)), [0.34, 0.20, 0.10, 1.0], "old_cedar_stump_trunk"),
+        part(merge([
+            transformed(box(0.95, 0.12, 0.18), (0.0, 0.02, 0.44)),
+            transformed(box(0.8, 0.10, 0.16), (0.34, 0.02, -0.36)),
+            transformed(box(0.7, 0.10, 0.16), (-0.4, 0.02, -0.28)),
+        ]), [0.18, 0.11, 0.06, 1.0], "old_cedar_stump_roots"),
+    ]
+
+
+def fire_ring_parts():
+    stones = []
+    for index in range(12):
+        angle = math.tau * float(index) / 12.0
+        stones.append(transformed(
+            cylinder(0.075, 0.085, 10, 0.10),
+            (math.cos(angle) * 0.36, 0.0, math.sin(angle) * 0.36),
+            (1.0, 0.75, 1.0),
+        ))
+    return [
+        part(merge(stones), [0.34, 0.33, 0.29, 1.0], "fire_ring_stones"),
+        part(transformed(cylinder(0.24, 0.015, 14, 0.02), (0.0, 0.0, 0.0)), [0.12, 0.11, 0.10, 1.0], "fire_ring_ash"),
+    ]
+
+
+def hiking_boot_parts():
+    return [
+        part(merge([
+            transformed(box(0.46, 0.08, 0.18), (0.0, 0.0, 0.0)),
+            transformed(box(0.18, 0.08, 0.16), (0.2, 0.08, 0.0)),
+        ]), [0.07, 0.05, 0.035, 1.0], "hiking_boot_sole_toe"),
+        part(merge([
+            transformed(box(0.34, 0.18, 0.17), (-0.03, 0.06, 0.0)),
+            transformed(box(0.15, 0.24, 0.16), (-0.2, 0.16, 0.0)),
+        ]), [0.28, 0.16, 0.08, 1.0], "hiking_boot_upper"),
+    ]
+
+
+def water_bottle_parts():
+    return [
+        part(transformed(cylinder(0.08, 0.42, 16, 0.02), (0.0, 0.0, 0.0)), [0.16, 0.42, 0.58, 1.0], "water_bottle_body"),
+        part(transformed(cylinder(0.055, 0.08, 12, 0.01), (0.0, 0.42, 0.0)), [0.80, 0.86, 0.86, 1.0], "water_bottle_neck"),
+        part(transformed(cylinder(0.06, 0.035, 12, 0.0), (0.0, 0.50, 0.0)), [0.08, 0.18, 0.26, 1.0], "water_bottle_cap"),
+    ]
+
+
 def main():
     args = parse_args()
     out_dir = args.out_dir
     out_dir.mkdir(parents=True, exist_ok=True)
     assets = [
-        ("trail_sign", trail_sign(), [0.45, 0.29, 0.16, 1.0]),
-        ("kiosk", kiosk(), [0.40, 0.26, 0.14, 1.0]),
-        ("mile_marker", mile_marker(), [0.48, 0.40, 0.26, 1.0]),
-        ("park_bench", park_bench(), [0.40, 0.25, 0.14, 1.0]),
-        ("carabiner", carabiner(), [0.10, 0.12, 0.12, 1.0]),
-        ("bottle_cap", bottle_cap(), [0.50, 0.42, 0.32, 1.0]),
-        ("picnic_table", picnic_table(), [0.42, 0.26, 0.14, 1.0]),
-        ("old_cedar_stump", old_cedar_stump(), [0.32, 0.20, 0.11, 1.0]),
-        ("fire_ring", fire_ring(), [0.30, 0.28, 0.24, 1.0]),
-        ("hiking_boot", hiking_boot(), [0.18, 0.12, 0.08, 1.0]),
-        ("water_bottle", water_bottle(), [0.22, 0.50, 0.62, 1.0]),
+        ("trail_sign", trail_sign_parts()),
+        ("kiosk", kiosk_parts()),
+        ("mile_marker", mile_marker_parts()),
+        ("park_bench", park_bench_parts()),
+        ("carabiner", carabiner_parts()),
+        ("bottle_cap", bottle_cap_parts()),
+        ("picnic_table", picnic_table_parts()),
+        ("old_cedar_stump", old_cedar_stump_parts()),
+        ("fire_ring", fire_ring_parts()),
+        ("hiking_boot", hiking_boot_parts()),
+        ("water_bottle", water_bottle_parts()),
     ]
-    for asset_name, mesh, color in assets:
-        vertices, indices = mesh
+    for asset_name, parts in assets:
         output_path = out_dir / (asset_name + ".glb")
-        write_glb(output_path, asset_name, vertices, indices, color)
+        write_glb_parts(output_path, asset_name, parts)
         print(f"wrote: {output_path}")
 
 
