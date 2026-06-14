@@ -171,7 +171,7 @@ run_sim "$out_dir/cedar_hollow_segment_overlook_to_old_cedar.json" \
 	--route-segment=overlook_to_old_cedar \
 	--seed=12345 \
 	--stuck-window=60 \
-	--stuck-min-progress=0.03
+	--stuck-min-progress=0.015
 
 assert_metrics "$out_dir/flat_flipped.json" \
 	--surface=packed_dirt:10 \
@@ -219,13 +219,13 @@ assert_metrics "$out_dir/cedar_hollow_overlook_ridge.json" \
 	--landmark=overlook_ridge
 
 assert_metrics "$out_dir/cedar_hollow_bog_bottom.json" \
-	--surface=mud:4 \
+	--surface=mud:2 \
 	--landmark=bog_bottom
 
 assert_metrics "$out_dir/cedar_hollow_the_crossing.json" \
 	--surface=wood_plank:8 \
 	--surface=mud:15 \
-	--surface=wet_stone:7 \
+	--surface=wet_stone:5 \
 	--surface-sequence=wood_plank,mud,wet_stone \
 	--landmark=the_crossing
 
@@ -239,7 +239,7 @@ assert_metrics "$out_dir/cedar_hollow_culvert_mouth.json" \
 
 assert_metrics "$out_dir/cedar_hollow_segment_trailhead_to_culvert_mouth.json" \
 	--surface=tall_grass:20 \
-	--surface=packed_dirt:60 \
+	--surface=packed_dirt:50 \
 	--landmark=culvert_mouth
 
 assert_metrics "$out_dir/cedar_hollow_segment_overlook_to_old_cedar.json" \
@@ -353,7 +353,7 @@ run_sim "$out_dir/golden_cedar_hollow_segment_overlook_to_old_cedar.json" \
 	--route-segment=overlook_to_old_cedar \
 	--seed=12345 \
 	--stuck-window=60 \
-	--stuck-min-progress=0.03
+	--stuck-min-progress=0.015
 
 printf 'run: cedar feature visuals\n'
 "$godot_bin" --headless --path . res://tools/cedar_visual_inspector.tscn

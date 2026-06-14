@@ -30,7 +30,8 @@ var motor_rpm_speed_scale: float = 100.0
 var susp_rest_length: float = 0.06
 var susp_travel: float = 0.05
 var susp_stiffness: float = 30.0
-var susp_damping: float = 4.0
+var susp_damping: float = 0.2
+var susp_damping_force_ratio: float = 0.1
 var wheel_radius: float = 0.03
 
 var default_friction: float = 1.0

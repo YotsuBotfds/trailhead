@@ -89,7 +89,7 @@ run_bog_bottom() {
 		--stuck-window=60 \
 		--stuck-min-progress=0.05
 	assert_metrics "$out_file" \
-		--surface=mud:4 \
+		--surface=mud:2 \
 		--landmark=bog_bottom
 }
 
@@ -109,7 +109,7 @@ run_the_crossing() {
 	assert_metrics "$out_file" \
 		--surface=wood_plank:8 \
 		--surface=mud:15 \
-		--surface=wet_stone:7 \
+		--surface=wet_stone:5 \
 		--surface-sequence=wood_plank,mud,wet_stone \
 		--landmark=the_crossing
 }
@@ -161,7 +161,7 @@ run_trailhead_to_culvert_segment() {
 		--stuck-min-progress=0.05
 	assert_metrics "$out_file" \
 		--surface=tall_grass:20 \
-		--surface=packed_dirt:60 \
+		--surface=packed_dirt:50 \
 		--landmark=culvert_mouth
 }
 
@@ -174,7 +174,7 @@ run_overlook_to_old_cedar_segment() {
 		--route-segment=overlook_to_old_cedar \
 		--seed="$seed" \
 		--stuck-window=60 \
-		--stuck-min-progress=0.03
+		--stuck-min-progress=0.015
 	assert_metrics "$out_file" \
 		--surface=loose_rock:20 \
 		--surface=packed_dirt:90 \

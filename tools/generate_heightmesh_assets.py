@@ -40,7 +40,7 @@ REGIONS = [
     ("trailhead_gravel", "packed_gravel", 0.0, 0.75, 2.0, 1.5, 0.0),
     ("log_ramp_apron", "tall_grass", 1.78, 0.62, 1.6, 1.1, 0.0),
     ("main_trail_00", "packed_dirt", 0.0, -2.4, 1.2, 4.8, 0.0),
-    ("old_cedar_pad", "packed_dirt", 0.0, -5.3, 2.0, 1.2, 0.0),
+    ("old_cedar_pad", "packed_dirt", 0.0, -5.15, 2.0, 1.5, 0.0),
     ("meadow_left", "tall_grass", -1.7, -2.5, 2.0, 5.5, 0.0),
     ("meadow_right", "tall_grass", 1.7, -2.0, 2.0, 4.4, 0.0),
     ("culvert_spur", "packed_dirt", -2.2, -1.75, 4.8, 1.6, 0.0),

@@ -135,7 +135,11 @@ func _apply_wheel_forces() -> void:
 		var compression: float = clampf((ray_length - dist) / maxf(GameConfig.susp_travel, 0.001), 0.0, 1.0)
 		var spring_force: float = compression * GameConfig.susp_stiffness
 		var force_pos: Vector3 = hit_point - _body.global_position
-		_body.apply_force(up * spring_force, force_pos)
+		var compression_velocity: float = -_body.linear_velocity.dot(up)
+		var damping_force: float = compression_velocity * GameConfig.susp_damping
+		var max_damping_force: float = spring_force * GameConfig.susp_damping_force_ratio
+		var suspension_force: float = maxf(0.0, spring_force + clampf(damping_force, -max_damping_force, max_damping_force))
+		_body.apply_force(up * suspension_force, force_pos)
 		var surface_def: Resource = _resolve_surface_def(ray.get_collider())
 		var surface_id: StringName = _surface_id(surface_def)
 		var wheel_surface: Array[StringName] = _state.get("wheel_surface")
