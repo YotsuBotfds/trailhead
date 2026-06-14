@@ -16,6 +16,7 @@ var _surface_rolling_drag: float = 0.0
 var _surface_slip: float = 0.0
 var _surface_bog_enabled: bool = false
 var _surface_bog_threshold: float = 0.0
+var _last_stable_forward: Vector3 = Vector3.FORWARD
 
 
 func _ready() -> void:
@@ -46,6 +47,7 @@ func reset_to(spawn: Transform3D) -> void:
 	_pending_input.call("clear")
 	_was_flipped = false
 	_current_surface_id = &""
+	_last_stable_forward = _horizontal_forward(spawn.basis)
 	_update_state()
 
 
@@ -53,7 +55,9 @@ func self_right() -> void:
 	if _body == null:
 		return
 	var t: Transform3D = _body.global_transform
-	t.basis = Basis.IDENTITY
+	var forward: Vector3 = _last_stable_forward
+	var right: Vector3 = forward.cross(Vector3.UP).normalized()
+	t.basis = Basis(right, Vector3.UP, -forward)
 	t.origin.y += GameConfig.self_right_lift
 	_body.global_transform = t
 	_body.linear_velocity *= GameConfig.self_right_velocity_retention
@@ -264,6 +268,8 @@ func _surface_bool(surface_def: Resource, property_name: StringName, fallback: b
 func _update_state() -> void:
 	if _body == null:
 		return
+	if _stable_wheel_contact_count() >= GameConfig.self_right_stable_contact_count and _body.global_transform.basis.y.dot(Vector3.UP) >= GameConfig.self_right_stable_upright_dot:
+		_last_stable_forward = _horizontal_forward(_body.global_transform.basis)
 	_state.set("position", _body.global_position)
 	_state.set("basis", _body.global_transform.basis)
 	_state.set("linear_velocity", _body.linear_velocity)
@@ -275,7 +281,24 @@ func _update_state() -> void:
 func _is_flipped() -> bool:
 	if _body == null:
 		return false
-	return _body.global_transform.basis.y.dot(Vector3.UP) < 0.0
+	return _body.global_transform.basis.y.dot(Vector3.UP) < GameConfig.self_right_min_upright_dot
+
+
+func _horizontal_forward(basis: Basis) -> Vector3:
+	var forward: Vector3 = -basis.z
+	forward.y = 0.0
+	if forward.length() <= GameConfig.self_right_forward_epsilon:
+		return Vector3.FORWARD
+	return forward.normalized()
+
+
+func _stable_wheel_contact_count() -> int:
+	var wheel_contact: Array[bool] = _state.get("wheel_contact")
+	var count: int = 0
+	for has_contact in wheel_contact:
+		if bool(has_contact):
+			count += 1
+	return count
 
 
 func _reset_surface_cache() -> void:

@@ -48,6 +48,9 @@ var _max_flipped_ticks_seen: int = 0
 var _min_progress_window: float = 999999.0
 var _started_flipped: bool = false
 var _self_right_input_count: int = 0
+var _initial_heading_deg: float = 0.0
+var _self_right_heading_error_deg: float = 999999.0
+var _self_right_heading_captured: bool = false
 var _max_abs_slip_angle_deg: float = 0.0
 var _max_y_position: float = -999999.0
 var _max_pitch_deg: float = -999999.0
@@ -131,6 +134,7 @@ func _begin_run() -> void:
 	_vehicle.call("reset_to", _spawn_transform(_spawn_id))
 	var initial_state: RefCounted = _vehicle.call("get_state")
 	_started_flipped = bool(initial_state.get("is_flipped"))
+	_initial_heading_deg = _heading_deg(initial_state.get("basis"))
 	_controller = _make_controller(_controller_id)
 	if _controller == null:
 		if _controller_config_error != "":
@@ -242,6 +246,10 @@ func _spawn_transform(spawn_id: String) -> Transform3D:
 	if spawn_id == "flat_flipped":
 		var flipped_basis: Basis = Basis(Vector3.FORWARD, PI)
 		return Transform3D(flipped_basis, Vector3(0.0, GameConfig.flat_spawn_height, 0.0))
+	if spawn_id == "flat_flipped_yawed":
+		var yaw_basis: Basis = Basis(Vector3.UP, deg_to_rad(45.0))
+		var flipped_basis: Basis = Basis(Vector3.FORWARD, PI)
+		return Transform3D(yaw_basis * flipped_basis, Vector3(0.0, GameConfig.flat_spawn_height, 0.0))
 	return Transform3D(Basis.IDENTITY, Vector3(0.0, GameConfig.flat_spawn_height, 0.0))
 
 
@@ -320,6 +328,9 @@ func _record(state: RefCounted, input: RefCounted) -> void:
 	_telemetry.append(row)
 	if bool(input.get("self_right")):
 		_self_right_input_count += 1
+	if not _self_right_heading_captured and _self_righted_event_count > 0 and not bool(state.get("is_flipped")):
+		_self_right_heading_error_deg = _angle_delta_abs_deg(_heading_deg(state_basis), _initial_heading_deg)
+		_self_right_heading_captured = true
 	if bool(input.get("ebrake")):
 		_ebrake_ticks += 1
 	if front_contact_count == 0 and rear_contact_count > 0:
@@ -424,12 +435,14 @@ func _finish(passed: bool) -> void:
 	var surface_event_observed: bool = _surface_event_count > 0
 	var target_landmark_event_observed: bool = _target_landmark_event_observed()
 	var event_bus_contract_passed: bool = _event_bus_contract_passed()
+	var self_right_heading_preserved: bool = _self_right_heading_preserved()
 	var predicates: Dictionary = {
 		"reached_target": target_predicate_passed,
 		"scenario_passed": scenario_predicate_passed,
 		"surface_event_observed": surface_event_observed,
 		"target_landmark_event_observed": target_landmark_event_observed,
 		"event_bus_contract": event_bus_contract_passed,
+		"self_right_heading_preserved": self_right_heading_preserved,
 		"never_stuck": _never_stuck,
 		"upright_or_recovered": _upright_or_recovered,
 		"stayed_in_bounds": _stayed_in_bounds
@@ -437,7 +450,7 @@ func _finish(passed: bool) -> void:
 	var golden_replay: Dictionary = _golden_replay_result(predicates)
 	var golden_replay_matched: bool = bool(golden_replay.get("matched", true))
 	predicates["golden_replay_matched"] = golden_replay_matched
-	var all_predicates_passed: bool = target_predicate_passed and scenario_predicate_passed and surface_event_observed and target_landmark_event_observed and event_bus_contract_passed and _never_stuck and _upright_or_recovered and _stayed_in_bounds and golden_replay_matched
+	var all_predicates_passed: bool = target_predicate_passed and scenario_predicate_passed and surface_event_observed and target_landmark_event_observed and event_bus_contract_passed and self_right_heading_preserved and _never_stuck and _upright_or_recovered and _stayed_in_bounds and golden_replay_matched
 	var result: Dictionary = {
 		"scene": _scene_id,
 		"controller": _controller_id,
@@ -458,6 +471,8 @@ func _finish(passed: bool) -> void:
 			"max_flipped_ticks": _max_flipped_ticks_seen,
 			"started_flipped": _started_flipped,
 			"self_right_input_count": _self_right_input_count,
+			"initial_heading_deg": _initial_heading_deg,
+			"self_right_heading_error_deg": _self_right_heading_error_deg if _self_right_heading_captured else null,
 			"max_abs_slip_angle_deg": _max_abs_slip_angle_deg,
 			"max_y_position": _max_y_position,
 			"max_pitch_deg": _max_pitch_deg,
@@ -510,6 +525,7 @@ func _finish_runner_error(message: String) -> void:
 			"surface_event_observed": false,
 			"target_landmark_event_observed": false,
 			"event_bus_contract": false,
+			"self_right_heading_preserved": false,
 			"never_stuck": false,
 			"upright_or_recovered": false,
 			"stayed_in_bounds": false
@@ -608,6 +624,24 @@ func _slip_angle_deg(basis: Basis, velocity: Vector3) -> float:
 	velocity_flat = velocity_flat.normalized()
 	var sign: float = signf(forward_flat.cross(velocity_flat).y)
 	return rad_to_deg(forward_flat.angle_to(velocity_flat)) * sign
+
+
+func _heading_deg(basis: Basis) -> float:
+	var forward: Vector3 = -basis.z
+	forward.y = 0.0
+	if forward.length() <= 0.001:
+		return 0.0
+	forward = forward.normalized()
+	return rad_to_deg(atan2(forward.x, -forward.z))
+
+
+func _angle_delta_abs_deg(a: float, b: float) -> float:
+	var delta: float = a - b
+	while delta > 180.0:
+		delta -= 360.0
+	while delta < -180.0:
+		delta += 360.0
+	return absf(delta)
 
 
 func _contact_count(wheel_contact: Array, start_index: int, end_index: int) -> int:
@@ -775,9 +809,17 @@ func _connect_event_bus() -> void:
 
 
 func _event_bus_contract_passed() -> bool:
-	if _spawn_id == "flat_flipped":
+	if _spawn_id == "flat_flipped" or _spawn_id == "flat_flipped_yawed":
 		return _flipped_event_count > 0 and _self_righted_event_count > 0
 	return true
+
+
+func _self_right_heading_preserved() -> bool:
+	if _spawn_id != "flat_flipped_yawed":
+		return true
+	if not _self_right_heading_captured:
+		return false
+	return _self_right_heading_error_deg <= GameConfig.self_right_heading_tolerance_deg
 
 
 func _target_landmark_event_observed() -> bool:

@@ -18,8 +18,12 @@ var launch_wheelie_torque: float = 0.03
 var launch_wheelie_min_throttle: float = 0.95
 var launch_wheelie_max_steer: float = 0.15
 var launch_wheelie_speed_max: float = 0.7
-var self_right_impulse: float = 5.0
 var self_right_lift: float = 0.12
+var self_right_min_upright_dot: float = 0.0
+var self_right_stable_upright_dot: float = 0.55
+var self_right_stable_contact_count: int = 3
+var self_right_forward_epsilon: float = 0.001
+var self_right_heading_tolerance_deg: float = 8.0
 var self_right_velocity_retention: float = 0.25
 var motor_rpm_speed_scale: float = 100.0
 

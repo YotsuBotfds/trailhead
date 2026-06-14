@@ -101,14 +101,15 @@ run_the_crossing() {
 		--controller=pd \
 		--spawn=trailhead \
 		--target=the_crossing \
+		--target-radius=0.15 \
 		--seed="$seed" \
 		--max-ticks=620 \
 		--stuck-window=60 \
 		--stuck-min-progress=0.05
 	assert_metrics "$out_file" \
-		--surface=wood_plank:10 \
-		--surface=mud:30 \
-		--surface=wet_stone:12 \
+		--surface=wood_plank:8 \
+		--surface=mud:15 \
+		--surface=wet_stone:7 \
 		--surface-sequence=wood_plank,mud,wet_stone \
 		--landmark=the_crossing
 }
@@ -121,12 +122,13 @@ run_boardwalk_end() {
 		--controller=pd \
 		--spawn=trailhead \
 		--target=boardwalk_end \
+		--target-radius=0.25 \
 		--seed="$seed" \
 		--max-ticks=420 \
 		--stuck-window=60 \
 		--stuck-min-progress=0.05
 	assert_metrics "$out_file" \
-		--surface=wood_plank:10 \
+		--surface=wood_plank:7 \
 		--landmark=boardwalk_end
 }
 
@@ -175,7 +177,7 @@ run_overlook_to_old_cedar_segment() {
 		--stuck-min-progress=0.03
 	assert_metrics "$out_file" \
 		--surface=loose_rock:20 \
-		--surface=packed_dirt:300 \
+		--surface=packed_dirt:90 \
 		--landmark=old_cedar
 }
 

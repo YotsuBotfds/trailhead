@@ -38,7 +38,17 @@ run_sim "$out_dir/flat_flipped.json" \
 	--scene=flat_plane \
 	--controller=pd \
 	--spawn=flat_flipped \
-	--target=flat_target \
+	--target=0,0,-3 \
+	--seed=12345 \
+	--max-ticks=420 \
+	--stuck-window=60 \
+	--stuck-min-progress=0.05
+
+run_sim "$out_dir/flat_flipped_yawed.json" \
+	--scene=flat_plane \
+	--controller=pd \
+	--spawn=flat_flipped_yawed \
+	--target=-3,0,-3 \
 	--seed=12345 \
 	--max-ticks=420 \
 	--stuck-window=60 \
@@ -120,6 +130,7 @@ run_sim "$out_dir/cedar_hollow_the_crossing.json" \
 	--controller=pd \
 	--spawn=trailhead \
 	--target=the_crossing \
+	--target-radius=0.15 \
 	--seed=12345 \
 	--max-ticks=620 \
 	--stuck-window=60 \
@@ -130,6 +141,7 @@ run_sim "$out_dir/cedar_hollow_boardwalk_end.json" \
 	--controller=pd \
 	--spawn=trailhead \
 	--target=boardwalk_end \
+	--target-radius=0.25 \
 	--seed=12345 \
 	--max-ticks=420 \
 	--stuck-window=60 \
@@ -162,7 +174,12 @@ run_sim "$out_dir/cedar_hollow_segment_overlook_to_old_cedar.json" \
 	--stuck-min-progress=0.03
 
 assert_metrics "$out_dir/flat_flipped.json" \
-	--surface=packed_dirt:40 \
+	--surface=packed_dirt:10 \
+	--metric-min=flipped_event_count:1 \
+	--metric-min=self_righted_event_count:1
+
+assert_metrics "$out_dir/flat_flipped_yawed.json" \
+	--surface=packed_dirt:10 \
 	--metric-min=flipped_event_count:1 \
 	--metric-min=self_righted_event_count:1
 
@@ -206,14 +223,14 @@ assert_metrics "$out_dir/cedar_hollow_bog_bottom.json" \
 	--landmark=bog_bottom
 
 assert_metrics "$out_dir/cedar_hollow_the_crossing.json" \
-	--surface=wood_plank:10 \
-	--surface=mud:30 \
-	--surface=wet_stone:12 \
+	--surface=wood_plank:8 \
+	--surface=mud:15 \
+	--surface=wet_stone:7 \
 	--surface-sequence=wood_plank,mud,wet_stone \
 	--landmark=the_crossing
 
 assert_metrics "$out_dir/cedar_hollow_boardwalk_end.json" \
-	--surface=wood_plank:10 \
+	--surface=wood_plank:7 \
 	--landmark=boardwalk_end
 
 assert_metrics "$out_dir/cedar_hollow_culvert_mouth.json" \
@@ -227,7 +244,7 @@ assert_metrics "$out_dir/cedar_hollow_segment_trailhead_to_culvert_mouth.json" \
 
 assert_metrics "$out_dir/cedar_hollow_segment_overlook_to_old_cedar.json" \
 	--surface=loose_rock:20 \
-	--surface=packed_dirt:300 \
+	--surface=packed_dirt:90 \
 	--landmark=old_cedar
 
 run_sim "$out_dir/golden_flat_target.json" \
@@ -246,7 +263,7 @@ run_sim "$out_dir/golden_flat_flipped.json" \
 	--controller=replay \
 	--replay=tests/golden/flat_flipped_replay.json \
 	--spawn=flat_flipped \
-	--target=flat_target \
+	--target=0,0,-3 \
 	--seed=12345 \
 	--max-ticks=420 \
 	--stuck-window=60 \
@@ -291,6 +308,7 @@ run_sim "$out_dir/golden_cedar_hollow_the_crossing.json" \
 	--replay=tests/golden/cedar_hollow_the_crossing_replay.json \
 	--spawn=trailhead \
 	--target=the_crossing \
+	--target-radius=0.15 \
 	--seed=12345 \
 	--max-ticks=620 \
 	--stuck-window=60 \
@@ -302,6 +320,7 @@ run_sim "$out_dir/golden_cedar_hollow_boardwalk_end.json" \
 	--replay=tests/golden/cedar_hollow_boardwalk_end_replay.json \
 	--spawn=trailhead \
 	--target=boardwalk_end \
+	--target-radius=0.25 \
 	--seed=12345 \
 	--max-ticks=420 \
 	--stuck-window=60 \

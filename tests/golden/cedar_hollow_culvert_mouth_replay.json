@@ -22,6 +22,7 @@
 		"never_stuck": true,
 		"reached_target": true,
 		"scenario_passed": true,
+		"self_right_heading_preserved": true,
 		"stayed_in_bounds": true,
 		"surface_event_observed": true,
 		"target_landmark_event_observed": true,
