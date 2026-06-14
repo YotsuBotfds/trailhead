@@ -9,6 +9,19 @@ trap 'rm -rf "$tmp_dir"' EXIT HUP INT TERM
 
 printf 'run: generated asset freshness\n'
 
+if ! pillow_error="$(python3 - <<'PY' 2>&1
+try:
+    import PIL  # noqa: F401
+except ImportError as exc:
+    raise SystemExit(f"ImportError: {exc}")
+PY
+)"; then
+	printf 'error: Pillow is required for generated asset checks but could not be imported.\n' >&2
+	printf 'Install dependencies with: python3 -m pip install -r requirements.txt\n' >&2
+	printf '%s\n' "$pillow_error" >&2
+	exit 1
+fi
+
 python3 tools/generate_feature_glbs.py --out-dir "$tmp_dir/features" >/dev/null
 python3 tools/generate_prop_glbs.py --out-dir "$tmp_dir/props" >/dev/null
 python3 tools/generate_scatter_glbs.py --out-dir "$tmp_dir/scatter" >/dev/null
