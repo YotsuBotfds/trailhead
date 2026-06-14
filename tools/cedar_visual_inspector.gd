@@ -14,6 +14,11 @@ const EXPECTED_BRANCHES: int = 5
 const EXPECTED_PINECONES: int = 8
 const EXPECTED_FERN_CLUMPS: int = 6
 const EXPECTED_CATTAILS: int = 5
+const EXPECTED_MUD_PATCHES: int = 8
+const EXPECTED_TIRE_TRACK_PAIRS: int = 3
+const EXPECTED_GRAVEL_SPECKLES: int = 14
+const EXPECTED_LEAF_LITTER: int = 12
+const EXPECTED_WET_GLINTS: int = 6
 const EXPECTED_BOUNDARY_GRASS: int = 20
 const EXPECTED_BOUNDARY_BOULDERS: int = 8
 const EXPECTED_BOUNDARY_BRANCHES: int = 6
@@ -29,6 +34,11 @@ const SCATTER_X_MIN: float = -2.8
 const SCATTER_X_MAX: float = 5.05
 const SCATTER_Z_MIN: float = -9.55
 const SCATTER_Z_MAX: float = -0.3
+const GROUND_DETAIL_X_MIN: float = -1.2
+const GROUND_DETAIL_X_MAX: float = 5.05
+const GROUND_DETAIL_Z_MIN: float = -7.8
+const GROUND_DETAIL_Z_MAX: float = 1.4
+const GROUND_DETAIL_MAX_HEIGHT: float = 0.08
 const GRASS_OCCLUDER_X_MIN: float = -2.8
 const GRASS_OCCLUDER_X_MAX: float = 4.7
 const GRASS_OCCLUDER_Z_MIN: float = -7.4
@@ -199,6 +209,21 @@ func _inspect() -> void:
 		var scatter_mesh_count: int = _count_mesh_instances(scatter_root)
 		if scatter_mesh_count <= 0:
 			_errors.append("ScatterVisuals contains no mesh instances")
+	var ground_detail_root: Node = _require_node(_scene_root, "CedarHollow/GroundDetailVisuals")
+	if ground_detail_root != null:
+		_require_named_count(ground_detail_root, "mud_patch_", EXPECTED_MUD_PATCHES)
+		_require_named_count(ground_detail_root, "tire_track_", EXPECTED_TIRE_TRACK_PAIRS * 2)
+		_require_named_count(ground_detail_root, "gravel_speckle_", EXPECTED_GRAVEL_SPECKLES)
+		_require_named_count(ground_detail_root, "leaf_litter_", EXPECTED_LEAF_LITTER)
+		_require_named_count(ground_detail_root, "wet_glint_", EXPECTED_WET_GLINTS)
+		_inspect_ground_detail_layout(ground_detail_root)
+		var ground_detail_collision_count: int = _count_collision_objects(ground_detail_root)
+		if ground_detail_collision_count > 0:
+			_errors.append("GroundDetailVisuals contains collision objects: " + str(ground_detail_collision_count))
+		var ground_detail_mesh_count: int = _count_mesh_instances(ground_detail_root)
+		var expected_ground_detail_mesh_count: int = EXPECTED_MUD_PATCHES + EXPECTED_TIRE_TRACK_PAIRS * 2 + EXPECTED_GRAVEL_SPECKLES + EXPECTED_LEAF_LITTER + EXPECTED_WET_GLINTS
+		if ground_detail_mesh_count < expected_ground_detail_mesh_count:
+			_errors.append("GroundDetailVisuals mesh count expected at least " + str(expected_ground_detail_mesh_count) + ", got " + str(ground_detail_mesh_count))
 	var boundary_root: Node = _require_node(_scene_root, "CedarHollow/BoundaryVisuals")
 	if boundary_root != null:
 		_require_named_count(boundary_root, "boundary_grass_", EXPECTED_BOUNDARY_GRASS)
@@ -548,6 +573,34 @@ func _inspect_chase_capture_clearance(scatter_root: Node) -> void:
 		var lateral: float = absf(delta.x * forward_xz.y - delta.y * forward_xz.x)
 		if lateral < CHASE_CLEAR_CORRIDOR_HALF_WIDTH:
 			_errors.append("ScatterVisuals/" + String(child.name) + " blocks the crossing chase QA corridor")
+
+
+func _inspect_ground_detail_layout(ground_detail_root: Node) -> void:
+	_require_node_position(ground_detail_root, "mud_patch_1", Vector3(2.16, 0.012, -4.72), FEATURE_TRANSFORM_TOLERANCE)
+	_require_node_position(ground_detail_root, "tire_track_1_left", Vector3(2.28642, 0.014, -5.133514), FEATURE_TRANSFORM_TOLERANCE)
+	_require_node_position(ground_detail_root, "gravel_speckle_1", Vector3(-0.82, 0.018, 1.16), FEATURE_TRANSFORM_TOLERANCE)
+	_require_node_position(ground_detail_root, "leaf_litter_1", Vector3(-0.82, 0.015, -1.72), FEATURE_TRANSFORM_TOLERANCE)
+	_require_node_position(ground_detail_root, "wet_glint_1", Vector3(3.58, 0.016, -7.08), FEATURE_TRANSFORM_TOLERANCE)
+	_require_direct_children_inside_xz(ground_detail_root, "GroundDetailVisuals", GROUND_DETAIL_X_MIN, GROUND_DETAIL_X_MAX, GROUND_DETAIL_Z_MIN, GROUND_DETAIL_Z_MAX)
+	for child in ground_detail_root.get_children():
+		var mesh_instance: MeshInstance3D = child as MeshInstance3D
+		if mesh_instance == null:
+			_errors.append("GroundDetailVisuals/" + String(child.name) + " should be a MeshInstance3D")
+			continue
+		var material: StandardMaterial3D = mesh_instance.material_override as StandardMaterial3D
+		if material == null:
+			_errors.append("GroundDetailVisuals/" + String(child.name) + " should use StandardMaterial3D")
+		else:
+			if absf(material.metallic) > FLOAT_EPSILON:
+				_errors.append("GroundDetailVisuals/" + String(child.name) + " should be nonmetallic")
+			if material.albedo_color.a < 1.0 and material.transparency != BaseMaterial3D.TRANSPARENCY_ALPHA:
+				_errors.append("GroundDetailVisuals/" + String(child.name) + " translucent detail should use alpha transparency")
+		var accumulator: BoundsAccumulator = BoundsAccumulator.new()
+		_collect_mesh_bounds(mesh_instance, accumulator)
+		if accumulator.has_bounds:
+			var height: float = accumulator.bounds_max.y - accumulator.bounds_min.y
+			if height > GROUND_DETAIL_MAX_HEIGHT:
+				_errors.append("GroundDetailVisuals/" + String(child.name) + " should stay low to the ground, height was " + str(height))
 
 
 func _name_begins_with_any(child_name: String, prefixes: Array[String]) -> bool:
