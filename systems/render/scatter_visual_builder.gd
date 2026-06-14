@@ -14,6 +14,7 @@ const EXPECTED_BRANCHES: int = 5
 const EXPECTED_PINECONES: int = 8
 const EXPECTED_FERN_CLUMPS: int = 6
 const EXPECTED_CATTAILS: int = 5
+const EXPECTED_GRASS_OCCLUDERS: int = 10
 
 
 static func build_cedar_hollow(parent: Node3D) -> Node3D:
@@ -21,6 +22,7 @@ static func build_cedar_hollow(parent: Node3D) -> Node3D:
 	root.name = "ScatterVisuals"
 	parent.add_child(root)
 	_add_grass(root)
+	_add_grass_occluders(root)
 	_add_boulders(root)
 	_add_branches(root)
 	_add_pinecones(root)
@@ -53,6 +55,26 @@ static func _add_grass(parent: Node3D) -> void:
 	for i in range(mini(EXPECTED_GRASS_TUFTS, positions.size())):
 		var rotation: Vector3 = Vector3(0.0, float(i) * 37.0, 0.0)
 		_instance_scatter(parent, GrassTuftScene, "grass_tuft_" + str(i + 1), positions[i], rotation, Vector3.ONE)
+
+
+static func _add_grass_occluders(parent: Node3D) -> void:
+	var positions: Array[Vector3] = [
+		Vector3(-2.65, 0.0, -1.25),
+		Vector3(-2.55, 0.0, -2.75),
+		Vector3(-2.35, 0.0, -4.35),
+		Vector3(-1.45, 0.0, -5.35),
+		Vector3(1.35, 0.0, -1.05),
+		Vector3(2.35, 0.0, -2.35),
+		Vector3(2.75, 0.0, -3.85),
+		Vector3(3.55, 0.0, -5.15),
+		Vector3(4.55, 0.0, -6.05),
+		Vector3(2.65, 0.0, -7.25)
+	]
+	for i in range(mini(EXPECTED_GRASS_OCCLUDERS, positions.size())):
+		var scale_y: float = 1.55 + float(i % 3) * 0.18
+		var scale: Vector3 = Vector3(1.15, scale_y, 1.15)
+		var rotation: Vector3 = Vector3(0.0, 18.0 + float(i) * 41.0, 0.0)
+		_instance_scatter(parent, GrassTuftScene, "grass_occluder_" + str(i + 1), positions[i], rotation, scale)
 
 
 static func _add_boulders(parent: Node3D) -> void:

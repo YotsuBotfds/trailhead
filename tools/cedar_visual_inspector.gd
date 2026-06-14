@@ -6,6 +6,7 @@ const VehicleStateScript: GDScript = preload("res://systems/vehicle/vehicle_stat
 const EXPECTED_BOARDWALK_SEGMENTS: int = 9
 const EXPECTED_STEPPING_STONES: int = 5
 const EXPECTED_GRASS_TUFTS: int = 18
+const EXPECTED_GRASS_OCCLUDERS: int = 10
 const EXPECTED_BOULDERS: int = 5
 const EXPECTED_BRANCHES: int = 5
 const EXPECTED_PINECONES: int = 8
@@ -23,6 +24,11 @@ const SCATTER_X_MIN: float = -2.8
 const SCATTER_X_MAX: float = 5.05
 const SCATTER_Z_MIN: float = -9.55
 const SCATTER_Z_MAX: float = -0.3
+const GRASS_OCCLUDER_X_MIN: float = -2.8
+const GRASS_OCCLUDER_X_MAX: float = 4.7
+const GRASS_OCCLUDER_Z_MIN: float = -7.4
+const GRASS_OCCLUDER_Z_MAX: float = -0.9
+const GRASS_OCCLUDER_MIN_HEIGHT: float = 0.58
 const BOUNDARY_EDGE_X: float = 4.5
 const BOUNDARY_BACK_Z: float = -9.8
 const HEIGHTMESH_ROUTE_MARGIN: float = 0.35
@@ -127,6 +133,7 @@ func _inspect() -> void:
 	var scatter_root: Node = _require_node(_scene_root, "CedarHollow/ScatterVisuals")
 	if scatter_root != null:
 		_require_named_count(scatter_root, "grass_tuft_", EXPECTED_GRASS_TUFTS)
+		_require_named_count(scatter_root, "grass_occluder_", EXPECTED_GRASS_OCCLUDERS)
 		_require_named_count(scatter_root, "boulder_", EXPECTED_BOULDERS)
 		_require_named_count(scatter_root, "branch_", EXPECTED_BRANCHES)
 		_require_named_count(scatter_root, "pinecone_", EXPECTED_PINECONES)
@@ -294,6 +301,8 @@ func _inspect_feature_collision_alignment(cedar_world: Node, feature_root: Node)
 func _inspect_scatter_layout(scatter_root: Node) -> void:
 	_require_node_position(scatter_root, "grass_tuft_1", Vector3(-2.3, 0.0, -0.9), FEATURE_TRANSFORM_TOLERANCE)
 	_require_node_position(scatter_root, "grass_tuft_18", Vector3(2.9, 0.0, -6.9), FEATURE_TRANSFORM_TOLERANCE)
+	_require_node_position(scatter_root, "grass_occluder_1", Vector3(-2.65, 0.0, -1.25), FEATURE_TRANSFORM_TOLERANCE)
+	_require_node_position(scatter_root, "grass_occluder_10", Vector3(2.65, 0.0, -7.25), FEATURE_TRANSFORM_TOLERANCE)
 	_require_node_position(scatter_root, "boulder_1", Vector3(-2.65, 0.3, -8.5), FEATURE_TRANSFORM_TOLERANCE)
 	_require_node_position(scatter_root, "boulder_5", Vector3(3.55, 0.0, -6.55), FEATURE_TRANSFORM_TOLERANCE)
 	_require_node_position(scatter_root, "branch_5", Vector3(-0.9, 0.02, -9.45), FEATURE_TRANSFORM_TOLERANCE)
@@ -302,7 +311,30 @@ func _inspect_scatter_layout(scatter_root: Node) -> void:
 	_require_node_position(scatter_root, "fern_clump_6", Vector3(3.05, 0.0, -7.65), FEATURE_TRANSFORM_TOLERANCE)
 	_require_node_position(scatter_root, "cattail_1", Vector3(3.95, 0.0, -6.25), FEATURE_TRANSFORM_TOLERANCE)
 	_require_node_position(scatter_root, "cattail_5", Vector3(4.45, 0.0, -7.55), FEATURE_TRANSFORM_TOLERANCE)
+	_inspect_grass_occluders(scatter_root)
 	_require_direct_children_inside_xz(scatter_root, "ScatterVisuals", SCATTER_X_MIN, SCATTER_X_MAX, SCATTER_Z_MIN, SCATTER_Z_MAX)
+
+
+func _inspect_grass_occluders(scatter_root: Node) -> void:
+	for i in range(EXPECTED_GRASS_OCCLUDERS):
+		var node_path: String = "grass_occluder_" + str(i + 1)
+		var occluder: Node3D = _require_node(scatter_root, node_path) as Node3D
+		if occluder == null:
+			continue
+		var position: Vector3 = occluder.position
+		if position.x < GRASS_OCCLUDER_X_MIN or position.x > GRASS_OCCLUDER_X_MAX or position.z < GRASS_OCCLUDER_Z_MIN or position.z > GRASS_OCCLUDER_Z_MAX:
+			_errors.append(node_path + " should remain in the meadow/creek occluder band, got " + str(position))
+		var accumulator: BoundsAccumulator = BoundsAccumulator.new()
+		_collect_mesh_bounds(occluder, accumulator)
+		if not accumulator.has_bounds:
+			_errors.append(node_path + " should expose mesh bounds")
+			continue
+		var height: float = accumulator.bounds_max.y - accumulator.bounds_min.y
+		if height < GRASS_OCCLUDER_MIN_HEIGHT:
+			_errors.append(node_path + " height expected at least " + str(GRASS_OCCLUDER_MIN_HEIGHT) + ", got " + str(height))
+		var camera_scale_height: float = GameConfig.cam_height * 3.0
+		if accumulator.bounds_max.y < occluder.global_position.y + camera_scale_height:
+			_errors.append(node_path + " should rise above the low chase-camera scale read")
 
 
 func _inspect_boundary_layout(boundary_root: Node) -> void:
