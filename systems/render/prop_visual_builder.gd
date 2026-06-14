@@ -2,6 +2,8 @@ class_name PropVisualBuilder
 extends RefCounted
 
 const TrailSignScene: PackedScene = preload("res://assets/models/props/trail_sign.glb")
+const KioskScene: PackedScene = preload("res://assets/models/props/kiosk.glb")
+const MileMarkerScene: PackedScene = preload("res://assets/models/props/mile_marker.glb")
 const PicnicTableScene: PackedScene = preload("res://assets/models/props/picnic_table.glb")
 const OldCedarStumpScene: PackedScene = preload("res://assets/models/props/old_cedar_stump.glb")
 const FireRingScene: PackedScene = preload("res://assets/models/props/fire_ring.glb")
@@ -15,6 +17,10 @@ static func build_cedar_hollow(parent: Node3D) -> Node3D:
 	parent.add_child(root)
 	var trail_sign: Node3D = _instance_prop(root, TrailSignScene, "trail_sign", Vector3(0.72, 0.0, 0.25), Vector3(0.0, -24.0, 0.0), Vector3.ONE)
 	_add_trail_sign_labels(trail_sign)
+	var kiosk: Node3D = _instance_prop(root, KioskScene, "kiosk", Vector3(-0.18, 0.0, 1.18), Vector3(0.0, 6.0, 0.0), Vector3.ONE)
+	_add_kiosk_labels(kiosk)
+	var mile_marker: Node3D = _instance_prop(root, MileMarkerScene, "mile_marker", Vector3(1.12, 0.0, -2.35), Vector3(0.0, -8.0, 0.0), Vector3.ONE)
+	_add_mile_marker_label(mile_marker)
 	_add_wayfinder_sign(root, "wayfinder_culvert", Vector3(-2.35, 0.0, -1.72), Vector3(0.0, 80.0, 0.0), Vector3(0.62, 0.72, 0.62), "Culvert", "Spur")
 	_add_wayfinder_sign(root, "wayfinder_overlook", Vector3(-0.7, 0.0, -5.95), Vector3(0.0, -58.0, 0.0), Vector3(0.62, 0.72, 0.62), "Overlook", "Ridge")
 	_add_wayfinder_sign(root, "wayfinder_creek", Vector3(2.15, 0.0, -4.55), Vector3(0.0, 38.0, 0.0), Vector3(0.62, 0.72, 0.62), "Bog", "Crossing")
@@ -41,6 +47,15 @@ static func _instance_prop(parent: Node3D, scene: PackedScene, node_name: String
 static func _add_trail_sign_labels(parent: Node3D) -> void:
 	_add_sign_label(parent, "label_old_cedar", "Old Cedar", Vector3(0.0, 0.73, -0.052), Vector3(0.0, 180.0, 0.0), 28)
 	_add_sign_label(parent, "label_creek", "Creek", Vector3(0.0, 0.43, -0.045), Vector3(0.0, 180.0, 0.0), 22)
+
+
+static func _add_kiosk_labels(parent: Node3D) -> void:
+	_add_sign_label(parent, "label_title", "Cedar Hollow", Vector3(0.0, 0.82, -0.055), Vector3(0.0, 180.0, 0.0), 22)
+	_add_sign_label(parent, "label_loop", "Loop Trail", Vector3(0.0, 0.58, -0.052), Vector3(0.0, 180.0, 0.0), 18)
+
+
+static func _add_mile_marker_label(parent: Node3D) -> void:
+	_add_sign_label(parent, "label_distance", "0.4", Vector3(0.0, 0.53, -0.047), Vector3(0.0, 180.0, 0.0), 18)
 
 
 static func _add_wayfinder_sign(parent: Node3D, node_name: String, position: Vector3, rotation: Vector3, scale: Vector3, primary_text: String, secondary_text: String) -> void:

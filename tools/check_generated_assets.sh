@@ -60,6 +60,8 @@ check_dir features \
 check_dir props \
 	fire_ring.glb \
 	hiking_boot.glb \
+	kiosk.glb \
+	mile_marker.glb \
 	old_cedar_stump.glb \
 	picnic_table.glb \
 	trail_sign.glb \

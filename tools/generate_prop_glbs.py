@@ -174,6 +174,24 @@ def trail_sign():
     ])
 
 
+def kiosk():
+    return merge([
+        transformed(box(0.08, 1.22, 0.08), (-0.46, 0.0, 0.0)),
+        transformed(box(0.08, 1.22, 0.08), (0.46, 0.0, 0.0)),
+        transformed(box(0.98, 0.58, 0.07), (0.0, 0.52, 0.0)),
+        transformed(box(1.15, 0.08, 0.26), (0.0, 1.12, 0.0)),
+        transformed(box(0.86, 0.09, 0.06), (0.0, 0.20, -0.01)),
+    ])
+
+
+def mile_marker():
+    return merge([
+        transformed(cylinder(0.045, 0.58, 12, 0.02), (0.0, 0.0, 0.0)),
+        transformed(box(0.22, 0.18, 0.055), (0.0, 0.48, 0.0)),
+        transformed(box(0.16, 0.045, 0.06), (0.0, 0.66, 0.0)),
+    ])
+
+
 def picnic_table():
     return merge([
         transformed(box(1.25, 0.08, 0.42), (0.0, 0.52, 0.0)),
@@ -231,6 +249,8 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
     assets = [
         ("trail_sign", trail_sign(), [0.45, 0.29, 0.16, 1.0]),
+        ("kiosk", kiosk(), [0.40, 0.26, 0.14, 1.0]),
+        ("mile_marker", mile_marker(), [0.48, 0.40, 0.26, 1.0]),
         ("picnic_table", picnic_table(), [0.42, 0.26, 0.14, 1.0]),
         ("old_cedar_stump", old_cedar_stump(), [0.32, 0.20, 0.11, 1.0]),
         ("fire_ring", fire_ring(), [0.30, 0.28, 0.24, 1.0]),
