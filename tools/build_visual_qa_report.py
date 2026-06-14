@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import hashlib
 import html
 import json
 import struct
@@ -32,6 +33,19 @@ CAPTURE_LABELS = {
     "old_cedar_dusk_chase": "Old Cedar dusk chase",
 }
 
+CAPTURE_REVIEW_FOCUS = {
+    "trailhead_dusk_chase": "Default low chase framing, trailhead prop scale, and clear route exit.",
+    "trailhead_dusk_chase_map": "Optional map visibility without dominating the primary driving view.",
+    "meadow_dusk_chase": "Grass occluders, low-camera scale, and route readability through meadow scatter.",
+    "meadow_dusk_orbit": "Secondary orbit camera usefulness for inspecting the same meadow composition.",
+    "bog_bottom_dusk_chase": "Mud pocket readability, tire scale, and safe grass height near the route.",
+    "crossing_dawn_chase": "Dawn comparison, creek crossing silhouette, wet-stone contrast, and mood legibility.",
+    "boardwalk_dusk_chase": "Wood-plank path clarity, rail/gap readability, and low-camera obstacle scale.",
+    "boardwalk_dusk_fpv": "FPV camera utility and boardwalk surface legibility from the tighter view.",
+    "overlook_dusk_orbit": "Ridge silhouette, long-shadow mood, and distant route composition.",
+    "old_cedar_dusk_chase": "Destination landmark scale, final approach readability, and vehicle silhouette.",
+}
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Build an HTML review sheet for Trailhead visual QA captures.")
@@ -47,6 +61,17 @@ def png_dimensions(path):
     if len(header) < 24 or header[:8] != b"\x89PNG\r\n\x1a\n" or header[12:16] != b"IHDR":
         raise ValueError("not a valid PNG with IHDR header")
     return struct.unpack(">II", header[16:24])
+
+
+def sha256_digest(path):
+    digest = hashlib.sha256()
+    with path.open("rb") as file:
+        while True:
+            chunk = file.read(65536)
+            if not chunk:
+                break
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def capture_manifest(capture_dir):
@@ -75,10 +100,12 @@ def capture_manifest(capture_dir):
         captures.append({
             "name": capture_name,
             "label": CAPTURE_LABELS[capture_name],
+            "review_focus": CAPTURE_REVIEW_FOCUS[capture_name],
             "filename": filename,
             "width": width,
             "height": height,
             "size_bytes": size_bytes,
+            "sha256": sha256_digest(path),
         })
     return captures, errors
 
@@ -97,13 +124,15 @@ def write_html(path, captures):
     for capture in captures:
         label = html.escape(capture["label"])
         filename = html.escape(capture["filename"])
-        details = f'{capture["width"]}x{capture["height"]} - {capture["size_bytes"]} bytes'
+        details = f'{capture["width"]}x{capture["height"]} - {capture["size_bytes"]} bytes - sha256 {capture["sha256"][:12]}'
+        focus = html.escape(capture["review_focus"])
         cards.append(
             f"""
       <article>
         <a href="{filename}"><img src="{filename}" alt="{label}"></a>
         <h2>{label}</h2>
-        <p>{html.escape(details)}</p>
+        <p class="meta">{html.escape(details)}</p>
+        <p>{focus}</p>
       </article>"""
         )
     path.write_text(
@@ -114,14 +143,26 @@ def write_html(path, captures):
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Trailhead Visual QA</title>
   <style>
+    :root {{
+      color-scheme: light;
+      --page: #f5f7f2;
+      --panel: #ffffff;
+      --text: #1f241f;
+      --muted: #626b61;
+      --line: #d7dfd2;
+      --accent: #416b43;
+      --accent-soft: #dfe9d9;
+    }}
     body {{
       margin: 0;
       font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      color: #1f211b;
-      background: #f3f0e7;
+      color: var(--text);
+      background: var(--page);
     }}
     header {{
-      padding: 24px 28px 12px;
+      padding: 24px 28px 14px;
+      border-bottom: 1px solid var(--line);
+      background: var(--panel);
     }}
     h1 {{
       margin: 0 0 6px;
@@ -130,7 +171,22 @@ def write_html(path, captures):
     }}
     header p {{
       margin: 0;
-      color: #57584e;
+      color: var(--muted);
+    }}
+    .summary {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 14px;
+    }}
+    .summary span {{
+      padding: 4px 8px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 13px;
+      font-weight: 600;
     }}
     main {{
       display: grid;
@@ -139,17 +195,18 @@ def write_html(path, captures):
       padding: 18px 28px 32px;
     }}
     article {{
-      background: #fffaf0;
-      border: 1px solid #d8d1c1;
+      background: var(--panel);
+      border: 1px solid var(--line);
       border-radius: 8px;
       overflow: hidden;
+      box-shadow: 0 1px 2px rgba(31, 36, 31, 0.06);
     }}
     img {{
       display: block;
       width: 100%;
       aspect-ratio: 16 / 9;
       object-fit: cover;
-      background: #d8d1c1;
+      background: var(--line);
     }}
     h2 {{
       margin: 12px 14px 2px;
@@ -157,8 +214,15 @@ def write_html(path, captures):
       letter-spacing: 0;
     }}
     article p {{
-      margin: 0 14px 14px;
-      color: #62635b;
+      margin: 6px 14px 14px;
+      color: var(--muted);
+    }}
+    article p.meta {{
+      margin-bottom: 0;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 12px;
+      color: #3d463d;
+      overflow-wrap: anywhere;
     }}
   </style>
 </head>
@@ -166,6 +230,11 @@ def write_html(path, captures):
   <header>
     <h1>Trailhead Visual QA</h1>
     <p>Exact capture set for low-camera readability, mood, surface, and landmark review.</p>
+    <div class="summary">
+      <span>{len(captures)} captures</span>
+      <span>1280x720 target</span>
+      <span>hashes in manifest</span>
+    </div>
   </header>
   <main>{"".join(cards)}
   </main>
