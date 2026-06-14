@@ -136,10 +136,44 @@ def grass_tuft():
 
 
 def boulder_a():
-    return merge([
-        tapered_cylinder(0.32, 0.26, 0.20, 14, 0.18),
-        transformed(tapered_cylinder(0.21, 0.12, 0.10, 12, 0.12), (-0.06, 0.16, 0.03)),
-    ])
+    radius_x = 0.33
+    radius_z = 0.30
+    height = 0.26
+    segments = 18
+    vertical_segments = 8
+    vertices = [(0.0, height, 0.0)]
+    for ring in range(1, vertical_segments):
+        phi = math.pi * float(ring) / float(vertical_segments)
+        ring_y = (math.cos(phi) * 0.5 + 0.5) * height
+        ring_radius = math.sin(phi)
+        for segment in range(segments):
+            angle = math.tau * float(segment) / float(segments)
+            lump = 1.0 + math.sin(angle * 3.0 + float(ring) * 0.7) * 0.055 + math.cos(angle * 5.0 - float(ring) * 0.35) * 0.035
+            x = math.cos(angle) * radius_x * ring_radius * lump
+            z = math.sin(angle) * radius_z * ring_radius * (1.0 + math.cos(angle * 2.0 + float(ring) * 0.4) * 0.045)
+            vertices.append((x, ring_y, z))
+    bottom_index = len(vertices)
+    vertices.append((0.0, 0.0, 0.0))
+    indices = []
+    first_ring = 1
+    for segment in range(segments):
+        next_segment = (segment + 1) % segments
+        indices.extend([0, first_ring + segment, first_ring + next_segment])
+    for ring in range(vertical_segments - 2):
+        current_start = 1 + ring * segments
+        next_start = current_start + segments
+        for segment in range(segments):
+            next_segment = (segment + 1) % segments
+            a = current_start + segment
+            b = current_start + next_segment
+            c = next_start + segment
+            d = next_start + next_segment
+            indices.extend([a, b, d, a, d, c])
+    last_ring = 1 + (vertical_segments - 2) * segments
+    for segment in range(segments):
+        next_segment = (segment + 1) % segments
+        indices.extend([bottom_index, last_ring + next_segment, last_ring + segment])
+    return vertices, indices
 
 
 def branch_a():
