@@ -22,5 +22,6 @@ check "no untyped member vars" sh -c '! rg -n "^[[:space:]]*var[[:space:]]+[A-Za
 check "no generic float/int math helpers" sh -c '! rg -n "\\b(max|min|abs|clamp|snapped)\\s*\\(" --glob "*.gd" .'
 check "EventBus signal names are snake_case groups" sh -c '! rg -n -P "^signal[[:space:]]+(?!vehicle_|world_|camera_|sim_)[A-Za-z0-9_]+" autoload systems --glob "*.gd"'
 check "no sim-path render/input/audio access" sh -c '! rg -n "\\b(Input|Camera3D|AudioStreamPlayer|MeshInstance3D)\\b" systems/sim systems/vehicle systems/world --glob "*.gd"'
+check "no sim-path render asset dependencies" sh -c '! rg -n "res://(systems/render|assets/models)" systems/sim systems/vehicle systems/world --glob "*.gd"'
 
 exit "$status"

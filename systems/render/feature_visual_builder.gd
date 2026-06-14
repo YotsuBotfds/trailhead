@@ -3,7 +3,6 @@ extends RefCounted
 
 const BoardwalkSegmentScene: PackedScene = preload("res://assets/models/features/boardwalk_segment.glb")
 const CulvertPipeScene: PackedScene = preload("res://assets/models/features/culvert_pipe.glb")
-const LogRampScene: PackedScene = preload("res://assets/models/features/log_ramp.glb")
 const SteppingStoneScene: PackedScene = preload("res://assets/models/features/stepping_stone.glb")
 
 const BOARDWALK_SEGMENT_COUNT: int = 9
@@ -16,7 +15,6 @@ static func build_cedar_hollow(parent: Node3D) -> Node3D:
 	parent.add_child(root)
 	_add_boardwalk(root)
 	_add_culvert(root)
-	_add_log_ramp(root)
 	_add_stepping_stones(root)
 	return root
 
@@ -31,10 +29,6 @@ static func _add_boardwalk(parent: Node3D) -> void:
 
 static func _add_culvert(parent: Node3D) -> void:
 	_instance_feature(parent, CulvertPipeScene, "culvert_pipe", Vector3(-4.35, -0.02, -3.05), Vector3(0.0, 0.0, 0.0), Vector3.ONE)
-
-
-static func _add_log_ramp(parent: Node3D) -> void:
-	_instance_feature(parent, LogRampScene, "log_ramp", Vector3(-0.65, 0.0, -5.75), Vector3(0.0, -18.0, 0.0), Vector3.ONE)
 
 
 static func _add_stepping_stones(parent: Node3D) -> void:
