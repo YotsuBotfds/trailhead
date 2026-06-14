@@ -34,6 +34,9 @@ const EXPECTED_BOUNDARY_BRANCHES: int = BoundaryVisualBuilderScript.EXPECTED_BOU
 const EXPECTED_TRAIL_BLAZES: int = BoundaryVisualBuilderScript.EXPECTED_TRAIL_BLAZES
 const EXPECTED_BOUNDARY_INSTANCED_CHILDREN: int = EXPECTED_BOUNDARY_GRASS + EXPECTED_BOUNDARY_BOULDERS + EXPECTED_BOUNDARY_BRANCHES + EXPECTED_TRAIL_BLAZES
 const EXPECTED_WAYFINDER_SIGNS: int = 3
+const EXPECTED_SIGN_LABEL_BACKINGS: int = 11
+const EXPECTED_SIGN_ARROW_LABELS: int = 5
+const EXPECTED_SIGN_AXIS_ACCENTS: int = 6
 const EXPECTED_PROP_MESH_NODES: Array[String] = [
 	"trail_sign",
 	"kiosk",
@@ -51,6 +54,8 @@ const EXPECTED_PROP_MESH_NODES: Array[String] = [
 	"water_bottle"
 ]
 const FLOAT_EPSILON: float = 0.001
+const LABEL_MIN_CONTRAST_RATIO: float = 7.0
+const ACCENT_MIN_CONTRAST_RATIO: float = 4.5
 const CAMERA_COMPOSITION_TOLERANCE: float = 0.01
 const CAMERA_LOOK_TOLERANCE: float = 0.01
 const CAMERA_PITCH_TOLERANCE_DEG: float = 0.25
@@ -183,9 +188,9 @@ func _inspect() -> void:
 		_require_named_count(prop_root, "hiking_boot", 1)
 		_require_named_count(prop_root, "water_bottle", 1)
 		_require_node_position(prop_root, "trail_sign", Vector3(0.72, 0.0, 0.25), FEATURE_TRANSFORM_TOLERANCE)
-		_require_node_rotation(prop_root, "trail_sign", Vector3(0.0, -24.0, 0.0), FLOAT_EPSILON)
+		_require_node_rotation(prop_root, "trail_sign", Vector3(0.0, -16.0, 0.0), FLOAT_EPSILON)
 		_require_node_position(prop_root, "kiosk", Vector3(-1.18, 0.0, 1.18), FEATURE_TRANSFORM_TOLERANCE)
-		_require_node_rotation(prop_root, "kiosk", Vector3(0.0, 12.0, 0.0), FLOAT_EPSILON)
+		_require_node_rotation(prop_root, "kiosk", Vector3(0.0, 20.0, 0.0), FLOAT_EPSILON)
 		_require_node_position(prop_root, "mile_marker", Vector3(1.12, 0.0, -2.35), FEATURE_TRANSFORM_TOLERANCE)
 		_require_node_rotation(prop_root, "mile_marker", Vector3(0.0, -8.0, 0.0), FLOAT_EPSILON)
 		_require_node_position(prop_root, "park_bench", Vector3(-2.0, 0.0, 0.9), FEATURE_TRANSFORM_TOLERANCE)
@@ -194,12 +199,12 @@ func _inspect() -> void:
 		_require_node_rotation(prop_root, "carabiner", Vector3(0.0, -18.0, 0.0), FLOAT_EPSILON)
 		_require_node_position(prop_root, "bottle_cap", Vector3(-0.95, 0.0, -3.25), FEATURE_TRANSFORM_TOLERANCE)
 		_require_node_rotation(prop_root, "bottle_cap", Vector3(0.0, 12.0, 0.0), FLOAT_EPSILON)
-		_require_node_position(prop_root, "wayfinder_culvert", Vector3(-2.35, 0.0, -1.72), FEATURE_TRANSFORM_TOLERANCE)
-		_require_node_rotation(prop_root, "wayfinder_culvert", Vector3(0.0, 80.0, 0.0), FLOAT_EPSILON)
-		_require_node_position(prop_root, "wayfinder_overlook", Vector3(-0.7, 0.0, -5.95), FEATURE_TRANSFORM_TOLERANCE)
-		_require_node_rotation(prop_root, "wayfinder_overlook", Vector3(0.0, -58.0, 0.0), FLOAT_EPSILON)
-		_require_node_position(prop_root, "wayfinder_creek", Vector3(2.15, 0.0, -4.55), FEATURE_TRANSFORM_TOLERANCE)
-		_require_node_rotation(prop_root, "wayfinder_creek", Vector3(0.0, 38.0, 0.0), FLOAT_EPSILON)
+		_require_node_position(prop_root, "wayfinder_culvert", Vector3(-2.15, 0.0, -1.82), FEATURE_TRANSFORM_TOLERANCE)
+		_require_node_rotation(prop_root, "wayfinder_culvert", Vector3(0.0, 68.0, 0.0), FLOAT_EPSILON)
+		_require_node_position(prop_root, "wayfinder_overlook", Vector3(-0.55, 0.0, -5.78), FEATURE_TRANSFORM_TOLERANCE)
+		_require_node_rotation(prop_root, "wayfinder_overlook", Vector3(0.0, -44.0, 0.0), FLOAT_EPSILON)
+		_require_node_position(prop_root, "wayfinder_creek", Vector3(1.95, 0.0, -4.72), FEATURE_TRANSFORM_TOLERANCE)
+		_require_node_rotation(prop_root, "wayfinder_creek", Vector3(0.0, 28.0, 0.0), FLOAT_EPSILON)
 		_require_node_position(prop_root, "picnic_table", Vector3(-1.45, 0.0, 0.35), FEATURE_TRANSFORM_TOLERANCE)
 		_require_node_rotation(prop_root, "picnic_table", Vector3(0.0, 18.0, 0.0), FLOAT_EPSILON)
 		_require_node_position(prop_root, "old_cedar_stump", Vector3(0.65, 0.0, -5.25), FEATURE_TRANSFORM_TOLERANCE)
@@ -210,17 +215,31 @@ func _inspect() -> void:
 		_require_node_rotation(prop_root, "hiking_boot", Vector3(0.0, -32.0, 0.0), FLOAT_EPSILON)
 		_require_node_position(prop_root, "water_bottle", Vector3(2.45, 0.0, -4.15), FEATURE_TRANSFORM_TOLERANCE)
 		_require_node_rotation(prop_root, "water_bottle", Vector3(0.0, 17.0, 78.0), FLOAT_EPSILON)
-		_require_label(prop_root, "trail_sign/label_old_cedar", "Old Cedar", 28)
-		_require_label(prop_root, "trail_sign/label_creek", "Creek", 22)
-		_require_label(prop_root, "kiosk/label_title", "Cedar Hollow", 22)
-		_require_label(prop_root, "kiosk/label_loop", "Loop Trail", 18)
-		_require_label(prop_root, "mile_marker/label_distance", "0.4", 18)
-		_require_label(prop_root, "wayfinder_culvert/label_primary", "Culvert", 22)
-		_require_label(prop_root, "wayfinder_culvert/label_secondary", "Spur", 18)
-		_require_label(prop_root, "wayfinder_overlook/label_primary", "Overlook", 22)
-		_require_label(prop_root, "wayfinder_overlook/label_secondary", "Ridge", 18)
-		_require_label(prop_root, "wayfinder_creek/label_primary", "Bog", 22)
-		_require_label(prop_root, "wayfinder_creek/label_secondary", "Crossing", 18)
+		_require_descendant_named_count(prop_root, "label_backing_", EXPECTED_SIGN_LABEL_BACKINGS)
+		_require_descendant_named_count(prop_root, "arrow_", EXPECTED_SIGN_ARROW_LABELS)
+		_require_descendant_named_count(prop_root, "axis_accent", EXPECTED_SIGN_AXIS_ACCENTS)
+		_require_label(prop_root, "trail_sign/label_old_cedar", "Old Cedar", 30)
+		_require_label(prop_root, "trail_sign/label_creek", "Creek", 24)
+		_require_label(prop_root, "kiosk/label_title", "Cedar Hollow", 24)
+		_require_label(prop_root, "kiosk/label_loop", "Loop Trail", 20)
+		_require_label(prop_root, "mile_marker/label_distance", "0.4", 20)
+		_require_label(prop_root, "wayfinder_culvert/label_primary", "Culvert", 24)
+		_require_label(prop_root, "wayfinder_culvert/label_secondary", "Spur", 20)
+		_require_label(prop_root, "wayfinder_overlook/label_primary", "Overlook", 24)
+		_require_label(prop_root, "wayfinder_overlook/label_secondary", "Ridge", 20)
+		_require_label(prop_root, "wayfinder_creek/label_primary", "Bog", 24)
+		_require_label(prop_root, "wayfinder_creek/label_secondary", "Crossing", 20)
+		_require_arrow_label(prop_root, "trail_sign/arrow_old_cedar", ">", 24)
+		_require_arrow_label(prop_root, "trail_sign/arrow_creek", ">", 21)
+		_require_arrow_label(prop_root, "wayfinder_culvert/arrow_primary", "<", 24)
+		_require_arrow_label(prop_root, "wayfinder_overlook/arrow_primary", "^", 24)
+		_require_arrow_label(prop_root, "wayfinder_creek/arrow_primary", ">", 24)
+		_require_accent_mesh(prop_root, "trail_sign/axis_accent")
+		_require_accent_mesh(prop_root, "kiosk/axis_accent")
+		_require_accent_mesh(prop_root, "mile_marker/axis_accent")
+		_require_accent_mesh(prop_root, "wayfinder_culvert/axis_accent")
+		_require_accent_mesh(prop_root, "wayfinder_overlook/axis_accent")
+		_require_accent_mesh(prop_root, "wayfinder_creek/axis_accent")
 		_require_prop_meshes(prop_root)
 		var prop_collision_count: int = _count_collision_objects(prop_root)
 		if prop_collision_count > 0:
@@ -333,6 +352,22 @@ func _require_direct_child_count(parent: Node, label: String, expected: int) -> 
 		_errors.append(label + " expected " + str(expected) + " direct instanced children, got " + str(count))
 
 
+func _require_descendant_named_count(parent: Node, prefix: String, expected: int) -> void:
+	var count: int = _count_descendants_named(parent, prefix)
+	if count != expected:
+		_errors.append("expected " + str(expected) + " descendant nodes named " + prefix + "*, got " + str(count))
+
+
+func _count_descendants_named(parent: Node, prefix: String) -> int:
+	var count: int = 0
+	for child in parent.get_children():
+		var child_name: String = child.name
+		if child_name.begins_with(prefix):
+			count += 1
+		count += _count_descendants_named(child, prefix)
+	return count
+
+
 func _require_node_position(parent: Node, path: String, expected: Vector3, tolerance: float) -> void:
 	var node: Node3D = _require_node(parent, path) as Node3D
 	if node == null:
@@ -365,6 +400,98 @@ func _require_label(parent: Node, path: String, expected_text: String, expected_
 		_errors.append(path + " text expected " + expected_text + ", got " + label.text)
 	if label.font_size != expected_font_size:
 		_errors.append(path + " font_size expected " + str(expected_font_size) + ", got " + str(label.font_size))
+	if label.outline_size < 6:
+		_errors.append(path + " outline_size should support high-contrast readability")
+	var label_material: StandardMaterial3D = label.material_override as StandardMaterial3D
+	if label_material == null:
+		_errors.append(path + " should use a StandardMaterial3D text material")
+	else:
+		_require_unshaded_material(label_material, path + " material")
+	var parent_node: Node = label.get_parent()
+	if parent_node == null:
+		_errors.append(path + " should have a parent for backing")
+		return
+	var backing_name: String = String(label.name).replace("label_", "label_backing_")
+	var backing: MeshInstance3D = parent_node.get_node_or_null(backing_name) as MeshInstance3D
+	if backing == null:
+		_errors.append(path + " missing high-contrast backing " + backing_name)
+		return
+	var backing_material: StandardMaterial3D = _require_mesh_standard_material(backing, path + " backing")
+	if backing_material == null:
+		return
+	_require_unshaded_material(backing_material, path + " backing")
+	if _contrast_ratio(label.modulate, backing_material.albedo_color) < LABEL_MIN_CONTRAST_RATIO:
+		_errors.append(path + " label/backing contrast should be at least " + str(LABEL_MIN_CONTRAST_RATIO))
+	if _contrast_ratio(label.modulate, label.outline_modulate) < LABEL_MIN_CONTRAST_RATIO:
+		_errors.append(path + " label/outline contrast should be at least " + str(LABEL_MIN_CONTRAST_RATIO))
+
+
+func _require_arrow_label(parent: Node, path: String, expected_text: String, expected_font_size: int) -> void:
+	var arrow: Label3D = _require_node(parent, path) as Label3D
+	if arrow == null:
+		return
+	if arrow.text != expected_text:
+		_errors.append(path + " arrow expected " + expected_text + ", got " + arrow.text)
+	if arrow.font_size != expected_font_size:
+		_errors.append(path + " font_size expected " + str(expected_font_size) + ", got " + str(arrow.font_size))
+	if arrow.outline_size < 7:
+		_errors.append(path + " outline_size should support high-contrast arrow readability")
+	var material: StandardMaterial3D = arrow.material_override as StandardMaterial3D
+	if material == null:
+		_errors.append(path + " should use a StandardMaterial3D arrow material")
+	else:
+		_require_unshaded_material(material, path + " material")
+	if _contrast_ratio(arrow.modulate, arrow.outline_modulate) < ACCENT_MIN_CONTRAST_RATIO:
+		_errors.append(path + " arrow/outline contrast should be at least " + str(ACCENT_MIN_CONTRAST_RATIO))
+
+
+func _require_accent_mesh(parent: Node, path: String) -> void:
+	var accent: MeshInstance3D = _require_node(parent, path) as MeshInstance3D
+	if accent == null:
+		return
+	var material: StandardMaterial3D = _require_mesh_standard_material(accent, path)
+	if material == null:
+		return
+	_require_unshaded_material(material, path + " material")
+	if _contrast_ratio(material.albedo_color, Color(0.045, 0.035, 0.022)) < ACCENT_MIN_CONTRAST_RATIO:
+		_errors.append(path + " accent should contrast with dark sign backing")
+
+
+func _require_mesh_standard_material(mesh_instance: MeshInstance3D, label: String) -> StandardMaterial3D:
+	var material: StandardMaterial3D = mesh_instance.material_override as StandardMaterial3D
+	if material == null:
+		_errors.append(label + " should use StandardMaterial3D")
+		return null
+	if mesh_instance.mesh == null:
+		_errors.append(label + " should include a mesh")
+	return material
+
+
+func _require_unshaded_material(material: StandardMaterial3D, label: String) -> void:
+	if material.shading_mode != BaseMaterial3D.SHADING_MODE_UNSHADED:
+		_errors.append(label + " should be unshaded for stable sign readability")
+	if material.cull_mode != BaseMaterial3D.CULL_DISABLED:
+		_errors.append(label + " should render double-sided")
+	if absf(material.metallic) > FLOAT_EPSILON:
+		_errors.append(label + " should be nonmetallic")
+
+
+func _contrast_ratio(a: Color, b: Color) -> float:
+	var luminance_a: float = _relative_luminance(a)
+	var luminance_b: float = _relative_luminance(b)
+	var lighter: float = maxf(luminance_a, luminance_b)
+	var darker: float = minf(luminance_a, luminance_b)
+	return (lighter + 0.05) / (darker + 0.05)
+
+
+func _relative_luminance(color: Color) -> float:
+	return 0.2126 * _linear_color_channel(color.r) + 0.7152 * _linear_color_channel(color.g) + 0.0722 * _linear_color_channel(color.b)
+
+
+func _linear_color_channel(value: float) -> float:
+	if value <= 0.03928:
+		return value / 12.92
+	return float(pow((value + 0.055) / 1.055, 2.4))
 
 
 func _require_prop_meshes(prop_root: Node) -> void:
@@ -734,9 +861,40 @@ func _inspect_boundary_layout(boundary_root: Node) -> void:
 	_require_node_position(boundary_root, "boundary_boulder_8", Vector3(0.15, 0.18, -10.05), FEATURE_TRANSFORM_TOLERANCE)
 	_require_node_position(boundary_root, "boundary_branch_1", Vector3(-4.9, 0.02, -2.2), FEATURE_TRANSFORM_TOLERANCE)
 	_require_node_position(boundary_root, "boundary_branch_6", Vector3(-1.55, 0.31, -10.05), FEATURE_TRANSFORM_TOLERANCE)
-	_require_node_position(boundary_root, "trail_blaze_1", Vector3(-5.18, 0.0, -2.85), FEATURE_TRANSFORM_TOLERANCE)
-	_require_node_position(boundary_root, "trail_blaze_4", Vector3(5.08, 0.0, -7.25), FEATURE_TRANSFORM_TOLERANCE)
+	_require_node_position(boundary_root, "trail_blaze_1", Vector3(-4.68, 0.0, -2.55), FEATURE_TRANSFORM_TOLERANCE)
+	_require_node_position(boundary_root, "trail_blaze_2", Vector3(-4.62, 0.0, -6.62), FEATURE_TRANSFORM_TOLERANCE)
+	_require_node_position(boundary_root, "trail_blaze_3", Vector3(4.68, 0.0, -3.42), FEATURE_TRANSFORM_TOLERANCE)
+	_require_node_position(boundary_root, "trail_blaze_4", Vector3(4.62, 0.0, -7.0), FEATURE_TRANSFORM_TOLERANCE)
+	_require_node_rotation(boundary_root, "trail_blaze_1", Vector3(0.0, 80.0, 0.0), FLOAT_EPSILON)
+	_require_node_rotation(boundary_root, "trail_blaze_2", Vector3(0.0, 72.0, 0.0), FLOAT_EPSILON)
+	_require_node_rotation(boundary_root, "trail_blaze_3", Vector3(0.0, -82.0, 0.0), FLOAT_EPSILON)
+	_require_node_rotation(boundary_root, "trail_blaze_4", Vector3(0.0, -72.0, 0.0), FLOAT_EPSILON)
+	_inspect_trail_blaze_readability(boundary_root)
 	_require_boundary_bands(boundary_root)
+
+
+func _inspect_trail_blaze_readability(boundary_root: Node) -> void:
+	for i in range(EXPECTED_TRAIL_BLAZES):
+		var blaze_path: String = "trail_blaze_" + str(i + 1)
+		var blaze: Node = _require_node(boundary_root, blaze_path)
+		if blaze == null:
+			continue
+		_require_blaze_marker(blaze, blaze_path + "/contrast_backing", "contrast_backing", Color(1.0, 0.92, 0.42), LABEL_MIN_CONTRAST_RATIO)
+		_require_blaze_marker(blaze, blaze_path + "/center_stripe", "center_stripe", Color(0.035, 0.028, 0.018), LABEL_MIN_CONTRAST_RATIO)
+		_require_blaze_marker(blaze, blaze_path + "/arrow_left_arm", "arrow_left_arm", Color(0.035, 0.028, 0.018), ACCENT_MIN_CONTRAST_RATIO)
+		_require_blaze_marker(blaze, blaze_path + "/arrow_right_arm", "arrow_right_arm", Color(0.035, 0.028, 0.018), ACCENT_MIN_CONTRAST_RATIO)
+
+
+func _require_blaze_marker(parent: Node, label: String, child_name: String, contrast_against: Color, minimum_contrast: float) -> void:
+	var marker: MeshInstance3D = _require_node(parent, child_name) as MeshInstance3D
+	if marker == null:
+		return
+	var material: StandardMaterial3D = _require_mesh_standard_material(marker, label)
+	if material == null:
+		return
+	_require_unshaded_material(material, label + " material")
+	if _contrast_ratio(material.albedo_color, contrast_against) < minimum_contrast:
+		_errors.append(label + " contrast should be at least " + str(minimum_contrast))
 
 
 func _require_direct_children_inside_xz(parent: Node, label: String, min_x: float, max_x: float, min_z: float, max_z: float) -> void:
