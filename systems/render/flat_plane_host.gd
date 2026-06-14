@@ -174,14 +174,20 @@ func _update_camera(delta: float) -> void:
 	var back: Vector3 = vehicle_basis.z.normalized()
 	var forward: Vector3 = -vehicle_basis.z.normalized()
 	var desired_position: Vector3 = vehicle_position + back * GameConfig.cam_distance + Vector3.UP * GameConfig.cam_height
-	var follow_alpha: float = clampf(GameConfig.cam_spring * delta, 0.0, 1.0)
 	if not _camera_initialized:
 		_camera.global_position = desired_position
 		_camera_initialized = true
 	else:
+		var follow_alpha: float = _chase_camera_follow_alpha(delta)
 		_camera.global_position = _camera.global_position.lerp(desired_position, follow_alpha)
 	_camera.look_at(_chase_camera_look_target(vehicle_position, forward), Vector3.UP)
 	_camera.fov = GameConfig.get_fov_for_speed(float(state.call("speed")))
+
+
+func _chase_camera_follow_alpha(delta: float) -> float:
+	var spring_alpha: float = 1.0 - exp(-maxf(GameConfig.cam_spring, 0.0) * delta)
+	var damping_scale: float = 1.0 / (1.0 + maxf(GameConfig.cam_damping, 0.0) * delta)
+	return clampf(spring_alpha * damping_scale, 0.0, 1.0)
 
 
 func _chase_camera_look_target(vehicle_position: Vector3, forward: Vector3) -> Vector3:
