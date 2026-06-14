@@ -11,13 +11,20 @@ const ScatterVisualBuilderScript: GDScript = preload("res://systems/render/scatt
 const ProceduralBuggyVisualScript: GDScript = preload("res://systems/render/procedural_buggy_visual.gd")
 const CedarAudioRigScript: GDScript = preload("res://systems/render/cedar_audio_rig.gd")
 const SurfaceMapScript: GDScript = preload("res://systems/world/surface_map.gd")
+const CAMERA_MODE_CHASE: int = 0
+const CAMERA_MODE_ORBIT: int = 1
 
 var _world: Node3D = null
 var _vehicle: Node = null
 var _vehicle_input: RefCounted = VehicleInputScript.new()
 var _camera: Camera3D = null
+var _orbit_camera: Camera3D = null
 var _wheel_sockets: Array[Node3D] = []
 var _wheel_spin: float = 0.0
+var _camera_mode: int = CAMERA_MODE_CHASE
+var _chase_camera_initialized: bool = false
+var _orbit_camera_initialized: bool = false
+var _orbit_yaw_degrees: float = 0.0
 
 
 func _ready() -> void:
@@ -35,6 +42,7 @@ func _physics_process(delta: float) -> void:
 	if _vehicle == null:
 		return
 	_update_vehicle_input()
+	_update_camera_input()
 	_vehicle.call("apply_input", _vehicle_input)
 	_update_visual_wheels(delta)
 	_update_camera(delta)
@@ -126,6 +134,12 @@ func _setup_camera() -> void:
 	_camera.current = true
 	_camera.fov = GameConfig.cam_fov_base
 	add_child(_camera)
+	_orbit_camera = Camera3D.new()
+	_orbit_camera.name = "OrbitCamera"
+	_orbit_camera.current = false
+	_orbit_camera.fov = GameConfig.orbit_cam_fov
+	add_child(_orbit_camera)
+	_orbit_yaw_degrees = GameConfig.orbit_cam_start_yaw_deg
 	_update_camera(GameConfig.FIXED_DT)
 
 
@@ -138,6 +152,15 @@ func _update_vehicle_input() -> void:
 	_vehicle_input.set("steer", clampf(steer, -1.0, 1.0))
 	_vehicle_input.set("ebrake", Input.is_action_pressed("ebrake"))
 	_vehicle_input.set("self_right", Input.is_action_just_pressed("self_right"))
+
+
+func _update_camera_input() -> void:
+	if not Input.is_action_just_pressed("cam_toggle"):
+		return
+	if _camera_mode == CAMERA_MODE_CHASE:
+		_camera_mode = CAMERA_MODE_ORBIT
+		return
+	_camera_mode = CAMERA_MODE_CHASE
 
 
 func _collect_visual_wheels() -> void:
@@ -181,15 +204,47 @@ func _update_visual_wheels(delta: float) -> void:
 
 
 func _update_camera(delta: float) -> void:
-	if _camera == null or _vehicle == null:
+	if _vehicle == null:
 		return
 	var state: RefCounted = _vehicle.call("get_state")
+	_update_chase_camera(delta, state)
+	_update_orbit_camera(delta, state)
+
+
+func _update_chase_camera(delta: float, state: RefCounted) -> void:
+	if _camera == null:
+		return
 	var vehicle_position: Vector3 = state.get("position")
 	var vehicle_basis: Basis = state.get("basis")
 	var back: Vector3 = vehicle_basis.z.normalized()
 	var forward: Vector3 = -vehicle_basis.z.normalized()
 	var desired_position: Vector3 = vehicle_position + back * GameConfig.cam_distance + Vector3.UP * GameConfig.cam_height
 	var follow_alpha: float = clampf(GameConfig.cam_spring * delta, 0.0, 1.0)
-	_camera.global_position = _camera.global_position.lerp(desired_position, follow_alpha)
+	if not _chase_camera_initialized:
+		_camera.global_position = desired_position
+		_chase_camera_initialized = true
+	else:
+		_camera.global_position = _camera.global_position.lerp(desired_position, follow_alpha)
 	_camera.look_at(vehicle_position + forward * GameConfig.cam_look_ahead, Vector3.UP)
 	_camera.fov = GameConfig.get_fov_for_speed(float(state.call("speed")))
+	_camera.current = _camera_mode == CAMERA_MODE_CHASE
+
+
+func _update_orbit_camera(delta: float, state: RefCounted) -> void:
+	if _orbit_camera == null:
+		return
+	var vehicle_position: Vector3 = state.get("position")
+	if _camera_mode == CAMERA_MODE_ORBIT:
+		_orbit_yaw_degrees += GameConfig.orbit_cam_speed_deg * delta
+	var yaw_radians: float = deg_to_rad(_orbit_yaw_degrees)
+	var orbit_offset: Vector3 = Vector3(sin(yaw_radians), 0.0, cos(yaw_radians)) * GameConfig.orbit_cam_distance
+	var desired_position: Vector3 = vehicle_position + orbit_offset + Vector3.UP * GameConfig.orbit_cam_height
+	var follow_alpha: float = clampf(GameConfig.orbit_cam_spring * delta, 0.0, 1.0)
+	if not _orbit_camera_initialized:
+		_orbit_camera.global_position = desired_position
+		_orbit_camera_initialized = true
+	else:
+		_orbit_camera.global_position = _orbit_camera.global_position.lerp(desired_position, follow_alpha)
+	_orbit_camera.look_at(vehicle_position + Vector3.UP * GameConfig.orbit_cam_look_height, Vector3.UP)
+	_orbit_camera.fov = GameConfig.orbit_cam_fov
+	_orbit_camera.current = _camera_mode == CAMERA_MODE_ORBIT

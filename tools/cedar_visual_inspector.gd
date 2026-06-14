@@ -61,6 +61,7 @@ func _inspect() -> void:
 	_require_node(_scene_root, "CedarHollow")
 	_require_node(_scene_root, "Vehicle")
 	_require_node(_scene_root, "ChaseCamera")
+	_require_node(_scene_root, "OrbitCamera")
 	_require_node(_scene_root, "SurfaceMap")
 	_require_node(_scene_root, "GoldenHourEnvironment")
 	_require_node(_scene_root, "GoldenHourSun")
@@ -107,7 +108,7 @@ func _count_mesh_instances(parent: Node) -> int:
 
 func _finish() -> void:
 	if _errors.is_empty():
-		print("ok: Cedar Hollow visuals, mood, and audio nodes instantiated")
+		print("ok: Cedar Hollow visuals, cameras, mood, and audio nodes instantiated")
 		if _scene_root != null:
 			_scene_root.queue_free()
 		await get_tree().process_frame

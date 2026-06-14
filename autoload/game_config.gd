@@ -43,6 +43,13 @@ var cam_look_ahead: float = 0.15
 var cam_fov_base: float = 60.0
 var cam_fov_speed_gain: float = 12.0
 var cam_pitch_deg: float = -6.0
+var orbit_cam_height: float = 0.65
+var orbit_cam_distance: float = 1.05
+var orbit_cam_spring: float = 10.0
+var orbit_cam_look_height: float = 0.08
+var orbit_cam_fov: float = 54.0
+var orbit_cam_speed_deg: float = 18.0
+var orbit_cam_start_yaw_deg: float = 35.0
 
 var dusk_sun_rotation_degrees: Vector3 = Vector3(-34.0, -48.0, 0.0)
 var dusk_sun_energy: float = 2.8
