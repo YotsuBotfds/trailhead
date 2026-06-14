@@ -21,9 +21,15 @@ const SCATTER_Z_MIN: float = -9.55
 const SCATTER_Z_MAX: float = -0.3
 const BOUNDARY_EDGE_X: float = 4.5
 const BOUNDARY_BACK_Z: float = -9.8
+const HEIGHTMESH_ROUTE_MARGIN: float = 0.35
 const EXPECTED_BOUNDARY_LEFT_VISUALS: int = 13
 const EXPECTED_BOUNDARY_RIGHT_VISUALS: int = 14
 const EXPECTED_BOUNDARY_BACK_VISUALS: int = 7
+
+class BoundsAccumulator:
+	var has_bounds: bool = false
+	var bounds_min: Vector3 = Vector3.ZERO
+	var bounds_max: Vector3 = Vector3.ZERO
 
 var _scene_root: Node = null
 var _errors: PackedStringArray = PackedStringArray()
@@ -43,7 +49,9 @@ func _inspect() -> void:
 	var terrain_root: Node = _require_node(_scene_root, "CedarHollow/TerrainVisuals")
 	if terrain_root != null:
 		_require_named_count(terrain_root, "terrain_patch_", 0)
-		_require_node(terrain_root, "cedar_hollow_heightmesh")
+		var heightmesh: Node = _require_node(terrain_root, "cedar_hollow_heightmesh")
+		if heightmesh != null:
+			_inspect_heightmesh_layout(heightmesh)
 		var terrain_collision_count: int = _count_collision_objects(terrain_root)
 		if terrain_collision_count > 0:
 			_errors.append("TerrainVisuals contains collision objects: " + str(terrain_collision_count))
@@ -198,6 +206,59 @@ func _require_label(parent: Node, path: String, expected_text: String, expected_
 		_errors.append(path + " text expected " + expected_text + ", got " + label.text)
 	if label.font_size != expected_font_size:
 		_errors.append(path + " font_size expected " + str(expected_font_size) + ", got " + str(label.font_size))
+
+
+func _inspect_heightmesh_layout(heightmesh: Node) -> void:
+	var accumulator: BoundsAccumulator = BoundsAccumulator.new()
+	_collect_mesh_bounds(heightmesh, accumulator)
+	if not accumulator.has_bounds:
+		_errors.append("cedar_hollow_heightmesh should expose mesh bounds")
+		return
+	var route_bounds_min: Vector3 = CedarRoute.get("bounds_min")
+	var route_bounds_max: Vector3 = CedarRoute.get("bounds_max")
+	if accumulator.bounds_min.x > route_bounds_min.x + HEIGHTMESH_ROUTE_MARGIN:
+		_errors.append("heightmesh should cover route min X within margin, got " + str(accumulator.bounds_min.x))
+	if accumulator.bounds_max.x < route_bounds_max.x - HEIGHTMESH_ROUTE_MARGIN:
+		_errors.append("heightmesh should cover route max X within margin, got " + str(accumulator.bounds_max.x))
+	if accumulator.bounds_min.z > route_bounds_min.z + HEIGHTMESH_ROUTE_MARGIN:
+		_errors.append("heightmesh should cover route min Z within margin, got " + str(accumulator.bounds_min.z))
+	if accumulator.bounds_max.z < route_bounds_max.z - HEIGHTMESH_ROUTE_MARGIN:
+		_errors.append("heightmesh should cover route max Z within margin, got " + str(accumulator.bounds_max.z))
+
+
+func _collect_mesh_bounds(parent: Node, accumulator: BoundsAccumulator) -> void:
+	var mesh_instance: MeshInstance3D = parent as MeshInstance3D
+	if mesh_instance != null:
+		var local_bounds: AABB = mesh_instance.get_aabb()
+		for x_index in range(2):
+			for y_index in range(2):
+				for z_index in range(2):
+					var local_point: Vector3 = local_bounds.position + Vector3(
+						local_bounds.size.x if x_index == 1 else 0.0,
+						local_bounds.size.y if y_index == 1 else 0.0,
+						local_bounds.size.z if z_index == 1 else 0.0
+					)
+					_include_bounds_point(accumulator, mesh_instance.global_transform * local_point)
+	for child in parent.get_children():
+		_collect_mesh_bounds(child, accumulator)
+
+
+func _include_bounds_point(accumulator: BoundsAccumulator, point: Vector3) -> void:
+	if not accumulator.has_bounds:
+		accumulator.has_bounds = true
+		accumulator.bounds_min = point
+		accumulator.bounds_max = point
+		return
+	accumulator.bounds_min = Vector3(
+		minf(accumulator.bounds_min.x, point.x),
+		minf(accumulator.bounds_min.y, point.y),
+		minf(accumulator.bounds_min.z, point.z)
+	)
+	accumulator.bounds_max = Vector3(
+		maxf(accumulator.bounds_max.x, point.x),
+		maxf(accumulator.bounds_max.y, point.y),
+		maxf(accumulator.bounds_max.z, point.z)
+	)
 
 
 func _inspect_feature_collision_alignment(cedar_world: Node, feature_root: Node) -> void:

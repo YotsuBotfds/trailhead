@@ -4,6 +4,7 @@ import json
 import re
 import struct
 import sys
+import zlib
 from pathlib import Path
 
 JSON_CHUNK_TYPE = 0x4E4F534A
@@ -50,18 +51,119 @@ def read_glb(path):
     return json.loads(json_chunk.decode("utf-8").rstrip(" \t\r\n\0")), bin_chunk_count
 
 
-def read_png_dimensions(path):
-    data = path.read_bytes()
-    if len(data) < 24:
-        raise ValueError("surface-ID map is too small for a PNG header")
-    if data[:8] != PNG_SIGNATURE:
-        raise ValueError("surface-ID map is not a PNG")
-    if data[12:16] != b"IHDR":
-        raise ValueError("surface-ID map is missing IHDR")
-    width, height = struct.unpack_from(">II", data, 16)
-    if width <= 0 or height <= 0:
-        raise ValueError(f"surface-ID map has invalid dimensions {width}x{height}")
-    return width, height
+def read_png_summary(path):
+	data = path.read_bytes()
+	if len(data) < 24:
+		raise ValueError("surface-ID map is too small for a PNG header")
+	if data[:8] != PNG_SIGNATURE:
+		raise ValueError("surface-ID map is not a PNG")
+	offset = 8
+	width = 0
+	height = 0
+	bit_depth = 0
+	color_type = 0
+	idat_chunks = []
+	while offset + 8 <= len(data):
+		chunk_length = struct.unpack_from(">I", data, offset)[0]
+		offset += 4
+		chunk_type = data[offset:offset + 4]
+		offset += 4
+		chunk_data = data[offset:offset + chunk_length]
+		offset += chunk_length + 4
+		if chunk_type == b"IHDR":
+			width, height, bit_depth, color_type, _compression, _filter, interlace = struct.unpack_from(">IIBBBBB", chunk_data, 0)
+			if interlace != 0:
+				raise ValueError("surface-ID map must be non-interlaced")
+		elif chunk_type == b"IDAT":
+			idat_chunks.append(chunk_data)
+		elif chunk_type == b"IEND":
+			break
+	if width <= 0 or height <= 0:
+		raise ValueError(f"surface-ID map has invalid dimensions {width}x{height}")
+	if bit_depth != 8:
+		raise ValueError(f"surface-ID map must use 8-bit channels, got bit depth {bit_depth}")
+	samples = decode_png_samples(width, height, color_type, b"".join(idat_chunks))
+	return {
+		"width": width,
+		"height": height,
+		"bit_depth": bit_depth,
+		"color_type": color_type,
+		"unique_samples": sorted(set(samples)),
+	}
+
+
+def decode_png_samples(width, height, color_type, compressed_data):
+	channels_by_color_type = {
+		0: 1,
+		2: 3,
+		3: 1,
+		4: 2,
+		6: 4,
+	}
+	channels = channels_by_color_type.get(color_type)
+	if channels is None:
+		raise ValueError(f"unsupported surface-ID map color type {color_type}")
+	stride = width * channels
+	raw = zlib.decompress(compressed_data)
+	expected_size = (stride + 1) * height
+	if len(raw) != expected_size:
+		raise ValueError(f"surface-ID map payload size {len(raw)} != expected {expected_size}")
+	rows = []
+	previous = bytearray(stride)
+	offset = 0
+	for _y in range(height):
+		filter_type = raw[offset]
+		offset += 1
+		row = bytearray(raw[offset:offset + stride])
+		offset += stride
+		unfilter_png_row(row, previous, channels, filter_type)
+		rows.append(bytes(row))
+		previous = row
+	samples = []
+	for row in rows:
+		for x in range(width):
+			samples.append(row[x * channels])
+	return samples
+
+
+def unfilter_png_row(row, previous, bytes_per_pixel, filter_type):
+	if filter_type == 0:
+		return
+	if filter_type == 1:
+		for index in range(len(row)):
+			left = row[index - bytes_per_pixel] if index >= bytes_per_pixel else 0
+			row[index] = (row[index] + left) & 0xFF
+		return
+	if filter_type == 2:
+		for index in range(len(row)):
+			row[index] = (row[index] + previous[index]) & 0xFF
+		return
+	if filter_type == 3:
+		for index in range(len(row)):
+			left = row[index - bytes_per_pixel] if index >= bytes_per_pixel else 0
+			up = previous[index]
+			row[index] = (row[index] + ((left + up) // 2)) & 0xFF
+		return
+	if filter_type == 4:
+		for index in range(len(row)):
+			left = row[index - bytes_per_pixel] if index >= bytes_per_pixel else 0
+			up = previous[index]
+			up_left = previous[index - bytes_per_pixel] if index >= bytes_per_pixel else 0
+			row[index] = (row[index] + paeth(left, up, up_left)) & 0xFF
+		return
+	raise ValueError(f"unsupported PNG filter type {filter_type}")
+
+
+def paeth(left, up, up_left):
+	p = left + up - up_left
+	pa = abs(p - left)
+	pb = abs(p - up)
+	pc = abs(p - up_left)
+	if pa <= pb and pa <= pc:
+		return left
+	if pb <= pc:
+		return up
+	return up_left
 
 
 def accessor_count(gltf, accessor_index):
@@ -184,8 +286,12 @@ def validate_heightmesh(args, stats):
         ok = fail(f"surface-ID map not found: {args.surface_id_map}") and ok
     else:
         try:
-            width, height = read_png_dimensions(args.surface_id_map)
-            print(f"surface-ID map: {args.surface_id_map} ({width}x{height})")
+            png_summary = read_png_summary(args.surface_id_map)
+            unique_samples = png_summary["unique_samples"]
+            print(f"surface-ID map: {args.surface_id_map} ({png_summary['width']}x{png_summary['height']})")
+            print(f"surface-ID map ids: {', '.join(str(value) for value in unique_samples)}")
+            if len(unique_samples) < 2:
+                ok = fail("surface-ID map must contain at least two distinct IDs") and ok
         except Exception as exc:
             ok = fail(str(exc)) and ok
     return ok
