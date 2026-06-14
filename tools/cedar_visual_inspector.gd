@@ -8,6 +8,9 @@ const EXPECTED_GRASS_TUFTS: int = 18
 const EXPECTED_BOULDERS: int = 5
 const EXPECTED_BRANCHES: int = 5
 const EXPECTED_PINECONES: int = 8
+const EXPECTED_BOUNDARY_GRASS: int = 20
+const EXPECTED_BOUNDARY_BOULDERS: int = 8
+const EXPECTED_BOUNDARY_BRANCHES: int = 6
 const FLOAT_EPSILON: float = 0.001
 
 var _scene_root: Node = null
@@ -74,6 +77,17 @@ func _inspect() -> void:
 		var scatter_mesh_count: int = _count_mesh_instances(scatter_root)
 		if scatter_mesh_count <= 0:
 			_errors.append("ScatterVisuals contains no mesh instances")
+	var boundary_root: Node = _require_node(_scene_root, "CedarHollow/BoundaryVisuals")
+	if boundary_root != null:
+		_require_named_count(boundary_root, "boundary_grass_", EXPECTED_BOUNDARY_GRASS)
+		_require_named_count(boundary_root, "boundary_boulder_", EXPECTED_BOUNDARY_BOULDERS)
+		_require_named_count(boundary_root, "boundary_branch_", EXPECTED_BOUNDARY_BRANCHES)
+		var boundary_collision_count: int = _count_collision_objects(boundary_root)
+		if boundary_collision_count > 0:
+			_errors.append("BoundaryVisuals contains collision objects: " + str(boundary_collision_count))
+		var boundary_mesh_count: int = _count_mesh_instances(boundary_root)
+		if boundary_mesh_count <= 0:
+			_errors.append("BoundaryVisuals contains no mesh instances")
 	_require_node(_scene_root, "CedarHollow")
 	_require_node(_scene_root, "Vehicle")
 	_require_node(_scene_root, "ChaseCamera")

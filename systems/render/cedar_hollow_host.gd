@@ -9,6 +9,7 @@ const TerrainVisualBuilderScript: GDScript = preload("res://systems/render/terra
 const FeatureVisualBuilderScript: GDScript = preload("res://systems/render/feature_visual_builder.gd")
 const PropVisualBuilderScript: GDScript = preload("res://systems/render/prop_visual_builder.gd")
 const ScatterVisualBuilderScript: GDScript = preload("res://systems/render/scatter_visual_builder.gd")
+const BoundaryVisualBuilderScript: GDScript = preload("res://systems/render/boundary_visual_builder.gd")
 const ProceduralBuggyVisualScript: GDScript = preload("res://systems/render/procedural_buggy_visual.gd")
 const CedarAudioRigScript: GDScript = preload("res://systems/render/cedar_audio_rig.gd")
 const LandmarkHintHudScript: GDScript = preload("res://systems/render/landmark_hint_hud.gd")
@@ -101,6 +102,7 @@ func _setup_world() -> void:
 	FeatureVisualBuilderScript.build_cedar_hollow(_world)
 	PropVisualBuilderScript.build_cedar_hollow(_world)
 	ScatterVisualBuilderScript.build_cedar_hollow(_world)
+	BoundaryVisualBuilderScript.build_cedar_hollow(_world)
 
 
 func _spawn_vehicle() -> void:
