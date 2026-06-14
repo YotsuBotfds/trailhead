@@ -137,4 +137,12 @@ run_sim "$out_dir/cedar_hollow_segment_trailhead_to_culvert_mouth.json" \
 	--stuck-window=60 \
 	--stuck-min-progress=0.05
 
+run_sim "$out_dir/cedar_hollow_segment_overlook_to_old_cedar.json" \
+	--scene=cedar_hollow \
+	--controller=pd \
+	--route-segment=overlook_to_old_cedar \
+	--seed=12345 \
+	--stuck-window=60 \
+	--stuck-min-progress=0.03
+
 ./tools/check.sh

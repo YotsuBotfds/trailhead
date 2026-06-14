@@ -191,7 +191,10 @@ func _make_controller(controller_id: String) -> RefCounted:
 			for waypoint in _waypoints:
 				points.append(waypoint)
 			points.append(_target)
-			pd_controller.call("configure_path", points, _target_radius)
+			var use_rough_throttle: bool = false
+			if _route != null and _route_segment_id != "":
+				use_rough_throttle = bool(_route.call("segment_uses_rough_throttle", StringName(_route_segment_id), false))
+			pd_controller.call("configure_path_with_waypoint_radius", points, GameConfig.pd_waypoint_intermediate_radius, _target_radius, use_rough_throttle)
 		return pd_controller
 	if controller_id == "replay":
 		var replay_controller: RefCounted = ReplayControllerScript.new()

@@ -77,6 +77,13 @@ var wheelie_probe_ticks: int = 70
 var wheelie_min_peak_pitch_deg: float = 8.0
 var wheelie_min_front_air_rear_contact_ticks: int = 6
 
+var pd_waypoint_default_min_throttle: float = 0.15
+var pd_waypoint_default_steer_throttle_drop: float = 0.55
+var pd_waypoint_min_throttle: float = 0.25
+var pd_waypoint_steer_throttle_drop: float = 0.75
+var pd_waypoint_air_throttle: float = 0.05
+var pd_waypoint_intermediate_radius: float = 0.45
+
 var default_landmark_radius: float = 0.4
 
 

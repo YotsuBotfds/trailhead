@@ -19,6 +19,7 @@ extends Resource
 @export var segment_waypoints: Array[Vector3] = []
 @export var segment_max_ticks: Array[int] = []
 @export var segment_target_radii: Array[float] = []
+@export var segment_rough_throttle: Array[bool] = []
 
 
 func validate() -> PackedStringArray:
@@ -136,6 +137,13 @@ func segment_target_radius_for(segment_id: StringName, fallback: float) -> float
 	if value <= 0.0:
 		return fallback
 	return value
+
+
+func segment_uses_rough_throttle(segment_id: StringName, fallback: bool) -> bool:
+	var index: int = _index_of_id(segment_ids, segment_id)
+	if index == -1 or index >= segment_rough_throttle.size():
+		return fallback
+	return segment_rough_throttle[index]
 
 
 func _index_of_id(ids: Array[StringName], query_id: StringName) -> int:

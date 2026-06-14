@@ -5,10 +5,12 @@ const VehicleInputScript: GDScript = preload("res://systems/vehicle/vehicle_inpu
 
 var target_pos: Vector3 = Vector3.ZERO
 var arrive_radius: float = 0.35
+var intermediate_radius: float = 0.35
 var _kp: float = 2.0
 var _kd: float = 0.4
 var _prev_err: float = 0.0
 var _done: bool = false
+var _use_rough_throttle: bool = false
 var _points: Array[Vector3] = []
 var _target_index: int = 0
 
@@ -19,6 +21,10 @@ func configure(target: Vector3, radius: float) -> void:
 
 
 func configure_path(points: Array[Vector3], radius: float) -> void:
+	configure_path_with_waypoint_radius(points, radius, radius, false)
+
+
+func configure_path_with_waypoint_radius(points: Array[Vector3], waypoint_radius: float, final_radius: float, use_rough_throttle: bool) -> void:
 	_points.clear()
 	for point in points:
 		_points.append(point)
@@ -26,7 +32,9 @@ func configure_path(points: Array[Vector3], radius: float) -> void:
 		_points.append(Vector3.ZERO)
 	_target_index = 0
 	target_pos = _points[_target_index]
-	arrive_radius = radius
+	intermediate_radius = waypoint_radius
+	arrive_radius = final_radius
+	_use_rough_throttle = use_rough_throttle
 	_prev_err = 0.0
 	_done = false
 
@@ -38,7 +46,7 @@ func next_input(state: RefCounted) -> RefCounted:
 	var is_flipped: bool = bool(state.get("is_flipped"))
 	var to_target: Vector3 = target_pos - state_position
 	to_target.y = 0.0
-	while to_target.length() <= arrive_radius and _target_index < _points.size() - 1:
+	while to_target.length() <= _current_arrive_radius() and _target_index < _points.size() - 1:
 		_target_index += 1
 		target_pos = _points[_target_index]
 		_prev_err = 0.0
@@ -59,7 +67,8 @@ func next_input(state: RefCounted) -> RefCounted:
 	_prev_err = err
 	var steer: float = clampf(_kp * err + _kd * d_err, -1.0, 1.0)
 	input.set("steer", steer)
-	input.set("throttle", clampf(1.0 - absf(steer) * 0.55, 0.15, 1.0))
+	var throttle: float = _throttle_for_steer(steer, bool(state.get("on_ground")))
+	input.set("throttle", throttle)
 	if is_flipped:
 		input.set("self_right", true)
 	return input
@@ -67,3 +76,18 @@ func next_input(state: RefCounted) -> RefCounted:
 
 func is_done() -> bool:
 	return _done
+
+
+func _current_arrive_radius() -> float:
+	if _target_index >= _points.size() - 1:
+		return arrive_radius
+	return intermediate_radius
+
+
+func _throttle_for_steer(steer: float, on_ground: bool) -> float:
+	if not _use_rough_throttle:
+		return clampf(1.0 - absf(steer) * GameConfig.pd_waypoint_default_steer_throttle_drop, GameConfig.pd_waypoint_default_min_throttle, 1.0)
+	var throttle: float = clampf(1.0 - absf(steer) * GameConfig.pd_waypoint_steer_throttle_drop, GameConfig.pd_waypoint_min_throttle, 1.0)
+	if not on_ground:
+		throttle = minf(throttle, GameConfig.pd_waypoint_air_throttle)
+	return throttle
