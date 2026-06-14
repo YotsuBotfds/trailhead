@@ -117,11 +117,18 @@ def pipe(radius, length, segments):
 
 def boardwalk_segment_parts():
     return [
-        part(box(0.9, 0.048, 0.24), [0.48, 0.31, 0.18, 1.0], "boardwalk_segment_plank"),
+        part(box(0.9, 0.044, 0.205), [0.42, 0.25, 0.12, 1.0], "boardwalk_segment_plank"),
         part(merge([
-            transformed(box(0.9, 0.012, 0.035), (0.0, 0.048, -0.085)),
-            transformed(box(0.9, 0.012, 0.035), (0.0, 0.048, 0.085)),
-        ]), [0.26, 0.16, 0.08, 1.0], "boardwalk_segment_seams"),
+            transformed(box(0.9, 0.016, 0.018), (0.0, 0.044, -0.112)),
+            transformed(box(0.9, 0.016, 0.018), (0.0, 0.044, 0.112)),
+            transformed(box(0.016, 0.014, 0.205), (-0.18, 0.044, 0.0)),
+            transformed(box(0.016, 0.014, 0.205), (0.18, 0.044, 0.0)),
+        ]), [0.16, 0.09, 0.045, 1.0], "boardwalk_segment_gaps"),
+        part(merge([
+            transformed(box(0.25, 0.006, 0.18), (-0.34, 0.058, 0.0)),
+            transformed(box(0.25, 0.006, 0.18), (0.0, 0.058, 0.0)),
+            transformed(box(0.25, 0.006, 0.18), (0.34, 0.058, 0.0)),
+        ]), [0.58, 0.38, 0.20, 1.0], "boardwalk_segment_worn_edges"),
     ]
 
 

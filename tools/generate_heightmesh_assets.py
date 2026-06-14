@@ -25,13 +25,13 @@ GRID_Z = 73
 SURFACE_MAP_SIZE = 256
 
 SURFACES = [
-    ("packed_gravel", 1, [0.42, 0.38, 0.32, 1.0]),
-    ("packed_dirt", 2, [0.35, 0.23, 0.14, 1.0]),
-    ("tall_grass", 3, [0.25, 0.38, 0.17, 1.0]),
-    ("mud", 4, [0.18, 0.12, 0.08, 1.0]),
-    ("loose_rock", 5, [0.34, 0.34, 0.31, 1.0]),
-    ("wet_stone", 6, [0.22, 0.30, 0.32, 1.0]),
-    ("wood_plank", 7, [0.43, 0.27, 0.13, 1.0]),
+    ("packed_gravel", 1, [0.50, 0.46, 0.36, 1.0]),
+    ("packed_dirt", 2, [0.40, 0.23, 0.12, 1.0]),
+    ("tall_grass", 3, [0.22, 0.44, 0.15, 1.0]),
+    ("mud", 4, [0.12, 0.075, 0.045, 1.0]),
+    ("loose_rock", 5, [0.42, 0.40, 0.34, 1.0]),
+    ("wet_stone", 6, [0.18, 0.34, 0.38, 1.0]),
+    ("wood_plank", 7, [0.50, 0.29, 0.12, 1.0]),
 ]
 SURFACE_INDEX = {name: index for name, index, _color in SURFACES}
 SURFACE_COLORS = {name: color for name, _index, color in SURFACES}
