@@ -443,10 +443,15 @@ func _inspect_default_environment(world_environment: WorldEnvironment) -> void:
 	if environment == null:
 		_errors.append("GoldenHourEnvironment has no Environment resource")
 		return
-	if environment.background_color != GameConfig.dusk_background_color:
-		_errors.append("GoldenHourEnvironment should start in dusk background color")
-	if absf(environment.fog_density - GameConfig.dusk_fog_density) > FLOAT_EPSILON:
-		_errors.append("GoldenHourEnvironment should start in dusk fog density")
+	_require_environment_mood(
+		environment,
+		"dusk",
+		GameConfig.dusk_background_color,
+		GameConfig.dusk_ambient_color,
+		GameConfig.dusk_ambient_energy,
+		GameConfig.dusk_fog_density,
+		GameConfig.dusk_fog_light_color
+	)
 
 
 func _inspect_default_sun(sun: DirectionalLight3D) -> void:
@@ -690,14 +695,38 @@ func _require_dawn_mood(world_environment: WorldEnvironment, sun: DirectionalLig
 		_errors.append("GoldenHourEnvironment has no Environment resource for dawn toggle")
 		return
 	var environment: Environment = world_environment.environment
-	if environment.background_color != GameConfig.dawn_background_color:
-		_errors.append("GoldenHourEnvironment should switch to dawn background color")
-	if absf(environment.fog_density - GameConfig.dawn_fog_density) > FLOAT_EPSILON:
-		_errors.append("GoldenHourEnvironment should switch to dawn fog density")
+	_require_environment_mood(
+		environment,
+		"dawn",
+		GameConfig.dawn_background_color,
+		GameConfig.dawn_ambient_color,
+		GameConfig.dawn_ambient_energy,
+		GameConfig.dawn_fog_density,
+		GameConfig.dawn_fog_light_color
+	)
 	if sun.light_color != GameConfig.dawn_sun_color:
 		_errors.append("GoldenHourSun should switch to dawn color")
 	if absf(sun.light_energy - GameConfig.dawn_sun_energy) > FLOAT_EPSILON:
 		_errors.append("GoldenHourSun should switch to dawn energy")
+
+
+func _require_environment_mood(environment: Environment, mood_name: String, background_color: Color, ambient_color: Color, ambient_energy: float, fog_density: float, fog_light_color: Color) -> void:
+	if environment.background_mode != Environment.BG_COLOR:
+		_errors.append("GoldenHourEnvironment " + mood_name + " should use color background mode")
+	if environment.ambient_light_source != Environment.AMBIENT_SOURCE_COLOR:
+		_errors.append("GoldenHourEnvironment " + mood_name + " should use color ambient source")
+	if not environment.fog_enabled:
+		_errors.append("GoldenHourEnvironment " + mood_name + " should enable fog")
+	if environment.background_color != background_color:
+		_errors.append("GoldenHourEnvironment " + mood_name + " background color mismatch")
+	if environment.ambient_light_color != ambient_color:
+		_errors.append("GoldenHourEnvironment " + mood_name + " ambient color mismatch")
+	if absf(environment.ambient_light_energy - ambient_energy) > FLOAT_EPSILON:
+		_errors.append("GoldenHourEnvironment " + mood_name + " ambient energy expected " + str(ambient_energy) + ", got " + str(environment.ambient_light_energy))
+	if absf(environment.fog_density - fog_density) > FLOAT_EPSILON:
+		_errors.append("GoldenHourEnvironment " + mood_name + " fog density expected " + str(fog_density) + ", got " + str(environment.fog_density))
+	if environment.fog_light_color != fog_light_color:
+		_errors.append("GoldenHourEnvironment " + mood_name + " fog light color mismatch")
 
 
 func _inspect_audio_rig(audio_rig: Node) -> void:
