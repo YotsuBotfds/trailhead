@@ -24,6 +24,9 @@ assert_metrics() {
 printf 'run: project opens headless\n'
 "$godot_bin" --headless --path . --quit
 
+printf 'run: project input map defaults\n'
+"$godot_bin" --headless --path . res://tools/input_map_inspector.tscn
+
 run_sim "$out_dir/flat_target.json" \
 	--scene=flat_plane \
 	--controller=pd \
