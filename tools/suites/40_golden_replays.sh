@@ -1,9 +1,23 @@
+golden_sample_count() {
+	python3 - "$1" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+data = json.loads(path.read_text())
+samples = data.get("samples", [])
+if not isinstance(samples, list) or not samples:
+	raise SystemExit(f"{path}: replay has no samples")
+print(len(samples))
+PY
+}
+
 assert_golden_replay() {
+	expected_samples="$(golden_sample_count "$2")"
 	assert_metrics "$1" \
 		--predicate=golden_replay_matched \
-		--metric-min=golden_replay.compared_samples:1 \
-		--metric-min=golden_replay.compared_slip_samples:1 \
-		--metric-min=golden_replay.compared_motor_rpm_samples:1 \
+		--metric-near="golden_replay.compared_samples:$expected_samples:0" \
 		--metric-min=golden_replay.compared_surface_ticks:1 \
 		--metric-min=golden_replay.compared_event_counts:4
 }
@@ -18,7 +32,7 @@ run_sim "$out_dir/golden_flat_target.json" \
 	--max-ticks=440 \
 	--stuck-window=120 \
 	--stuck-min-progress=0.05
-assert_golden_replay "$out_dir/golden_flat_target.json"
+assert_golden_replay "$out_dir/golden_flat_target.json" "tests/golden/flat_target_replay.json"
 
 run_sim "$out_dir/golden_flat_flipped.json" \
 	--scene=flat_plane \
@@ -30,7 +44,7 @@ run_sim "$out_dir/golden_flat_flipped.json" \
 	--max-ticks=840 \
 	--stuck-window=120 \
 	--stuck-min-progress=0.05
-assert_golden_replay "$out_dir/golden_flat_flipped.json"
+assert_golden_replay "$out_dir/golden_flat_flipped.json" "tests/golden/flat_flipped_replay.json"
 
 run_sim "$out_dir/golden_cedar_hollow_old_cedar.json" \
 	--scene=cedar_hollow \
@@ -42,7 +56,7 @@ run_sim "$out_dir/golden_cedar_hollow_old_cedar.json" \
 	--max-ticks=720 \
 	--stuck-window=120 \
 	--stuck-min-progress=0.05
-assert_golden_replay "$out_dir/golden_cedar_hollow_old_cedar.json"
+assert_golden_replay "$out_dir/golden_cedar_hollow_old_cedar.json" "tests/golden/cedar_hollow_old_cedar_replay.json"
 
 run_sim "$out_dir/golden_cedar_hollow_overlook_ridge.json" \
 	--scene=cedar_hollow \
@@ -54,7 +68,7 @@ run_sim "$out_dir/golden_cedar_hollow_overlook_ridge.json" \
 	--max-ticks=1040 \
 	--stuck-window=120 \
 	--stuck-min-progress=0.05
-assert_golden_replay "$out_dir/golden_cedar_hollow_overlook_ridge.json"
+assert_golden_replay "$out_dir/golden_cedar_hollow_overlook_ridge.json" "tests/golden/cedar_hollow_overlook_ridge_replay.json"
 
 run_sim "$out_dir/golden_cedar_hollow_bog_bottom.json" \
 	--scene=cedar_hollow \
@@ -66,7 +80,7 @@ run_sim "$out_dir/golden_cedar_hollow_bog_bottom.json" \
 	--max-ticks=840 \
 	--stuck-window=120 \
 	--stuck-min-progress=0.05
-assert_golden_replay "$out_dir/golden_cedar_hollow_bog_bottom.json"
+assert_golden_replay "$out_dir/golden_cedar_hollow_bog_bottom.json" "tests/golden/cedar_hollow_bog_bottom_replay.json"
 
 run_sim "$out_dir/golden_cedar_hollow_the_crossing.json" \
 	--scene=cedar_hollow \
@@ -79,7 +93,7 @@ run_sim "$out_dir/golden_cedar_hollow_the_crossing.json" \
 	--max-ticks=1240 \
 	--stuck-window=120 \
 	--stuck-min-progress=0.05
-assert_golden_replay "$out_dir/golden_cedar_hollow_the_crossing.json"
+assert_golden_replay "$out_dir/golden_cedar_hollow_the_crossing.json" "tests/golden/cedar_hollow_the_crossing_replay.json"
 
 run_sim "$out_dir/golden_cedar_hollow_boardwalk_end.json" \
 	--scene=cedar_hollow \
@@ -92,7 +106,7 @@ run_sim "$out_dir/golden_cedar_hollow_boardwalk_end.json" \
 	--max-ticks=840 \
 	--stuck-window=120 \
 	--stuck-min-progress=0.05
-assert_golden_replay "$out_dir/golden_cedar_hollow_boardwalk_end.json"
+assert_golden_replay "$out_dir/golden_cedar_hollow_boardwalk_end.json" "tests/golden/cedar_hollow_boardwalk_end_replay.json"
 
 run_sim "$out_dir/golden_cedar_hollow_culvert_mouth.json" \
 	--scene=cedar_hollow \
@@ -104,7 +118,7 @@ run_sim "$out_dir/golden_cedar_hollow_culvert_mouth.json" \
 	--max-ticks=1040 \
 	--stuck-window=120 \
 	--stuck-min-progress=0.05
-assert_golden_replay "$out_dir/golden_cedar_hollow_culvert_mouth.json"
+assert_golden_replay "$out_dir/golden_cedar_hollow_culvert_mouth.json" "tests/golden/cedar_hollow_culvert_mouth_replay.json"
 
 run_sim "$out_dir/golden_cedar_hollow_segment_trailhead_to_culvert_mouth.json" \
 	--scene=cedar_hollow \
@@ -115,7 +129,7 @@ run_sim "$out_dir/golden_cedar_hollow_segment_trailhead_to_culvert_mouth.json" \
 	--max-ticks=1040 \
 	--stuck-window=120 \
 	--stuck-min-progress=0.05
-assert_golden_replay "$out_dir/golden_cedar_hollow_segment_trailhead_to_culvert_mouth.json"
+assert_golden_replay "$out_dir/golden_cedar_hollow_segment_trailhead_to_culvert_mouth.json" "tests/golden/cedar_hollow_segment_trailhead_to_culvert_mouth_replay.json"
 
 run_sim "$out_dir/golden_cedar_hollow_segment_overlook_to_old_cedar.json" \
 	--scene=cedar_hollow \
@@ -126,4 +140,4 @@ run_sim "$out_dir/golden_cedar_hollow_segment_overlook_to_old_cedar.json" \
 	--max-ticks=3200 \
 	--stuck-window=120 \
 	--stuck-min-progress=0.015
-assert_golden_replay "$out_dir/golden_cedar_hollow_segment_overlook_to_old_cedar.json"
+assert_golden_replay "$out_dir/golden_cedar_hollow_segment_overlook_to_old_cedar.json" "tests/golden/cedar_hollow_segment_overlook_to_old_cedar_replay.json"
