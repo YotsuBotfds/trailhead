@@ -12,11 +12,24 @@ const CAMERA_MODE_ORBIT: int = 1
 const CAMERA_MODE_FPV: int = 2
 const MOOD_DUSK: int = 0
 const MOOD_DAWN: int = 1
+const EXPECTED_CAPTURE_NAMES: Array[String] = [
+	"trailhead_dusk_chase",
+	"trailhead_dusk_chase_map",
+	"meadow_dusk_chase",
+	"meadow_dusk_orbit",
+	"bog_bottom_dusk_chase",
+	"crossing_dawn_chase",
+	"boardwalk_dusk_chase",
+	"boardwalk_dusk_fpv",
+	"overlook_dusk_orbit",
+	"old_cedar_dusk_chase",
+]
 
 var _host: Node = null
 var _out_dir: String = DEFAULT_OUT_DIR
 var _errors: PackedStringArray = PackedStringArray()
-var _captures_written: PackedStringArray = PackedStringArray()
+var _capture_paths_written: PackedStringArray = PackedStringArray()
+var _capture_names_written: Array[String] = []
 
 
 func _ready() -> void:
@@ -36,10 +49,21 @@ func _parse_args() -> void:
 
 
 func _prepare_output_dir() -> void:
-	var absolute_dir: String = ProjectSettings.globalize_path("res://" + _out_dir)
+	var absolute_dir: String = _absolute_out_dir()
 	var err: Error = DirAccess.make_dir_recursive_absolute(absolute_dir)
 	if err != OK:
 		_errors.append("failed to create visual capture output dir: " + absolute_dir + " error=" + str(err))
+		return
+	var dir: DirAccess = DirAccess.open(absolute_dir)
+	if dir == null:
+		_errors.append("failed to open visual capture output dir: " + absolute_dir)
+		return
+	for capture_name in EXPECTED_CAPTURE_NAMES:
+		var file_name: String = capture_name + ".png"
+		if dir.file_exists(file_name):
+			var remove_err: Error = dir.remove(file_name)
+			if remove_err != OK:
+				_errors.append("failed to remove stale visual capture: " + absolute_dir.path_join(file_name) + " error=" + str(remove_err))
 
 
 func _run() -> void:
@@ -89,6 +113,7 @@ func _run() -> void:
 	_set_camera_mode(CAMERA_MODE_CHASE)
 	await _wait_for_render()
 	_capture("old_cedar_dusk_chase")
+	_verify_capture_set()
 	await _finish()
 
 
@@ -143,7 +168,38 @@ func _capture(capture_name: String) -> void:
 	if err != OK:
 		_errors.append(capture_name + " failed to save " + path + " error=" + str(err))
 		return
-	_captures_written.append(ProjectSettings.globalize_path(path))
+	_capture_paths_written.append(ProjectSettings.globalize_path(path))
+	_capture_names_written.append(capture_name)
+
+
+func _verify_capture_set() -> void:
+	for expected_name in EXPECTED_CAPTURE_NAMES:
+		if not _capture_names_written.has(expected_name):
+			_errors.append("missing expected visual capture: " + expected_name + ".png")
+	if _capture_names_written.size() != EXPECTED_CAPTURE_NAMES.size():
+		_errors.append("expected " + str(EXPECTED_CAPTURE_NAMES.size()) + " visual captures, wrote " + str(_capture_names_written.size()))
+	var absolute_dir: String = _absolute_out_dir()
+	var dir: DirAccess = DirAccess.open(absolute_dir)
+	if dir == null:
+		_errors.append("failed to inspect visual capture output dir: " + absolute_dir)
+		return
+	dir.list_dir_begin()
+	while true:
+		var file_name: String = dir.get_next()
+		if file_name == "":
+			break
+		if dir.current_is_dir():
+			continue
+		if file_name.get_extension().to_lower() != "png":
+			continue
+		var capture_name: String = file_name.get_basename()
+		if not EXPECTED_CAPTURE_NAMES.has(capture_name):
+			_errors.append("unexpected visual capture PNG in output dir: " + absolute_dir.path_join(file_name))
+	dir.list_dir_end()
+
+
+func _absolute_out_dir() -> String:
+	return ProjectSettings.globalize_path("res://" + _out_dir)
 
 
 func _image_has_variance(image: Image) -> bool:
@@ -170,9 +226,9 @@ func _finish() -> void:
 		await _wait_for_shutdown()
 		get_tree().quit(1)
 		return
-	for path in _captures_written:
+	for path in _capture_paths_written:
 		print("capture: " + path)
-	print("ok: windowed visual captures wrote " + str(_captures_written.size()) + " files")
+	print("ok: windowed visual captures wrote exact set of " + str(_capture_paths_written.size()) + " files")
 	_cleanup_host()
 	await _wait_for_shutdown()
 	get_tree().quit(0)
