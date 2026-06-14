@@ -8,6 +8,7 @@ const EXPECTED_GRASS_TUFTS: int = 18
 const EXPECTED_BOULDERS: int = 5
 const EXPECTED_BRANCHES: int = 5
 const EXPECTED_PINECONES: int = 8
+const FLOAT_EPSILON: float = 0.001
 
 var _scene_root: Node = null
 var _errors: PackedStringArray = PackedStringArray()
@@ -73,8 +74,12 @@ func _inspect() -> void:
 	_require_node(_scene_root, "ChaseCamera")
 	_require_node(_scene_root, "OrbitCamera")
 	_require_node(_scene_root, "SurfaceMap")
-	_require_node(_scene_root, "GoldenHourEnvironment")
-	_require_node(_scene_root, "GoldenHourSun")
+	var world_environment: WorldEnvironment = _require_node(_scene_root, "GoldenHourEnvironment") as WorldEnvironment
+	if world_environment != null:
+		_inspect_default_environment(world_environment)
+	var sun: DirectionalLight3D = _require_node(_scene_root, "GoldenHourSun") as DirectionalLight3D
+	if sun != null:
+		_inspect_default_sun(sun)
 	_require_node(_scene_root, "CedarAudioRig")
 	_require_node(_scene_root, "CedarAudioRig/MotorWhine")
 	_require_node(_scene_root, "CedarAudioRig/TireTexture")
@@ -103,6 +108,24 @@ func _require_named_count(parent: Node, prefix: String, expected: int) -> void:
 			count += 1
 	if count != expected:
 		_errors.append("expected " + str(expected) + " nodes named " + prefix + "*, got " + str(count))
+
+
+func _inspect_default_environment(world_environment: WorldEnvironment) -> void:
+	var environment: Environment = world_environment.environment
+	if environment == null:
+		_errors.append("GoldenHourEnvironment has no Environment resource")
+		return
+	if environment.background_color != GameConfig.dusk_background_color:
+		_errors.append("GoldenHourEnvironment should start in dusk background color")
+	if absf(environment.fog_density - GameConfig.dusk_fog_density) > FLOAT_EPSILON:
+		_errors.append("GoldenHourEnvironment should start in dusk fog density")
+
+
+func _inspect_default_sun(sun: DirectionalLight3D) -> void:
+	if sun.light_color != GameConfig.dusk_sun_color:
+		_errors.append("GoldenHourSun should start in dusk color")
+	if absf(sun.light_energy - GameConfig.dusk_sun_energy) > FLOAT_EPSILON:
+		_errors.append("GoldenHourSun should start in dusk energy")
 
 
 func _count_collision_objects(parent: Node) -> int:

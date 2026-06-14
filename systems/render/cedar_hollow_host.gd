@@ -15,6 +15,8 @@ const LandmarkHintHudScript: GDScript = preload("res://systems/render/landmark_h
 const SurfaceMapScript: GDScript = preload("res://systems/world/surface_map.gd")
 const CAMERA_MODE_CHASE: int = 0
 const CAMERA_MODE_ORBIT: int = 1
+const MOOD_DUSK: int = 0
+const MOOD_DAWN: int = 1
 
 var _world: Node3D = null
 var _vehicle: Node = null
@@ -28,6 +30,9 @@ var _chase_camera_initialized: bool = false
 var _orbit_camera_initialized: bool = false
 var _orbit_yaw_degrees: float = 0.0
 var _landmark_hint_hud: CanvasLayer = null
+var _world_environment: WorldEnvironment = null
+var _sun: DirectionalLight3D = null
+var _mood: int = MOOD_DUSK
 
 
 func _ready() -> void:
@@ -48,6 +53,7 @@ func _physics_process(delta: float) -> void:
 	_update_vehicle_input()
 	_update_camera_input()
 	_update_hud_input()
+	_update_mood_input()
 	_vehicle.call("apply_input", _vehicle_input)
 	_update_visual_wheels(delta)
 	_update_camera(delta)
@@ -62,6 +68,7 @@ func _ensure_default_input_map() -> void:
 	_ensure_action(&"self_right", [KEY_R])
 	_ensure_action(&"cam_toggle", [KEY_C])
 	_ensure_action(&"map_toggle", [KEY_M])
+	_ensure_action(&"mood_toggle", [KEY_N])
 
 
 func _ensure_action(action_name: StringName, keycodes: Array[int]) -> void:
@@ -104,12 +111,10 @@ func _spawn_vehicle() -> void:
 
 
 func _setup_light() -> void:
-	var sun: DirectionalLight3D = DirectionalLight3D.new()
-	sun.name = "GoldenHourSun"
-	sun.rotation_degrees = GameConfig.dusk_sun_rotation_degrees
-	sun.light_energy = GameConfig.dusk_sun_energy
-	sun.light_color = GameConfig.dusk_sun_color
-	add_child(sun)
+	_sun = DirectionalLight3D.new()
+	_sun.name = "GoldenHourSun"
+	add_child(_sun)
+	_apply_mood()
 
 
 func _setup_audio() -> void:
@@ -120,19 +125,12 @@ func _setup_audio() -> void:
 
 
 func _setup_environment() -> void:
-	var world_environment: WorldEnvironment = WorldEnvironment.new()
-	world_environment.name = "GoldenHourEnvironment"
+	_world_environment = WorldEnvironment.new()
+	_world_environment.name = "GoldenHourEnvironment"
 	var environment: Environment = Environment.new()
-	environment.background_mode = Environment.BG_COLOR
-	environment.background_color = GameConfig.dusk_background_color
-	environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	environment.ambient_light_color = GameConfig.dusk_ambient_color
-	environment.ambient_light_energy = GameConfig.dusk_ambient_energy
-	environment.fog_enabled = true
-	environment.fog_density = GameConfig.dusk_fog_density
-	environment.fog_light_color = GameConfig.dusk_fog_light_color
-	world_environment.environment = environment
-	add_child(world_environment)
+	_world_environment.environment = environment
+	add_child(_world_environment)
+	_apply_mood()
 
 
 func _setup_camera() -> void:
@@ -182,6 +180,46 @@ func _update_hud_input() -> void:
 	if _landmark_hint_hud == null or not Input.is_action_just_pressed("map_toggle"):
 		return
 	_landmark_hint_hud.visible = not _landmark_hint_hud.visible
+
+
+func _update_mood_input() -> void:
+	if not Input.is_action_just_pressed("mood_toggle"):
+		return
+	if _mood == MOOD_DUSK:
+		_mood = MOOD_DAWN
+	else:
+		_mood = MOOD_DUSK
+	_apply_mood()
+
+
+func _apply_mood() -> void:
+	if _sun != null:
+		if _mood == MOOD_DAWN:
+			_sun.rotation_degrees = GameConfig.dawn_sun_rotation_degrees
+			_sun.light_energy = GameConfig.dawn_sun_energy
+			_sun.light_color = GameConfig.dawn_sun_color
+		else:
+			_sun.rotation_degrees = GameConfig.dusk_sun_rotation_degrees
+			_sun.light_energy = GameConfig.dusk_sun_energy
+			_sun.light_color = GameConfig.dusk_sun_color
+	if _world_environment == null or _world_environment.environment == null:
+		return
+	var environment: Environment = _world_environment.environment
+	environment.background_mode = Environment.BG_COLOR
+	environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	environment.fog_enabled = true
+	if _mood == MOOD_DAWN:
+		environment.background_color = GameConfig.dawn_background_color
+		environment.ambient_light_color = GameConfig.dawn_ambient_color
+		environment.ambient_light_energy = GameConfig.dawn_ambient_energy
+		environment.fog_density = GameConfig.dawn_fog_density
+		environment.fog_light_color = GameConfig.dawn_fog_light_color
+	else:
+		environment.background_color = GameConfig.dusk_background_color
+		environment.ambient_light_color = GameConfig.dusk_ambient_color
+		environment.ambient_light_energy = GameConfig.dusk_ambient_energy
+		environment.fog_density = GameConfig.dusk_fog_density
+		environment.fog_light_color = GameConfig.dusk_fog_light_color
 
 
 func _collect_visual_wheels() -> void:

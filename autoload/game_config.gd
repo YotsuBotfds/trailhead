@@ -67,6 +67,14 @@ var dusk_ambient_color: Color = Color(0.42, 0.35, 0.32)
 var dusk_ambient_energy: float = 0.35
 var dusk_fog_density: float = 0.018
 var dusk_fog_light_color: Color = Color(0.78, 0.57, 0.38)
+var dawn_sun_rotation_degrees: Vector3 = Vector3(-22.0, 42.0, 0.0)
+var dawn_sun_energy: float = 1.8
+var dawn_sun_color: Color = Color(0.86, 0.78, 0.68)
+var dawn_background_color: Color = Color(0.42, 0.50, 0.55)
+var dawn_ambient_color: Color = Color(0.46, 0.52, 0.54)
+var dawn_ambient_energy: float = 0.46
+var dawn_fog_density: float = 0.032
+var dawn_fog_light_color: Color = Color(0.68, 0.75, 0.78)
 
 var audio_mix_rate: float = 22050.0
 var audio_buffer_length: float = 0.08
