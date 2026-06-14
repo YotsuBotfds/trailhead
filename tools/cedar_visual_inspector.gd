@@ -13,6 +13,7 @@ const EXPECTED_BOUNDARY_BOULDERS: int = 8
 const EXPECTED_BOUNDARY_BRANCHES: int = 6
 const FLOAT_EPSILON: float = 0.001
 const FEATURE_TRANSFORM_TOLERANCE: float = 0.01
+const FEATURE_COLLISION_ALIGNMENT_TOLERANCE: float = 0.05
 
 var _scene_root: Node = null
 var _errors: PackedStringArray = PackedStringArray()
@@ -52,6 +53,9 @@ func _inspect() -> void:
 		_require_node_rotation(feature_root, "log_ramp", Vector3(0.0, 115.0, 0.0), FLOAT_EPSILON)
 		_require_node_position(feature_root, "stepping_stone_1", Vector3(3.45, 0.01, -7.05), FEATURE_TRANSFORM_TOLERANCE)
 		_require_node_position(feature_root, "stepping_stone_5", Vector3(5.0, 0.01, -7.2), FEATURE_TRANSFORM_TOLERANCE)
+		var cedar_world: Node = _require_node(_scene_root, "CedarHollow")
+		if cedar_world != null:
+			_inspect_feature_collision_alignment(cedar_world, feature_root)
 		var collision_count: int = _count_collision_objects(feature_root)
 		if collision_count > 0:
 			_errors.append("FeatureVisuals contains collision objects: " + str(collision_count))
@@ -178,6 +182,46 @@ func _require_label(parent: Node, path: String, expected_text: String, expected_
 		_errors.append(path + " text expected " + expected_text + ", got " + label.text)
 	if label.font_size != expected_font_size:
 		_errors.append(path + " font_size expected " + str(expected_font_size) + ", got " + str(label.font_size))
+
+
+func _inspect_feature_collision_alignment(cedar_world: Node, feature_root: Node) -> void:
+	_require_node_xz_matches_body(feature_root, "boardwalk_segment_5", cedar_world, "boardwalk__surf_wood_plank", FEATURE_COLLISION_ALIGNMENT_TOLERANCE)
+	_require_node_xz_matches_body(feature_root, "culvert_pipe", cedar_world, "culvert_mouth_floor__surf_packed_dirt", FEATURE_COLLISION_ALIGNMENT_TOLERANCE)
+	_require_node_xz_matches_body(feature_root, "log_ramp", cedar_world, "log_ramp__surf_wood_plank", FEATURE_COLLISION_ALIGNMENT_TOLERANCE)
+	_require_node_inside_body_xz(feature_root, "boardwalk_segment_1", cedar_world, "boardwalk__surf_wood_plank", FEATURE_COLLISION_ALIGNMENT_TOLERANCE)
+	_require_node_inside_body_xz(feature_root, "boardwalk_segment_9", cedar_world, "boardwalk__surf_wood_plank", FEATURE_COLLISION_ALIGNMENT_TOLERANCE)
+	_require_node_inside_body_xz(feature_root, "stepping_stone_1", cedar_world, "wet_stone_crossing__surf_wet_stone", FEATURE_COLLISION_ALIGNMENT_TOLERANCE)
+	_require_node_inside_body_xz(feature_root, "stepping_stone_5", cedar_world, "wet_stone_crossing__surf_wet_stone", FEATURE_COLLISION_ALIGNMENT_TOLERANCE)
+
+
+func _require_node_xz_matches_body(visual_parent: Node, visual_path: String, body_parent: Node, body_path: String, tolerance: float) -> void:
+	var visual: Node3D = _require_node(visual_parent, visual_path) as Node3D
+	var body: Node3D = _require_node(body_parent, body_path) as Node3D
+	if visual == null or body == null:
+		return
+	var delta: Vector2 = Vector2(visual.global_position.x - body.global_position.x, visual.global_position.z - body.global_position.z)
+	if delta.length() > tolerance:
+		_errors.append(visual_path + " should align with " + body_path + " in XZ, delta was " + str(delta.length()))
+
+
+func _require_node_inside_body_xz(visual_parent: Node, visual_path: String, body_parent: Node, body_path: String, margin: float) -> void:
+	var visual: Node3D = _require_node(visual_parent, visual_path) as Node3D
+	var body: Node3D = _require_node(body_parent, body_path) as Node3D
+	if visual == null or body == null:
+		return
+	var collision: CollisionShape3D = body.get_node_or_null("Collision") as CollisionShape3D
+	if collision == null:
+		_errors.append(body_path + " is missing Collision")
+		return
+	var box: BoxShape3D = collision.shape as BoxShape3D
+	if box == null:
+		_errors.append(body_path + " Collision should use BoxShape3D")
+		return
+	var local_position: Vector3 = body.global_transform.affine_inverse() * visual.global_position
+	var half_x: float = box.size.x * 0.5 + margin
+	var half_z: float = box.size.z * 0.5 + margin
+	if absf(local_position.x) > half_x or absf(local_position.z) > half_z:
+		_errors.append(visual_path + " should sit inside " + body_path + " XZ bounds, local position was " + str(local_position))
 
 
 func _inspect_default_environment(world_environment: WorldEnvironment) -> void:
