@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="TerrainSurfacePalette" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://systems/world/terrain_surface_palette.gd" id="1_script"]
+
+[resource]
+script = ExtResource("1_script")
+image_path = "res://assets/models/terrain/cedar_hollow_surface_id.png"
+id_values = Array[int]([1, 2, 3, 4, 5, 6, 7])
+surface_ids = Array[StringName]([&"packed_gravel", &"packed_dirt", &"tall_grass", &"mud", &"loose_rock", &"wet_stone", &"wood_plank"])
