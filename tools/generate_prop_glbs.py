@@ -189,12 +189,44 @@ def old_cedar_stump():
     ])
 
 
+def fire_ring():
+    stones = []
+    for index in range(12):
+        angle = math.tau * float(index) / 12.0
+        stones.append(transformed(
+            cylinder(0.075, 0.085, 10, 0.10),
+            (math.cos(angle) * 0.36, 0.0, math.sin(angle) * 0.36),
+            (1.0, 0.75, 1.0),
+        ))
+    return merge(stones)
+
+
+def hiking_boot():
+    return merge([
+        transformed(box(0.46, 0.08, 0.18), (0.0, 0.0, 0.0)),
+        transformed(box(0.34, 0.18, 0.17), (-0.03, 0.06, 0.0)),
+        transformed(box(0.15, 0.24, 0.16), (-0.2, 0.16, 0.0)),
+        transformed(box(0.18, 0.08, 0.16), (0.2, 0.08, 0.0)),
+    ])
+
+
+def water_bottle():
+    return merge([
+        transformed(cylinder(0.08, 0.42, 16, 0.02), (0.0, 0.0, 0.0)),
+        transformed(cylinder(0.055, 0.08, 12, 0.01), (0.0, 0.42, 0.0)),
+        transformed(cylinder(0.06, 0.035, 12, 0.0), (0.0, 0.50, 0.0)),
+    ])
+
+
 def main():
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     assets = [
         ("trail_sign", trail_sign(), [0.45, 0.29, 0.16, 1.0]),
         ("picnic_table", picnic_table(), [0.42, 0.26, 0.14, 1.0]),
         ("old_cedar_stump", old_cedar_stump(), [0.32, 0.20, 0.11, 1.0]),
+        ("fire_ring", fire_ring(), [0.30, 0.28, 0.24, 1.0]),
+        ("hiking_boot", hiking_boot(), [0.18, 0.12, 0.08, 1.0]),
+        ("water_bottle", water_bottle(), [0.22, 0.50, 0.62, 1.0]),
     ]
     for asset_name, mesh, color in assets:
         vertices, indices = mesh
