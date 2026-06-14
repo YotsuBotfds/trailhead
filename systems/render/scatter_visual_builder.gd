@@ -86,7 +86,10 @@ static func _add_boulders(parent: Node3D) -> void:
 		Vector3(3.15, 0.0, -7.25)
 	]
 	for i in range(mini(EXPECTED_BOULDERS, positions.size())):
-		var scale: Vector3 = Vector3.ONE * (0.75 + float(i % 3) * 0.15)
+		var scale_factor: float = 0.75 + float(i % 3) * 0.15
+		if i == 3:
+			scale_factor = 0.62
+		var scale: Vector3 = Vector3.ONE * scale_factor
 		_instance_scatter(parent, BoulderScene, "boulder_" + str(i + 1), positions[i], Vector3(0.0, float(i) * 41.0, 0.0), scale)
 
 
@@ -128,7 +131,10 @@ static func _add_ferns(parent: Node3D) -> void:
 		Vector3(3.05, 0.0, -7.65)
 	]
 	for i in range(mini(EXPECTED_FERN_CLUMPS, positions.size())):
-		var scale: Vector3 = Vector3.ONE * (0.8 + float(i % 3) * 0.12)
+		var scale_factor: float = 0.8 + float(i % 3) * 0.12
+		if i == 4:
+			scale_factor = 0.68
+		var scale: Vector3 = Vector3.ONE * scale_factor
 		_instance_scatter(parent, FernClumpScene, "fern_clump_" + str(i + 1), positions[i], Vector3(0.0, float(i) * 53.0, 0.0), scale)
 
 

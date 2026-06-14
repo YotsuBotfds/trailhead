@@ -122,7 +122,7 @@ def part(mesh, color, part_name):
     return vertices, indices, color, part_name
 
 
-def write_glb_parts(path, asset_name, parts, generator, roughness_factor, surface_id=""):
+def write_glb_parts(path, asset_name, parts, generator, roughness_factor, surface_id="", double_sided=False):
     node_name = asset_name
     if surface_id:
         node_name = asset_name + "__surf_" + surface_id
@@ -200,14 +200,17 @@ def write_glb_parts(path, asset_name, parts, generator, roughness_factor, surfac
             "mode": 4,
             "material": part_index,
         })
-        materials.append({
+        material = {
             "name": part_name + "_mat",
             "pbrMetallicRoughness": {
                 "baseColorFactor": color,
                 "roughnessFactor": roughness_factor,
                 "metallicFactor": 0.0,
             },
-        })
+        }
+        if double_sided:
+            material["doubleSided"] = True
+        materials.append(material)
     bin_chunk = pad4(bytes(bin_data), b"\0")
     gltf = {
         "asset": {"version": "2.0", "generator": generator},
