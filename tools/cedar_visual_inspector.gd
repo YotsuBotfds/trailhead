@@ -14,6 +14,15 @@ const EXPECTED_BOUNDARY_BRANCHES: int = 6
 const FLOAT_EPSILON: float = 0.001
 const FEATURE_TRANSFORM_TOLERANCE: float = 0.01
 const FEATURE_COLLISION_ALIGNMENT_TOLERANCE: float = 0.05
+const SCATTER_X_MIN: float = -2.8
+const SCATTER_X_MAX: float = 5.05
+const SCATTER_Z_MIN: float = -9.55
+const SCATTER_Z_MAX: float = -0.3
+const BOUNDARY_EDGE_X: float = 4.5
+const BOUNDARY_BACK_Z: float = -9.8
+const EXPECTED_BOUNDARY_LEFT_VISUALS: int = 13
+const EXPECTED_BOUNDARY_RIGHT_VISUALS: int = 14
+const EXPECTED_BOUNDARY_BACK_VISUALS: int = 7
 
 var _scene_root: Node = null
 var _errors: PackedStringArray = PackedStringArray()
@@ -94,6 +103,7 @@ func _inspect() -> void:
 		_require_named_count(scatter_root, "boulder_", EXPECTED_BOULDERS)
 		_require_named_count(scatter_root, "branch_", EXPECTED_BRANCHES)
 		_require_named_count(scatter_root, "pinecone_", EXPECTED_PINECONES)
+		_inspect_scatter_layout(scatter_root)
 		var scatter_collision_count: int = _count_collision_objects(scatter_root)
 		if scatter_collision_count > 0:
 			_errors.append("ScatterVisuals contains collision objects: " + str(scatter_collision_count))
@@ -105,6 +115,7 @@ func _inspect() -> void:
 		_require_named_count(boundary_root, "boundary_grass_", EXPECTED_BOUNDARY_GRASS)
 		_require_named_count(boundary_root, "boundary_boulder_", EXPECTED_BOUNDARY_BOULDERS)
 		_require_named_count(boundary_root, "boundary_branch_", EXPECTED_BOUNDARY_BRANCHES)
+		_inspect_boundary_layout(boundary_root)
 		var boundary_collision_count: int = _count_collision_objects(boundary_root)
 		if boundary_collision_count > 0:
 			_errors.append("BoundaryVisuals contains collision objects: " + str(boundary_collision_count))
@@ -193,6 +204,65 @@ func _inspect_feature_collision_alignment(cedar_world: Node, feature_root: Node)
 	_require_node_inside_body_xz(feature_root, "boardwalk_segment_9", cedar_world, "boardwalk__surf_wood_plank", FEATURE_COLLISION_ALIGNMENT_TOLERANCE)
 	_require_node_inside_body_xz(feature_root, "stepping_stone_1", cedar_world, "wet_stone_crossing__surf_wet_stone", FEATURE_COLLISION_ALIGNMENT_TOLERANCE)
 	_require_node_inside_body_xz(feature_root, "stepping_stone_5", cedar_world, "wet_stone_crossing__surf_wet_stone", FEATURE_COLLISION_ALIGNMENT_TOLERANCE)
+
+
+func _inspect_scatter_layout(scatter_root: Node) -> void:
+	_require_node_position(scatter_root, "grass_tuft_1", Vector3(-2.3, 0.0, -0.9), FEATURE_TRANSFORM_TOLERANCE)
+	_require_node_position(scatter_root, "grass_tuft_18", Vector3(2.9, 0.0, -6.9), FEATURE_TRANSFORM_TOLERANCE)
+	_require_node_position(scatter_root, "boulder_1", Vector3(-2.65, 0.3, -8.5), FEATURE_TRANSFORM_TOLERANCE)
+	_require_node_position(scatter_root, "boulder_5", Vector3(3.55, 0.0, -6.55), FEATURE_TRANSFORM_TOLERANCE)
+	_require_node_position(scatter_root, "branch_5", Vector3(-0.9, 0.02, -9.45), FEATURE_TRANSFORM_TOLERANCE)
+	_require_node_position(scatter_root, "pinecone_8", Vector3(-1.9, 0.24, -8.9), FEATURE_TRANSFORM_TOLERANCE)
+	_require_direct_children_inside_xz(scatter_root, "ScatterVisuals", SCATTER_X_MIN, SCATTER_X_MAX, SCATTER_Z_MIN, SCATTER_Z_MAX)
+
+
+func _inspect_boundary_layout(boundary_root: Node) -> void:
+	_require_node_position(boundary_root, "boundary_grass_1", Vector3(-5.05, 0.0, 0.8), FEATURE_TRANSFORM_TOLERANCE)
+	_require_node_position(boundary_root, "boundary_grass_16", Vector3(4.95, 0.0, -8.5), FEATURE_TRANSFORM_TOLERANCE)
+	_require_node_position(boundary_root, "boundary_grass_20", Vector3(1.0, 0.12, -9.95), FEATURE_TRANSFORM_TOLERANCE)
+	_require_node_position(boundary_root, "boundary_boulder_1", Vector3(-5.15, 0.0, -0.9), FEATURE_TRANSFORM_TOLERANCE)
+	_require_node_position(boundary_root, "boundary_boulder_8", Vector3(0.15, 0.18, -10.05), FEATURE_TRANSFORM_TOLERANCE)
+	_require_node_position(boundary_root, "boundary_branch_1", Vector3(-4.9, 0.02, -2.2), FEATURE_TRANSFORM_TOLERANCE)
+	_require_node_position(boundary_root, "boundary_branch_6", Vector3(-1.55, 0.31, -10.05), FEATURE_TRANSFORM_TOLERANCE)
+	_require_boundary_bands(boundary_root)
+
+
+func _require_direct_children_inside_xz(parent: Node, label: String, min_x: float, max_x: float, min_z: float, max_z: float) -> void:
+	for child in parent.get_children():
+		var node: Node3D = child as Node3D
+		if node == null:
+			continue
+		var local_position: Vector3 = node.position
+		if local_position.x < min_x or local_position.x > max_x or local_position.z < min_z or local_position.z > max_z:
+			_errors.append(label + "/" + String(child.name) + " should remain inside XZ range, got " + str(local_position))
+
+
+func _require_boundary_bands(boundary_root: Node) -> void:
+	var left_count: int = 0
+	var right_count: int = 0
+	var back_count: int = 0
+	for child in boundary_root.get_children():
+		var node: Node3D = child as Node3D
+		if node == null:
+			continue
+		var local_position: Vector3 = node.position
+		var is_left_band: bool = local_position.x <= -BOUNDARY_EDGE_X
+		var is_right_band: bool = local_position.x >= BOUNDARY_EDGE_X
+		var is_back_band: bool = local_position.z <= BOUNDARY_BACK_Z
+		if is_left_band:
+			left_count += 1
+		if is_right_band:
+			right_count += 1
+		if is_back_band:
+			back_count += 1
+		if not is_left_band and not is_right_band and not is_back_band:
+			_errors.append("BoundaryVisuals/" + String(child.name) + " should sit on a left, right, or back boundary band, got " + str(local_position))
+	if left_count != EXPECTED_BOUNDARY_LEFT_VISUALS:
+		_errors.append("expected " + str(EXPECTED_BOUNDARY_LEFT_VISUALS) + " left boundary visuals, got " + str(left_count))
+	if right_count != EXPECTED_BOUNDARY_RIGHT_VISUALS:
+		_errors.append("expected " + str(EXPECTED_BOUNDARY_RIGHT_VISUALS) + " right boundary visuals, got " + str(right_count))
+	if back_count != EXPECTED_BOUNDARY_BACK_VISUALS:
+		_errors.append("expected " + str(EXPECTED_BOUNDARY_BACK_VISUALS) + " back boundary visuals, got " + str(back_count))
 
 
 func _require_node_xz_matches_body(visual_parent: Node, visual_path: String, body_parent: Node, body_path: String, tolerance: float) -> void:
