@@ -33,6 +33,10 @@ const GRASS_OCCLUDER_X_MAX: float = 4.7
 const GRASS_OCCLUDER_Z_MIN: float = -7.4
 const GRASS_OCCLUDER_Z_MAX: float = -0.9
 const GRASS_OCCLUDER_MIN_HEIGHT: float = 0.58
+const CROSSING_CHASE_QA_POSITION: Vector3 = Vector3(4.25, 0.0, -6.55)
+const CROSSING_CHASE_QA_YAW_DEGREES: float = -70.0
+const CHASE_CLEAR_CORRIDOR_LENGTH: float = 0.7
+const CHASE_CLEAR_CORRIDOR_HALF_WIDTH: float = 0.18
 const BOUNDARY_EDGE_X: float = 4.5
 const BOUNDARY_BACK_Z: float = -9.8
 const HEIGHTMESH_ROUTE_MARGIN: float = 0.35
@@ -163,6 +167,7 @@ func _inspect() -> void:
 		_require_named_count(scatter_root, "fern_clump_", EXPECTED_FERN_CLUMPS)
 		_require_named_count(scatter_root, "cattail_", EXPECTED_CATTAILS)
 		_inspect_scatter_layout(scatter_root)
+		_inspect_chase_capture_clearance(scatter_root)
 		var scatter_collision_count: int = _count_collision_objects(scatter_root)
 		if scatter_collision_count > 0:
 			_errors.append("ScatterVisuals contains collision objects: " + str(scatter_collision_count))
@@ -406,6 +411,34 @@ func _inspect_grass_occluders(scatter_root: Node) -> void:
 		var camera_scale_height: float = GameConfig.cam_height * 3.0
 		if accumulator.bounds_max.y < occluder.global_position.y + camera_scale_height:
 			_errors.append(node_path + " should rise above the low chase-camera scale read")
+
+
+func _inspect_chase_capture_clearance(scatter_root: Node) -> void:
+	var prefixes: Array[String] = ["grass_occluder_", "cattail_"]
+	var basis: Basis = Basis(Vector3.UP, deg_to_rad(CROSSING_CHASE_QA_YAW_DEGREES))
+	var forward: Vector3 = -basis.z.normalized()
+	var forward_xz: Vector2 = Vector2(forward.x, forward.z).normalized()
+	for child in scatter_root.get_children():
+		var node: Node3D = child as Node3D
+		if node == null or not _name_begins_with_any(String(child.name), prefixes):
+			continue
+		var delta: Vector2 = Vector2(
+			node.position.x - CROSSING_CHASE_QA_POSITION.x,
+			node.position.z - CROSSING_CHASE_QA_POSITION.z
+		)
+		var along: float = delta.dot(forward_xz)
+		if along <= 0.0 or along > CHASE_CLEAR_CORRIDOR_LENGTH:
+			continue
+		var lateral: float = absf(delta.x * forward_xz.y - delta.y * forward_xz.x)
+		if lateral < CHASE_CLEAR_CORRIDOR_HALF_WIDTH:
+			_errors.append("ScatterVisuals/" + String(child.name) + " blocks the crossing chase QA corridor")
+
+
+func _name_begins_with_any(child_name: String, prefixes: Array[String]) -> bool:
+	for prefix in prefixes:
+		if child_name.begins_with(prefix):
+			return true
+	return false
 
 
 func _inspect_boundary_layout(boundary_root: Node) -> void:

@@ -135,8 +135,8 @@ static func _add_ferns(parent: Node3D) -> void:
 static func _add_cattails(parent: Node3D) -> void:
 	var positions: Array[Vector3] = [
 		Vector3(3.95, 0.0, -6.25),
-		Vector3(4.35, 0.0, -6.55),
-		Vector3(4.75, 0.0, -6.9),
+		Vector3(4.55, 0.0, -6.1),
+		Vector3(4.9, 0.0, -7.05),
 		Vector3(3.85, 0.0, -7.35),
 		Vector3(4.45, 0.0, -7.55)
 	]
