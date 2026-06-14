@@ -161,6 +161,32 @@ run_sim "$out_dir/cedar_hollow_segment_overlook_to_old_cedar.json" \
 	--stuck-window=60 \
 	--stuck-min-progress=0.03
 
+assert_metrics "$out_dir/flat_flipped.json" \
+	--surface=packed_dirt:40 \
+	--metric-min=flipped_event_count:1 \
+	--metric-min=self_righted_event_count:1
+
+assert_metrics "$out_dir/ebrake_drift.json" \
+	--surface=packed_dirt:40 \
+	--metric-min=ebrake_ticks:80 \
+	--metric-min=max_abs_slip_angle_deg:90.0 \
+	--metric-min=max_abs_yaw_rate:10.0 \
+	--metric-min=max_speed:2.5
+
+assert_metrics "$out_dir/launch_wheelie.json" \
+	--surface=packed_dirt:25 \
+	--metric-min=front_air_rear_contact_ticks:8 \
+	--metric-min=max_pitch_deg:8.0 \
+	--metric-min=max_speed:3.0
+
+assert_metrics "$out_dir/surface_sweep.json" \
+	--surface=packed_dirt:8 \
+	--surface=tall_grass:10 \
+	--surface=mud:10 \
+	--surface=wet_stone:8 \
+	--surface-sequence=packed_dirt,tall_grass,mud,wet_stone \
+	--metric-min=max_abs_slip_angle_deg:3.0
+
 assert_metrics "$out_dir/cedar_hollow_log_ramp.json" \
 	--surface=wood_plank:20 \
 	--surface-sequence=wood_plank,tall_grass,wood_plank \
