@@ -10,9 +10,18 @@ check_feature() {
 	./tools/check_glb.py "$path" --require-surface-tag --surface-id="$surface_id"
 }
 
-check_decoration() {
+check_prop() {
 	path="$1"
-	./tools/check_glb.py "$path"
+	min_dimension="$2"
+	max_dimension="$3"
+	./tools/check_glb.py "$path" --profile prop --min-dimension="$min_dimension" --max-dimension="$max_dimension"
+}
+
+check_scatter() {
+	path="$1"
+	min_dimension="$2"
+	max_dimension="$3"
+	./tools/check_glb.py "$path" --profile scatter --min-dimension="$min_dimension" --max-dimension="$max_dimension"
 }
 
 check_vehicle() {
@@ -42,12 +51,24 @@ check_feature assets/models/features/culvert_pipe.glb packed_dirt
 check_feature assets/models/features/log_ramp.glb wood_plank
 check_feature assets/models/features/stepping_stone.glb wet_stone
 
-for path in assets/models/props/*.glb; do
-	check_decoration "$path"
-done
+check_prop assets/models/props/bottle_cap.glb 0.07 0.35
+check_prop assets/models/props/carabiner.glb 0.08 0.45
+check_prop assets/models/props/fire_ring.glb 0.40 1.40
+check_prop assets/models/props/hiking_boot.glb 0.25 0.90
+check_prop assets/models/props/kiosk.glb 0.80 2.60
+check_prop assets/models/props/mile_marker.glb 0.35 1.10
+check_prop assets/models/props/old_cedar_stump.glb 0.60 2.20
+check_prop assets/models/props/park_bench.glb 0.70 2.20
+check_prop assets/models/props/picnic_table.glb 0.80 2.40
+check_prop assets/models/props/trail_sign.glb 0.50 1.60
+check_prop assets/models/props/water_bottle.glb 0.25 0.90
 
-for path in assets/models/scatter/*.glb; do
-	check_decoration "$path"
-done
+check_scatter assets/models/scatter/boulder_a.glb 0.20 1.20
+check_scatter assets/models/scatter/branch_a.glb 0.30 1.40
+check_scatter assets/models/scatter/cattail.glb 0.30 1.00
+check_scatter assets/models/scatter/fern_clump.glb 0.15 0.80
+check_scatter assets/models/scatter/grass_tuft.glb 0.20 0.80
+check_scatter assets/models/scatter/pinecone.glb 0.08 0.35
+check_scatter assets/models/scatter/trail_blaze.glb 0.25 0.90
 
 printf 'ok: asset GLB contracts passed\n'

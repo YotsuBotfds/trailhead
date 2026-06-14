@@ -22,6 +22,16 @@ VEHICLE_WHEEL_SOCKET_POSITIONS = {
     "wheel_rear_right": [0.08, -0.015, 0.10],
 }
 VEHICLE_SOCKET_TOLERANCE = 0.001
+DECORATION_PROFILE_DEFAULTS = {
+    "prop": {
+        "min_dimension": 0.05,
+        "max_dimension": 4.0,
+    },
+    "scatter": {
+        "min_dimension": 0.05,
+        "max_dimension": 1.5,
+    },
+}
 
 
 def fail(message):
@@ -334,6 +344,37 @@ def validate_heightmesh(args, stats):
     return ok
 
 
+def validate_decoration_profile(args, stats, profile_name, surface_tags, wheel_names):
+    ok = True
+    expected_name = args.expected_name if args.expected_name is not None else args.path.stem
+    defaults = DECORATION_PROFILE_DEFAULTS[profile_name]
+    min_dimension = args.min_dimension if args.min_dimension is not None else defaults["min_dimension"]
+    max_dimension = args.max_dimension if args.max_dimension is not None else defaults["max_dimension"]
+
+    if stats["mesh_count"] <= 0:
+        ok = fail(f"{profile_name} profile requires at least one mesh") and ok
+    if stats["primitive_count"] <= 0:
+        ok = fail(f"{profile_name} profile requires at least one primitive") and ok
+    if stats["triangle_count"] <= 0:
+        ok = fail(f"{profile_name} profile requires nonzero triangles") and ok
+    if expected_name not in stats["names"]:
+        ok = fail(f"{profile_name} profile requires a node or mesh named {expected_name}") and ok
+    for name in stats["names"]:
+        if not SNAKE_CASE_PATTERN.match(name):
+            ok = fail(f"{profile_name} node/mesh name is not snake_case: {name}") and ok
+    if surface_tags:
+        ok = fail(f"{profile_name} profile is decorative; unexpected surface tags: {', '.join(sorted(set(surface_tags)))}") and ok
+    if wheel_names:
+        ok = fail(f"{profile_name} profile should not include wheel/tire nodes: {', '.join(wheel_names)}") and ok
+    if stats["dimensions"]:
+        largest = max(stats["dimensions"])
+        if largest < min_dimension:
+            ok = fail(f"{profile_name} largest dimension {largest:.3f} m is below min {min_dimension:.3f} m") and ok
+        if largest > max_dimension:
+            ok = fail(f"{profile_name} largest dimension {largest:.3f} m exceeds max {max_dimension:.3f} m") and ok
+    return ok
+
+
 def validate(args, stats, bin_chunk_count):
     ok = True
     print(f"file: {args.path}")
@@ -385,6 +426,9 @@ def validate(args, stats, bin_chunk_count):
     if args.profile == "heightmesh":
         ok = validate_heightmesh(args, stats) and ok
 
+    if args.profile == "prop" or args.profile == "scatter":
+        ok = validate_decoration_profile(args, stats, args.profile, surface_tags, wheel_names) and ok
+
     if ok:
         print("ok: GLB import contract checks passed")
     return ok
@@ -393,10 +437,11 @@ def validate(args, stats, bin_chunk_count):
 def main():
     parser = argparse.ArgumentParser(description="Validate Trailhead GLB import contracts.")
     parser.add_argument("path", type=Path)
-    parser.add_argument("--profile", choices=["generic", "vehicle", "heightmesh"], default="generic")
+    parser.add_argument("--profile", choices=["generic", "vehicle", "heightmesh", "prop", "scatter"], default="generic")
     parser.add_argument("--max-triangles", type=int, default=200000)
     parser.add_argument("--max-dimension", type=float)
     parser.add_argument("--min-dimension", type=float)
+    parser.add_argument("--expected-name")
     parser.add_argument("--require-surface-tag", action="store_true")
     parser.add_argument("--surface-id")
     parser.add_argument("--surface-id-map", type=Path)
