@@ -28,6 +28,7 @@ python3 tools/generate_scatter_glbs.py --out-dir "$tmp_dir/scatter" >/dev/null
 python3 tools/generate_heightmesh_assets.py --out-dir "$tmp_dir/terrain" >/dev/null
 python3 tools/generate_vehicle_glbs.py --out-dir "$tmp_dir/vehicle" >/dev/null
 python3 tools/generate_vehicle_residue_textures.py --out-dir "$tmp_dir/vehicle_residue" >/dev/null
+python3 tools/generate_surface_detail_textures.py --out-dir "$tmp_dir/surface_detail" >/dev/null
 
 check_file() {
 	generated_path="$1"
@@ -111,3 +112,7 @@ check_file "$tmp_dir/vehicle_residue/wetness_body_mask.png" "assets/textures/veh
 check_file "$tmp_dir/vehicle_residue/mud_tire_mask.png" "assets/textures/vehicle/residue/mud_tire_mask.png"
 check_file "$tmp_dir/vehicle_residue/dust_tire_mask.png" "assets/textures/vehicle/residue/dust_tire_mask.png"
 check_file "$tmp_dir/vehicle_residue/wetness_tire_mask.png" "assets/textures/vehicle/residue/wetness_tire_mask.png"
+check_file "$tmp_dir/surface_detail/SOURCES.md" "assets/textures/surface_visuals/generated/SOURCES.md"
+check_file "$tmp_dir/surface_detail/terrain_detail_albedo.png" "assets/textures/surface_visuals/generated/terrain_detail_albedo.png"
+check_file "$tmp_dir/surface_detail/terrain_detail_normal.png" "assets/textures/surface_visuals/generated/terrain_detail_normal.png"
+check_file "$tmp_dir/surface_detail/terrain_detail_mask.png" "assets/textures/surface_visuals/generated/terrain_detail_mask.png"

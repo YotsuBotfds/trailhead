@@ -6,7 +6,7 @@ const MAX_TIRE_AUDIO_GAIN: float = 2.0
 const MIN_TIRE_AUDIO_PITCH: float = 0.1
 const MAX_TIRE_AUDIO_PITCH: float = 3.0
 const MIN_TEXTURE_UV_SCALE: float = 0.1
-const MAX_TEXTURE_UV_SCALE: float = 64.0
+const MAX_TEXTURE_UV_SCALE: float = 256.0
 const MIN_NORMAL_SCALE: float = 0.0
 const MAX_NORMAL_SCALE: float = 4.0
 
@@ -22,7 +22,6 @@ const MAX_NORMAL_SCALE: float = 4.0
 @export var emits_plank_knock: bool = false
 @export_file("*.png", "*.jpg", "*.jpeg") var albedo_texture_path: String = ""
 @export_file("*.png", "*.jpg", "*.jpeg") var normal_texture_path: String = ""
-@export_file("*.png", "*.jpg", "*.jpeg") var orm_texture_path: String = ""
 @export_file("*.png", "*.jpg", "*.jpeg") var detail_albedo_texture_path: String = ""
 @export_file("*.png", "*.jpg", "*.jpeg") var detail_normal_texture_path: String = ""
 @export var texture_uv_scale: Vector2 = Vector2(8.0, 8.0)
@@ -48,7 +47,6 @@ func validate(resource_label: String = "") -> PackedStringArray:
 	_require_float_range(tire_audio_pitch, MIN_TIRE_AUDIO_PITCH, MAX_TIRE_AUDIO_PITCH, label + " tire_audio_pitch", errors)
 	_require_texture_path(albedo_texture_path, label + " albedo_texture_path", errors)
 	_require_texture_path(normal_texture_path, label + " normal_texture_path", errors)
-	_require_texture_path(orm_texture_path, label + " orm_texture_path", errors)
 	_require_texture_path(detail_albedo_texture_path, label + " detail_albedo_texture_path", errors)
 	_require_texture_path(detail_normal_texture_path, label + " detail_normal_texture_path", errors)
 	_require_float_range(texture_uv_scale.x, MIN_TEXTURE_UV_SCALE, MAX_TEXTURE_UV_SCALE, label + " texture_uv_scale.x", errors)

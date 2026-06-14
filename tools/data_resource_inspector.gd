@@ -12,6 +12,10 @@ const EXPECTED_SURFACE_IDS: Array[StringName] = [
 	&"wet_stone",
 	&"wood_plank"
 ]
+const WET_DEFAULT_SURFACE_IDS: Array[StringName] = [
+	&"mud",
+	&"wet_stone"
+]
 
 var _errors: PackedStringArray = PackedStringArray()
 var _surface_ids: Array[StringName] = []
@@ -75,12 +79,34 @@ func _inspect_surface_visual_texture_paths() -> void:
 		if visual_def == null:
 			continue
 		var visual_id: StringName = visual_def.get("id")
+		var surface_id: StringName = visual_def.get("surface_id")
+		var is_default: bool = bool(visual_def.get("default_for_surface"))
 		var albedo_texture_path: String = visual_def.get("albedo_texture_path")
 		var normal_texture_path: String = visual_def.get("normal_texture_path")
+		var detail_albedo_texture_path: String = visual_def.get("detail_albedo_texture_path")
+		var detail_normal_texture_path: String = visual_def.get("detail_normal_texture_path")
+		var texture_uv_scale: Vector2 = visual_def.get("texture_uv_scale")
+		var detail_uv_scale: Vector2 = visual_def.get("detail_uv_scale")
+		var wetness: float = float(visual_def.get("wetness"))
+		var normal_scale: float = float(visual_def.get("normal_scale"))
 		if albedo_texture_path.is_empty():
 			_errors.append("SurfaceVisualDef " + String(visual_id) + " should have an albedo texture path")
 		if normal_texture_path.is_empty():
 			_errors.append("SurfaceVisualDef " + String(visual_id) + " should have a normal texture path")
+		if detail_albedo_texture_path.is_empty():
+			_errors.append("SurfaceVisualDef " + String(visual_id) + " should have a detail albedo texture path")
+		if detail_normal_texture_path.is_empty():
+			_errors.append("SurfaceVisualDef " + String(visual_id) + " should have a detail normal texture path")
+		if not bool(visual_def.get("triplanar")):
+			_errors.append("SurfaceVisualDef " + String(visual_id) + " should enable triplanar terrain mapping")
+		if detail_uv_scale.x <= texture_uv_scale.x or detail_uv_scale.y <= texture_uv_scale.y:
+			_errors.append("SurfaceVisualDef " + String(visual_id) + " detail_uv_scale should be finer than texture_uv_scale")
+		if normal_scale < 1.0:
+			_errors.append("SurfaceVisualDef " + String(visual_id) + " normal_scale should keep normal maps visible")
+		if is_default and WET_DEFAULT_SURFACE_IDS.has(surface_id) and wetness <= 0.0:
+			_errors.append("SurfaceVisualDef " + String(visual_id) + " should use render wetness")
+		if is_default and not WET_DEFAULT_SURFACE_IDS.has(surface_id) and wetness > 0.0:
+			_errors.append("SurfaceVisualDef " + String(visual_id) + " should stay dry by default")
 
 
 func _inspect_surface(surface: Resource, resource_path: String, expected_id: StringName) -> void:

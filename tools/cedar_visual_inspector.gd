@@ -98,6 +98,11 @@ const RESIDUE_MUD_TIRE_MASK: String = "res://assets/textures/vehicle/residue/mud
 const RESIDUE_DUST_TIRE_MASK: String = "res://assets/textures/vehicle/residue/dust_tire_mask.png"
 const RESIDUE_WETNESS_TIRE_MASK: String = "res://assets/textures/vehicle/residue/wetness_tire_mask.png"
 const TERRAIN_MATERIAL_PREFIX: String = "terrain_mat_"
+const TERRAIN_DETAIL_MASK_TEXTURE: String = "res://assets/textures/surface_visuals/generated/terrain_detail_mask.png"
+const WET_DIFFUSE_MULTIPLIER: float = 0.2
+const WET_ROUGHNESS: float = 0.12
+const WET_CLEARCOAT: float = 0.58
+const WET_CLEARCOAT_ROUGHNESS: float = 0.08
 const WHEEL_SOCKET_NAMES: Array[String] = [
 	"wheel_front_left",
 	"wheel_front_right",
@@ -433,9 +438,13 @@ func _inspect_heightmesh_mesh_materials(mesh_instance: MeshInstance3D, observed_
 		if material == null:
 			_errors.append("terrain surface " + String(surface_id) + " should have a StandardMaterial3D override")
 			continue
-		var expected_color: Color = visual_def.get("albedo_color")
-		var expected_roughness: float = float(visual_def.get("roughness"))
+		var wetness: float = clampf(float(visual_def.get("wetness")), 0.0, 1.0)
+		var base_color: Color = visual_def.get("albedo_color")
+		var expected_color: Color = _wet_albedo_color(base_color, wetness)
+		var expected_roughness: float = _wet_roughness(float(visual_def.get("roughness")), wetness)
 		var expected_uv_scale: Vector2 = visual_def.get("texture_uv_scale")
+		var expected_detail_uv_scale: Vector2 = visual_def.get("detail_uv_scale")
+		var expected_triplanar: bool = bool(visual_def.get("triplanar"))
 		var expected_name: String = "terrain_visual_" + String(visual_id)
 		if material.resource_name != expected_name:
 			_errors.append("terrain surface " + String(surface_id) + " override name expected " + expected_name + ", got " + material.resource_name)
@@ -447,12 +456,46 @@ func _inspect_heightmesh_mesh_materials(mesh_instance: MeshInstance3D, observed_
 			_errors.append("terrain surface " + String(surface_id) + " metallic should be 0")
 		if absf(material.uv1_scale.x - expected_uv_scale.x) > FLOAT_EPSILON or absf(material.uv1_scale.y - expected_uv_scale.y) > FLOAT_EPSILON:
 			_errors.append("terrain surface " + String(surface_id) + " uv1_scale expected " + str(expected_uv_scale) + ", got " + str(material.uv1_scale))
+		if absf(material.uv2_scale.x - expected_detail_uv_scale.x) > FLOAT_EPSILON or absf(material.uv2_scale.y - expected_detail_uv_scale.y) > FLOAT_EPSILON:
+			_errors.append("terrain surface " + String(surface_id) + " uv2_scale expected " + str(expected_detail_uv_scale) + ", got " + str(material.uv2_scale))
+		if material.uv1_triplanar != expected_triplanar:
+			_errors.append("terrain surface " + String(surface_id) + " uv1_triplanar should match SurfaceVisualCatalog")
+		if material.uv1_world_triplanar != expected_triplanar:
+			_errors.append("terrain surface " + String(surface_id) + " uv1_world_triplanar should match SurfaceVisualCatalog")
+		if material.uv2_triplanar != expected_triplanar:
+			_errors.append("terrain surface " + String(surface_id) + " uv2_triplanar should match SurfaceVisualCatalog")
+		if material.uv2_world_triplanar != expected_triplanar:
+			_errors.append("terrain surface " + String(surface_id) + " uv2_world_triplanar should match SurfaceVisualCatalog")
+		if material.texture_repeat != true:
+			_errors.append("terrain surface " + String(surface_id) + " should repeat terrain textures")
 		_require_material_texture(material.albedo_texture, String(visual_def.get("albedo_texture_path")), "terrain surface " + String(surface_id) + " albedo texture")
 		var expected_normal_texture_path: String = visual_def.get("normal_texture_path")
 		if not expected_normal_texture_path.is_empty() and not material.normal_enabled:
 			_errors.append("terrain surface " + String(surface_id) + " should enable normal mapping")
+		if absf(material.normal_scale - float(visual_def.get("normal_scale"))) > FLOAT_EPSILON:
+			_errors.append("terrain surface " + String(surface_id) + " normal_scale should match SurfaceVisualCatalog")
 		_require_material_texture(material.normal_texture, expected_normal_texture_path, "terrain surface " + String(surface_id) + " normal texture")
-		_require_material_texture(material.orm_texture, String(visual_def.get("orm_texture_path")), "terrain surface " + String(surface_id) + " ORM texture")
+		var expected_detail_albedo_path: String = visual_def.get("detail_albedo_texture_path")
+		var expected_detail_normal_path: String = visual_def.get("detail_normal_texture_path")
+		if not expected_detail_albedo_path.is_empty() or not expected_detail_normal_path.is_empty():
+			if not material.detail_enabled:
+				_errors.append("terrain surface " + String(surface_id) + " should enable detail mapping")
+			if material.detail_blend_mode != BaseMaterial3D.BLEND_MODE_MUL:
+				_errors.append("terrain surface " + String(surface_id) + " detail_blend_mode should multiply")
+			if material.detail_uv_layer != BaseMaterial3D.DETAIL_UV_2:
+				_errors.append("terrain surface " + String(surface_id) + " detail_uv_layer should use UV2")
+			_require_material_texture(material.detail_mask, TERRAIN_DETAIL_MASK_TEXTURE, "terrain surface " + String(surface_id) + " detail mask")
+			_require_material_texture(material.detail_albedo, expected_detail_albedo_path, "terrain surface " + String(surface_id) + " detail albedo")
+			_require_material_texture(material.detail_normal, expected_detail_normal_path, "terrain surface " + String(surface_id) + " detail normal")
+		if wetness > 0.0:
+			if not material.clearcoat_enabled:
+				_errors.append("terrain surface " + String(surface_id) + " should enable clearcoat when wet")
+			if absf(material.clearcoat - WET_CLEARCOAT * wetness) > FLOAT_EPSILON:
+				_errors.append("terrain surface " + String(surface_id) + " clearcoat should scale with wetness")
+			if absf(material.clearcoat_roughness - WET_CLEARCOAT_ROUGHNESS) > FLOAT_EPSILON:
+				_errors.append("terrain surface " + String(surface_id) + " clearcoat_roughness should match wetness model")
+		elif material.clearcoat_enabled:
+			_errors.append("terrain surface " + String(surface_id) + " should not enable clearcoat when dry")
 
 
 func _material_token_for_terrain_surface(mesh: Mesh, surface_index: int) -> StringName:
@@ -477,6 +520,15 @@ func _require_material_texture(texture: Texture2D, expected_path: String, label:
 
 func _colors_match(actual: Color, expected: Color) -> bool:
 	return absf(actual.r - expected.r) <= FLOAT_EPSILON and absf(actual.g - expected.g) <= FLOAT_EPSILON and absf(actual.b - expected.b) <= FLOAT_EPSILON and absf(actual.a - expected.a) <= FLOAT_EPSILON
+
+
+func _wet_albedo_color(base_color: Color, wetness: float) -> Color:
+	var multiplier: float = 1.0 + (WET_DIFFUSE_MULTIPLIER - 1.0) * wetness
+	return Color(base_color.r * multiplier, base_color.g * multiplier, base_color.b * multiplier, base_color.a)
+
+
+func _wet_roughness(base_roughness: float, wetness: float) -> float:
+	return base_roughness + (WET_ROUGHNESS - base_roughness) * wetness
 
 
 func _collect_mesh_bounds(parent: Node, accumulator: BoundsAccumulator) -> void:
