@@ -81,12 +81,19 @@ SCATTER_BUDGETS = {
 }
 
 
-def run(command):
-    subprocess.run(command, cwd=ROOT, check=True)
+def run(command, check=True):
+    completed = subprocess.run(command, cwd=ROOT, check=False)
+    if check and completed.returncode != 0:
+        raise subprocess.CalledProcessError(completed.returncode, command)
+    return completed.returncode
 
 
 def check_glb(path, *args):
     run([sys.executable, "tools/check_glb.py", path, *args])
+
+
+def check_glb_result(path, *args):
+    return run([sys.executable, "tools/check_glb.py", path, *args], check=False) == 0
 
 
 def fail(message):
@@ -223,7 +230,7 @@ def check_candidate(subdir, filename, candidate_path, surface_id_map):
     target_path = "assets/models/" + subdir + "/" + filename
     target_stem = Path(filename).stem
     if subdir == "features":
-        check_glb(
+        ok = check_glb_result(
             str(candidate),
             "--require-surface-tag",
             "--surface-id=" + FEATURE_SURFACES[filename],
@@ -231,7 +238,7 @@ def check_candidate(subdir, filename, candidate_path, surface_id_map):
         )
     elif subdir == "props":
         min_dimension, max_dimension = PROP_BUDGETS[filename]
-        check_glb(
+        ok = check_glb_result(
             str(candidate),
             "--profile",
             "prop",
@@ -243,7 +250,7 @@ def check_candidate(subdir, filename, candidate_path, surface_id_map):
         )
     elif subdir == "scatter":
         min_dimension, max_dimension = SCATTER_BUDGETS[filename]
-        check_glb(
+        ok = check_glb_result(
             str(candidate),
             "--profile",
             "scatter",
@@ -254,7 +261,7 @@ def check_candidate(subdir, filename, candidate_path, surface_id_map):
             "--max-primitives=" + str(SCATTER_MAX_PRIMITIVES),
         )
     elif subdir == "vehicle":
-        check_glb(
+        ok = check_glb_result(
             str(candidate),
             "--profile",
             "vehicle",
@@ -265,7 +272,7 @@ def check_candidate(subdir, filename, candidate_path, surface_id_map):
         if surface_id_map is None:
             fail("terrain GLB candidate requires --surface-id-map")
             return 1
-        check_glb(
+        ok = check_glb_result(
             str(candidate),
             "--profile",
             "heightmesh",
@@ -275,6 +282,9 @@ def check_candidate(subdir, filename, candidate_path, surface_id_map):
         )
     else:
         fail("candidate checks do not support target: " + target_path)
+        return 1
+    if not ok:
+        fail("candidate does not satisfy manifest contract for " + target_path)
         return 1
     print("ok: candidate satisfies manifest contract for " + target_path)
     return 0
