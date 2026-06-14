@@ -12,6 +12,7 @@ const EXPECTED_BOUNDARY_GRASS: int = 20
 const EXPECTED_BOUNDARY_BOULDERS: int = 8
 const EXPECTED_BOUNDARY_BRANCHES: int = 6
 const FLOAT_EPSILON: float = 0.001
+const FEATURE_TRANSFORM_TOLERANCE: float = 0.01
 
 var _scene_root: Node = null
 var _errors: PackedStringArray = PackedStringArray()
@@ -43,6 +44,14 @@ func _inspect() -> void:
 		_require_named_count(feature_root, "stepping_stone_", EXPECTED_STEPPING_STONES)
 		_require_named_count(feature_root, "culvert_pipe", 1)
 		_require_named_count(feature_root, "log_ramp", 1)
+		_require_node_position(feature_root, "boardwalk_segment_1", Vector3(3.25, 0.035, -4.31), FEATURE_TRANSFORM_TOLERANCE)
+		_require_node_position(feature_root, "boardwalk_segment_9", Vector3(3.25, 0.035, -2.39), FEATURE_TRANSFORM_TOLERANCE)
+		_require_node_scale(feature_root, "boardwalk_segment_1", Vector3(1.35, 1.0, 1.0), FLOAT_EPSILON)
+		_require_node_position(feature_root, "culvert_pipe", Vector3(-4.35, -0.02, -3.05), FEATURE_TRANSFORM_TOLERANCE)
+		_require_node_position(feature_root, "log_ramp", Vector3(1.3, -0.005, 0.16), FEATURE_TRANSFORM_TOLERANCE)
+		_require_node_rotation(feature_root, "log_ramp", Vector3(0.0, 115.0, 0.0), FLOAT_EPSILON)
+		_require_node_position(feature_root, "stepping_stone_1", Vector3(3.45, 0.01, -7.05), FEATURE_TRANSFORM_TOLERANCE)
+		_require_node_position(feature_root, "stepping_stone_5", Vector3(5.0, 0.01, -7.2), FEATURE_TRANSFORM_TOLERANCE)
 		var collision_count: int = _count_collision_objects(feature_root)
 		if collision_count > 0:
 			_errors.append("FeatureVisuals contains collision objects: " + str(collision_count))
@@ -128,6 +137,30 @@ func _require_named_count(parent: Node, prefix: String, expected: int) -> void:
 			count += 1
 	if count != expected:
 		_errors.append("expected " + str(expected) + " nodes named " + prefix + "*, got " + str(count))
+
+
+func _require_node_position(parent: Node, path: String, expected: Vector3, tolerance: float) -> void:
+	var node: Node3D = _require_node(parent, path) as Node3D
+	if node == null:
+		return
+	if node.position.distance_to(expected) > tolerance:
+		_errors.append(path + " position expected " + str(expected) + ", got " + str(node.position))
+
+
+func _require_node_rotation(parent: Node, path: String, expected: Vector3, tolerance: float) -> void:
+	var node: Node3D = _require_node(parent, path) as Node3D
+	if node == null:
+		return
+	if node.rotation_degrees.distance_to(expected) > tolerance:
+		_errors.append(path + " rotation expected " + str(expected) + ", got " + str(node.rotation_degrees))
+
+
+func _require_node_scale(parent: Node, path: String, expected: Vector3, tolerance: float) -> void:
+	var node: Node3D = _require_node(parent, path) as Node3D
+	if node == null:
+		return
+	if node.scale.distance_to(expected) > tolerance:
+		_errors.append(path + " scale expected " + str(expected) + ", got " + str(node.scale))
 
 
 func _inspect_default_environment(world_environment: WorldEnvironment) -> void:
