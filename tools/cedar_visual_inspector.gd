@@ -48,6 +48,9 @@ const HEIGHTMESH_ROUTE_MARGIN: float = 0.35
 const EXPECTED_BOUNDARY_LEFT_VISUALS: int = 15
 const EXPECTED_BOUNDARY_RIGHT_VISUALS: int = 16
 const EXPECTED_BOUNDARY_BACK_VISUALS: int = 7
+const RESIDUE_MUD_OVERLAY: String = "residue_mud_overlay"
+const RESIDUE_DUST_OVERLAY: String = "residue_dust_overlay"
+const RESIDUE_WETNESS_OVERLAY: String = "residue_wetness_overlay"
 
 class BoundsAccumulator:
 	var has_bounds: bool = false
@@ -630,6 +633,7 @@ func _inspect_vehicle_visuals(host: Node, vehicle: Node) -> void:
 	if visual_mesh_count < 9:
 		_errors.append("vehicle VisualRoot should include chassis, roll cage, and wheel meshes")
 	_require_vehicle_steering_visuals(host, visual_root)
+	_require_vehicle_residue_visuals(host, vehicle, visual_root)
 
 
 func _require_vehicle_steering_visuals(host: Node, visual_root: Node) -> void:
@@ -646,6 +650,52 @@ func _require_vehicle_steering_visuals(host: Node, visual_root: Node) -> void:
 	_require_node_rotation_y(visual_root, "wheel_rear_right", 0.0, FLOAT_EPSILON)
 	vehicle_input.set("steer", 0.0)
 	host.call("_update_visual_wheels", GameConfig.FIXED_DT)
+
+
+func _require_vehicle_residue_visuals(host: Node, vehicle: Node, visual_root: Node) -> void:
+	var state: RefCounted = vehicle.call("get_state")
+	var contamination: RefCounted = state.get("contamination") as RefCounted
+	if contamination == null:
+		_errors.append("vehicle state should expose contamination")
+		return
+	contamination.call("set_values", 0.5, 0.25, 0.75)
+	host.call("_update_vehicle_residue_visual", state)
+	_require_residue_overlay_alpha(visual_root, RESIDUE_MUD_OVERLAY, 0.5 * GameConfig.vehicle_residue_mud_visual_alpha)
+	_require_residue_overlay_alpha(visual_root, RESIDUE_DUST_OVERLAY, 0.25 * GameConfig.vehicle_residue_dust_visual_alpha)
+	_require_residue_overlay_alpha(visual_root, RESIDUE_WETNESS_OVERLAY, 0.75 * GameConfig.vehicle_residue_wetness_visual_alpha)
+	contamination.call("reset")
+	host.call("_update_vehicle_residue_visual", state)
+	_require_residue_overlay_hidden(visual_root, RESIDUE_MUD_OVERLAY)
+	_require_residue_overlay_hidden(visual_root, RESIDUE_DUST_OVERLAY)
+	_require_residue_overlay_hidden(visual_root, RESIDUE_WETNESS_OVERLAY)
+
+
+func _require_residue_overlay_alpha(parent: Node, path: String, expected_alpha: float) -> void:
+	var overlay: MeshInstance3D = _require_node(parent, path) as MeshInstance3D
+	if overlay == null:
+		return
+	if not overlay.visible:
+		_errors.append(path + " should be visible when contamination is nonzero")
+	var material: StandardMaterial3D = overlay.material_override as StandardMaterial3D
+	if material == null:
+		_errors.append(path + " should use StandardMaterial3D")
+		return
+	if absf(material.albedo_color.a - expected_alpha) > FLOAT_EPSILON:
+		_errors.append(path + " alpha expected " + str(expected_alpha) + ", got " + str(material.albedo_color.a))
+
+
+func _require_residue_overlay_hidden(parent: Node, path: String) -> void:
+	var overlay: MeshInstance3D = _require_node(parent, path) as MeshInstance3D
+	if overlay == null:
+		return
+	var material: StandardMaterial3D = overlay.material_override as StandardMaterial3D
+	if material == null:
+		_errors.append(path + " should use StandardMaterial3D")
+		return
+	if overlay.visible:
+		_errors.append(path + " should hide after contamination reset")
+	if material.albedo_color.a > FLOAT_EPSILON:
+		_errors.append(path + " alpha should reset to zero, got " + str(material.albedo_color.a))
 
 
 func _require_wheel_socket_mesh(parent: Node, path: String) -> void:

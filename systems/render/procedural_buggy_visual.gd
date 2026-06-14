@@ -2,6 +2,7 @@ class_name ProceduralBuggyVisual
 extends RefCounted
 
 const BuggyVisualScene: PackedScene = preload("res://assets/models/vehicle/rc_buggy.glb")
+const VehicleResidueVisualScript: GDScript = preload("res://systems/render/vehicle_residue_visual.gd")
 
 
 func attach(vehicle: Node) -> void:
@@ -19,3 +20,5 @@ func attach(vehicle: Node) -> void:
 		visual_root = imported_buggy
 	visual_root.name = "VisualRoot"
 	body.add_child(visual_root)
+	var residue_visual: RefCounted = VehicleResidueVisualScript.new()
+	residue_visual.call("attach", visual_root)

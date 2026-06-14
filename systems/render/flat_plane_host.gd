@@ -4,6 +4,7 @@ extends Node3D
 const VehicleScene: PackedScene = preload("res://scenes/vehicle.tscn")
 const VehicleInputScript: GDScript = preload("res://systems/vehicle/vehicle_input.gd")
 const ProceduralBuggyVisualScript: GDScript = preload("res://systems/render/procedural_buggy_visual.gd")
+const VehicleResidueVisualScript: GDScript = preload("res://systems/render/vehicle_residue_visual.gd")
 const FlatWorldBuilderScript: GDScript = preload("res://systems/world/flat_world_builder.gd")
 const SurfaceMapScript: GDScript = preload("res://systems/world/surface_map.gd")
 
@@ -11,6 +12,8 @@ var _vehicle: Node = null
 var _vehicle_input: RefCounted = VehicleInputScript.new()
 var _camera: Camera3D = null
 var _wheel_sockets: Array[Node3D] = []
+var _vehicle_visual_root: Node = null
+var _vehicle_residue_visual: RefCounted = VehicleResidueVisualScript.new()
 var _wheel_spin: float = 0.0
 var _camera_initialized: bool = false
 
@@ -122,12 +125,14 @@ func _update_vehicle_input() -> void:
 
 func _collect_visual_wheels() -> void:
 	_wheel_sockets.clear()
+	_vehicle_visual_root = null
 	var body: Node = _vehicle.get_node_or_null("PhysicsBody")
 	if body == null:
 		return
 	var visual_root: Node = body.get_node_or_null("VisualRoot")
 	if visual_root == null:
 		return
+	_vehicle_visual_root = visual_root
 	var names: Array[String] = [
 		"wheel_front_left",
 		"wheel_front_right",
@@ -141,9 +146,10 @@ func _collect_visual_wheels() -> void:
 
 
 func _update_visual_wheels(delta: float) -> void:
+	var state: RefCounted = _vehicle.call("get_state")
+	_update_vehicle_residue_visual(state)
 	if _wheel_sockets.is_empty():
 		return
-	var state: RefCounted = _vehicle.call("get_state")
 	var speed: float = float(state.call("speed"))
 	var spin_step: float = speed * delta / maxf(GameConfig.wheel_radius, 0.001)
 	var throttle: float = float(_vehicle_input.get("throttle"))
@@ -158,6 +164,12 @@ func _update_visual_wheels(delta: float) -> void:
 		var wheel_mesh: Node3D = _wheel_mesh_for_socket(socket)
 		if wheel_mesh != null:
 			wheel_mesh.rotation = Vector3(_wheel_spin, 0.0, deg_to_rad(90.0))
+
+
+func _update_vehicle_residue_visual(state: RefCounted) -> void:
+	if _vehicle_visual_root == null:
+		return
+	_vehicle_residue_visual.call("apply_state", _vehicle_visual_root, state)
 
 
 func _wheel_mesh_for_socket(socket: Node3D) -> Node3D:

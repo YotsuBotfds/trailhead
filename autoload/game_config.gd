@@ -41,6 +41,15 @@ var surface_rolling_drag_force: float = 2.5
 var surface_bog_drag_force: float = 6.0
 var surface_min_lateral_grip: float = 0.15
 var default_bog_threshold: float = 0.2
+var vehicle_contamination_pickup_rate: float = 0.08
+var vehicle_contamination_decay_rate: float = 0.012
+var vehicle_residue_visible_epsilon: float = 0.001
+var vehicle_residue_mud_visual_alpha: float = 0.58
+var vehicle_residue_dust_visual_alpha: float = 0.34
+var vehicle_residue_wetness_visual_alpha: float = 0.42
+var vehicle_residue_mud_color: Color = Color(0.17, 0.10, 0.05)
+var vehicle_residue_dust_color: Color = Color(0.66, 0.55, 0.36)
+var vehicle_residue_wetness_color: Color = Color(0.52, 0.62, 0.66)
 
 var cam_height: float = 0.18
 var cam_distance: float = 0.62

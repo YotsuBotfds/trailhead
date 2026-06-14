@@ -10,3 +10,4 @@ rolling_drag = 0.08
 slip = 0.0
 bog_enabled = false
 bog_threshold = 0.2
+dust_residue = 0.65

@@ -80,6 +80,10 @@ var _surface_speed_sum: Dictionary = {}
 var _surface_speed_delta_sum: Dictionary = {}
 var _surface_abs_slip_sum: Dictionary = {}
 var _surface_max_abs_slip: Dictionary = {}
+var _max_contamination_mud: float = 0.0
+var _max_contamination_dust: float = 0.0
+var _max_contamination_wetness: float = 0.0
+var _final_vehicle_contamination: Dictionary = {}
 
 
 func _ready() -> void:
@@ -319,6 +323,7 @@ func _record(state: RefCounted, input: RefCounted) -> void:
 	var input_throttle: float = float(input.get("throttle"))
 	var wheel_contact: Array = state.get("wheel_contact")
 	var wheel_surface: Array = state.get("wheel_surface")
+	var vehicle_contamination: Dictionary = _vehicle_contamination_dictionary(state)
 	var surface_id: StringName = _dominant_surface_from_array(wheel_surface)
 	var front_contact_count: int = _contact_count(wheel_contact, 0, 2)
 	var rear_contact_count: int = _contact_count(wheel_contact, 2, 4)
@@ -341,6 +346,7 @@ func _record(state: RefCounted, input: RefCounted) -> void:
 		"wheel_contact": _bool_array_to_array(wheel_contact),
 		"wheel_surface": _surface_array_to_array(wheel_surface),
 		"surface_id": String(surface_id),
+		"vehicle_contamination": vehicle_contamination,
 		"on_ground": bool(state.get("on_ground")),
 		"is_flipped": bool(state.get("is_flipped")),
 		"input": {
@@ -352,6 +358,7 @@ func _record(state: RefCounted, input: RefCounted) -> void:
 		}
 	}
 	_telemetry.append(row)
+	_record_contamination_metrics(vehicle_contamination)
 	if bool(input.get("self_right")):
 		_self_right_input_count += 1
 	if not _self_right_heading_captured and _self_righted_event_count > 0 and not bool(state.get("is_flipped")):
@@ -522,6 +529,8 @@ func _finish(passed: bool) -> void:
 			"landmark_event_sequence": _landmark_event_sequence,
 			"surface_contact_ticks": _surface_contact_ticks,
 			"surface_source_counts": _surface_source_counts(),
+			"vehicle_contamination": _final_vehicle_contamination,
+			"max_vehicle_contamination": _max_vehicle_contamination_dictionary(),
 			"avg_speed_by_surface": _surface_average_dictionary(_surface_speed_sum),
 			"avg_speed_delta_by_surface": _surface_average_dictionary(_surface_speed_delta_sum),
 			"max_abs_slip_angle_by_surface": _surface_max_abs_slip,
@@ -704,6 +713,39 @@ func _surface_array_to_array(values: Array) -> Array[String]:
 	for value in values:
 		out.append(String(value))
 	return out
+
+
+func _vehicle_contamination_dictionary(state: RefCounted) -> Dictionary:
+	var contamination: RefCounted = state.get("contamination") as RefCounted
+	if contamination == null:
+		return {
+			"mud": 0.0,
+			"dust": 0.0,
+			"wetness": 0.0
+		}
+	return {
+		"mud": float(contamination.get("mud")),
+		"dust": float(contamination.get("dust")),
+		"wetness": float(contamination.get("wetness"))
+	}
+
+
+func _record_contamination_metrics(contamination: Dictionary) -> void:
+	var mud: float = float(contamination.get("mud", 0.0))
+	var dust: float = float(contamination.get("dust", 0.0))
+	var wetness: float = float(contamination.get("wetness", 0.0))
+	_max_contamination_mud = maxf(_max_contamination_mud, mud)
+	_max_contamination_dust = maxf(_max_contamination_dust, dust)
+	_max_contamination_wetness = maxf(_max_contamination_wetness, wetness)
+	_final_vehicle_contamination = contamination.duplicate()
+
+
+func _max_vehicle_contamination_dictionary() -> Dictionary:
+	return {
+		"mud": _max_contamination_mud,
+		"dust": _max_contamination_dust,
+		"wetness": _max_contamination_wetness
+	}
 
 
 func _dominant_surface_from_array(values: Array) -> StringName:

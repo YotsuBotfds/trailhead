@@ -66,6 +66,9 @@ func _inspect_surface(surface: Resource, resource_path: String, expected_id: Str
 	_require_float_range(float(surface.get("rolling_drag")), 0.0, 2.0, resource_path + " rolling_drag")
 	_require_float_range(float(surface.get("slip")), 0.0, 1.0, resource_path + " slip")
 	_require_float_range(float(surface.get("bog_threshold")), 0.0, 1.0, resource_path + " bog_threshold")
+	_require_float_range(float(surface.get("mud_residue")), 0.0, 1.0, resource_path + " mud_residue")
+	_require_float_range(float(surface.get("dust_residue")), 0.0, 1.0, resource_path + " dust_residue")
+	_require_float_range(float(surface.get("wetness_residue")), 0.0, 1.0, resource_path + " wetness_residue")
 
 
 func _inspect_cedar_route() -> void:

@@ -4,6 +4,7 @@ extends "res://systems/vehicle/vehicle_controller.gd"
 const WHEEL_COUNT: int = 4
 const RaycastVehicleInputScript: GDScript = preload("res://systems/vehicle/vehicle_input.gd")
 const RaycastVehicleStateScript: GDScript = preload("res://systems/vehicle/vehicle_state.gd")
+const VehicleContaminationStateScript: GDScript = preload("res://systems/vehicle/vehicle_contamination_state.gd")
 
 var _body: RigidBody3D = null
 var _wheel_rays: Array[RayCast3D] = []
@@ -48,6 +49,7 @@ func reset_to(spawn: Transform3D) -> void:
 	_was_flipped = false
 	_current_surface_id = &""
 	_last_stable_forward = _horizontal_forward(spawn.basis)
+	_vehicle_contamination().call("reset")
 	_update_state()
 
 
@@ -116,6 +118,9 @@ func _apply_wheel_forces() -> void:
 	var rolling_drag_sum: float = 0.0
 	var slip_sum: float = 0.0
 	var bog_threshold_sum: float = 0.0
+	var mud_residue_sum: float = 0.0
+	var dust_residue_sum: float = 0.0
+	var wetness_residue_sum: float = 0.0
 	var bog_enabled: bool = false
 	for i in range(_wheel_rays.size()):
 		var ray: RayCast3D = _wheel_rays[i]
@@ -149,6 +154,9 @@ func _apply_wheel_forces() -> void:
 		rolling_drag_sum += _surface_float(surface_def, "rolling_drag", GameConfig.default_rolling_drag)
 		slip_sum += _surface_float(surface_def, "slip", GameConfig.default_slip)
 		bog_threshold_sum += _surface_float(surface_def, "bog_threshold", GameConfig.default_bog_threshold)
+		mud_residue_sum += _surface_float(surface_def, "mud_residue", 0.0)
+		dust_residue_sum += _surface_float(surface_def, "dust_residue", 0.0)
+		wetness_residue_sum += _surface_float(surface_def, "wetness_residue", 0.0)
 		if _surface_bool(surface_def, "bog_enabled", false):
 			bog_enabled = true
 	_state.set("on_ground", contact_count > 0)
@@ -164,6 +172,7 @@ func _apply_wheel_forces() -> void:
 		_surface_slip = GameConfig.default_slip
 		_surface_bog_enabled = false
 		_surface_bog_threshold = GameConfig.default_bog_threshold
+	_update_contamination(contact_count, mud_residue_sum, dust_residue_sum, wetness_residue_sum)
 	_update_surface_event()
 
 
@@ -267,6 +276,38 @@ func _surface_bool(surface_def: Resource, property_name: StringName, fallback: b
 	if surface_def == null:
 		return fallback
 	return bool(surface_def.get(property_name))
+
+
+func _update_contamination(contact_count: int, mud_residue_sum: float, dust_residue_sum: float, wetness_residue_sum: float) -> void:
+	var target_mud: float = 0.0
+	var target_dust: float = 0.0
+	var target_wetness: float = 0.0
+	if contact_count > 0:
+		target_mud = mud_residue_sum / float(contact_count)
+		target_dust = dust_residue_sum / float(contact_count)
+		target_wetness = wetness_residue_sum / float(contact_count)
+	var contamination: RefCounted = _vehicle_contamination()
+	contamination.set("mud", _residue_step(float(contamination.get("mud")), target_mud))
+	contamination.set("dust", _residue_step(float(contamination.get("dust")), target_dust))
+	contamination.set("wetness", _residue_step(float(contamination.get("wetness")), target_wetness))
+
+
+func _residue_step(current: float, target: float) -> float:
+	var step: float = GameConfig.vehicle_contamination_pickup_rate
+	if target < current:
+		step = GameConfig.vehicle_contamination_decay_rate
+	var delta: float = target - current
+	if absf(delta) <= step:
+		return clampf(target, 0.0, 1.0)
+	return clampf(current + signf(delta) * step, 0.0, 1.0)
+
+
+func _vehicle_contamination() -> RefCounted:
+	var contamination: RefCounted = _state.get("contamination") as RefCounted
+	if contamination == null:
+		contamination = VehicleContaminationStateScript.new()
+		_state.set("contamination", contamination)
+	return contamination
 
 
 func _update_state() -> void:

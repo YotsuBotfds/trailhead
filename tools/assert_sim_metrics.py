@@ -25,6 +25,15 @@ def sequence_contains(actual, expected):
     return expected_index == len(expected)
 
 
+def nested_value(values, dotted_name):
+    current = values
+    for part in dotted_name.split("."):
+        if not isinstance(current, dict) or part not in current:
+            return None
+        current = current[part]
+    return current
+
+
 def main():
     parser = argparse.ArgumentParser(description="Assert selected metrics from a Trailhead sim JSON output.")
     parser.add_argument("path", type=Path)
@@ -59,7 +68,7 @@ def main():
             errors.append(f"missing landmark event {landmark_id}; saw {landmark_sequence}")
 
     for metric_name, minimum in args.metric_min:
-        actual_value = metrics.get(metric_name)
+        actual_value = nested_value(metrics, metric_name)
         if actual_value is None:
             errors.append(f"missing metric {metric_name}")
             continue

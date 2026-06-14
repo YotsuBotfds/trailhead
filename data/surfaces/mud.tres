@@ -10,3 +10,5 @@ rolling_drag = 0.8
 slip = 0.12
 bog_enabled = true
 bog_threshold = 0.25
+mud_residue = 1.0
+wetness_residue = 0.55
