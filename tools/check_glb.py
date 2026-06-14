@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import json
+import math
 import re
 import struct
 import sys
@@ -211,18 +212,182 @@ def primitive_triangle_count(gltf, primitive):
     return 0
 
 
+def vector_from_property(value, length, default):
+    if not isinstance(value, list) or len(value) < length:
+        return list(default)
+    try:
+        return [float(value[index]) for index in range(length)]
+    except (TypeError, ValueError):
+        return list(default)
+
+
+def identity_matrix():
+    return [
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ]
+
+
+def translation_matrix(translation):
+    matrix = identity_matrix()
+    matrix[0][3] = translation[0]
+    matrix[1][3] = translation[1]
+    matrix[2][3] = translation[2]
+    return matrix
+
+
+def scale_matrix(scale):
+    matrix = identity_matrix()
+    matrix[0][0] = scale[0]
+    matrix[1][1] = scale[1]
+    matrix[2][2] = scale[2]
+    return matrix
+
+
+def rotation_matrix(rotation):
+    x, y, z, w = rotation
+    length = math.sqrt(x * x + y * y + z * z + w * w)
+    if length <= 0.0:
+        return identity_matrix()
+    x /= length
+    y /= length
+    z /= length
+    w /= length
+    xx = x * x
+    yy = y * y
+    zz = z * z
+    xy = x * y
+    xz = x * z
+    yz = y * z
+    wx = w * x
+    wy = w * y
+    wz = w * z
+    return [
+        [1.0 - 2.0 * (yy + zz), 2.0 * (xy - wz), 2.0 * (xz + wy), 0.0],
+        [2.0 * (xy + wz), 1.0 - 2.0 * (xx + zz), 2.0 * (yz - wx), 0.0],
+        [2.0 * (xz - wy), 2.0 * (yz + wx), 1.0 - 2.0 * (xx + yy), 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ]
+
+
+def matrix_multiply(a, b):
+    result = []
+    for row in range(4):
+        result_row = []
+        for column in range(4):
+            result_row.append(sum(a[row][index] * b[index][column] for index in range(4)))
+        result.append(result_row)
+    return result
+
+
+def transform_point(matrix, point):
+    x, y, z = point
+    w = matrix[3][0] * x + matrix[3][1] * y + matrix[3][2] * z + matrix[3][3]
+    if abs(w) <= 0.000001:
+        w = 1.0
+    return [
+        (matrix[0][0] * x + matrix[0][1] * y + matrix[0][2] * z + matrix[0][3]) / w,
+        (matrix[1][0] * x + matrix[1][1] * y + matrix[1][2] * z + matrix[1][3]) / w,
+        (matrix[2][0] * x + matrix[2][1] * y + matrix[2][2] * z + matrix[2][3]) / w,
+    ]
+
+
+def node_matrix_values(node):
+    matrix = node.get("matrix")
+    if not isinstance(matrix, list) or len(matrix) < 16:
+        return None
+    try:
+        return [float(matrix[index]) for index in range(16)]
+    except (TypeError, ValueError):
+        return None
+
+
+def node_translation(node):
+    matrix = node_matrix_values(node)
+    if matrix is not None:
+        return [matrix[12], matrix[13], matrix[14]]
+    return vector_from_property(node.get("translation"), 3, [0.0, 0.0, 0.0])
+
+
+def node_local_matrix(node):
+    values = node_matrix_values(node)
+    if values is not None:
+        return [
+            [values[0], values[4], values[8], values[12]],
+            [values[1], values[5], values[9], values[13]],
+            [values[2], values[6], values[10], values[14]],
+            [values[3], values[7], values[11], values[15]],
+        ]
+    translation = vector_from_property(node.get("translation"), 3, [0.0, 0.0, 0.0])
+    rotation = vector_from_property(node.get("rotation"), 4, [0.0, 0.0, 0.0, 1.0])
+    scale = vector_from_property(node.get("scale"), 3, [1.0, 1.0, 1.0])
+    return matrix_multiply(translation_matrix(translation), matrix_multiply(rotation_matrix(rotation), scale_matrix(scale)))
+
+
+def accessor_bounds_for_primitive(gltf, primitive):
+    accessors = gltf.get("accessors", [])
+    position_accessor = primitive_position_accessor(primitive)
+    if position_accessor is None or position_accessor < 0 or position_accessor >= len(accessors):
+        return None
+    accessor = accessors[position_accessor]
+    amin = accessor.get("min")
+    amax = accessor.get("max")
+    if not isinstance(amin, list) or not isinstance(amax, list) or len(amin) < 3 or len(amax) < 3:
+        return None
+    try:
+        return [float(amin[index]) for index in range(3)], [float(amax[index]) for index in range(3)]
+    except (TypeError, ValueError):
+        return None
+
+
+def bounds_corners(bounds_pair):
+    bounds_min, bounds_max = bounds_pair
+    return [
+        [x, y, z]
+        for x in (bounds_min[0], bounds_max[0])
+        for y in (bounds_min[1], bounds_max[1])
+        for z in (bounds_min[2], bounds_max[2])
+    ]
+
+
+def expand_bounds_with_point(bounds_min, bounds_max, point):
+    for index in range(3):
+        bounds_min[index] = min(bounds_min[index], point[index])
+        bounds_max[index] = max(bounds_max[index], point[index])
+
+
+def scene_root_indices(gltf, nodes):
+    scenes = gltf.get("scenes", [])
+    scene_index = gltf.get("scene")
+    if isinstance(scene_index, int) and 0 <= scene_index < len(scenes):
+        roots = scenes[scene_index].get("nodes", [])
+        if isinstance(roots, list):
+            return [index for index in roots if isinstance(index, int) and 0 <= index < len(nodes)]
+    child_indices = set()
+    for node in nodes:
+        children = node.get("children", [])
+        if isinstance(children, list):
+            child_indices.update(index for index in children if isinstance(index, int) and 0 <= index < len(nodes))
+    return [index for index in range(len(nodes)) if index not in child_indices]
+
+
 def collect_stats(gltf):
     meshes = gltf.get("meshes", [])
     nodes = gltf.get("nodes", [])
-    accessors = gltf.get("accessors", [])
     triangle_count = 0
     primitive_count = 0
     primitive_attributes = []
-    bounds_min = [float("inf"), float("inf"), float("inf")]
-    bounds_max = [float("-inf"), float("-inf"), float("-inf")]
-    has_bounds = False
+    mesh_bounds = []
+    local_bounds_min = [float("inf"), float("inf"), float("inf")]
+    local_bounds_max = [float("-inf"), float("-inf"), float("-inf")]
+    has_local_bounds = False
 
     for mesh in meshes:
+        mesh_bounds_min = [float("inf"), float("inf"), float("inf")]
+        mesh_bounds_max = [float("-inf"), float("-inf"), float("-inf")]
+        has_mesh_bounds = False
         for primitive in mesh.get("primitives", []):
             primitive_count += 1
             attributes = primitive.get("attributes", {})
@@ -231,28 +396,70 @@ def collect_stats(gltf):
             else:
                 primitive_attributes.append([])
             triangle_count += primitive_triangle_count(gltf, primitive)
-            position_accessor = primitive_position_accessor(primitive)
-            if position_accessor is not None and 0 <= position_accessor < len(accessors):
-                accessor = accessors[position_accessor]
-                amin = accessor.get("min")
-                amax = accessor.get("max")
-                if isinstance(amin, list) and isinstance(amax, list) and len(amin) >= 3 and len(amax) >= 3:
-                    has_bounds = True
-                    for index in range(3):
-                        bounds_min[index] = min(bounds_min[index], float(amin[index]))
-                        bounds_max[index] = max(bounds_max[index], float(amax[index]))
+            bounds_pair = accessor_bounds_for_primitive(gltf, primitive)
+            if bounds_pair is not None:
+                has_mesh_bounds = True
+                has_local_bounds = True
+                for corner in bounds_corners(bounds_pair):
+                    expand_bounds_with_point(mesh_bounds_min, mesh_bounds_max, corner)
+                    expand_bounds_with_point(local_bounds_min, local_bounds_max, corner)
+        mesh_bounds.append((mesh_bounds_min, mesh_bounds_max) if has_mesh_bounds else None)
+
+    world_bounds_min = [float("inf"), float("inf"), float("inf")]
+    world_bounds_max = [float("-inf"), float("-inf"), float("-inf")]
+    has_world_bounds = False
+
+    def visit_node(node_index, parent_matrix, active_nodes):
+        nonlocal has_world_bounds
+        if node_index in active_nodes or node_index < 0 or node_index >= len(nodes):
+            return
+        node = nodes[node_index]
+        world_matrix = matrix_multiply(parent_matrix, node_local_matrix(node))
+        mesh_index = node.get("mesh")
+        if isinstance(mesh_index, int) and 0 <= mesh_index < len(mesh_bounds) and mesh_bounds[mesh_index] is not None:
+            for corner in bounds_corners(mesh_bounds[mesh_index]):
+                expand_bounds_with_point(world_bounds_min, world_bounds_max, transform_point(world_matrix, corner))
+            has_world_bounds = True
+        children = node.get("children", [])
+        if isinstance(children, list):
+            next_active_nodes = set(active_nodes)
+            next_active_nodes.add(node_index)
+            for child_index in children:
+                if isinstance(child_index, int):
+                    visit_node(child_index, world_matrix, next_active_nodes)
+
+    roots = scene_root_indices(gltf, nodes)
+    if not roots and nodes:
+        roots = list(range(len(nodes)))
+    for root_index in roots:
+        visit_node(root_index, identity_matrix(), set())
+
+    if has_world_bounds:
+        bounds_min = world_bounds_min
+        bounds_max = world_bounds_max
+        dimensions = [bounds_max[index] - bounds_min[index] for index in range(3)]
+        bounds_source = "world"
+    elif has_local_bounds:
+        bounds_min = local_bounds_min
+        bounds_max = local_bounds_max
+        dimensions = [bounds_max[index] - bounds_min[index] for index in range(3)]
+        bounds_source = "local"
+    else:
+        bounds_min = []
+        bounds_max = []
+        dimensions = []
+        bounds_source = "none"
 
     names = []
     node_summaries = []
     for index, node in enumerate(nodes):
         node_name = str(node.get("name", ""))
-        translation = node.get("translation", [0.0, 0.0, 0.0])
         children = node.get("children", [])
         mesh_index = node.get("mesh")
         node_summaries.append({
             "index": index,
             "name": node_name,
-            "translation": translation if isinstance(translation, list) else [0.0, 0.0, 0.0],
+            "translation": node_translation(node),
             "children": children if isinstance(children, list) else [],
             "mesh": mesh_index if isinstance(mesh_index, int) else None,
         })
@@ -262,18 +469,21 @@ def collect_stats(gltf):
         if "name" in mesh:
             names.append(str(mesh["name"]))
 
-    if has_bounds:
-        dimensions = [bounds_max[index] - bounds_min[index] for index in range(3)]
-    else:
-        dimensions = []
     return {
         "mesh_count": len(meshes),
         "node_count": len(nodes),
         "primitive_count": primitive_count,
         "triangle_count": triangle_count,
-        "bounds_min": bounds_min if has_bounds else [],
-        "bounds_max": bounds_max if has_bounds else [],
+        "bounds_min": bounds_min,
+        "bounds_max": bounds_max,
         "dimensions": dimensions,
+        "local_bounds_min": local_bounds_min if has_local_bounds else [],
+        "local_bounds_max": local_bounds_max if has_local_bounds else [],
+        "local_dimensions": [local_bounds_max[index] - local_bounds_min[index] for index in range(3)] if has_local_bounds else [],
+        "world_bounds_min": world_bounds_min if has_world_bounds else [],
+        "world_bounds_max": world_bounds_max if has_world_bounds else [],
+        "world_dimensions": [world_bounds_max[index] - world_bounds_min[index] for index in range(3)] if has_world_bounds else [],
+        "bounds_source": bounds_source,
         "names": names,
         "nodes": node_summaries,
         "primitive_attributes": primitive_attributes,
@@ -432,7 +642,7 @@ def validate(args, stats, bin_chunk_count):
         ok = fail("missing BIN chunk") and ok
     if stats["dimensions"]:
         dims = ", ".join(f"{value:.3f}" for value in stats["dimensions"])
-        print(f"bounds dimensions: {dims} m")
+        print(f"bounds dimensions ({stats['bounds_source']}): {dims} m")
     else:
         ok = fail("POSITION accessors do not expose min/max bounds") and ok
 
