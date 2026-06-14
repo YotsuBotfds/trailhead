@@ -2,5 +2,6 @@
 .godot/
 *.gd.uid
 *.tmp
+__pycache__/
 tests/out/
 assets/generated/
