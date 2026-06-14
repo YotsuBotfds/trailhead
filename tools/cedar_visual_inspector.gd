@@ -4,7 +4,6 @@ const CedarHollowPlayableScene: PackedScene = preload("res://scenes/cedar_hollow
 const VehicleStateScript: GDScript = preload("res://systems/vehicle/vehicle_state.gd")
 const EXPECTED_BOARDWALK_SEGMENTS: int = 9
 const EXPECTED_STEPPING_STONES: int = 5
-const EXPECTED_TERRAIN_PATCHES: int = 20
 const EXPECTED_GRASS_TUFTS: int = 18
 const EXPECTED_BOULDERS: int = 5
 const EXPECTED_BRANCHES: int = 5
@@ -42,13 +41,14 @@ func _inspect() -> void:
 		return
 	var terrain_root: Node = _require_node(_scene_root, "CedarHollow/TerrainVisuals")
 	if terrain_root != null:
-		_require_named_count(terrain_root, "terrain_patch_", EXPECTED_TERRAIN_PATCHES)
+		_require_named_count(terrain_root, "terrain_patch_", 0)
+		_require_node(terrain_root, "cedar_hollow_heightmesh")
 		var terrain_collision_count: int = _count_collision_objects(terrain_root)
 		if terrain_collision_count > 0:
 			_errors.append("TerrainVisuals contains collision objects: " + str(terrain_collision_count))
 		var terrain_mesh_count: int = _count_mesh_instances(terrain_root)
-		if terrain_mesh_count != EXPECTED_TERRAIN_PATCHES:
-			_errors.append("expected " + str(EXPECTED_TERRAIN_PATCHES) + " terrain patch meshes, got " + str(terrain_mesh_count))
+		if terrain_mesh_count <= 0:
+			_errors.append("TerrainVisuals contains no mesh instances")
 	var feature_root: Node = _require_node(_scene_root, "CedarHollow/FeatureVisuals")
 	if feature_root != null:
 		_require_named_count(feature_root, "boardwalk_segment_", EXPECTED_BOARDWALK_SEGMENTS)
