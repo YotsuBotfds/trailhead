@@ -5,6 +5,7 @@ const CedarHollowSceneResource: PackedScene = preload("res://scenes/cedar_hollow
 const CedarRoute: Resource = preload("res://data/routes/cedar_hollow.tres")
 const VehicleScene: PackedScene = preload("res://scenes/vehicle.tscn")
 const VehicleInputScript: GDScript = preload("res://systems/vehicle/vehicle_input.gd")
+const TerrainVisualBuilderScript: GDScript = preload("res://systems/render/terrain_visual_builder.gd")
 const FeatureVisualBuilderScript: GDScript = preload("res://systems/render/feature_visual_builder.gd")
 const PropVisualBuilderScript: GDScript = preload("res://systems/render/prop_visual_builder.gd")
 const ScatterVisualBuilderScript: GDScript = preload("res://systems/render/scatter_visual_builder.gd")
@@ -82,6 +83,7 @@ func _setup_world() -> void:
 		return
 	_world.name = "CedarHollow"
 	add_child(_world)
+	TerrainVisualBuilderScript.build_cedar_hollow(_world)
 	FeatureVisualBuilderScript.build_cedar_hollow(_world)
 	PropVisualBuilderScript.build_cedar_hollow(_world)
 	ScatterVisualBuilderScript.build_cedar_hollow(_world)

@@ -3,6 +3,7 @@ extends Node
 const CedarHollowPlayableScene: PackedScene = preload("res://scenes/cedar_hollow_playable.tscn")
 const EXPECTED_BOARDWALK_SEGMENTS: int = 9
 const EXPECTED_STEPPING_STONES: int = 5
+const EXPECTED_TERRAIN_PATCHES: int = 18
 const EXPECTED_GRASS_TUFTS: int = 18
 const EXPECTED_BOULDERS: int = 5
 const EXPECTED_BRANCHES: int = 5
@@ -23,6 +24,15 @@ func _inspect() -> void:
 		_errors.append("failed to instantiate Cedar Hollow playable scene")
 		_finish()
 		return
+	var terrain_root: Node = _require_node(_scene_root, "CedarHollow/TerrainVisuals")
+	if terrain_root != null:
+		_require_named_count(terrain_root, "terrain_patch_", EXPECTED_TERRAIN_PATCHES)
+		var terrain_collision_count: int = _count_collision_objects(terrain_root)
+		if terrain_collision_count > 0:
+			_errors.append("TerrainVisuals contains collision objects: " + str(terrain_collision_count))
+		var terrain_mesh_count: int = _count_mesh_instances(terrain_root)
+		if terrain_mesh_count != EXPECTED_TERRAIN_PATCHES:
+			_errors.append("expected " + str(EXPECTED_TERRAIN_PATCHES) + " terrain patch meshes, got " + str(terrain_mesh_count))
 	var feature_root: Node = _require_node(_scene_root, "CedarHollow/FeatureVisuals")
 	if feature_root != null:
 		_require_named_count(feature_root, "boardwalk_segment_", EXPECTED_BOARDWALK_SEGMENTS)
@@ -108,7 +118,7 @@ func _count_mesh_instances(parent: Node) -> int:
 
 func _finish() -> void:
 	if _errors.is_empty():
-		print("ok: Cedar Hollow visuals, cameras, mood, and audio nodes instantiated")
+		print("ok: Cedar Hollow terrain, visuals, cameras, mood, and audio nodes instantiated")
 		if _scene_root != null:
 			_scene_root.queue_free()
 		await get_tree().process_frame
