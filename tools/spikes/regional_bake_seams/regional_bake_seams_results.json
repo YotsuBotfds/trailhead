@@ -1,0 +1,94 @@
+{
+  "after_ghost_exchange": {
+    "max_abs": 0.0,
+    "mean_abs": 0.0,
+    "rms": 0.0,
+    "seams": [
+      {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "name": "vertical_x1_z0",
+        "rms": 0.0,
+        "samples": 33
+      },
+      {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "name": "vertical_x1_z1",
+        "rms": 0.0,
+        "samples": 33
+      },
+      {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "name": "horizontal_z1_x0",
+        "rms": 0.0,
+        "samples": 33
+      },
+      {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "name": "horizontal_z1_x1",
+        "rms": 0.0,
+        "samples": 33
+      }
+    ]
+  },
+  "baseline_without_exchange": {
+    "max_abs": 0.01690022647380829,
+    "mean_abs": 0.0016667591795946162,
+    "rms": 0.003934369844716275,
+    "seams": [
+      {
+        "max_abs": 0.003304421901702881,
+        "mean_abs": 0.000553879773978031,
+        "name": "vertical_x1_z0",
+        "rms": 0.0010243509048134397,
+        "samples": 33
+      },
+      {
+        "max_abs": 0.0017582811415195465,
+        "mean_abs": 9.131826686136651e-05,
+        "name": "vertical_x1_z1",
+        "rms": 0.000376069545497442,
+        "samples": 33
+      },
+      {
+        "max_abs": 0.004067622125148773,
+        "mean_abs": 0.0004602369259704243,
+        "name": "horizontal_z1_x0",
+        "rms": 0.000862036932656021,
+        "samples": 33
+      },
+      {
+        "max_abs": 0.01690022647380829,
+        "mean_abs": 0.005561601751568643,
+        "name": "horizontal_z1_x1",
+        "rms": 0.007744884346944459,
+        "samples": 33
+      }
+    ]
+  },
+  "config": {
+    "exchange_steps": 4,
+    "halo_steps": 8,
+    "numpy_version": "2.4.6",
+    "region_seed": 20260615,
+    "sample_spacing": 0.25,
+    "seam_threshold": 1e-07,
+    "tile_count": [
+      2,
+      2
+    ],
+    "tile_samples": 33,
+    "tile_world_size": 8.0
+  },
+  "determinism": {
+    "array_bytes_equal": true,
+    "array_sha256": "3754bc9b27a8cd15fee0ed063afaff36a838ded2ad0a24ca2f397fc6166741f1",
+    "stats_equal": true,
+    "stats_sha256": "a6e60332a30d5e407075d822e87030d6ef2e3d752e8e3984e445d2daf6be068d"
+  },
+  "hypothesis": "Regional offline bakes can produce deterministic, seam-continuous tiles using seeded erosion with halo/ghost-cell exchange.",
+  "pass": true
+}

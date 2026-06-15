@@ -12,6 +12,7 @@ const FOG_AERIAL_PERSPECTIVE: float = 0.38
 const FOG_SUN_SCATTER: float = 0.42
 const SHADOW_FADE_START: float = 0.72
 const CONTACT_FILL_LIGHT_NAME: String = "VehicleContactFillLight"
+const CAMERA_ATTRIBUTES_OWNER_META: StringName = &"atmosphere_camera_attributes_instance_id"
 
 
 static func apply_mood(world_environment: WorldEnvironment, sun: DirectionalLight3D, mood: int) -> void:
@@ -104,17 +105,31 @@ static func _apply_screen_space_grounding(environment: Environment) -> void:
 static func _apply_viewport_antialiasing(viewport: Viewport) -> void:
 	if viewport == null:
 		return
-	viewport.msaa_3d = Viewport.MSAA_DISABLED
+	viewport.msaa_3d = Viewport.MSAA_2X
 	viewport.use_taa = true
 
 
 static func _apply_camera_attributes(camera: Camera3D) -> void:
 	if camera == null:
 		return
-	var attributes: CameraAttributesPractical = camera.attributes as CameraAttributesPractical
+	var existing_attributes: CameraAttributes = camera.attributes
+	if existing_attributes != null and not (existing_attributes is CameraAttributesPractical):
+		var type_message: String = "AtmosphereVisualBuilder expected CameraAttributesPractical on " + String(camera.name) + ", got " + existing_attributes.get_class()
+		push_error(type_message)
+		assert(false, type_message)
+		return
+	var attributes: CameraAttributesPractical = existing_attributes as CameraAttributesPractical
 	if attributes == null:
 		attributes = CameraAttributesPractical.new()
 		camera.attributes = attributes
+	var previous_id: int = int(camera.get_meta(CAMERA_ATTRIBUTES_OWNER_META, 0))
+	var current_id: int = attributes.get_instance_id()
+	if previous_id != 0 and previous_id != current_id:
+		var replace_message: String = "CameraAttributesPractical was replaced after AtmosphereVisualBuilder configured " + String(camera.name)
+		push_error(replace_message)
+		assert(false, replace_message)
+		return
+	camera.set_meta(CAMERA_ATTRIBUTES_OWNER_META, current_id)
 	attributes.auto_exposure_enabled = GameConfig.atmosphere_auto_exposure_enabled
 
 

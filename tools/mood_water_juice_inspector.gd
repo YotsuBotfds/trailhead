@@ -3,6 +3,10 @@ extends Node
 const CedarHollowPlayableScene: PackedScene = preload("res://scenes/cedar_hollow_playable.tscn")
 const FLOAT_EPSILON: float = 0.001
 const WATER_SHADER_PATH: String = "res://systems/render/water_visual.gdshader"
+const TILT_SHIFT_SHADER_PATH: String = "res://systems/render/tilt_shift.gdshader"
+const TILT_SHIFT_LAYER_NAME: String = "TiltShiftLayer"
+const TILT_SHIFT_RECT_NAME: String = "TiltShiftOverlay"
+const TILT_SHIFT_LAYER_INDEX: int = 2
 const WATER_SURFACE_COUNT: int = 3
 const DUST_MOTE_COUNT_FLOOR: int = 1
 const CONTACT_FILL_LIGHT_NAME: String = "VehicleContactFillLight"
@@ -100,8 +104,8 @@ func _inspect_viewport_antialiasing() -> void:
 	if viewport == null:
 		_errors.append("Cedar scene should have a viewport for antialiasing settings")
 		return
-	if viewport.msaa_3d != Viewport.MSAA_DISABLED:
-		_errors.append("Cedar viewport should disable 3D MSAA for SSAO/SSIL")
+	if viewport.msaa_3d != Viewport.MSAA_2X:
+		_errors.append("Cedar viewport should use MSAA_2X")
 	if not viewport.use_taa:
 		_errors.append("Cedar viewport should enable TAA for SSAO/SSIL")
 
@@ -135,6 +139,7 @@ func _inspect_dust_and_tilt_shift() -> void:
 	if chase_camera != null:
 		var dust: GPUParticles3D = _require_node(chase_camera, "DustMoteField") as GPUParticles3D
 		_inspect_dust_field(dust)
+	_inspect_tilt_shift_layer()
 	_inspect_tilt_shift_camera(chase_camera, "ChaseCamera")
 	_inspect_tilt_shift_camera(orbit_camera, "OrbitCamera")
 	_inspect_tilt_shift_camera(fpv_camera, "FpvCamera")
@@ -179,17 +184,49 @@ func _inspect_tilt_shift_camera(camera: Camera3D, label: String) -> void:
 		return
 	var attributes: CameraAttributesPractical = camera.attributes as CameraAttributesPractical
 	if attributes == null:
-		_errors.append(label + " should have practical camera attributes for DOF")
+		_errors.append(label + " should have atmosphere-owned practical camera attributes")
 		return
-	if not attributes.dof_blur_near_enabled or not attributes.dof_blur_far_enabled:
-		_errors.append(label + " should enable near and far DOF blur")
-	if attributes.dof_blur_amount <= 0.0:
-		_errors.append(label + " DOF blur amount should be positive")
+	if attributes.dof_blur_near_enabled:
+		_errors.append(label + " should not enable near DOF blur")
+	if attributes.dof_blur_far_enabled:
+		_errors.append(label + " should not enable far DOF blur")
 	if attributes.auto_exposure_enabled != GameConfig.atmosphere_auto_exposure_enabled:
 		_errors.append(label + " auto exposure should follow GameConfig")
 	var axis: Vector2 = camera.get_meta("tilt_shift_gradient_axis", Vector2.ZERO) as Vector2
 	if axis.distance_to(Vector2(0.0, 1.0)) > FLOAT_EPSILON:
 		_errors.append(label + " should declare a vertical tilt-shift gradient axis")
+	var screen_layer: String = String(camera.get_meta("tilt_shift_screen_layer", ""))
+	if screen_layer != TILT_SHIFT_LAYER_NAME:
+		_errors.append(label + " should declare " + TILT_SHIFT_LAYER_NAME + " as its tilt-shift screen layer")
+	var focus_band: float = float(camera.get_meta("tilt_shift_focus_band", -1.0))
+	if absf(focus_band - GameConfig.tilt_shift_focus_band) > FLOAT_EPSILON:
+		_errors.append(label + " tilt-shift focus band should follow GameConfig")
+
+
+func _inspect_tilt_shift_layer() -> void:
+	var layer: CanvasLayer = _require_node(_scene_root, TILT_SHIFT_LAYER_NAME) as CanvasLayer
+	if layer == null:
+		return
+	if layer.layer != TILT_SHIFT_LAYER_INDEX:
+		_errors.append("TiltShiftLayer layer expected " + str(TILT_SHIFT_LAYER_INDEX) + ", got " + str(layer.layer))
+	if layer.visible != GameConfig.tilt_shift_enabled:
+		_errors.append("TiltShiftLayer visible state should follow GameConfig")
+	var overlay: ColorRect = _require_node(layer, TILT_SHIFT_RECT_NAME) as ColorRect
+	if overlay == null:
+		return
+	if absf(overlay.anchor_left) > FLOAT_EPSILON or absf(overlay.anchor_top) > FLOAT_EPSILON or absf(overlay.anchor_right - 1.0) > FLOAT_EPSILON or absf(overlay.anchor_bottom - 1.0) > FLOAT_EPSILON:
+		_errors.append("TiltShiftOverlay should be full-rect anchored")
+	var material: ShaderMaterial = overlay.material as ShaderMaterial
+	if material == null:
+		_errors.append("TiltShiftOverlay should use ShaderMaterial")
+		return
+	if material.shader == null:
+		_errors.append("TiltShiftOverlay should have a shader")
+	elif material.shader.resource_path != TILT_SHIFT_SHADER_PATH:
+		_errors.append("TiltShiftOverlay shader expected " + TILT_SHIFT_SHADER_PATH + ", got " + material.shader.resource_path)
+	_require_shader_float(material, "center", GameConfig.tilt_shift_band_center, "TiltShiftOverlay")
+	_require_shader_float(material, "band", GameConfig.tilt_shift_focus_band, "TiltShiftOverlay")
+	_require_shader_float(material, "blur", GameConfig.tilt_shift_blur_amount, "TiltShiftOverlay")
 
 
 func _inspect_contact_fill_light() -> void:

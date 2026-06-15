@@ -1,0 +1,435 @@
+{
+	"comparison": {
+		"chain_rows": 584,
+		"compared_rows": 584,
+		"final_chain": {
+			"angular_velocity": [
+				0.478226393461227,
+				-0.0139997024089098,
+				0.128577068448067
+			],
+			"basis": [
+				[
+					0.998025238513947,
+					-0.058891486376524,
+					-0.0218501091003418
+				],
+				[
+					0.0584686920046806,
+					0.998098611831665,
+					-0.0195092707872391
+				],
+				[
+					0.0229574926197529,
+					0.0181931983679533,
+					0.999570906162262
+				]
+			],
+			"body_tile": [
+				0,
+				-5
+			],
+			"collision_tiles": [
+				[
+					0,
+					-5
+				]
+			],
+			"linear_velocity": [
+				-0.181254521012306,
+				-0.199392259120941,
+				-7.99939012527466
+			],
+			"position": [
+				1.25929987430573,
+				0.140807867050171,
+				-62.9943885803223
+			],
+			"speed": 8.00392723083496,
+			"tick": 583,
+			"wheel_surface": [
+				"packed_dirt",
+				"packed_dirt",
+				"packed_dirt",
+				"packed_dirt"
+			]
+		},
+		"final_position_delta_m": 0.0709182545542717,
+		"final_single": {
+			"angular_velocity": [
+				0.301280081272125,
+				-0.0262717045843601,
+				-0.508232057094574
+			],
+			"basis": [
+				[
+					0.998080849647522,
+					-0.0582677312195301,
+					-0.0209642667323351
+				],
+				[
+					0.0577687621116638,
+					0.998049437999725,
+					-0.023667935281992
+				],
+				[
+					0.0223024506121874,
+					0.0224114321172237,
+					0.999500036239624
+				]
+			],
+			"body_tile": [
+				0,
+				-5
+			],
+			"collision_tiles": [
+				[
+					0,
+					-5
+				]
+			],
+			"linear_velocity": [
+				-0.178940713405609,
+				-0.266949534416199,
+				-8.01399326324463
+			],
+			"position": [
+				1.2223117351532,
+				0.14406056702137,
+				-62.933967590332
+			],
+			"speed": 8.02043437957764,
+			"tick": 583,
+			"wheel_surface": [
+				"packed_dirt",
+				"packed_dirt",
+				"packed_dirt",
+				"packed_dirt"
+			]
+		},
+		"final_speed_delta_mps": 0.0165071487426758,
+		"final_velocity_delta_mps": 0.0691562741994858,
+		"max_position_delta_m": 0.0737537369132042,
+		"max_speed_delta_mps": 0.0609474182128906,
+		"max_velocity_delta_mps": 0.170181334018707,
+		"passed": true,
+		"single_rows": 584
+	},
+	"godot_version": "4.6.1-stable (official)",
+	"hypothesis": "Two chained Cedar replay segments with segment B body-state injection reproduce one full crossing within D10 tolerances.",
+	"limitations": [
+		"Spike-local harness replays existing golden inputs instead of adding production sim_runner hooks.",
+		"Segment B transfers transform, linear velocity, and angular velocity; render state and replay-controller state are not involved.",
+		"Vehicle contamination and EventBus history are not injected because they do not affect current vehicle dynamics for this replay."
+	],
+	"pass": true,
+	"physics_engine": "GodotPhysics3D",
+	"physics_ticks_per_second": 120,
+	"production_recommendation": "Add a gated sim_runner hook that can export and import transform, linear_velocity, angular_velocity, and a collision_tiles manifest at segment boundaries, then run the existing golden comparison around the chained replay.",
+	"replay_name": "cedar_hollow_segment_pine_floor_to_far_mile_marker",
+	"replay_path": "res://tests/golden/cedar_hollow_segment_pine_floor_to_far_mile_marker_replay.json",
+	"route_segment": "pine_floor_to_far_mile_marker",
+	"seed": 12345,
+	"segments": [
+		{
+			"collision_tiles_manifest": {
+				"body_tile_crossings": 2,
+				"body_tiles": [
+					[
+						0,
+						-2
+					],
+					[
+						0,
+						-3
+					],
+					[
+						0,
+						-4
+					]
+				],
+				"collision_tiles": [
+					[
+						0,
+						-2
+					],
+					[
+						0,
+						-3
+					],
+					[
+						0,
+						-4
+					]
+				],
+				"contact_tiles": [
+					[
+						0,
+						-2
+					],
+					[
+						0,
+						-3
+					],
+					[
+						0,
+						-4
+					]
+				]
+			},
+			"end_tick": 346,
+			"events": {
+				"vehicle_changed_surface": [
+					"packed_dirt"
+				],
+				"world_reached_landmark": [
+					"pine_floor"
+				]
+			},
+			"label": "segment_a",
+			"row_count": 347,
+			"start_tick": 0,
+			"summary": {
+				"final_angular_velocity": [
+					0.222608268260956,
+					-0.232478082180023,
+					-0.862153947353363
+				],
+				"final_basis": [
+					[
+						0.98259836435318,
+						-0.00825448893010616,
+						0.185559839010239
+					],
+					[
+						0.00660858443006873,
+						0.999933242797852,
+						0.00948671437799931
+					],
+					[
+						-0.185625717043877,
+						-0.00809534080326557,
+						0.982587158679962
+					]
+				],
+				"final_linear_velocity": [
+					1.47351837158203,
+					0.0630946457386017,
+					-7.88534641265869
+				],
+				"final_position": [
+					-0.484284073114395,
+					0.209127053618431,
+					-47.2545471191406
+				],
+				"final_speed": 8.02208995819092,
+				"row_count": 347
+			}
+		},
+		{
+			"collision_tiles_manifest": {
+				"body_tile_crossings": 1,
+				"body_tiles": [
+					[
+						0,
+						-4
+					],
+					[
+						0,
+						-5
+					]
+				],
+				"collision_tiles": [
+					[
+						0,
+						-4
+					],
+					[
+						0,
+						-5
+					]
+				],
+				"contact_tiles": [
+					[
+						0,
+						-4
+					],
+					[
+						0,
+						-5
+					]
+				]
+			},
+			"end_tick": 583,
+			"events": {
+				"vehicle_changed_surface": [
+					"packed_dirt"
+				],
+				"world_reached_landmark": [
+					"far_mile_marker"
+				]
+			},
+			"label": "segment_b_injected",
+			"row_count": 238,
+			"start_tick": 346,
+			"summary": {
+				"final_angular_velocity": [
+					0.478226393461227,
+					-0.0139997024089098,
+					0.128577068448067
+				],
+				"final_basis": [
+					[
+						0.998025238513947,
+						-0.058891486376524,
+						-0.0218501091003418
+					],
+					[
+						0.0584686920046806,
+						0.998098611831665,
+						-0.0195092707872391
+					],
+					[
+						0.0229574926197529,
+						0.0181931983679533,
+						0.999570906162262
+					]
+				],
+				"final_linear_velocity": [
+					-0.181254521012306,
+					-0.199392259120941,
+					-7.99939012527466
+				],
+				"final_position": [
+					1.25929987430573,
+					0.140807867050171,
+					-62.9943885803223
+				],
+				"final_speed": 8.00392723083496,
+				"row_count": 238
+			}
+		}
+	],
+	"single_full_crossing": {
+		"collision_tiles_manifest": {
+			"body_tile_crossings": 3,
+			"body_tiles": [
+				[
+					0,
+					-2
+				],
+				[
+					0,
+					-3
+				],
+				[
+					0,
+					-4
+				],
+				[
+					0,
+					-5
+				]
+			],
+			"collision_tiles": [
+				[
+					0,
+					-2
+				],
+				[
+					0,
+					-3
+				],
+				[
+					0,
+					-4
+				],
+				[
+					0,
+					-5
+				]
+			],
+			"contact_tiles": [
+				[
+					0,
+					-2
+				],
+				[
+					0,
+					-3
+				],
+				[
+					0,
+					-4
+				],
+				[
+					0,
+					-5
+				]
+			]
+		},
+		"end_tick": 583,
+		"events": {
+			"vehicle_changed_surface": [
+				"packed_dirt"
+			],
+			"world_reached_landmark": [
+				"pine_floor",
+				"far_mile_marker"
+			]
+		},
+		"label": "single_full_crossing",
+		"row_count": 584,
+		"start_tick": 0,
+		"summary": {
+			"final_angular_velocity": [
+				0.301280081272125,
+				-0.0262717045843601,
+				-0.508232057094574
+			],
+			"final_basis": [
+				[
+					0.998080849647522,
+					-0.0582677312195301,
+					-0.0209642667323351
+				],
+				[
+					0.0577687621116638,
+					0.998049437999725,
+					-0.023667935281992
+				],
+				[
+					0.0223024506121874,
+					0.0224114321172237,
+					0.999500036239624
+				]
+			],
+			"final_linear_velocity": [
+				-0.178940713405609,
+				-0.266949534416199,
+				-8.01399326324463
+			],
+			"final_position": [
+				1.2223117351532,
+				0.14406056702137,
+				-62.933967590332
+			],
+			"final_speed": 8.02043437957764,
+			"row_count": 584
+		}
+	},
+	"spike": "seam_crossing_golden_chain",
+	"split": {
+		"split_tick": 346,
+		"target_split_tile": [
+			0,
+			-4
+		],
+		"total_ticks": 583
+	},
+	"tolerances": {
+		"position_m": 0.08,
+		"speed_mps": 0.2,
+		"velocity_mps": 0.25
+	}
+}

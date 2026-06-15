@@ -62,6 +62,13 @@ const ACCENT_MIN_CONTRAST_RATIO: float = 4.5
 const CAMERA_COMPOSITION_TOLERANCE: float = 0.01
 const CAMERA_LOOK_TOLERANCE: float = 0.01
 const CAMERA_PITCH_TOLERANCE_DEG: float = 0.25
+const CAMERA_REACTIVE_PITCH_TOLERANCE_DEG: float = 0.5
+const TILT_SHIFT_SHADER_PATH: String = "res://systems/render/tilt_shift.gdshader"
+const TILT_SHIFT_LAYER_NAME: String = "TiltShiftLayer"
+const TILT_SHIFT_RECT_NAME: String = "TiltShiftOverlay"
+const TILT_SHIFT_LAYER_INDEX: int = 2
+const EXPECTED_FOV_MIN: float = 68.0
+const EXPECTED_FOV_MAX: float = 80.0
 const FEATURE_TRANSFORM_TOLERANCE: float = 0.01
 const SCATTER_X_MIN: float = -2.8
 const SCATTER_X_MAX: float = 5.05
@@ -315,6 +322,7 @@ func _inspect() -> void:
 	var orbit_camera: Camera3D = _require_node(_scene_root, "OrbitCamera") as Camera3D
 	var fpv_camera: Camera3D = _require_node(_scene_root, "FpvCamera") as Camera3D
 	_inspect_camera_defaults(vehicle, chase_camera, orbit_camera, fpv_camera)
+	_inspect_render_camera_contract(_scene_root, chase_camera, orbit_camera, fpv_camera, "Cedar")
 	var prop_visual_root: Node = _scene_root.get_node_or_null("CedarHollow/PropVisuals")
 	if prop_visual_root != null:
 		_inspect_chase_camera_prop_clearance(prop_visual_root, chase_camera)
@@ -1440,6 +1448,97 @@ func _require_shader_float(material: ShaderMaterial, parameter_name: String, exp
 		_errors.append(label + " shader parameter " + parameter_name + " expected " + str(expected) + ", got " + str(value))
 
 
+func _inspect_render_camera_contract(host: Node, chase_camera: Camera3D, orbit_camera: Camera3D, fpv_camera: Camera3D, context: String) -> void:
+	_inspect_tilt_shift_layer(host, context)
+	_inspect_viewport_antialiasing(host, context)
+	_inspect_project_scaling_settings(context)
+	_inspect_fov_range(context)
+	_require_camera_dof_disabled(chase_camera, context + " ChaseCamera")
+	_require_camera_dof_disabled(orbit_camera, context + " OrbitCamera")
+	_require_camera_dof_disabled(fpv_camera, context + " FpvCamera")
+
+
+func _inspect_tilt_shift_layer(host: Node, context: String) -> void:
+	if host == null:
+		return
+	var layer: CanvasLayer = _require_node(host, TILT_SHIFT_LAYER_NAME) as CanvasLayer
+	if layer == null:
+		return
+	if layer.layer != TILT_SHIFT_LAYER_INDEX:
+		_errors.append(context + " TiltShiftLayer layer expected " + str(TILT_SHIFT_LAYER_INDEX) + ", got " + str(layer.layer))
+	if layer.visible != GameConfig.tilt_shift_enabled:
+		_errors.append(context + " TiltShiftLayer visible state should follow GameConfig")
+	var overlay: ColorRect = _require_node(layer, TILT_SHIFT_RECT_NAME) as ColorRect
+	if overlay == null:
+		return
+	if absf(overlay.anchor_left) > FLOAT_EPSILON or absf(overlay.anchor_top) > FLOAT_EPSILON or absf(overlay.anchor_right - 1.0) > FLOAT_EPSILON or absf(overlay.anchor_bottom - 1.0) > FLOAT_EPSILON:
+		_errors.append(context + " TiltShiftOverlay should be full-rect anchored")
+	var material: ShaderMaterial = overlay.material as ShaderMaterial
+	if material == null:
+		_errors.append(context + " TiltShiftOverlay should use ShaderMaterial")
+		return
+	if material.shader == null:
+		_errors.append(context + " TiltShiftOverlay should have a shader")
+	elif material.shader.resource_path != TILT_SHIFT_SHADER_PATH:
+		_errors.append(context + " TiltShiftOverlay shader expected " + TILT_SHIFT_SHADER_PATH + ", got " + material.shader.resource_path)
+	_require_shader_float(material, "center", GameConfig.tilt_shift_band_center, context + " TiltShiftOverlay")
+	_require_shader_float(material, "band", GameConfig.tilt_shift_focus_band, context + " TiltShiftOverlay")
+	_require_shader_float(material, "blur", GameConfig.tilt_shift_blur_amount, context + " TiltShiftOverlay")
+
+
+func _inspect_viewport_antialiasing(host: Node, context: String) -> void:
+	if host == null:
+		return
+	var viewport: Viewport = host.get_viewport()
+	if viewport == null:
+		_errors.append(context + " host should have a viewport")
+		return
+	if viewport.msaa_3d != Viewport.MSAA_2X:
+		_errors.append(context + " viewport msaa_3d expected MSAA_2X, got " + str(viewport.msaa_3d))
+	if not viewport.use_taa:
+		_errors.append(context + " viewport should keep TAA enabled")
+
+
+func _inspect_project_scaling_settings(context: String) -> void:
+	var mode_value: int = int(ProjectSettings.get_setting("rendering/scaling_3d/mode", -1))
+	var scale_value: float = float(ProjectSettings.get_setting("rendering/scaling_3d/scale", 0.0))
+	var sharpness_value: float = float(ProjectSettings.get_setting("rendering/scaling_3d/fsr_sharpness", -1.0))
+	if mode_value != 2:
+		_errors.append(context + " project scaling_3d/mode expected 2, got " + str(mode_value))
+	if absf(scale_value - 0.99) > FLOAT_EPSILON:
+		_errors.append(context + " project scaling_3d/scale expected 0.99, got " + str(scale_value))
+	if absf(sharpness_value - 0.1) > FLOAT_EPSILON:
+		_errors.append(context + " project scaling_3d/fsr_sharpness expected 0.1, got " + str(sharpness_value))
+
+
+func _inspect_fov_range(context: String) -> void:
+	var rest_fov: float = GameConfig.get_fov_for_speed(0.0)
+	var max_fov: float = GameConfig.get_fov_for_speed(GameConfig.max_speed)
+	if absf(rest_fov - EXPECTED_FOV_MIN) > FLOAT_EPSILON:
+		_errors.append(context + " FOV at rest expected " + str(EXPECTED_FOV_MIN) + ", got " + str(rest_fov))
+	if absf(max_fov - EXPECTED_FOV_MAX) > FLOAT_EPSILON:
+		_errors.append(context + " FOV at max speed expected " + str(EXPECTED_FOV_MAX) + ", got " + str(max_fov))
+
+
+func _require_camera_dof_disabled(camera: Camera3D, label: String) -> void:
+	if camera == null:
+		return
+	var existing_attributes: CameraAttributes = camera.attributes
+	if existing_attributes != null and not (existing_attributes is CameraAttributesPractical):
+		_errors.append(label + " should use CameraAttributesPractical when attributes are present")
+		return
+	var attributes: CameraAttributesPractical = existing_attributes as CameraAttributesPractical
+	if attributes == null:
+		_errors.append(label + " should have atmosphere-owned practical attributes")
+		return
+	if attributes.dof_blur_near_enabled:
+		_errors.append(label + " should not enable near DOF blur")
+	if attributes.dof_blur_far_enabled:
+		_errors.append(label + " should not enable far DOF blur")
+	if attributes.auto_exposure_enabled != GameConfig.atmosphere_auto_exposure_enabled:
+		_errors.append(label + " auto exposure should follow GameConfig")
+
+
 func _require_wheel_socket_mesh(parent: Node, path: String) -> void:
 	var socket: Node = _require_node(parent, path)
 	if socket == null:
@@ -1476,7 +1575,7 @@ func _inspect_camera_reactivity(host: Node, vehicle: Node, chase_camera: Camera3
 		_errors.append("ChaseCamera FOV should widen at max speed")
 	if chase_camera.global_position.distance_to(chase_position_before) <= FLOAT_EPSILON:
 		_errors.append("ChaseCamera should move toward a changed vehicle state")
-	_require_camera_pitch(chase_camera, "ChaseCamera reactive update")
+	_require_camera_pitch(chase_camera, "ChaseCamera reactive update", CAMERA_REACTIVE_PITCH_TOLERANCE_DEG)
 
 	host.call("cycle_camera_mode")
 	var orbit_position_before: Vector3 = orbit_camera.global_position
@@ -1503,6 +1602,9 @@ func _require_chase_camera_composition(state: RefCounted, chase_camera: Camera3D
 	var vehicle_position: Vector3 = state.get("position")
 	var vehicle_basis: Basis = state.get("basis")
 	var back: Vector3 = vehicle_basis.z.normalized()
+	var expected_position: Vector3 = vehicle_position + back * GameConfig.cam_distance + Vector3.UP * GameConfig.cam_height
+	if chase_camera.global_position.distance_to(expected_position) > CAMERA_COMPOSITION_TOLERANCE:
+		_errors.append(context + " initial position expected " + str(expected_position) + ", got " + str(chase_camera.global_position))
 	var offset: Vector3 = chase_camera.global_position - vehicle_position
 	var expected_offset_xz: Vector2 = Vector2(back.x, back.z) * GameConfig.cam_distance
 	var actual_offset_xz: Vector2 = Vector2(offset.x, offset.z)
@@ -1513,10 +1615,10 @@ func _require_chase_camera_composition(state: RefCounted, chase_camera: Camera3D
 	_require_camera_pitch(chase_camera, context)
 
 
-func _require_camera_pitch(camera: Camera3D, context: String) -> void:
+func _require_camera_pitch(camera: Camera3D, context: String, tolerance_degrees: float = CAMERA_PITCH_TOLERANCE_DEG) -> void:
 	var forward: Vector3 = -camera.global_transform.basis.z.normalized()
 	var pitch_degrees: float = rad_to_deg(asin(clampf(forward.y, -1.0, 1.0)))
-	if absf(pitch_degrees - GameConfig.cam_pitch_deg) > CAMERA_PITCH_TOLERANCE_DEG:
+	if absf(pitch_degrees - GameConfig.cam_pitch_deg) > tolerance_degrees:
 		_errors.append(context + " pitch expected " + str(GameConfig.cam_pitch_deg) + ", got " + str(pitch_degrees))
 
 

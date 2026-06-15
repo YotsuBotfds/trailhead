@@ -1,0 +1,1803 @@
+{
+	"benchmarks": [
+		{
+			"activation_mode": "node_single_body",
+			"grid": {
+				"map_depth": 145,
+				"map_width": 129,
+				"sample_spacing_x_m": 0.78125,
+				"sample_spacing_z_m": 0.694444444444444,
+				"samples": 18705,
+				"tile_size_m": 100.0
+			},
+			"label": "committed_resource_load_node_single_body",
+			"run_index": 0,
+			"source": "committed HeightMapShape3D .tres via ResourceLoader.CACHE_MODE_IGNORE",
+			"stats": {
+				"activation_api_ms": {
+					"count": 12,
+					"max": 0.014,
+					"mean": 0.00841666666666667,
+					"median": 0.008,
+					"min": 0.003,
+					"p95": 0.014
+				},
+				"node_bind_ms": {
+					"count": 12,
+					"max": 0.052,
+					"mean": 0.0399166666666667,
+					"median": 0.039,
+					"min": 0.026,
+					"p95": 0.052
+				},
+				"physics_frame_settle_ms": {
+					"count": 12,
+					"max": 0.035,
+					"mean": 0.0225,
+					"median": 0.022,
+					"min": 0.007,
+					"p95": 0.035
+				},
+				"resource_load_ms": {
+					"count": 12,
+					"max": 31.401,
+					"mean": 23.83975,
+					"median": 22.097,
+					"min": 21.117,
+					"p95": 31.401
+				},
+				"total_per_tile_ms": {
+					"count": 12,
+					"max": 31.496,
+					"mean": 23.91325,
+					"median": 22.17,
+					"min": 21.178,
+					"p95": 31.496
+				}
+			},
+			"tile_count": 12
+		},
+		{
+			"activation_mode": "node_single_body",
+			"grid": {
+				"map_depth": 145,
+				"map_width": 129,
+				"sample_spacing_x_m": 0.78125,
+				"sample_spacing_z_m": 0.694444444444444,
+				"samples": 18705,
+				"tile_size_m": 100.0
+			},
+			"label": "phasev_129x145_node_single_body",
+			"run_index": 0,
+			"source": "synthetic deterministic height data",
+			"stats": {
+				"activation_api_ms": {
+					"count": 13,
+					"max": 0.072,
+					"mean": 0.0294615384615385,
+					"median": 0.027,
+					"min": 0.02,
+					"p95": 0.072
+				},
+				"data_build_ms": {
+					"count": 13,
+					"max": 2.736,
+					"mean": 1.708,
+					"median": 1.565,
+					"min": 1.47,
+					"p95": 2.736
+				},
+				"physics_frame_settle_ms": {
+					"count": 13,
+					"max": 10.639,
+					"mean": 0.828769230769231,
+					"median": 0.009,
+					"min": 0.003,
+					"p95": 10.639
+				},
+				"shape_commit_ms": {
+					"count": 13,
+					"max": 0.143,
+					"mean": 0.0616153846153846,
+					"median": 0.057,
+					"min": 0.047,
+					"p95": 0.143
+				},
+				"threaded_shape_wall_ms": {
+					"count": 0,
+					"max": 0.0,
+					"mean": 0.0,
+					"median": 0.0,
+					"min": 0.0,
+					"p95": 0.0
+				},
+				"total_per_tile_ms": {
+					"count": 13,
+					"max": 12.648,
+					"mean": 2.63023076923077,
+					"median": 1.652,
+					"min": 1.542,
+					"p95": 12.648
+				}
+			},
+			"threaded_build": false,
+			"tile_count": 13
+		},
+		{
+			"activation_mode": "physics_server_body",
+			"grid": {
+				"map_depth": 145,
+				"map_width": 129,
+				"sample_spacing_x_m": 0.78125,
+				"sample_spacing_z_m": 0.694444444444444,
+				"samples": 18705,
+				"tile_size_m": 100.0
+			},
+			"label": "phasev_129x145_threaded_physics_server",
+			"run_index": 0,
+			"source": "synthetic deterministic height data",
+			"stats": {
+				"activation_api_ms": {
+					"count": 8,
+					"max": 0.116,
+					"mean": 0.06925,
+					"median": 0.059,
+					"min": 0.052,
+					"p95": 0.116
+				},
+				"data_build_ms": {
+					"count": 0,
+					"max": 0.0,
+					"mean": 0.0,
+					"median": 0.0,
+					"min": 0.0,
+					"p95": 0.0
+				},
+				"physics_frame_settle_ms": {
+					"count": 8,
+					"max": 11.942,
+					"mean": 5.742625,
+					"median": 5.228,
+					"min": 3.427,
+					"p95": 11.942
+				},
+				"shape_commit_ms": {
+					"count": 0,
+					"max": 0.0,
+					"mean": 0.0,
+					"median": 0.0,
+					"min": 0.0,
+					"p95": 0.0
+				},
+				"threaded_shape_wall_ms": {
+					"count": 8,
+					"max": 2.897,
+					"mean": 2.048875,
+					"median": 1.835,
+					"min": 1.748,
+					"p95": 2.897
+				},
+				"total_per_tile_ms": {
+					"count": 8,
+					"max": 14.553,
+					"mean": 7.87375,
+					"median": 7.126,
+					"min": 5.746,
+					"p95": 14.553
+				}
+			},
+			"threaded_build": true,
+			"tile_count": 8
+		},
+		{
+			"activation_mode": "node_single_body",
+			"grid": {
+				"map_depth": 257,
+				"map_width": 257,
+				"sample_spacing_x_m": 0.390625,
+				"sample_spacing_z_m": 0.390625,
+				"samples": 66049,
+				"tile_size_m": 100.0
+			},
+			"label": "phasev_257x257_node_single_body",
+			"run_index": 0,
+			"source": "synthetic deterministic height data",
+			"stats": {
+				"activation_api_ms": {
+					"count": 8,
+					"max": 0.141,
+					"mean": 0.105875,
+					"median": 0.094,
+					"min": 0.076,
+					"p95": 0.141
+				},
+				"data_build_ms": {
+					"count": 8,
+					"max": 7.601,
+					"mean": 5.711125,
+					"median": 5.423,
+					"min": 5.17,
+					"p95": 7.601
+				},
+				"physics_frame_settle_ms": {
+					"count": 8,
+					"max": 9.669,
+					"mean": 1.822625,
+					"median": 0.921,
+					"min": 0.038,
+					"p95": 9.669
+				},
+				"shape_commit_ms": {
+					"count": 8,
+					"max": 0.211,
+					"mean": 0.19,
+					"median": 0.185,
+					"min": 0.175,
+					"p95": 0.211
+				},
+				"threaded_shape_wall_ms": {
+					"count": 0,
+					"max": 0.0,
+					"mean": 0.0,
+					"median": 0.0,
+					"min": 0.0,
+					"p95": 0.0
+				},
+				"total_per_tile_ms": {
+					"count": 8,
+					"max": 15.314,
+					"mean": 7.836125,
+					"median": 6.848,
+					"min": 5.687,
+					"p95": 15.314
+				}
+			},
+			"threaded_build": false,
+			"tile_count": 8
+		},
+		{
+			"activation_mode": "physics_server_body",
+			"grid": {
+				"map_depth": 257,
+				"map_width": 257,
+				"sample_spacing_x_m": 0.390625,
+				"sample_spacing_z_m": 0.390625,
+				"samples": 66049,
+				"tile_size_m": 100.0
+			},
+			"label": "phasev_257x257_threaded_physics_server",
+			"run_index": 0,
+			"source": "synthetic deterministic height data",
+			"stats": {
+				"activation_api_ms": {
+					"count": 8,
+					"max": 0.165,
+					"mean": 0.140125,
+					"median": 0.136,
+					"min": 0.127,
+					"p95": 0.165
+				},
+				"data_build_ms": {
+					"count": 0,
+					"max": 0.0,
+					"mean": 0.0,
+					"median": 0.0,
+					"min": 0.0,
+					"p95": 0.0
+				},
+				"physics_frame_settle_ms": {
+					"count": 8,
+					"max": 9.224,
+					"mean": 1.883875,
+					"median": 0.81,
+					"min": 0.029,
+					"p95": 9.224
+				},
+				"shape_commit_ms": {
+					"count": 0,
+					"max": 0.0,
+					"mean": 0.0,
+					"median": 0.0,
+					"min": 0.0,
+					"p95": 0.0
+				},
+				"threaded_shape_wall_ms": {
+					"count": 8,
+					"max": 5.932,
+					"mean": 5.666,
+					"median": 5.561,
+					"min": 5.334,
+					"p95": 5.932
+				},
+				"total_per_tile_ms": {
+					"count": 8,
+					"max": 15.263,
+					"mean": 7.697125,
+					"median": 6.767,
+					"min": 5.92,
+					"p95": 15.263
+				}
+			},
+			"threaded_build": true,
+			"tile_count": 8
+		},
+		{
+			"activation_mode": "node_single_body",
+			"grid": {
+				"map_depth": 513,
+				"map_width": 513,
+				"sample_spacing_x_m": 0.1953125,
+				"sample_spacing_z_m": 0.1953125,
+				"samples": 263169,
+				"tile_size_m": 100.0
+			},
+			"label": "phasev_513x513_node_single_body",
+			"run_index": 0,
+			"source": "synthetic deterministic height data",
+			"stats": {
+				"activation_api_ms": {
+					"count": 4,
+					"max": 0.316,
+					"mean": 0.28375,
+					"median": 0.257,
+					"min": 0.255,
+					"p95": 0.316
+				},
+				"data_build_ms": {
+					"count": 4,
+					"max": 21.107,
+					"mean": 20.18725,
+					"median": 20.014,
+					"min": 19.449,
+					"p95": 21.107
+				},
+				"physics_frame_settle_ms": {
+					"count": 4,
+					"max": 0.033,
+					"mean": 0.029,
+					"median": 0.026,
+					"min": 0.026,
+					"p95": 0.033
+				},
+				"shape_commit_ms": {
+					"count": 4,
+					"max": 0.886,
+					"mean": 0.73875,
+					"median": 0.678,
+					"min": 0.666,
+					"p95": 0.886
+				},
+				"threaded_shape_wall_ms": {
+					"count": 0,
+					"max": 0.0,
+					"mean": 0.0,
+					"median": 0.0,
+					"min": 0.0,
+					"p95": 0.0
+				},
+				"total_per_tile_ms": {
+					"count": 4,
+					"max": 22.075,
+					"mean": 21.2475,
+					"median": 21.089,
+					"min": 20.674,
+					"p95": 22.075
+				}
+			},
+			"threaded_build": false,
+			"tile_count": 4
+		},
+		{
+			"activation_mode": "physics_server_body",
+			"grid": {
+				"map_depth": 513,
+				"map_width": 513,
+				"sample_spacing_x_m": 0.1953125,
+				"sample_spacing_z_m": 0.1953125,
+				"samples": 263169,
+				"tile_size_m": 100.0
+			},
+			"label": "phasev_513x513_threaded_physics_server",
+			"run_index": 0,
+			"source": "synthetic deterministic height data",
+			"stats": {
+				"activation_api_ms": {
+					"count": 4,
+					"max": 0.491,
+					"mean": 0.4505,
+					"median": 0.433,
+					"min": 0.429,
+					"p95": 0.491
+				},
+				"data_build_ms": {
+					"count": 0,
+					"max": 0.0,
+					"mean": 0.0,
+					"median": 0.0,
+					"min": 0.0,
+					"p95": 0.0
+				},
+				"physics_frame_settle_ms": {
+					"count": 4,
+					"max": 0.023,
+					"mean": 0.021,
+					"median": 0.02,
+					"min": 0.02,
+					"p95": 0.023
+				},
+				"shape_commit_ms": {
+					"count": 0,
+					"max": 0.0,
+					"mean": 0.0,
+					"median": 0.0,
+					"min": 0.0,
+					"p95": 0.0
+				},
+				"threaded_shape_wall_ms": {
+					"count": 4,
+					"max": 20.722,
+					"mean": 20.03625,
+					"median": 19.741,
+					"min": 19.694,
+					"p95": 20.722
+				},
+				"total_per_tile_ms": {
+					"count": 4,
+					"max": 21.182,
+					"mean": 20.51325,
+					"median": 20.216,
+					"min": 20.151,
+					"p95": 21.182
+				}
+			},
+			"threaded_build": true,
+			"tile_count": 4
+		},
+		{
+			"activation_mode": "node_single_body",
+			"grid": {
+				"map_depth": 1181,
+				"map_width": 1181,
+				"sample_spacing_x_m": 0.0847457627118644,
+				"sample_spacing_z_m": 0.0847457627118644,
+				"samples": 1394761,
+				"tile_size_m": 100.0
+			},
+			"label": "phasev_1181x1181_node_single_body",
+			"run_index": 0,
+			"source": "synthetic deterministic height data",
+			"stats": {
+				"activation_api_ms": {
+					"count": 2,
+					"max": 1.473,
+					"mean": 1.38,
+					"median": 1.287,
+					"min": 1.287,
+					"p95": 1.473
+				},
+				"data_build_ms": {
+					"count": 2,
+					"max": 125.764,
+					"mean": 116.396,
+					"median": 107.028,
+					"min": 107.028,
+					"p95": 125.764
+				},
+				"physics_frame_settle_ms": {
+					"count": 2,
+					"max": 0.049,
+					"mean": 0.036,
+					"median": 0.023,
+					"min": 0.023,
+					"p95": 0.049
+				},
+				"shape_commit_ms": {
+					"count": 2,
+					"max": 4.186,
+					"mean": 4.074,
+					"median": 3.962,
+					"min": 3.962,
+					"p95": 4.186
+				},
+				"threaded_shape_wall_ms": {
+					"count": 0,
+					"max": 0.0,
+					"mean": 0.0,
+					"median": 0.0,
+					"min": 0.0,
+					"p95": 0.0
+				},
+				"total_per_tile_ms": {
+					"count": 2,
+					"max": 131.256,
+					"mean": 121.895,
+					"median": 112.534,
+					"min": 112.534,
+					"p95": 131.256
+				}
+			},
+			"threaded_build": false,
+			"tile_count": 2
+		},
+		{
+			"activation_mode": "physics_server_body",
+			"grid": {
+				"map_depth": 1181,
+				"map_width": 1181,
+				"sample_spacing_x_m": 0.0847457627118644,
+				"sample_spacing_z_m": 0.0847457627118644,
+				"samples": 1394761,
+				"tile_size_m": 100.0
+			},
+			"label": "phasev_1181x1181_threaded_physics_server",
+			"run_index": 0,
+			"source": "synthetic deterministic height data",
+			"stats": {
+				"activation_api_ms": {
+					"count": 2,
+					"max": 2.513,
+					"mean": 2.477,
+					"median": 2.441,
+					"min": 2.441,
+					"p95": 2.513
+				},
+				"data_build_ms": {
+					"count": 0,
+					"max": 0.0,
+					"mean": 0.0,
+					"median": 0.0,
+					"min": 0.0,
+					"p95": 0.0
+				},
+				"physics_frame_settle_ms": {
+					"count": 2,
+					"max": 0.031,
+					"mean": 0.0285,
+					"median": 0.026,
+					"min": 0.026,
+					"p95": 0.031
+				},
+				"shape_commit_ms": {
+					"count": 0,
+					"max": 0.0,
+					"mean": 0.0,
+					"median": 0.0,
+					"min": 0.0,
+					"p95": 0.0
+				},
+				"threaded_shape_wall_ms": {
+					"count": 2,
+					"max": 122.324,
+					"mean": 120.101,
+					"median": 117.878,
+					"min": 117.878,
+					"p95": 122.324
+				},
+				"total_per_tile_ms": {
+					"count": 2,
+					"max": 124.874,
+					"mean": 122.6135,
+					"median": 120.353,
+					"min": 120.353,
+					"p95": 124.874
+				}
+			},
+			"threaded_build": true,
+			"tile_count": 2
+		},
+		{
+			"activation_mode": "node_single_body",
+			"grid": {
+				"map_depth": 145,
+				"map_width": 129,
+				"sample_spacing_x_m": 0.78125,
+				"sample_spacing_z_m": 0.694444444444444,
+				"samples": 18705,
+				"tile_size_m": 100.0
+			},
+			"label": "committed_resource_load_node_single_body",
+			"run_index": 1,
+			"source": "committed HeightMapShape3D .tres via ResourceLoader.CACHE_MODE_IGNORE",
+			"stats": {
+				"activation_api_ms": {
+					"count": 12,
+					"max": 0.017,
+					"mean": 0.0113333333333333,
+					"median": 0.011,
+					"min": 0.009,
+					"p95": 0.017
+				},
+				"node_bind_ms": {
+					"count": 12,
+					"max": 0.096,
+					"mean": 0.056,
+					"median": 0.047,
+					"min": 0.039,
+					"p95": 0.096
+				},
+				"physics_frame_settle_ms": {
+					"count": 12,
+					"max": 0.038,
+					"mean": 0.0296666666666667,
+					"median": 0.026,
+					"min": 0.023,
+					"p95": 0.038
+				},
+				"resource_load_ms": {
+					"count": 12,
+					"max": 37.883,
+					"mean": 27.28025,
+					"median": 25.87,
+					"min": 22.674,
+					"p95": 37.883
+				},
+				"total_per_tile_ms": {
+					"count": 12,
+					"max": 38.003,
+					"mean": 27.381,
+					"median": 25.968,
+					"min": 22.761,
+					"p95": 38.003
+				}
+			},
+			"tile_count": 12
+		},
+		{
+			"activation_mode": "node_single_body",
+			"grid": {
+				"map_depth": 145,
+				"map_width": 129,
+				"sample_spacing_x_m": 0.78125,
+				"sample_spacing_z_m": 0.694444444444444,
+				"samples": 18705,
+				"tile_size_m": 100.0
+			},
+			"label": "phasev_129x145_node_single_body",
+			"run_index": 1,
+			"source": "synthetic deterministic height data",
+			"stats": {
+				"activation_api_ms": {
+					"count": 13,
+					"max": 0.057,
+					"mean": 0.0315384615384615,
+					"median": 0.027,
+					"min": 0.023,
+					"p95": 0.057
+				},
+				"data_build_ms": {
+					"count": 13,
+					"max": 2.181,
+					"mean": 1.753,
+					"median": 1.737,
+					"min": 1.516,
+					"p95": 2.181
+				},
+				"physics_frame_settle_ms": {
+					"count": 13,
+					"max": 3.373,
+					"mean": 0.270153846153846,
+					"median": 0.011,
+					"min": 0.005,
+					"p95": 3.373
+				},
+				"shape_commit_ms": {
+					"count": 13,
+					"max": 0.14,
+					"mean": 0.0689230769230769,
+					"median": 0.059,
+					"min": 0.052,
+					"p95": 0.14
+				},
+				"threaded_shape_wall_ms": {
+					"count": 0,
+					"max": 0.0,
+					"mean": 0.0,
+					"median": 0.0,
+					"min": 0.0,
+					"p95": 0.0
+				},
+				"total_per_tile_ms": {
+					"count": 13,
+					"max": 5.246,
+					"mean": 2.12592307692308,
+					"median": 1.846,
+					"min": 1.619,
+					"p95": 5.246
+				}
+			},
+			"threaded_build": false,
+			"tile_count": 13
+		},
+		{
+			"activation_mode": "physics_server_body",
+			"grid": {
+				"map_depth": 145,
+				"map_width": 129,
+				"sample_spacing_x_m": 0.78125,
+				"sample_spacing_z_m": 0.694444444444444,
+				"samples": 18705,
+				"tile_size_m": 100.0
+			},
+			"label": "phasev_129x145_threaded_physics_server",
+			"run_index": 1,
+			"source": "synthetic deterministic height data",
+			"stats": {
+				"activation_api_ms": {
+					"count": 8,
+					"max": 0.077,
+					"mean": 0.05725,
+					"median": 0.052,
+					"min": 0.047,
+					"p95": 0.077
+				},
+				"data_build_ms": {
+					"count": 0,
+					"max": 0.0,
+					"mean": 0.0,
+					"median": 0.0,
+					"min": 0.0,
+					"p95": 0.0
+				},
+				"physics_frame_settle_ms": {
+					"count": 8,
+					"max": 11.81,
+					"mean": 6.83925,
+					"median": 5.296,
+					"min": 4.552,
+					"p95": 11.81
+				},
+				"shape_commit_ms": {
+					"count": 0,
+					"max": 0.0,
+					"mean": 0.0,
+					"median": 0.0,
+					"min": 0.0,
+					"p95": 0.0
+				},
+				"threaded_shape_wall_ms": {
+					"count": 8,
+					"max": 1.719,
+					"mean": 1.64825,
+					"median": 1.626,
+					"min": 1.576,
+					"p95": 1.719
+				},
+				"total_per_tile_ms": {
+					"count": 8,
+					"max": 13.594,
+					"mean": 8.55,
+					"median": 7.051,
+					"min": 6.282,
+					"p95": 13.594
+				}
+			},
+			"threaded_build": true,
+			"tile_count": 8
+		},
+		{
+			"activation_mode": "node_single_body",
+			"grid": {
+				"map_depth": 257,
+				"map_width": 257,
+				"sample_spacing_x_m": 0.390625,
+				"sample_spacing_z_m": 0.390625,
+				"samples": 66049,
+				"tile_size_m": 100.0
+			},
+			"label": "phasev_257x257_node_single_body",
+			"run_index": 1,
+			"source": "synthetic deterministic height data",
+			"stats": {
+				"activation_api_ms": {
+					"count": 8,
+					"max": 0.116,
+					"mean": 0.079625,
+					"median": 0.073,
+					"min": 0.07,
+					"p95": 0.116
+				},
+				"data_build_ms": {
+					"count": 8,
+					"max": 6.956,
+					"mean": 5.45925,
+					"median": 5.227,
+					"min": 5.1,
+					"p95": 6.956
+				},
+				"physics_frame_settle_ms": {
+					"count": 8,
+					"max": 9.814,
+					"mean": 2.74975,
+					"median": 0.497,
+					"min": 0.015,
+					"p95": 9.814
+				},
+				"shape_commit_ms": {
+					"count": 8,
+					"max": 0.224,
+					"mean": 0.1755,
+					"median": 0.166,
+					"min": 0.157,
+					"p95": 0.224
+				},
+				"threaded_shape_wall_ms": {
+					"count": 0,
+					"max": 0.0,
+					"mean": 0.0,
+					"median": 0.0,
+					"min": 0.0,
+					"p95": 0.0
+				},
+				"total_per_tile_ms": {
+					"count": 8,
+					"max": 15.162,
+					"mean": 8.467625,
+					"median": 6.875,
+					"min": 5.489,
+					"p95": 15.162
+				}
+			},
+			"threaded_build": false,
+			"tile_count": 8
+		},
+		{
+			"activation_mode": "physics_server_body",
+			"grid": {
+				"map_depth": 257,
+				"map_width": 257,
+				"sample_spacing_x_m": 0.390625,
+				"sample_spacing_z_m": 0.390625,
+				"samples": 66049,
+				"tile_size_m": 100.0
+			},
+			"label": "phasev_257x257_threaded_physics_server",
+			"run_index": 1,
+			"source": "synthetic deterministic height data",
+			"stats": {
+				"activation_api_ms": {
+					"count": 8,
+					"max": 0.145,
+					"mean": 0.13625,
+					"median": 0.135,
+					"min": 0.129,
+					"p95": 0.145
+				},
+				"data_build_ms": {
+					"count": 0,
+					"max": 0.0,
+					"mean": 0.0,
+					"median": 0.0,
+					"min": 0.0,
+					"p95": 0.0
+				},
+				"physics_frame_settle_ms": {
+					"count": 8,
+					"max": 9.547,
+					"mean": 2.686875,
+					"median": 1.024,
+					"min": 0.015,
+					"p95": 9.547
+				},
+				"shape_commit_ms": {
+					"count": 0,
+					"max": 0.0,
+					"mean": 0.0,
+					"median": 0.0,
+					"min": 0.0,
+					"p95": 0.0
+				},
+				"threaded_shape_wall_ms": {
+					"count": 8,
+					"max": 5.799,
+					"mean": 5.613,
+					"median": 5.608,
+					"min": 5.396,
+					"p95": 5.799
+				},
+				"total_per_tile_ms": {
+					"count": 8,
+					"max": 15.267,
+					"mean": 8.43925,
+					"median": 6.763,
+					"min": 5.618,
+					"p95": 15.267
+				}
+			},
+			"threaded_build": true,
+			"tile_count": 8
+		},
+		{
+			"activation_mode": "node_single_body",
+			"grid": {
+				"map_depth": 513,
+				"map_width": 513,
+				"sample_spacing_x_m": 0.1953125,
+				"sample_spacing_z_m": 0.1953125,
+				"samples": 263169,
+				"tile_size_m": 100.0
+			},
+			"label": "phasev_513x513_node_single_body",
+			"run_index": 1,
+			"source": "synthetic deterministic height data",
+			"stats": {
+				"activation_api_ms": {
+					"count": 4,
+					"max": 0.277,
+					"mean": 0.2645,
+					"median": 0.253,
+					"min": 0.251,
+					"p95": 0.277
+				},
+				"data_build_ms": {
+					"count": 4,
+					"max": 21.396,
+					"mean": 20.41625,
+					"median": 20.091,
+					"min": 19.694,
+					"p95": 21.396
+				},
+				"physics_frame_settle_ms": {
+					"count": 4,
+					"max": 0.021,
+					"mean": 0.01725,
+					"median": 0.016,
+					"min": 0.012,
+					"p95": 0.021
+				},
+				"shape_commit_ms": {
+					"count": 4,
+					"max": 0.686,
+					"mean": 0.6545,
+					"median": 0.636,
+					"min": 0.634,
+					"p95": 0.686
+				},
+				"threaded_shape_wall_ms": {
+					"count": 0,
+					"max": 0.0,
+					"mean": 0.0,
+					"median": 0.0,
+					"min": 0.0,
+					"p95": 0.0
+				},
+				"total_per_tile_ms": {
+					"count": 4,
+					"max": 22.358,
+					"mean": 21.35775,
+					"median": 21.027,
+					"min": 20.598,
+					"p95": 22.358
+				}
+			},
+			"threaded_build": false,
+			"tile_count": 4
+		},
+		{
+			"activation_mode": "physics_server_body",
+			"grid": {
+				"map_depth": 513,
+				"map_width": 513,
+				"sample_spacing_x_m": 0.1953125,
+				"sample_spacing_z_m": 0.1953125,
+				"samples": 263169,
+				"tile_size_m": 100.0
+			},
+			"label": "phasev_513x513_threaded_physics_server",
+			"run_index": 1,
+			"source": "synthetic deterministic height data",
+			"stats": {
+				"activation_api_ms": {
+					"count": 4,
+					"max": 0.661,
+					"mean": 0.5335,
+					"median": 0.49,
+					"min": 0.49,
+					"p95": 0.661
+				},
+				"data_build_ms": {
+					"count": 0,
+					"max": 0.0,
+					"mean": 0.0,
+					"median": 0.0,
+					"min": 0.0,
+					"p95": 0.0
+				},
+				"physics_frame_settle_ms": {
+					"count": 4,
+					"max": 0.038,
+					"mean": 0.02475,
+					"median": 0.02,
+					"min": 0.019,
+					"p95": 0.038
+				},
+				"shape_commit_ms": {
+					"count": 0,
+					"max": 0.0,
+					"mean": 0.0,
+					"median": 0.0,
+					"min": 0.0,
+					"p95": 0.0
+				},
+				"threaded_shape_wall_ms": {
+					"count": 4,
+					"max": 31.22,
+					"mean": 24.015,
+					"median": 21.485,
+					"min": 21.183,
+					"p95": 31.22
+				},
+				"total_per_tile_ms": {
+					"count": 4,
+					"max": 31.909,
+					"mean": 24.57875,
+					"median": 22.022,
+					"min": 21.695,
+					"p95": 31.909
+				}
+			},
+			"threaded_build": true,
+			"tile_count": 4
+		},
+		{
+			"activation_mode": "node_single_body",
+			"grid": {
+				"map_depth": 1181,
+				"map_width": 1181,
+				"sample_spacing_x_m": 0.0847457627118644,
+				"sample_spacing_z_m": 0.0847457627118644,
+				"samples": 1394761,
+				"tile_size_m": 100.0
+			},
+			"label": "phasev_1181x1181_node_single_body",
+			"run_index": 1,
+			"source": "synthetic deterministic height data",
+			"stats": {
+				"activation_api_ms": {
+					"count": 2,
+					"max": 1.284,
+					"mean": 1.273,
+					"median": 1.262,
+					"min": 1.262,
+					"p95": 1.284
+				},
+				"data_build_ms": {
+					"count": 2,
+					"max": 162.276,
+					"mean": 138.333,
+					"median": 114.39,
+					"min": 114.39,
+					"p95": 162.276
+				},
+				"physics_frame_settle_ms": {
+					"count": 2,
+					"max": 0.028,
+					"mean": 0.0275,
+					"median": 0.027,
+					"min": 0.027,
+					"p95": 0.028
+				},
+				"shape_commit_ms": {
+					"count": 2,
+					"max": 4.156,
+					"mean": 3.8405,
+					"median": 3.525,
+					"min": 3.525,
+					"p95": 4.156
+				},
+				"threaded_shape_wall_ms": {
+					"count": 0,
+					"max": 0.0,
+					"mean": 0.0,
+					"median": 0.0,
+					"min": 0.0,
+					"p95": 0.0
+				},
+				"total_per_tile_ms": {
+					"count": 2,
+					"max": 167.733,
+					"mean": 143.4835,
+					"median": 119.234,
+					"min": 119.234,
+					"p95": 167.733
+				}
+			},
+			"threaded_build": false,
+			"tile_count": 2
+		},
+		{
+			"activation_mode": "physics_server_body",
+			"grid": {
+				"map_depth": 1181,
+				"map_width": 1181,
+				"sample_spacing_x_m": 0.0847457627118644,
+				"sample_spacing_z_m": 0.0847457627118644,
+				"samples": 1394761,
+				"tile_size_m": 100.0
+			},
+			"label": "phasev_1181x1181_threaded_physics_server",
+			"run_index": 1,
+			"source": "synthetic deterministic height data",
+			"stats": {
+				"activation_api_ms": {
+					"count": 2,
+					"max": 2.615,
+					"mean": 2.5155,
+					"median": 2.416,
+					"min": 2.416,
+					"p95": 2.615
+				},
+				"data_build_ms": {
+					"count": 0,
+					"max": 0.0,
+					"mean": 0.0,
+					"median": 0.0,
+					"min": 0.0,
+					"p95": 0.0
+				},
+				"physics_frame_settle_ms": {
+					"count": 2,
+					"max": 0.037,
+					"mean": 0.0325,
+					"median": 0.028,
+					"min": 0.028,
+					"p95": 0.037
+				},
+				"shape_commit_ms": {
+					"count": 0,
+					"max": 0.0,
+					"mean": 0.0,
+					"median": 0.0,
+					"min": 0.0,
+					"p95": 0.0
+				},
+				"threaded_shape_wall_ms": {
+					"count": 2,
+					"max": 117.298,
+					"mean": 113.177,
+					"median": 109.056,
+					"min": 109.056,
+					"p95": 117.298
+				},
+				"total_per_tile_ms": {
+					"count": 2,
+					"max": 119.956,
+					"mean": 115.7305,
+					"median": 111.505,
+					"min": 111.505,
+					"p95": 119.956
+				}
+			},
+			"threaded_build": true,
+			"tile_count": 2
+		},
+		{
+			"activation_mode": "node_single_body",
+			"grid": {
+				"map_depth": 145,
+				"map_width": 129,
+				"sample_spacing_x_m": 0.78125,
+				"sample_spacing_z_m": 0.694444444444444,
+				"samples": 18705,
+				"tile_size_m": 100.0
+			},
+			"label": "committed_resource_load_node_single_body",
+			"run_index": 2,
+			"source": "committed HeightMapShape3D .tres via ResourceLoader.CACHE_MODE_IGNORE",
+			"stats": {
+				"activation_api_ms": {
+					"count": 12,
+					"max": 0.009,
+					"mean": 0.0045,
+					"median": 0.003,
+					"min": 0.002,
+					"p95": 0.009
+				},
+				"node_bind_ms": {
+					"count": 12,
+					"max": 0.042,
+					"mean": 0.0304166666666667,
+					"median": 0.029,
+					"min": 0.024,
+					"p95": 0.042
+				},
+				"physics_frame_settle_ms": {
+					"count": 12,
+					"max": 0.023,
+					"mean": 0.0110833333333333,
+					"median": 0.009,
+					"min": 0.005,
+					"p95": 0.023
+				},
+				"resource_load_ms": {
+					"count": 12,
+					"max": 23.186,
+					"mean": 22.36475,
+					"median": 22.232,
+					"min": 21.116,
+					"p95": 23.186
+				},
+				"total_per_tile_ms": {
+					"count": 12,
+					"max": 23.24,
+					"mean": 22.4123333333333,
+					"median": 22.276,
+					"min": 21.16,
+					"p95": 23.24
+				}
+			},
+			"tile_count": 12
+		},
+		{
+			"activation_mode": "node_single_body",
+			"grid": {
+				"map_depth": 145,
+				"map_width": 129,
+				"sample_spacing_x_m": 0.78125,
+				"sample_spacing_z_m": 0.694444444444444,
+				"samples": 18705,
+				"tile_size_m": 100.0
+			},
+			"label": "phasev_129x145_node_single_body",
+			"run_index": 2,
+			"source": "synthetic deterministic height data",
+			"stats": {
+				"activation_api_ms": {
+					"count": 13,
+					"max": 0.023,
+					"mean": 0.0208461538461538,
+					"median": 0.021,
+					"min": 0.019,
+					"p95": 0.023
+				},
+				"data_build_ms": {
+					"count": 13,
+					"max": 1.709,
+					"mean": 1.55153846153846,
+					"median": 1.558,
+					"min": 1.463,
+					"p95": 1.709
+				},
+				"physics_frame_settle_ms": {
+					"count": 13,
+					"max": 12.558,
+					"mean": 2.08807692307692,
+					"median": 0.004,
+					"min": 0.002,
+					"p95": 12.558
+				},
+				"shape_commit_ms": {
+					"count": 13,
+					"max": 0.054,
+					"mean": 0.0473846153846154,
+					"median": 0.046,
+					"min": 0.044,
+					"p95": 0.054
+				},
+				"threaded_shape_wall_ms": {
+					"count": 0,
+					"max": 0.0,
+					"mean": 0.0,
+					"median": 0.0,
+					"min": 0.0,
+					"p95": 0.0
+				},
+				"total_per_tile_ms": {
+					"count": 13,
+					"max": 14.169,
+					"mean": 3.70923076923077,
+					"median": 1.648,
+					"min": 1.53,
+					"p95": 14.169
+				}
+			},
+			"threaded_build": false,
+			"tile_count": 13
+		},
+		{
+			"activation_mode": "physics_server_body",
+			"grid": {
+				"map_depth": 145,
+				"map_width": 129,
+				"sample_spacing_x_m": 0.78125,
+				"sample_spacing_z_m": 0.694444444444444,
+				"samples": 18705,
+				"tile_size_m": 100.0
+			},
+			"label": "phasev_129x145_threaded_physics_server",
+			"run_index": 2,
+			"source": "synthetic deterministic height data",
+			"stats": {
+				"activation_api_ms": {
+					"count": 8,
+					"max": 0.054,
+					"mean": 0.049375,
+					"median": 0.048,
+					"min": 0.046,
+					"p95": 0.054
+				},
+				"data_build_ms": {
+					"count": 0,
+					"max": 0.0,
+					"mean": 0.0,
+					"median": 0.0,
+					"min": 0.0,
+					"p95": 0.0
+				},
+				"physics_frame_settle_ms": {
+					"count": 8,
+					"max": 12.289,
+					"mean": 6.52475,
+					"median": 4.848,
+					"min": 3.967,
+					"p95": 12.289
+				},
+				"shape_commit_ms": {
+					"count": 0,
+					"max": 0.0,
+					"mean": 0.0,
+					"median": 0.0,
+					"min": 0.0,
+					"p95": 0.0
+				},
+				"threaded_shape_wall_ms": {
+					"count": 8,
+					"max": 2.186,
+					"mean": 1.95075,
+					"median": 1.971,
+					"min": 1.718,
+					"p95": 2.186
+				},
+				"total_per_tile_ms": {
+					"count": 8,
+					"max": 14.315,
+					"mean": 8.52775,
+					"median": 6.87,
+					"min": 6.208,
+					"p95": 14.315
+				}
+			},
+			"threaded_build": true,
+			"tile_count": 8
+		},
+		{
+			"activation_mode": "node_single_body",
+			"grid": {
+				"map_depth": 257,
+				"map_width": 257,
+				"sample_spacing_x_m": 0.390625,
+				"sample_spacing_z_m": 0.390625,
+				"samples": 66049,
+				"tile_size_m": 100.0
+			},
+			"label": "phasev_257x257_node_single_body",
+			"run_index": 2,
+			"source": "synthetic deterministic height data",
+			"stats": {
+				"activation_api_ms": {
+					"count": 8,
+					"max": 0.093,
+					"mean": 0.076375,
+					"median": 0.07,
+					"min": 0.068,
+					"p95": 0.093
+				},
+				"data_build_ms": {
+					"count": 8,
+					"max": 7.674,
+					"mean": 6.28675,
+					"median": 5.985,
+					"min": 5.64,
+					"p95": 7.674
+				},
+				"physics_frame_settle_ms": {
+					"count": 8,
+					"max": 9.366,
+					"mean": 1.918375,
+					"median": 0.011,
+					"min": 0.006,
+					"p95": 9.366
+				},
+				"shape_commit_ms": {
+					"count": 8,
+					"max": 0.225,
+					"mean": 0.18225,
+					"median": 0.17,
+					"min": 0.165,
+					"p95": 0.225
+				},
+				"threaded_shape_wall_ms": {
+					"count": 0,
+					"max": 0.0,
+					"mean": 0.0,
+					"median": 0.0,
+					"min": 0.0,
+					"p95": 0.0
+				},
+				"total_per_tile_ms": {
+					"count": 8,
+					"max": 15.473,
+					"mean": 8.465375,
+					"median": 6.468,
+					"min": 5.943,
+					"p95": 15.473
+				}
+			},
+			"threaded_build": false,
+			"tile_count": 8
+		},
+		{
+			"activation_mode": "physics_server_body",
+			"grid": {
+				"map_depth": 257,
+				"map_width": 257,
+				"sample_spacing_x_m": 0.390625,
+				"sample_spacing_z_m": 0.390625,
+				"samples": 66049,
+				"tile_size_m": 100.0
+			},
+			"label": "phasev_257x257_threaded_physics_server",
+			"run_index": 2,
+			"source": "synthetic deterministic height data",
+			"stats": {
+				"activation_api_ms": {
+					"count": 8,
+					"max": 0.2,
+					"mean": 0.12975,
+					"median": 0.118,
+					"min": 0.114,
+					"p95": 0.2
+				},
+				"data_build_ms": {
+					"count": 0,
+					"max": 0.0,
+					"mean": 0.0,
+					"median": 0.0,
+					"min": 0.0,
+					"p95": 0.0
+				},
+				"physics_frame_settle_ms": {
+					"count": 8,
+					"max": 9.871,
+					"mean": 2.7985,
+					"median": 0.619,
+					"min": 0.007,
+					"p95": 9.871
+				},
+				"shape_commit_ms": {
+					"count": 0,
+					"max": 0.0,
+					"mean": 0.0,
+					"median": 0.0,
+					"min": 0.0,
+					"p95": 0.0
+				},
+				"threaded_shape_wall_ms": {
+					"count": 8,
+					"max": 5.8,
+					"mean": 5.55875,
+					"median": 5.626,
+					"min": 5.133,
+					"p95": 5.8
+				},
+				"total_per_tile_ms": {
+					"count": 8,
+					"max": 15.126,
+					"mean": 8.490375,
+					"median": 6.437,
+					"min": 5.771,
+					"p95": 15.126
+				}
+			},
+			"threaded_build": true,
+			"tile_count": 8
+		},
+		{
+			"activation_mode": "node_single_body",
+			"grid": {
+				"map_depth": 513,
+				"map_width": 513,
+				"sample_spacing_x_m": 0.1953125,
+				"sample_spacing_z_m": 0.1953125,
+				"samples": 263169,
+				"tile_size_m": 100.0
+			},
+			"label": "phasev_513x513_node_single_body",
+			"run_index": 2,
+			"source": "synthetic deterministic height data",
+			"stats": {
+				"activation_api_ms": {
+					"count": 4,
+					"max": 0.305,
+					"mean": 0.26575,
+					"median": 0.255,
+					"min": 0.247,
+					"p95": 0.305
+				},
+				"data_build_ms": {
+					"count": 4,
+					"max": 25.965,
+					"mean": 22.542,
+					"median": 21.476,
+					"min": 21.057,
+					"p95": 25.965
+				},
+				"physics_frame_settle_ms": {
+					"count": 4,
+					"max": 0.03,
+					"mean": 0.022,
+					"median": 0.019,
+					"min": 0.018,
+					"p95": 0.03
+				},
+				"shape_commit_ms": {
+					"count": 4,
+					"max": 0.637,
+					"mean": 0.62075,
+					"median": 0.61,
+					"min": 0.609,
+					"p95": 0.637
+				},
+				"threaded_shape_wall_ms": {
+					"count": 0,
+					"max": 0.0,
+					"mean": 0.0,
+					"median": 0.0,
+					"min": 0.0,
+					"p95": 0.0
+				},
+				"total_per_tile_ms": {
+					"count": 4,
+					"max": 26.882,
+					"mean": 23.45525,
+					"median": 22.443,
+					"min": 21.946,
+					"p95": 26.882
+				}
+			},
+			"threaded_build": false,
+			"tile_count": 4
+		},
+		{
+			"activation_mode": "physics_server_body",
+			"grid": {
+				"map_depth": 513,
+				"map_width": 513,
+				"sample_spacing_x_m": 0.1953125,
+				"sample_spacing_z_m": 0.1953125,
+				"samples": 263169,
+				"tile_size_m": 100.0
+			},
+			"label": "phasev_513x513_threaded_physics_server",
+			"run_index": 2,
+			"source": "synthetic deterministic height data",
+			"stats": {
+				"activation_api_ms": {
+					"count": 4,
+					"max": 0.492,
+					"mean": 0.48425,
+					"median": 0.483,
+					"min": 0.475,
+					"p95": 0.492
+				},
+				"data_build_ms": {
+					"count": 0,
+					"max": 0.0,
+					"mean": 0.0,
+					"median": 0.0,
+					"min": 0.0,
+					"p95": 0.0
+				},
+				"physics_frame_settle_ms": {
+					"count": 4,
+					"max": 0.023,
+					"mean": 0.016,
+					"median": 0.011,
+					"min": 0.011,
+					"p95": 0.023
+				},
+				"shape_commit_ms": {
+					"count": 0,
+					"max": 0.0,
+					"mean": 0.0,
+					"median": 0.0,
+					"min": 0.0,
+					"p95": 0.0
+				},
+				"threaded_shape_wall_ms": {
+					"count": 4,
+					"max": 30.92,
+					"mean": 25.01675,
+					"median": 22.218,
+					"min": 20.989,
+					"p95": 30.92
+				},
+				"total_per_tile_ms": {
+					"count": 4,
+					"max": 31.434,
+					"mean": 25.5205,
+					"median": 22.715,
+					"min": 21.495,
+					"p95": 31.434
+				}
+			},
+			"threaded_build": true,
+			"tile_count": 4
+		},
+		{
+			"activation_mode": "node_single_body",
+			"grid": {
+				"map_depth": 1181,
+				"map_width": 1181,
+				"sample_spacing_x_m": 0.0847457627118644,
+				"sample_spacing_z_m": 0.0847457627118644,
+				"samples": 1394761,
+				"tile_size_m": 100.0
+			},
+			"label": "phasev_1181x1181_node_single_body",
+			"run_index": 2,
+			"source": "synthetic deterministic height data",
+			"stats": {
+				"activation_api_ms": {
+					"count": 2,
+					"max": 1.308,
+					"mean": 1.2845,
+					"median": 1.261,
+					"min": 1.261,
+					"p95": 1.308
+				},
+				"data_build_ms": {
+					"count": 2,
+					"max": 110.805,
+					"mean": 108.233,
+					"median": 105.661,
+					"min": 105.661,
+					"p95": 110.805
+				},
+				"physics_frame_settle_ms": {
+					"count": 2,
+					"max": 0.032,
+					"mean": 0.029,
+					"median": 0.026,
+					"min": 0.026,
+					"p95": 0.032
+				},
+				"shape_commit_ms": {
+					"count": 2,
+					"max": 3.431,
+					"mean": 3.349,
+					"median": 3.267,
+					"min": 3.267,
+					"p95": 3.431
+				},
+				"threaded_shape_wall_ms": {
+					"count": 0,
+					"max": 0.0,
+					"mean": 0.0,
+					"median": 0.0,
+					"min": 0.0,
+					"p95": 0.0
+				},
+				"total_per_tile_ms": {
+					"count": 2,
+					"max": 115.582,
+					"mean": 112.9005,
+					"median": 110.219,
+					"min": 110.219,
+					"p95": 115.582
+				}
+			},
+			"threaded_build": false,
+			"tile_count": 2
+		},
+		{
+			"activation_mode": "physics_server_body",
+			"grid": {
+				"map_depth": 1181,
+				"map_width": 1181,
+				"sample_spacing_x_m": 0.0847457627118644,
+				"sample_spacing_z_m": 0.0847457627118644,
+				"samples": 1394761,
+				"tile_size_m": 100.0
+			},
+			"label": "phasev_1181x1181_threaded_physics_server",
+			"run_index": 2,
+			"source": "synthetic deterministic height data",
+			"stats": {
+				"activation_api_ms": {
+					"count": 2,
+					"max": 2.669,
+					"mean": 2.5435,
+					"median": 2.418,
+					"min": 2.418,
+					"p95": 2.669
+				},
+				"data_build_ms": {
+					"count": 0,
+					"max": 0.0,
+					"mean": 0.0,
+					"median": 0.0,
+					"min": 0.0,
+					"p95": 0.0
+				},
+				"physics_frame_settle_ms": {
+					"count": 2,
+					"max": 0.029,
+					"mean": 0.0255,
+					"median": 0.022,
+					"min": 0.022,
+					"p95": 0.029
+				},
+				"shape_commit_ms": {
+					"count": 0,
+					"max": 0.0,
+					"mean": 0.0,
+					"median": 0.0,
+					"min": 0.0,
+					"p95": 0.0
+				},
+				"threaded_shape_wall_ms": {
+					"count": 2,
+					"max": 114.884,
+					"mean": 113.36,
+					"median": 111.836,
+					"min": 111.836,
+					"p95": 114.884
+				},
+				"total_per_tile_ms": {
+					"count": 2,
+					"max": 117.585,
+					"mean": 115.934,
+					"median": 114.283,
+					"min": 114.283,
+					"p95": 117.585
+				}
+			},
+			"threaded_build": true,
+			"tile_count": 2
+		}
+	],
+	"budget_math": {
+		"active_radius_lead_seconds": 25.0,
+		"active_tile_count": 25,
+		"diagonal_active_delta_tiles_per_crossing": 9,
+		"diagonal_prefetch_delta_tiles_per_crossing": 13,
+		"one_ring_prefetch_lead_seconds": 12.5,
+		"prefetch_tile_count": 49,
+		"seconds_per_100m_tile_at_max_speed": 12.5,
+		"straight_active_delta_tiles_per_crossing": 5,
+		"straight_prefetch_delta_tiles_per_crossing": 7
+	},
+	"current_terrain": {
+		"active_tiles": 12,
+		"collision_grid": {
+			"x": 129,
+			"z": 145
+		},
+		"density_preserving_phase_v_grid": {
+			"x": 1165,
+			"z": 1182
+		},
+		"path": "res://data/terrain/cedar_hollow_terrain_def.tres",
+		"sample_spacing_m": {
+			"x": 0.0859375,
+			"z": 0.0847222208976746
+		},
+		"tile_size_m": {
+			"x": 11.0,
+			"z": 12.1999998092651
+		}
+	},
+	"elapsed_ms": 3762.758,
+	"godot_version": "4.6.1-stable (official)",
+	"inputs": {
+		"active_radius": 2,
+		"include_heavy": true,
+		"max_speed_mps": 8.0,
+		"phase_v_tile_size_m": 100.0,
+		"prefetch_radius": 3,
+		"repeat": 3
+	},
+	"physics_engine": "GodotPhysics3D",
+	"physics_ticks_per_second": 120,
+	"spike": "lookahead_budget"
+}

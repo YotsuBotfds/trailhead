@@ -3,14 +3,14 @@ extends RefCounted
 
 const ROOT_NAME: String = "DustTiltShiftVisuals"
 const DUST_FIELD_NAME: String = "DustMoteField"
+const TILT_SHIFT_LAYER_NAME: String = "TiltShiftLayer"
+const TILT_SHIFT_RECT_NAME: String = "TiltShiftOverlay"
+const TiltShiftShader: Shader = preload("res://systems/render/tilt_shift.gdshader")
 const DUST_FIXED_SEED: int = 424242
 const DUST_LIFETIME: float = 9.0
 const DUST_PREPROCESS: float = 9.0
 const DUST_SCALE: float = 0.006
 const DUST_ALPHA: float = 0.30
-const CAMERA_NEAR_DOF_DISTANCE: float = 0.20
-const CAMERA_FAR_DOF_DISTANCE: float = 1.55
-const CAMERA_DOF_TRANSITION_SCALE: float = 1.25
 
 
 static func build(parent: Node3D, chase_camera: Camera3D, orbit_camera: Camera3D, fpv_camera: Camera3D) -> Node3D:
@@ -19,6 +19,7 @@ static func build(parent: Node3D, chase_camera: Camera3D, orbit_camera: Camera3D
 	parent.add_child(root)
 	if chase_camera != null:
 		chase_camera.add_child(_make_dust_field())
+	_ensure_tilt_shift_layer(parent)
 	_apply_tilt_shift(chase_camera)
 	_apply_tilt_shift(orbit_camera)
 	_apply_tilt_shift(fpv_camera)
@@ -76,19 +77,45 @@ static func _dust_mesh() -> QuadMesh:
 static func _apply_tilt_shift(camera: Camera3D) -> void:
 	if camera == null:
 		return
-	var attributes: CameraAttributesPractical = camera.attributes as CameraAttributesPractical
-	if attributes == null:
-		attributes = CameraAttributesPractical.new()
-		camera.attributes = attributes
-	var blur_amount: float = maxf(GameConfig.tilt_shift_blur_amount, 0.0)
-	var focus_band: float = clampf(GameConfig.tilt_shift_focus_band, 0.1, 0.9)
-	var softness: float = maxf(GameConfig.tilt_shift_gradient_softness, 0.1)
-	attributes.dof_blur_near_enabled = true
-	attributes.dof_blur_far_enabled = true
-	attributes.dof_blur_amount = blur_amount
-	attributes.dof_blur_near_distance = CAMERA_NEAR_DOF_DISTANCE + focus_band * 0.18
-	attributes.dof_blur_far_distance = CAMERA_FAR_DOF_DISTANCE + focus_band * 0.45
-	attributes.dof_blur_near_transition = softness * CAMERA_DOF_TRANSITION_SCALE
-	attributes.dof_blur_far_transition = softness * CAMERA_DOF_TRANSITION_SCALE
 	camera.set_meta("tilt_shift_gradient_axis", Vector2(0.0, 1.0))
-	camera.set_meta("tilt_shift_focus_band", focus_band)
+	camera.set_meta("tilt_shift_focus_band", clampf(GameConfig.tilt_shift_focus_band, 0.0, 0.5))
+	camera.set_meta("tilt_shift_screen_layer", TILT_SHIFT_LAYER_NAME)
+
+
+static func _ensure_tilt_shift_layer(parent: Node) -> CanvasLayer:
+	var existing_layer: CanvasLayer = parent.get_node_or_null(TILT_SHIFT_LAYER_NAME) as CanvasLayer
+	if existing_layer != null:
+		_configure_tilt_shift_layer(existing_layer)
+		return existing_layer
+	var layer: CanvasLayer = CanvasLayer.new()
+	layer.name = TILT_SHIFT_LAYER_NAME
+	layer.layer = 2
+	parent.add_child(layer)
+	_configure_tilt_shift_layer(layer)
+	return layer
+
+
+static func _configure_tilt_shift_layer(layer: CanvasLayer) -> void:
+	layer.visible = GameConfig.tilt_shift_enabled
+	var overlay: ColorRect = layer.get_node_or_null(TILT_SHIFT_RECT_NAME) as ColorRect
+	if overlay == null:
+		overlay = ColorRect.new()
+		overlay.name = TILT_SHIFT_RECT_NAME
+		overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		overlay.anchor_left = 0.0
+		overlay.anchor_top = 0.0
+		overlay.anchor_right = 1.0
+		overlay.anchor_bottom = 1.0
+		overlay.offset_left = 0.0
+		overlay.offset_top = 0.0
+		overlay.offset_right = 0.0
+		overlay.offset_bottom = 0.0
+		layer.add_child(overlay)
+	var material: ShaderMaterial = overlay.material as ShaderMaterial
+	if material == null:
+		material = ShaderMaterial.new()
+		overlay.material = material
+	material.shader = TiltShiftShader
+	material.set_shader_parameter("center", clampf(GameConfig.tilt_shift_band_center, 0.0, 1.0))
+	material.set_shader_parameter("band", clampf(GameConfig.tilt_shift_focus_band, 0.0, 0.5))
+	material.set_shader_parameter("blur", maxf(GameConfig.tilt_shift_blur_amount, 0.0))

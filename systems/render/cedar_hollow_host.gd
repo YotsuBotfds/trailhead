@@ -41,6 +41,7 @@ var _vehicle_residue_visual: RefCounted = VehicleResidueVisualScript.new()
 var _wheel_spin: float = 0.0
 var _camera_mode: int = CAMERA_MODE_CHASE
 var _chase_camera_initialized: bool = false
+var _chase_look_target_current: Vector3 = Vector3.ZERO
 var _orbit_camera_initialized: bool = false
 var _orbit_yaw_degrees: float = 0.0
 var _landmark_hint_hud: CanvasLayer = null
@@ -387,26 +388,37 @@ func _update_chase_camera(delta: float, state: RefCounted) -> void:
 	var vehicle_basis: Basis = state.get("basis")
 	var back: Vector3 = vehicle_basis.z.normalized()
 	var forward: Vector3 = -vehicle_basis.z.normalized()
+	var steer: float = clampf(float(_vehicle_input.get("steer")), -1.0, 1.0)
 	var desired_position: Vector3 = vehicle_position + back * GameConfig.cam_distance + Vector3.UP * GameConfig.cam_height
 	if not _chase_camera_initialized:
 		_camera.global_position = desired_position
+		_chase_look_target_current = _chase_camera_look_target(vehicle_position, vehicle_basis, forward, steer)
 		_chase_camera_initialized = true
 	else:
-		var follow_alpha: float = _chase_camera_follow_alpha(delta)
-		_camera.global_position = _camera.global_position.lerp(desired_position, follow_alpha)
-	_camera.look_at(_chase_camera_look_target(vehicle_position, forward), Vector3.UP)
+		var follow_alpha_xz: float = _chase_camera_follow_alpha(delta, GameConfig.cam_spring_xz)
+		var follow_alpha_y: float = _chase_camera_follow_alpha(delta, GameConfig.cam_spring_vy)
+		var current_position: Vector3 = _camera.global_position
+		current_position.x = lerpf(current_position.x, desired_position.x, follow_alpha_xz)
+		current_position.y = lerpf(current_position.y, desired_position.y, follow_alpha_y)
+		current_position.z = lerpf(current_position.z, desired_position.z, follow_alpha_xz)
+		_camera.global_position = current_position
+		var raw_look_target: Vector3 = _chase_camera_look_target(vehicle_position, vehicle_basis, forward, steer)
+		var look_alpha: float = _chase_camera_follow_alpha(delta, GameConfig.cam_look_spring)
+		_chase_look_target_current = _chase_look_target_current.lerp(raw_look_target, look_alpha)
+	_camera.look_at(_chase_look_target_current, Vector3.UP)
 	_camera.fov = GameConfig.get_fov_for_speed(float(state.call("speed")))
 	_camera.current = _camera_mode == CAMERA_MODE_CHASE
 
 
-func _chase_camera_follow_alpha(delta: float) -> float:
-	var spring_alpha: float = 1.0 - exp(-maxf(GameConfig.cam_spring, 0.0) * delta)
-	var damping_scale: float = 1.0 / (1.0 + maxf(GameConfig.cam_damping, 0.0) * delta)
-	return clampf(spring_alpha * damping_scale, 0.0, 1.0)
+func _chase_camera_follow_alpha(delta: float, spring: float) -> float:
+	return clampf(1.0 - exp(-maxf(spring, 0.0) * delta), 0.0, 1.0)
 
 
-func _chase_camera_look_target(vehicle_position: Vector3, forward: Vector3) -> Vector3:
-	var target: Vector3 = vehicle_position + forward * GameConfig.cam_look_ahead
+func _chase_camera_look_target(vehicle_position: Vector3, vehicle_basis: Basis, forward: Vector3, steer: float) -> Vector3:
+	var lateral: Vector3 = vehicle_basis.x.normalized()
+	var target: Vector3 = vehicle_position \
+		+ forward * GameConfig.cam_look_ahead \
+		+ lateral * steer * GameConfig.cam_look_turn_bias
 	if _camera == null:
 		return target
 	var flat_delta: Vector3 = Vector3(target.x - _camera.global_position.x, 0.0, target.z - _camera.global_position.z)

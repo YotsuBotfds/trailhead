@@ -5,6 +5,8 @@ const VehicleScene: PackedScene = preload("res://scenes/vehicle.tscn")
 const VehicleInputScript: GDScript = preload("res://systems/vehicle/vehicle_input.gd")
 const ProceduralBuggyVisualScript: GDScript = preload("res://systems/render/procedural_buggy_visual.gd")
 const VehicleResidueVisualScript: GDScript = preload("res://systems/render/vehicle_residue_visual.gd")
+const AtmosphereVisualBuilderScript: GDScript = preload("res://systems/render/atmosphere_visual_builder.gd")
+const DustTiltShiftVisualBuilderScript: GDScript = preload("res://systems/render/dust_tilt_shift_visual_builder.gd")
 const FlatWorldBuilderScript: GDScript = preload("res://systems/world/flat_world_builder.gd")
 const SurfaceMapScript: GDScript = preload("res://systems/world/surface_map.gd")
 
@@ -16,6 +18,7 @@ var _vehicle_visual_root: Node = null
 var _vehicle_residue_visual: RefCounted = VehicleResidueVisualScript.new()
 var _wheel_spin: float = 0.0
 var _camera_initialized: bool = false
+var _chase_look_target_current: Vector3 = Vector3.ZERO
 
 
 func _ready() -> void:
@@ -25,6 +28,7 @@ func _ready() -> void:
 	_spawn_vehicle()
 	_setup_light()
 	_setup_camera()
+	_setup_render_support()
 
 
 func _physics_process(delta: float) -> void:
@@ -105,6 +109,11 @@ func _setup_camera() -> void:
 	_camera.fov = GameConfig.cam_fov_base
 	add_child(_camera)
 	_update_camera(GameConfig.FIXED_DT)
+
+
+func _setup_render_support() -> void:
+	DustTiltShiftVisualBuilderScript.build(self, _camera, null, null)
+	AtmosphereVisualBuilderScript.configure_render_support(self, _vehicle, _camera, null, null)
 
 
 func _update_vehicle_input() -> void:
@@ -191,25 +200,36 @@ func _update_camera(delta: float) -> void:
 	var vehicle_basis: Basis = state.get("basis")
 	var back: Vector3 = vehicle_basis.z.normalized()
 	var forward: Vector3 = -vehicle_basis.z.normalized()
+	var steer: float = clampf(float(_vehicle_input.get("steer")), -1.0, 1.0)
 	var desired_position: Vector3 = vehicle_position + back * GameConfig.cam_distance + Vector3.UP * GameConfig.cam_height
 	if not _camera_initialized:
 		_camera.global_position = desired_position
+		_chase_look_target_current = _chase_camera_look_target(vehicle_position, vehicle_basis, forward, steer)
 		_camera_initialized = true
 	else:
-		var follow_alpha: float = _chase_camera_follow_alpha(delta)
-		_camera.global_position = _camera.global_position.lerp(desired_position, follow_alpha)
-	_camera.look_at(_chase_camera_look_target(vehicle_position, forward), Vector3.UP)
+		var follow_alpha_xz: float = _chase_camera_follow_alpha(delta, GameConfig.cam_spring_xz)
+		var follow_alpha_y: float = _chase_camera_follow_alpha(delta, GameConfig.cam_spring_vy)
+		var current_position: Vector3 = _camera.global_position
+		current_position.x = lerpf(current_position.x, desired_position.x, follow_alpha_xz)
+		current_position.y = lerpf(current_position.y, desired_position.y, follow_alpha_y)
+		current_position.z = lerpf(current_position.z, desired_position.z, follow_alpha_xz)
+		_camera.global_position = current_position
+		var raw_look_target: Vector3 = _chase_camera_look_target(vehicle_position, vehicle_basis, forward, steer)
+		var look_alpha: float = _chase_camera_follow_alpha(delta, GameConfig.cam_look_spring)
+		_chase_look_target_current = _chase_look_target_current.lerp(raw_look_target, look_alpha)
+	_camera.look_at(_chase_look_target_current, Vector3.UP)
 	_camera.fov = GameConfig.get_fov_for_speed(float(state.call("speed")))
 
 
-func _chase_camera_follow_alpha(delta: float) -> float:
-	var spring_alpha: float = 1.0 - exp(-maxf(GameConfig.cam_spring, 0.0) * delta)
-	var damping_scale: float = 1.0 / (1.0 + maxf(GameConfig.cam_damping, 0.0) * delta)
-	return clampf(spring_alpha * damping_scale, 0.0, 1.0)
+func _chase_camera_follow_alpha(delta: float, spring: float) -> float:
+	return clampf(1.0 - exp(-maxf(spring, 0.0) * delta), 0.0, 1.0)
 
 
-func _chase_camera_look_target(vehicle_position: Vector3, forward: Vector3) -> Vector3:
-	var target: Vector3 = vehicle_position + forward * GameConfig.cam_look_ahead
+func _chase_camera_look_target(vehicle_position: Vector3, vehicle_basis: Basis, forward: Vector3, steer: float) -> Vector3:
+	var lateral: Vector3 = vehicle_basis.x.normalized()
+	var target: Vector3 = vehicle_position \
+		+ forward * GameConfig.cam_look_ahead \
+		+ lateral * steer * GameConfig.cam_look_turn_bias
 	if _camera == null:
 		return target
 	var flat_delta: Vector3 = Vector3(target.x - _camera.global_position.x, 0.0, target.z - _camera.global_position.z)

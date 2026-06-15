@@ -1,0 +1,4265 @@
+{
+  "comparisons": [
+    {
+      "activation_match": true,
+      "baseline_activation_count": 70,
+      "out_of_order_ready_events": 0,
+      "stall_ticks": 2,
+      "telemetry_match": true,
+      "variant": "streamed_workers_1",
+      "variant_activation_count": 70
+    },
+    {
+      "activation_match": true,
+      "baseline_activation_count": 70,
+      "out_of_order_ready_events": 13,
+      "stall_ticks": 2,
+      "telemetry_match": true,
+      "variant": "streamed_workers_2",
+      "variant_activation_count": 70
+    },
+    {
+      "activation_match": true,
+      "baseline_activation_count": 70,
+      "out_of_order_ready_events": 27,
+      "stall_ticks": 2,
+      "telemetry_match": true,
+      "variant": "streamed_workers_8",
+      "variant_activation_count": 70
+    }
+  ],
+  "hypothesis": "Integer-cell keyed prefetch plus sorted in-physics-tick activation yields identical activation ticks and telemetry across pre-pinned and streamed worker counts.",
+  "inputs": {
+    "activation_cap_per_tick": 4,
+    "active_radius": 2,
+    "max_speed_mps": 8.0,
+    "prefetch_radius": 3,
+    "route_cells": [
+      [
+        0,
+        0
+      ],
+      [
+        1,
+        -1
+      ],
+      [
+        2,
+        -2
+      ],
+      [
+        3,
+        -3
+      ],
+      [
+        4,
+        -4
+      ],
+      [
+        5,
+        -5
+      ]
+    ],
+    "ticks_per_second": 120,
+    "ticks_per_tile": 1500,
+    "tile_size_m": 100.0
+  },
+  "limitations": [
+    "This is a deterministic proxy, not a RigidBody3D vehicle streaming scene.",
+    "It proves activation scheduling and telemetry invariance under out-of-order ready completion.",
+    "Production still needs the same check with real HeightMapShape3D resources and raycast/suspension contact."
+  ],
+  "pass": true,
+  "production_recommendation": "Carry this into a Godot S3 implementation by building immutable shape data off-thread, then activating bodies only from _physics_process in sorted cell order with a bounded per-tick activation cap. Keep the prefetch budget from S2 and record activation ticks.",
+  "spike": "position_keyed_streaming_determinism",
+  "variants": [
+    {
+      "activation_by_cell": {
+        "-1,-1": {
+          "order_in_tick": 2,
+          "tick": 1
+        },
+        "-1,-2": {
+          "order_in_tick": 1,
+          "tick": 1
+        },
+        "-1,-3": {
+          "order_in_tick": 0,
+          "tick": 1500
+        },
+        "-1,0": {
+          "order_in_tick": 3,
+          "tick": 1
+        },
+        "-1,1": {
+          "order_in_tick": 0,
+          "tick": 2
+        },
+        "-1,2": {
+          "order_in_tick": 1,
+          "tick": 2
+        },
+        "-2,-1": {
+          "order_in_tick": 1,
+          "tick": 0
+        },
+        "-2,-2": {
+          "order_in_tick": 0,
+          "tick": 0
+        },
+        "-2,0": {
+          "order_in_tick": 2,
+          "tick": 0
+        },
+        "-2,1": {
+          "order_in_tick": 3,
+          "tick": 0
+        },
+        "-2,2": {
+          "order_in_tick": 0,
+          "tick": 1
+        },
+        "0,-1": {
+          "order_in_tick": 3,
+          "tick": 2
+        },
+        "0,-2": {
+          "order_in_tick": 2,
+          "tick": 2
+        },
+        "0,-3": {
+          "order_in_tick": 1,
+          "tick": 1500
+        },
+        "0,-4": {
+          "order_in_tick": 0,
+          "tick": 3000
+        },
+        "0,0": {
+          "order_in_tick": 0,
+          "tick": 3
+        },
+        "0,1": {
+          "order_in_tick": 1,
+          "tick": 3
+        },
+        "0,2": {
+          "order_in_tick": 2,
+          "tick": 3
+        },
+        "1,-1": {
+          "order_in_tick": 0,
+          "tick": 4
+        },
+        "1,-2": {
+          "order_in_tick": 3,
+          "tick": 3
+        },
+        "1,-3": {
+          "order_in_tick": 2,
+          "tick": 1500
+        },
+        "1,-4": {
+          "order_in_tick": 1,
+          "tick": 3000
+        },
+        "1,-5": {
+          "order_in_tick": 0,
+          "tick": 4500
+        },
+        "1,0": {
+          "order_in_tick": 1,
+          "tick": 4
+        },
+        "1,1": {
+          "order_in_tick": 2,
+          "tick": 4
+        },
+        "1,2": {
+          "order_in_tick": 3,
+          "tick": 4
+        },
+        "2,-1": {
+          "order_in_tick": 1,
+          "tick": 5
+        },
+        "2,-2": {
+          "order_in_tick": 0,
+          "tick": 5
+        },
+        "2,-3": {
+          "order_in_tick": 3,
+          "tick": 1500
+        },
+        "2,-4": {
+          "order_in_tick": 2,
+          "tick": 3000
+        },
+        "2,-5": {
+          "order_in_tick": 1,
+          "tick": 4500
+        },
+        "2,-6": {
+          "order_in_tick": 0,
+          "tick": 6000
+        },
+        "2,0": {
+          "order_in_tick": 2,
+          "tick": 5
+        },
+        "2,1": {
+          "order_in_tick": 3,
+          "tick": 5
+        },
+        "2,2": {
+          "order_in_tick": 0,
+          "tick": 6
+        },
+        "3,-1": {
+          "order_in_tick": 2,
+          "tick": 1501
+        },
+        "3,-2": {
+          "order_in_tick": 1,
+          "tick": 1501
+        },
+        "3,-3": {
+          "order_in_tick": 0,
+          "tick": 1501
+        },
+        "3,-4": {
+          "order_in_tick": 3,
+          "tick": 3000
+        },
+        "3,-5": {
+          "order_in_tick": 2,
+          "tick": 4500
+        },
+        "3,-6": {
+          "order_in_tick": 1,
+          "tick": 6000
+        },
+        "3,-7": {
+          "order_in_tick": 0,
+          "tick": 7500
+        },
+        "3,0": {
+          "order_in_tick": 3,
+          "tick": 1501
+        },
+        "3,1": {
+          "order_in_tick": 0,
+          "tick": 1502
+        },
+        "4,-1": {
+          "order_in_tick": 3,
+          "tick": 3001
+        },
+        "4,-2": {
+          "order_in_tick": 2,
+          "tick": 3001
+        },
+        "4,-3": {
+          "order_in_tick": 1,
+          "tick": 3001
+        },
+        "4,-4": {
+          "order_in_tick": 0,
+          "tick": 3001
+        },
+        "4,-5": {
+          "order_in_tick": 3,
+          "tick": 4500
+        },
+        "4,-6": {
+          "order_in_tick": 2,
+          "tick": 6000
+        },
+        "4,-7": {
+          "order_in_tick": 1,
+          "tick": 7500
+        },
+        "4,0": {
+          "order_in_tick": 0,
+          "tick": 3002
+        },
+        "5,-1": {
+          "order_in_tick": 0,
+          "tick": 4502
+        },
+        "5,-2": {
+          "order_in_tick": 3,
+          "tick": 4501
+        },
+        "5,-3": {
+          "order_in_tick": 2,
+          "tick": 4501
+        },
+        "5,-4": {
+          "order_in_tick": 1,
+          "tick": 4501
+        },
+        "5,-5": {
+          "order_in_tick": 0,
+          "tick": 4501
+        },
+        "5,-6": {
+          "order_in_tick": 3,
+          "tick": 6000
+        },
+        "5,-7": {
+          "order_in_tick": 2,
+          "tick": 7500
+        },
+        "6,-2": {
+          "order_in_tick": 0,
+          "tick": 6002
+        },
+        "6,-3": {
+          "order_in_tick": 3,
+          "tick": 6001
+        },
+        "6,-4": {
+          "order_in_tick": 2,
+          "tick": 6001
+        },
+        "6,-5": {
+          "order_in_tick": 1,
+          "tick": 6001
+        },
+        "6,-6": {
+          "order_in_tick": 0,
+          "tick": 6001
+        },
+        "6,-7": {
+          "order_in_tick": 3,
+          "tick": 7500
+        },
+        "7,-3": {
+          "order_in_tick": 0,
+          "tick": 7502
+        },
+        "7,-4": {
+          "order_in_tick": 3,
+          "tick": 7501
+        },
+        "7,-5": {
+          "order_in_tick": 2,
+          "tick": 7501
+        },
+        "7,-6": {
+          "order_in_tick": 1,
+          "tick": 7501
+        },
+        "7,-7": {
+          "order_in_tick": 0,
+          "tick": 7501
+        }
+      },
+      "activation_log": [
+        {
+          "cell": [
+            -2,
+            -2
+          ],
+          "order_in_tick": 0,
+          "tick": 0,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            -2,
+            -1
+          ],
+          "order_in_tick": 1,
+          "tick": 0,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            -2,
+            0
+          ],
+          "order_in_tick": 2,
+          "tick": 0,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            -2,
+            1
+          ],
+          "order_in_tick": 3,
+          "tick": 0,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            -2,
+            2
+          ],
+          "order_in_tick": 0,
+          "tick": 1,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            -1,
+            -2
+          ],
+          "order_in_tick": 1,
+          "tick": 1,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            -1,
+            -1
+          ],
+          "order_in_tick": 2,
+          "tick": 1,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            -1,
+            0
+          ],
+          "order_in_tick": 3,
+          "tick": 1,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            -1,
+            1
+          ],
+          "order_in_tick": 0,
+          "tick": 2,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            -1,
+            2
+          ],
+          "order_in_tick": 1,
+          "tick": 2,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            0,
+            -2
+          ],
+          "order_in_tick": 2,
+          "tick": 2,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            0,
+            -1
+          ],
+          "order_in_tick": 3,
+          "tick": 2,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            0,
+            0
+          ],
+          "order_in_tick": 0,
+          "tick": 3,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            0,
+            1
+          ],
+          "order_in_tick": 1,
+          "tick": 3,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            0,
+            2
+          ],
+          "order_in_tick": 2,
+          "tick": 3,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            1,
+            -2
+          ],
+          "order_in_tick": 3,
+          "tick": 3,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            1,
+            -1
+          ],
+          "order_in_tick": 0,
+          "tick": 4,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            1,
+            0
+          ],
+          "order_in_tick": 1,
+          "tick": 4,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            1,
+            1
+          ],
+          "order_in_tick": 2,
+          "tick": 4,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            1,
+            2
+          ],
+          "order_in_tick": 3,
+          "tick": 4,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            2,
+            -2
+          ],
+          "order_in_tick": 0,
+          "tick": 5,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            2,
+            -1
+          ],
+          "order_in_tick": 1,
+          "tick": 5,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            2,
+            0
+          ],
+          "order_in_tick": 2,
+          "tick": 5,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            2,
+            1
+          ],
+          "order_in_tick": 3,
+          "tick": 5,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            2,
+            2
+          ],
+          "order_in_tick": 0,
+          "tick": 6,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            -1,
+            -3
+          ],
+          "order_in_tick": 0,
+          "tick": 1500,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            0,
+            -3
+          ],
+          "order_in_tick": 1,
+          "tick": 1500,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            1,
+            -3
+          ],
+          "order_in_tick": 2,
+          "tick": 1500,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            2,
+            -3
+          ],
+          "order_in_tick": 3,
+          "tick": 1500,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            3,
+            -3
+          ],
+          "order_in_tick": 0,
+          "tick": 1501,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            3,
+            -2
+          ],
+          "order_in_tick": 1,
+          "tick": 1501,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            3,
+            -1
+          ],
+          "order_in_tick": 2,
+          "tick": 1501,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            3,
+            0
+          ],
+          "order_in_tick": 3,
+          "tick": 1501,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            3,
+            1
+          ],
+          "order_in_tick": 0,
+          "tick": 1502,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            0,
+            -4
+          ],
+          "order_in_tick": 0,
+          "tick": 3000,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            1,
+            -4
+          ],
+          "order_in_tick": 1,
+          "tick": 3000,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            2,
+            -4
+          ],
+          "order_in_tick": 2,
+          "tick": 3000,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            3,
+            -4
+          ],
+          "order_in_tick": 3,
+          "tick": 3000,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            4,
+            -4
+          ],
+          "order_in_tick": 0,
+          "tick": 3001,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            4,
+            -3
+          ],
+          "order_in_tick": 1,
+          "tick": 3001,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            4,
+            -2
+          ],
+          "order_in_tick": 2,
+          "tick": 3001,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            4,
+            -1
+          ],
+          "order_in_tick": 3,
+          "tick": 3001,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            4,
+            0
+          ],
+          "order_in_tick": 0,
+          "tick": 3002,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            1,
+            -5
+          ],
+          "order_in_tick": 0,
+          "tick": 4500,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            2,
+            -5
+          ],
+          "order_in_tick": 1,
+          "tick": 4500,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            3,
+            -5
+          ],
+          "order_in_tick": 2,
+          "tick": 4500,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            4,
+            -5
+          ],
+          "order_in_tick": 3,
+          "tick": 4500,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            5,
+            -5
+          ],
+          "order_in_tick": 0,
+          "tick": 4501,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            5,
+            -4
+          ],
+          "order_in_tick": 1,
+          "tick": 4501,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            5,
+            -3
+          ],
+          "order_in_tick": 2,
+          "tick": 4501,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            5,
+            -2
+          ],
+          "order_in_tick": 3,
+          "tick": 4501,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            5,
+            -1
+          ],
+          "order_in_tick": 0,
+          "tick": 4502,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            2,
+            -6
+          ],
+          "order_in_tick": 0,
+          "tick": 6000,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            3,
+            -6
+          ],
+          "order_in_tick": 1,
+          "tick": 6000,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            4,
+            -6
+          ],
+          "order_in_tick": 2,
+          "tick": 6000,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            5,
+            -6
+          ],
+          "order_in_tick": 3,
+          "tick": 6000,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            6,
+            -6
+          ],
+          "order_in_tick": 0,
+          "tick": 6001,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            6,
+            -5
+          ],
+          "order_in_tick": 1,
+          "tick": 6001,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            6,
+            -4
+          ],
+          "order_in_tick": 2,
+          "tick": 6001,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            6,
+            -3
+          ],
+          "order_in_tick": 3,
+          "tick": 6001,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            6,
+            -2
+          ],
+          "order_in_tick": 0,
+          "tick": 6002,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            3,
+            -7
+          ],
+          "order_in_tick": 0,
+          "tick": 7500,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            4,
+            -7
+          ],
+          "order_in_tick": 1,
+          "tick": 7500,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            5,
+            -7
+          ],
+          "order_in_tick": 2,
+          "tick": 7500,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            6,
+            -7
+          ],
+          "order_in_tick": 3,
+          "tick": 7500,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            7,
+            -7
+          ],
+          "order_in_tick": 0,
+          "tick": 7501,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            7,
+            -6
+          ],
+          "order_in_tick": 1,
+          "tick": 7501,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            7,
+            -5
+          ],
+          "order_in_tick": 2,
+          "tick": 7501,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            7,
+            -4
+          ],
+          "order_in_tick": 3,
+          "tick": 7501,
+          "variant": "pre_pinned"
+        },
+        {
+          "cell": [
+            7,
+            -3
+          ],
+          "order_in_tick": 0,
+          "tick": 7502,
+          "variant": "pre_pinned"
+        }
+      ],
+      "name": "pre_pinned",
+      "out_of_order_ready_events": 0,
+      "stall_ticks": 2,
+      "tasks": {
+        "max_duration_ticks": 0,
+        "max_ready_tick": -1,
+        "task_count": 114
+      },
+      "telemetry": [
+        {
+          "active_count": 25,
+          "active_hash": 17586912958198139931,
+          "cell": [
+            0,
+            0
+          ],
+          "front_probe_cell": [
+            1,
+            -1
+          ],
+          "position": [
+            0.0,
+            0.05,
+            0.0
+          ],
+          "ray_proxy_height": 0.0,
+          "route_index": 0,
+          "tick": 6
+        },
+        {
+          "active_count": 34,
+          "active_hash": 717177772374832854,
+          "cell": [
+            1,
+            -1
+          ],
+          "front_probe_cell": [
+            2,
+            -2
+          ],
+          "position": [
+            100.0,
+            0.051000000000000004,
+            -100.0
+          ],
+          "ray_proxy_height": 0.018557,
+          "route_index": 1,
+          "tick": 1502
+        },
+        {
+          "active_count": 43,
+          "active_hash": 4392655819429625422,
+          "cell": [
+            2,
+            -2
+          ],
+          "front_probe_cell": [
+            3,
+            -3
+          ],
+          "position": [
+            200.0,
+            0.052000000000000005,
+            -200.0
+          ],
+          "ray_proxy_height": 0.037113,
+          "route_index": 2,
+          "tick": 3002
+        },
+        {
+          "active_count": 52,
+          "active_hash": 9887548079649591617,
+          "cell": [
+            3,
+            -3
+          ],
+          "front_probe_cell": [
+            4,
+            -4
+          ],
+          "position": [
+            300.0,
+            0.053000000000000005,
+            -300.0
+          ],
+          "ray_proxy_height": 0.05567,
+          "route_index": 3,
+          "tick": 4502
+        },
+        {
+          "active_count": 61,
+          "active_hash": 5291586704625961795,
+          "cell": [
+            4,
+            -4
+          ],
+          "front_probe_cell": [
+            5,
+            -5
+          ],
+          "position": [
+            400.0,
+            0.054000000000000006,
+            -400.0
+          ],
+          "ray_proxy_height": 0.074227,
+          "route_index": 4,
+          "tick": 6002
+        },
+        {
+          "active_count": 70,
+          "active_hash": 6032522500198322764,
+          "cell": [
+            5,
+            -5
+          ],
+          "front_probe_cell": [
+            6,
+            -6
+          ],
+          "position": [
+            500.0,
+            0.055,
+            -500.0
+          ],
+          "ray_proxy_height": 0.092784,
+          "route_index": 5,
+          "tick": 7502
+        }
+      ],
+      "worker_count": 0
+    },
+    {
+      "activation_by_cell": {
+        "-1,-1": {
+          "order_in_tick": 2,
+          "tick": 1
+        },
+        "-1,-2": {
+          "order_in_tick": 1,
+          "tick": 1
+        },
+        "-1,-3": {
+          "order_in_tick": 0,
+          "tick": 1500
+        },
+        "-1,0": {
+          "order_in_tick": 3,
+          "tick": 1
+        },
+        "-1,1": {
+          "order_in_tick": 0,
+          "tick": 2
+        },
+        "-1,2": {
+          "order_in_tick": 1,
+          "tick": 2
+        },
+        "-2,-1": {
+          "order_in_tick": 1,
+          "tick": 0
+        },
+        "-2,-2": {
+          "order_in_tick": 0,
+          "tick": 0
+        },
+        "-2,0": {
+          "order_in_tick": 2,
+          "tick": 0
+        },
+        "-2,1": {
+          "order_in_tick": 3,
+          "tick": 0
+        },
+        "-2,2": {
+          "order_in_tick": 0,
+          "tick": 1
+        },
+        "0,-1": {
+          "order_in_tick": 3,
+          "tick": 2
+        },
+        "0,-2": {
+          "order_in_tick": 2,
+          "tick": 2
+        },
+        "0,-3": {
+          "order_in_tick": 1,
+          "tick": 1500
+        },
+        "0,-4": {
+          "order_in_tick": 0,
+          "tick": 3000
+        },
+        "0,0": {
+          "order_in_tick": 0,
+          "tick": 3
+        },
+        "0,1": {
+          "order_in_tick": 1,
+          "tick": 3
+        },
+        "0,2": {
+          "order_in_tick": 2,
+          "tick": 3
+        },
+        "1,-1": {
+          "order_in_tick": 0,
+          "tick": 4
+        },
+        "1,-2": {
+          "order_in_tick": 3,
+          "tick": 3
+        },
+        "1,-3": {
+          "order_in_tick": 2,
+          "tick": 1500
+        },
+        "1,-4": {
+          "order_in_tick": 1,
+          "tick": 3000
+        },
+        "1,-5": {
+          "order_in_tick": 0,
+          "tick": 4500
+        },
+        "1,0": {
+          "order_in_tick": 1,
+          "tick": 4
+        },
+        "1,1": {
+          "order_in_tick": 2,
+          "tick": 4
+        },
+        "1,2": {
+          "order_in_tick": 3,
+          "tick": 4
+        },
+        "2,-1": {
+          "order_in_tick": 1,
+          "tick": 5
+        },
+        "2,-2": {
+          "order_in_tick": 0,
+          "tick": 5
+        },
+        "2,-3": {
+          "order_in_tick": 3,
+          "tick": 1500
+        },
+        "2,-4": {
+          "order_in_tick": 2,
+          "tick": 3000
+        },
+        "2,-5": {
+          "order_in_tick": 1,
+          "tick": 4500
+        },
+        "2,-6": {
+          "order_in_tick": 0,
+          "tick": 6000
+        },
+        "2,0": {
+          "order_in_tick": 2,
+          "tick": 5
+        },
+        "2,1": {
+          "order_in_tick": 3,
+          "tick": 5
+        },
+        "2,2": {
+          "order_in_tick": 0,
+          "tick": 6
+        },
+        "3,-1": {
+          "order_in_tick": 2,
+          "tick": 1501
+        },
+        "3,-2": {
+          "order_in_tick": 1,
+          "tick": 1501
+        },
+        "3,-3": {
+          "order_in_tick": 0,
+          "tick": 1501
+        },
+        "3,-4": {
+          "order_in_tick": 3,
+          "tick": 3000
+        },
+        "3,-5": {
+          "order_in_tick": 2,
+          "tick": 4500
+        },
+        "3,-6": {
+          "order_in_tick": 1,
+          "tick": 6000
+        },
+        "3,-7": {
+          "order_in_tick": 0,
+          "tick": 7500
+        },
+        "3,0": {
+          "order_in_tick": 3,
+          "tick": 1501
+        },
+        "3,1": {
+          "order_in_tick": 0,
+          "tick": 1502
+        },
+        "4,-1": {
+          "order_in_tick": 3,
+          "tick": 3001
+        },
+        "4,-2": {
+          "order_in_tick": 2,
+          "tick": 3001
+        },
+        "4,-3": {
+          "order_in_tick": 1,
+          "tick": 3001
+        },
+        "4,-4": {
+          "order_in_tick": 0,
+          "tick": 3001
+        },
+        "4,-5": {
+          "order_in_tick": 3,
+          "tick": 4500
+        },
+        "4,-6": {
+          "order_in_tick": 2,
+          "tick": 6000
+        },
+        "4,-7": {
+          "order_in_tick": 1,
+          "tick": 7500
+        },
+        "4,0": {
+          "order_in_tick": 0,
+          "tick": 3002
+        },
+        "5,-1": {
+          "order_in_tick": 0,
+          "tick": 4502
+        },
+        "5,-2": {
+          "order_in_tick": 3,
+          "tick": 4501
+        },
+        "5,-3": {
+          "order_in_tick": 2,
+          "tick": 4501
+        },
+        "5,-4": {
+          "order_in_tick": 1,
+          "tick": 4501
+        },
+        "5,-5": {
+          "order_in_tick": 0,
+          "tick": 4501
+        },
+        "5,-6": {
+          "order_in_tick": 3,
+          "tick": 6000
+        },
+        "5,-7": {
+          "order_in_tick": 2,
+          "tick": 7500
+        },
+        "6,-2": {
+          "order_in_tick": 0,
+          "tick": 6002
+        },
+        "6,-3": {
+          "order_in_tick": 3,
+          "tick": 6001
+        },
+        "6,-4": {
+          "order_in_tick": 2,
+          "tick": 6001
+        },
+        "6,-5": {
+          "order_in_tick": 1,
+          "tick": 6001
+        },
+        "6,-6": {
+          "order_in_tick": 0,
+          "tick": 6001
+        },
+        "6,-7": {
+          "order_in_tick": 3,
+          "tick": 7500
+        },
+        "7,-3": {
+          "order_in_tick": 0,
+          "tick": 7502
+        },
+        "7,-4": {
+          "order_in_tick": 3,
+          "tick": 7501
+        },
+        "7,-5": {
+          "order_in_tick": 2,
+          "tick": 7501
+        },
+        "7,-6": {
+          "order_in_tick": 1,
+          "tick": 7501
+        },
+        "7,-7": {
+          "order_in_tick": 0,
+          "tick": 7501
+        }
+      },
+      "activation_log": [
+        {
+          "cell": [
+            -2,
+            -2
+          ],
+          "order_in_tick": 0,
+          "tick": 0,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            -2,
+            -1
+          ],
+          "order_in_tick": 1,
+          "tick": 0,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            -2,
+            0
+          ],
+          "order_in_tick": 2,
+          "tick": 0,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            -2,
+            1
+          ],
+          "order_in_tick": 3,
+          "tick": 0,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            -2,
+            2
+          ],
+          "order_in_tick": 0,
+          "tick": 1,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            -1,
+            -2
+          ],
+          "order_in_tick": 1,
+          "tick": 1,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            -1,
+            -1
+          ],
+          "order_in_tick": 2,
+          "tick": 1,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            -1,
+            0
+          ],
+          "order_in_tick": 3,
+          "tick": 1,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            -1,
+            1
+          ],
+          "order_in_tick": 0,
+          "tick": 2,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            -1,
+            2
+          ],
+          "order_in_tick": 1,
+          "tick": 2,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            0,
+            -2
+          ],
+          "order_in_tick": 2,
+          "tick": 2,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            0,
+            -1
+          ],
+          "order_in_tick": 3,
+          "tick": 2,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            0,
+            0
+          ],
+          "order_in_tick": 0,
+          "tick": 3,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            0,
+            1
+          ],
+          "order_in_tick": 1,
+          "tick": 3,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            0,
+            2
+          ],
+          "order_in_tick": 2,
+          "tick": 3,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            1,
+            -2
+          ],
+          "order_in_tick": 3,
+          "tick": 3,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            1,
+            -1
+          ],
+          "order_in_tick": 0,
+          "tick": 4,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            1,
+            0
+          ],
+          "order_in_tick": 1,
+          "tick": 4,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            1,
+            1
+          ],
+          "order_in_tick": 2,
+          "tick": 4,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            1,
+            2
+          ],
+          "order_in_tick": 3,
+          "tick": 4,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            2,
+            -2
+          ],
+          "order_in_tick": 0,
+          "tick": 5,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            2,
+            -1
+          ],
+          "order_in_tick": 1,
+          "tick": 5,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            2,
+            0
+          ],
+          "order_in_tick": 2,
+          "tick": 5,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            2,
+            1
+          ],
+          "order_in_tick": 3,
+          "tick": 5,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            2,
+            2
+          ],
+          "order_in_tick": 0,
+          "tick": 6,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            -1,
+            -3
+          ],
+          "order_in_tick": 0,
+          "tick": 1500,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            0,
+            -3
+          ],
+          "order_in_tick": 1,
+          "tick": 1500,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            1,
+            -3
+          ],
+          "order_in_tick": 2,
+          "tick": 1500,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            2,
+            -3
+          ],
+          "order_in_tick": 3,
+          "tick": 1500,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            3,
+            -3
+          ],
+          "order_in_tick": 0,
+          "tick": 1501,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            3,
+            -2
+          ],
+          "order_in_tick": 1,
+          "tick": 1501,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            3,
+            -1
+          ],
+          "order_in_tick": 2,
+          "tick": 1501,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            3,
+            0
+          ],
+          "order_in_tick": 3,
+          "tick": 1501,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            3,
+            1
+          ],
+          "order_in_tick": 0,
+          "tick": 1502,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            0,
+            -4
+          ],
+          "order_in_tick": 0,
+          "tick": 3000,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            1,
+            -4
+          ],
+          "order_in_tick": 1,
+          "tick": 3000,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            2,
+            -4
+          ],
+          "order_in_tick": 2,
+          "tick": 3000,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            3,
+            -4
+          ],
+          "order_in_tick": 3,
+          "tick": 3000,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            4,
+            -4
+          ],
+          "order_in_tick": 0,
+          "tick": 3001,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            4,
+            -3
+          ],
+          "order_in_tick": 1,
+          "tick": 3001,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            4,
+            -2
+          ],
+          "order_in_tick": 2,
+          "tick": 3001,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            4,
+            -1
+          ],
+          "order_in_tick": 3,
+          "tick": 3001,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            4,
+            0
+          ],
+          "order_in_tick": 0,
+          "tick": 3002,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            1,
+            -5
+          ],
+          "order_in_tick": 0,
+          "tick": 4500,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            2,
+            -5
+          ],
+          "order_in_tick": 1,
+          "tick": 4500,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            3,
+            -5
+          ],
+          "order_in_tick": 2,
+          "tick": 4500,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            4,
+            -5
+          ],
+          "order_in_tick": 3,
+          "tick": 4500,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            5,
+            -5
+          ],
+          "order_in_tick": 0,
+          "tick": 4501,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            5,
+            -4
+          ],
+          "order_in_tick": 1,
+          "tick": 4501,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            5,
+            -3
+          ],
+          "order_in_tick": 2,
+          "tick": 4501,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            5,
+            -2
+          ],
+          "order_in_tick": 3,
+          "tick": 4501,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            5,
+            -1
+          ],
+          "order_in_tick": 0,
+          "tick": 4502,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            2,
+            -6
+          ],
+          "order_in_tick": 0,
+          "tick": 6000,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            3,
+            -6
+          ],
+          "order_in_tick": 1,
+          "tick": 6000,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            4,
+            -6
+          ],
+          "order_in_tick": 2,
+          "tick": 6000,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            5,
+            -6
+          ],
+          "order_in_tick": 3,
+          "tick": 6000,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            6,
+            -6
+          ],
+          "order_in_tick": 0,
+          "tick": 6001,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            6,
+            -5
+          ],
+          "order_in_tick": 1,
+          "tick": 6001,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            6,
+            -4
+          ],
+          "order_in_tick": 2,
+          "tick": 6001,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            6,
+            -3
+          ],
+          "order_in_tick": 3,
+          "tick": 6001,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            6,
+            -2
+          ],
+          "order_in_tick": 0,
+          "tick": 6002,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            3,
+            -7
+          ],
+          "order_in_tick": 0,
+          "tick": 7500,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            4,
+            -7
+          ],
+          "order_in_tick": 1,
+          "tick": 7500,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            5,
+            -7
+          ],
+          "order_in_tick": 2,
+          "tick": 7500,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            6,
+            -7
+          ],
+          "order_in_tick": 3,
+          "tick": 7500,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            7,
+            -7
+          ],
+          "order_in_tick": 0,
+          "tick": 7501,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            7,
+            -6
+          ],
+          "order_in_tick": 1,
+          "tick": 7501,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            7,
+            -5
+          ],
+          "order_in_tick": 2,
+          "tick": 7501,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            7,
+            -4
+          ],
+          "order_in_tick": 3,
+          "tick": 7501,
+          "variant": "streamed_workers_1"
+        },
+        {
+          "cell": [
+            7,
+            -3
+          ],
+          "order_in_tick": 0,
+          "tick": 7502,
+          "variant": "streamed_workers_1"
+        }
+      ],
+      "name": "streamed_workers_1",
+      "out_of_order_ready_events": 0,
+      "stall_ticks": 2,
+      "tasks": {
+        "max_duration_ticks": 82,
+        "max_ready_tick": 6612,
+        "task_count": 114
+      },
+      "telemetry": [
+        {
+          "active_count": 25,
+          "active_hash": 17586912958198139931,
+          "cell": [
+            0,
+            0
+          ],
+          "front_probe_cell": [
+            1,
+            -1
+          ],
+          "position": [
+            0.0,
+            0.05,
+            0.0
+          ],
+          "ray_proxy_height": 0.0,
+          "route_index": 0,
+          "tick": 6
+        },
+        {
+          "active_count": 34,
+          "active_hash": 717177772374832854,
+          "cell": [
+            1,
+            -1
+          ],
+          "front_probe_cell": [
+            2,
+            -2
+          ],
+          "position": [
+            100.0,
+            0.051000000000000004,
+            -100.0
+          ],
+          "ray_proxy_height": 0.018557,
+          "route_index": 1,
+          "tick": 1502
+        },
+        {
+          "active_count": 43,
+          "active_hash": 4392655819429625422,
+          "cell": [
+            2,
+            -2
+          ],
+          "front_probe_cell": [
+            3,
+            -3
+          ],
+          "position": [
+            200.0,
+            0.052000000000000005,
+            -200.0
+          ],
+          "ray_proxy_height": 0.037113,
+          "route_index": 2,
+          "tick": 3002
+        },
+        {
+          "active_count": 52,
+          "active_hash": 9887548079649591617,
+          "cell": [
+            3,
+            -3
+          ],
+          "front_probe_cell": [
+            4,
+            -4
+          ],
+          "position": [
+            300.0,
+            0.053000000000000005,
+            -300.0
+          ],
+          "ray_proxy_height": 0.05567,
+          "route_index": 3,
+          "tick": 4502
+        },
+        {
+          "active_count": 61,
+          "active_hash": 5291586704625961795,
+          "cell": [
+            4,
+            -4
+          ],
+          "front_probe_cell": [
+            5,
+            -5
+          ],
+          "position": [
+            400.0,
+            0.054000000000000006,
+            -400.0
+          ],
+          "ray_proxy_height": 0.074227,
+          "route_index": 4,
+          "tick": 6002
+        },
+        {
+          "active_count": 70,
+          "active_hash": 6032522500198322764,
+          "cell": [
+            5,
+            -5
+          ],
+          "front_probe_cell": [
+            6,
+            -6
+          ],
+          "position": [
+            500.0,
+            0.055,
+            -500.0
+          ],
+          "ray_proxy_height": 0.092784,
+          "route_index": 5,
+          "tick": 7502
+        }
+      ],
+      "worker_count": 1
+    },
+    {
+      "activation_by_cell": {
+        "-1,-1": {
+          "order_in_tick": 2,
+          "tick": 1
+        },
+        "-1,-2": {
+          "order_in_tick": 1,
+          "tick": 1
+        },
+        "-1,-3": {
+          "order_in_tick": 0,
+          "tick": 1500
+        },
+        "-1,0": {
+          "order_in_tick": 3,
+          "tick": 1
+        },
+        "-1,1": {
+          "order_in_tick": 0,
+          "tick": 2
+        },
+        "-1,2": {
+          "order_in_tick": 1,
+          "tick": 2
+        },
+        "-2,-1": {
+          "order_in_tick": 1,
+          "tick": 0
+        },
+        "-2,-2": {
+          "order_in_tick": 0,
+          "tick": 0
+        },
+        "-2,0": {
+          "order_in_tick": 2,
+          "tick": 0
+        },
+        "-2,1": {
+          "order_in_tick": 3,
+          "tick": 0
+        },
+        "-2,2": {
+          "order_in_tick": 0,
+          "tick": 1
+        },
+        "0,-1": {
+          "order_in_tick": 3,
+          "tick": 2
+        },
+        "0,-2": {
+          "order_in_tick": 2,
+          "tick": 2
+        },
+        "0,-3": {
+          "order_in_tick": 1,
+          "tick": 1500
+        },
+        "0,-4": {
+          "order_in_tick": 0,
+          "tick": 3000
+        },
+        "0,0": {
+          "order_in_tick": 0,
+          "tick": 3
+        },
+        "0,1": {
+          "order_in_tick": 1,
+          "tick": 3
+        },
+        "0,2": {
+          "order_in_tick": 2,
+          "tick": 3
+        },
+        "1,-1": {
+          "order_in_tick": 0,
+          "tick": 4
+        },
+        "1,-2": {
+          "order_in_tick": 3,
+          "tick": 3
+        },
+        "1,-3": {
+          "order_in_tick": 2,
+          "tick": 1500
+        },
+        "1,-4": {
+          "order_in_tick": 1,
+          "tick": 3000
+        },
+        "1,-5": {
+          "order_in_tick": 0,
+          "tick": 4500
+        },
+        "1,0": {
+          "order_in_tick": 1,
+          "tick": 4
+        },
+        "1,1": {
+          "order_in_tick": 2,
+          "tick": 4
+        },
+        "1,2": {
+          "order_in_tick": 3,
+          "tick": 4
+        },
+        "2,-1": {
+          "order_in_tick": 1,
+          "tick": 5
+        },
+        "2,-2": {
+          "order_in_tick": 0,
+          "tick": 5
+        },
+        "2,-3": {
+          "order_in_tick": 3,
+          "tick": 1500
+        },
+        "2,-4": {
+          "order_in_tick": 2,
+          "tick": 3000
+        },
+        "2,-5": {
+          "order_in_tick": 1,
+          "tick": 4500
+        },
+        "2,-6": {
+          "order_in_tick": 0,
+          "tick": 6000
+        },
+        "2,0": {
+          "order_in_tick": 2,
+          "tick": 5
+        },
+        "2,1": {
+          "order_in_tick": 3,
+          "tick": 5
+        },
+        "2,2": {
+          "order_in_tick": 0,
+          "tick": 6
+        },
+        "3,-1": {
+          "order_in_tick": 2,
+          "tick": 1501
+        },
+        "3,-2": {
+          "order_in_tick": 1,
+          "tick": 1501
+        },
+        "3,-3": {
+          "order_in_tick": 0,
+          "tick": 1501
+        },
+        "3,-4": {
+          "order_in_tick": 3,
+          "tick": 3000
+        },
+        "3,-5": {
+          "order_in_tick": 2,
+          "tick": 4500
+        },
+        "3,-6": {
+          "order_in_tick": 1,
+          "tick": 6000
+        },
+        "3,-7": {
+          "order_in_tick": 0,
+          "tick": 7500
+        },
+        "3,0": {
+          "order_in_tick": 3,
+          "tick": 1501
+        },
+        "3,1": {
+          "order_in_tick": 0,
+          "tick": 1502
+        },
+        "4,-1": {
+          "order_in_tick": 3,
+          "tick": 3001
+        },
+        "4,-2": {
+          "order_in_tick": 2,
+          "tick": 3001
+        },
+        "4,-3": {
+          "order_in_tick": 1,
+          "tick": 3001
+        },
+        "4,-4": {
+          "order_in_tick": 0,
+          "tick": 3001
+        },
+        "4,-5": {
+          "order_in_tick": 3,
+          "tick": 4500
+        },
+        "4,-6": {
+          "order_in_tick": 2,
+          "tick": 6000
+        },
+        "4,-7": {
+          "order_in_tick": 1,
+          "tick": 7500
+        },
+        "4,0": {
+          "order_in_tick": 0,
+          "tick": 3002
+        },
+        "5,-1": {
+          "order_in_tick": 0,
+          "tick": 4502
+        },
+        "5,-2": {
+          "order_in_tick": 3,
+          "tick": 4501
+        },
+        "5,-3": {
+          "order_in_tick": 2,
+          "tick": 4501
+        },
+        "5,-4": {
+          "order_in_tick": 1,
+          "tick": 4501
+        },
+        "5,-5": {
+          "order_in_tick": 0,
+          "tick": 4501
+        },
+        "5,-6": {
+          "order_in_tick": 3,
+          "tick": 6000
+        },
+        "5,-7": {
+          "order_in_tick": 2,
+          "tick": 7500
+        },
+        "6,-2": {
+          "order_in_tick": 0,
+          "tick": 6002
+        },
+        "6,-3": {
+          "order_in_tick": 3,
+          "tick": 6001
+        },
+        "6,-4": {
+          "order_in_tick": 2,
+          "tick": 6001
+        },
+        "6,-5": {
+          "order_in_tick": 1,
+          "tick": 6001
+        },
+        "6,-6": {
+          "order_in_tick": 0,
+          "tick": 6001
+        },
+        "6,-7": {
+          "order_in_tick": 3,
+          "tick": 7500
+        },
+        "7,-3": {
+          "order_in_tick": 0,
+          "tick": 7502
+        },
+        "7,-4": {
+          "order_in_tick": 3,
+          "tick": 7501
+        },
+        "7,-5": {
+          "order_in_tick": 2,
+          "tick": 7501
+        },
+        "7,-6": {
+          "order_in_tick": 1,
+          "tick": 7501
+        },
+        "7,-7": {
+          "order_in_tick": 0,
+          "tick": 7501
+        }
+      },
+      "activation_log": [
+        {
+          "cell": [
+            -2,
+            -2
+          ],
+          "order_in_tick": 0,
+          "tick": 0,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            -2,
+            -1
+          ],
+          "order_in_tick": 1,
+          "tick": 0,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            -2,
+            0
+          ],
+          "order_in_tick": 2,
+          "tick": 0,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            -2,
+            1
+          ],
+          "order_in_tick": 3,
+          "tick": 0,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            -2,
+            2
+          ],
+          "order_in_tick": 0,
+          "tick": 1,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            -1,
+            -2
+          ],
+          "order_in_tick": 1,
+          "tick": 1,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            -1,
+            -1
+          ],
+          "order_in_tick": 2,
+          "tick": 1,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            -1,
+            0
+          ],
+          "order_in_tick": 3,
+          "tick": 1,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            -1,
+            1
+          ],
+          "order_in_tick": 0,
+          "tick": 2,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            -1,
+            2
+          ],
+          "order_in_tick": 1,
+          "tick": 2,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            0,
+            -2
+          ],
+          "order_in_tick": 2,
+          "tick": 2,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            0,
+            -1
+          ],
+          "order_in_tick": 3,
+          "tick": 2,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            0,
+            0
+          ],
+          "order_in_tick": 0,
+          "tick": 3,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            0,
+            1
+          ],
+          "order_in_tick": 1,
+          "tick": 3,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            0,
+            2
+          ],
+          "order_in_tick": 2,
+          "tick": 3,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            1,
+            -2
+          ],
+          "order_in_tick": 3,
+          "tick": 3,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            1,
+            -1
+          ],
+          "order_in_tick": 0,
+          "tick": 4,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            1,
+            0
+          ],
+          "order_in_tick": 1,
+          "tick": 4,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            1,
+            1
+          ],
+          "order_in_tick": 2,
+          "tick": 4,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            1,
+            2
+          ],
+          "order_in_tick": 3,
+          "tick": 4,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            2,
+            -2
+          ],
+          "order_in_tick": 0,
+          "tick": 5,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            2,
+            -1
+          ],
+          "order_in_tick": 1,
+          "tick": 5,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            2,
+            0
+          ],
+          "order_in_tick": 2,
+          "tick": 5,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            2,
+            1
+          ],
+          "order_in_tick": 3,
+          "tick": 5,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            2,
+            2
+          ],
+          "order_in_tick": 0,
+          "tick": 6,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            -1,
+            -3
+          ],
+          "order_in_tick": 0,
+          "tick": 1500,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            0,
+            -3
+          ],
+          "order_in_tick": 1,
+          "tick": 1500,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            1,
+            -3
+          ],
+          "order_in_tick": 2,
+          "tick": 1500,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            2,
+            -3
+          ],
+          "order_in_tick": 3,
+          "tick": 1500,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            3,
+            -3
+          ],
+          "order_in_tick": 0,
+          "tick": 1501,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            3,
+            -2
+          ],
+          "order_in_tick": 1,
+          "tick": 1501,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            3,
+            -1
+          ],
+          "order_in_tick": 2,
+          "tick": 1501,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            3,
+            0
+          ],
+          "order_in_tick": 3,
+          "tick": 1501,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            3,
+            1
+          ],
+          "order_in_tick": 0,
+          "tick": 1502,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            0,
+            -4
+          ],
+          "order_in_tick": 0,
+          "tick": 3000,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            1,
+            -4
+          ],
+          "order_in_tick": 1,
+          "tick": 3000,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            2,
+            -4
+          ],
+          "order_in_tick": 2,
+          "tick": 3000,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            3,
+            -4
+          ],
+          "order_in_tick": 3,
+          "tick": 3000,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            4,
+            -4
+          ],
+          "order_in_tick": 0,
+          "tick": 3001,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            4,
+            -3
+          ],
+          "order_in_tick": 1,
+          "tick": 3001,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            4,
+            -2
+          ],
+          "order_in_tick": 2,
+          "tick": 3001,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            4,
+            -1
+          ],
+          "order_in_tick": 3,
+          "tick": 3001,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            4,
+            0
+          ],
+          "order_in_tick": 0,
+          "tick": 3002,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            1,
+            -5
+          ],
+          "order_in_tick": 0,
+          "tick": 4500,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            2,
+            -5
+          ],
+          "order_in_tick": 1,
+          "tick": 4500,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            3,
+            -5
+          ],
+          "order_in_tick": 2,
+          "tick": 4500,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            4,
+            -5
+          ],
+          "order_in_tick": 3,
+          "tick": 4500,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            5,
+            -5
+          ],
+          "order_in_tick": 0,
+          "tick": 4501,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            5,
+            -4
+          ],
+          "order_in_tick": 1,
+          "tick": 4501,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            5,
+            -3
+          ],
+          "order_in_tick": 2,
+          "tick": 4501,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            5,
+            -2
+          ],
+          "order_in_tick": 3,
+          "tick": 4501,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            5,
+            -1
+          ],
+          "order_in_tick": 0,
+          "tick": 4502,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            2,
+            -6
+          ],
+          "order_in_tick": 0,
+          "tick": 6000,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            3,
+            -6
+          ],
+          "order_in_tick": 1,
+          "tick": 6000,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            4,
+            -6
+          ],
+          "order_in_tick": 2,
+          "tick": 6000,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            5,
+            -6
+          ],
+          "order_in_tick": 3,
+          "tick": 6000,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            6,
+            -6
+          ],
+          "order_in_tick": 0,
+          "tick": 6001,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            6,
+            -5
+          ],
+          "order_in_tick": 1,
+          "tick": 6001,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            6,
+            -4
+          ],
+          "order_in_tick": 2,
+          "tick": 6001,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            6,
+            -3
+          ],
+          "order_in_tick": 3,
+          "tick": 6001,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            6,
+            -2
+          ],
+          "order_in_tick": 0,
+          "tick": 6002,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            3,
+            -7
+          ],
+          "order_in_tick": 0,
+          "tick": 7500,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            4,
+            -7
+          ],
+          "order_in_tick": 1,
+          "tick": 7500,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            5,
+            -7
+          ],
+          "order_in_tick": 2,
+          "tick": 7500,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            6,
+            -7
+          ],
+          "order_in_tick": 3,
+          "tick": 7500,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            7,
+            -7
+          ],
+          "order_in_tick": 0,
+          "tick": 7501,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            7,
+            -6
+          ],
+          "order_in_tick": 1,
+          "tick": 7501,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            7,
+            -5
+          ],
+          "order_in_tick": 2,
+          "tick": 7501,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            7,
+            -4
+          ],
+          "order_in_tick": 3,
+          "tick": 7501,
+          "variant": "streamed_workers_2"
+        },
+        {
+          "cell": [
+            7,
+            -3
+          ],
+          "order_in_tick": 0,
+          "tick": 7502,
+          "variant": "streamed_workers_2"
+        }
+      ],
+      "name": "streamed_workers_2",
+      "out_of_order_ready_events": 13,
+      "stall_ticks": 2,
+      "tasks": {
+        "max_duration_ticks": 82,
+        "max_ready_tick": 6323,
+        "task_count": 114
+      },
+      "telemetry": [
+        {
+          "active_count": 25,
+          "active_hash": 17586912958198139931,
+          "cell": [
+            0,
+            0
+          ],
+          "front_probe_cell": [
+            1,
+            -1
+          ],
+          "position": [
+            0.0,
+            0.05,
+            0.0
+          ],
+          "ray_proxy_height": 0.0,
+          "route_index": 0,
+          "tick": 6
+        },
+        {
+          "active_count": 34,
+          "active_hash": 717177772374832854,
+          "cell": [
+            1,
+            -1
+          ],
+          "front_probe_cell": [
+            2,
+            -2
+          ],
+          "position": [
+            100.0,
+            0.051000000000000004,
+            -100.0
+          ],
+          "ray_proxy_height": 0.018557,
+          "route_index": 1,
+          "tick": 1502
+        },
+        {
+          "active_count": 43,
+          "active_hash": 4392655819429625422,
+          "cell": [
+            2,
+            -2
+          ],
+          "front_probe_cell": [
+            3,
+            -3
+          ],
+          "position": [
+            200.0,
+            0.052000000000000005,
+            -200.0
+          ],
+          "ray_proxy_height": 0.037113,
+          "route_index": 2,
+          "tick": 3002
+        },
+        {
+          "active_count": 52,
+          "active_hash": 9887548079649591617,
+          "cell": [
+            3,
+            -3
+          ],
+          "front_probe_cell": [
+            4,
+            -4
+          ],
+          "position": [
+            300.0,
+            0.053000000000000005,
+            -300.0
+          ],
+          "ray_proxy_height": 0.05567,
+          "route_index": 3,
+          "tick": 4502
+        },
+        {
+          "active_count": 61,
+          "active_hash": 5291586704625961795,
+          "cell": [
+            4,
+            -4
+          ],
+          "front_probe_cell": [
+            5,
+            -5
+          ],
+          "position": [
+            400.0,
+            0.054000000000000006,
+            -400.0
+          ],
+          "ray_proxy_height": 0.074227,
+          "route_index": 4,
+          "tick": 6002
+        },
+        {
+          "active_count": 70,
+          "active_hash": 6032522500198322764,
+          "cell": [
+            5,
+            -5
+          ],
+          "front_probe_cell": [
+            6,
+            -6
+          ],
+          "position": [
+            500.0,
+            0.055,
+            -500.0
+          ],
+          "ray_proxy_height": 0.092784,
+          "route_index": 5,
+          "tick": 7502
+        }
+      ],
+      "worker_count": 2
+    },
+    {
+      "activation_by_cell": {
+        "-1,-1": {
+          "order_in_tick": 2,
+          "tick": 1
+        },
+        "-1,-2": {
+          "order_in_tick": 1,
+          "tick": 1
+        },
+        "-1,-3": {
+          "order_in_tick": 0,
+          "tick": 1500
+        },
+        "-1,0": {
+          "order_in_tick": 3,
+          "tick": 1
+        },
+        "-1,1": {
+          "order_in_tick": 0,
+          "tick": 2
+        },
+        "-1,2": {
+          "order_in_tick": 1,
+          "tick": 2
+        },
+        "-2,-1": {
+          "order_in_tick": 1,
+          "tick": 0
+        },
+        "-2,-2": {
+          "order_in_tick": 0,
+          "tick": 0
+        },
+        "-2,0": {
+          "order_in_tick": 2,
+          "tick": 0
+        },
+        "-2,1": {
+          "order_in_tick": 3,
+          "tick": 0
+        },
+        "-2,2": {
+          "order_in_tick": 0,
+          "tick": 1
+        },
+        "0,-1": {
+          "order_in_tick": 3,
+          "tick": 2
+        },
+        "0,-2": {
+          "order_in_tick": 2,
+          "tick": 2
+        },
+        "0,-3": {
+          "order_in_tick": 1,
+          "tick": 1500
+        },
+        "0,-4": {
+          "order_in_tick": 0,
+          "tick": 3000
+        },
+        "0,0": {
+          "order_in_tick": 0,
+          "tick": 3
+        },
+        "0,1": {
+          "order_in_tick": 1,
+          "tick": 3
+        },
+        "0,2": {
+          "order_in_tick": 2,
+          "tick": 3
+        },
+        "1,-1": {
+          "order_in_tick": 0,
+          "tick": 4
+        },
+        "1,-2": {
+          "order_in_tick": 3,
+          "tick": 3
+        },
+        "1,-3": {
+          "order_in_tick": 2,
+          "tick": 1500
+        },
+        "1,-4": {
+          "order_in_tick": 1,
+          "tick": 3000
+        },
+        "1,-5": {
+          "order_in_tick": 0,
+          "tick": 4500
+        },
+        "1,0": {
+          "order_in_tick": 1,
+          "tick": 4
+        },
+        "1,1": {
+          "order_in_tick": 2,
+          "tick": 4
+        },
+        "1,2": {
+          "order_in_tick": 3,
+          "tick": 4
+        },
+        "2,-1": {
+          "order_in_tick": 1,
+          "tick": 5
+        },
+        "2,-2": {
+          "order_in_tick": 0,
+          "tick": 5
+        },
+        "2,-3": {
+          "order_in_tick": 3,
+          "tick": 1500
+        },
+        "2,-4": {
+          "order_in_tick": 2,
+          "tick": 3000
+        },
+        "2,-5": {
+          "order_in_tick": 1,
+          "tick": 4500
+        },
+        "2,-6": {
+          "order_in_tick": 0,
+          "tick": 6000
+        },
+        "2,0": {
+          "order_in_tick": 2,
+          "tick": 5
+        },
+        "2,1": {
+          "order_in_tick": 3,
+          "tick": 5
+        },
+        "2,2": {
+          "order_in_tick": 0,
+          "tick": 6
+        },
+        "3,-1": {
+          "order_in_tick": 2,
+          "tick": 1501
+        },
+        "3,-2": {
+          "order_in_tick": 1,
+          "tick": 1501
+        },
+        "3,-3": {
+          "order_in_tick": 0,
+          "tick": 1501
+        },
+        "3,-4": {
+          "order_in_tick": 3,
+          "tick": 3000
+        },
+        "3,-5": {
+          "order_in_tick": 2,
+          "tick": 4500
+        },
+        "3,-6": {
+          "order_in_tick": 1,
+          "tick": 6000
+        },
+        "3,-7": {
+          "order_in_tick": 0,
+          "tick": 7500
+        },
+        "3,0": {
+          "order_in_tick": 3,
+          "tick": 1501
+        },
+        "3,1": {
+          "order_in_tick": 0,
+          "tick": 1502
+        },
+        "4,-1": {
+          "order_in_tick": 3,
+          "tick": 3001
+        },
+        "4,-2": {
+          "order_in_tick": 2,
+          "tick": 3001
+        },
+        "4,-3": {
+          "order_in_tick": 1,
+          "tick": 3001
+        },
+        "4,-4": {
+          "order_in_tick": 0,
+          "tick": 3001
+        },
+        "4,-5": {
+          "order_in_tick": 3,
+          "tick": 4500
+        },
+        "4,-6": {
+          "order_in_tick": 2,
+          "tick": 6000
+        },
+        "4,-7": {
+          "order_in_tick": 1,
+          "tick": 7500
+        },
+        "4,0": {
+          "order_in_tick": 0,
+          "tick": 3002
+        },
+        "5,-1": {
+          "order_in_tick": 0,
+          "tick": 4502
+        },
+        "5,-2": {
+          "order_in_tick": 3,
+          "tick": 4501
+        },
+        "5,-3": {
+          "order_in_tick": 2,
+          "tick": 4501
+        },
+        "5,-4": {
+          "order_in_tick": 1,
+          "tick": 4501
+        },
+        "5,-5": {
+          "order_in_tick": 0,
+          "tick": 4501
+        },
+        "5,-6": {
+          "order_in_tick": 3,
+          "tick": 6000
+        },
+        "5,-7": {
+          "order_in_tick": 2,
+          "tick": 7500
+        },
+        "6,-2": {
+          "order_in_tick": 0,
+          "tick": 6002
+        },
+        "6,-3": {
+          "order_in_tick": 3,
+          "tick": 6001
+        },
+        "6,-4": {
+          "order_in_tick": 2,
+          "tick": 6001
+        },
+        "6,-5": {
+          "order_in_tick": 1,
+          "tick": 6001
+        },
+        "6,-6": {
+          "order_in_tick": 0,
+          "tick": 6001
+        },
+        "6,-7": {
+          "order_in_tick": 3,
+          "tick": 7500
+        },
+        "7,-3": {
+          "order_in_tick": 0,
+          "tick": 7502
+        },
+        "7,-4": {
+          "order_in_tick": 3,
+          "tick": 7501
+        },
+        "7,-5": {
+          "order_in_tick": 2,
+          "tick": 7501
+        },
+        "7,-6": {
+          "order_in_tick": 1,
+          "tick": 7501
+        },
+        "7,-7": {
+          "order_in_tick": 0,
+          "tick": 7501
+        }
+      },
+      "activation_log": [
+        {
+          "cell": [
+            -2,
+            -2
+          ],
+          "order_in_tick": 0,
+          "tick": 0,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            -2,
+            -1
+          ],
+          "order_in_tick": 1,
+          "tick": 0,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            -2,
+            0
+          ],
+          "order_in_tick": 2,
+          "tick": 0,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            -2,
+            1
+          ],
+          "order_in_tick": 3,
+          "tick": 0,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            -2,
+            2
+          ],
+          "order_in_tick": 0,
+          "tick": 1,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            -1,
+            -2
+          ],
+          "order_in_tick": 1,
+          "tick": 1,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            -1,
+            -1
+          ],
+          "order_in_tick": 2,
+          "tick": 1,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            -1,
+            0
+          ],
+          "order_in_tick": 3,
+          "tick": 1,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            -1,
+            1
+          ],
+          "order_in_tick": 0,
+          "tick": 2,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            -1,
+            2
+          ],
+          "order_in_tick": 1,
+          "tick": 2,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            0,
+            -2
+          ],
+          "order_in_tick": 2,
+          "tick": 2,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            0,
+            -1
+          ],
+          "order_in_tick": 3,
+          "tick": 2,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            0,
+            0
+          ],
+          "order_in_tick": 0,
+          "tick": 3,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            0,
+            1
+          ],
+          "order_in_tick": 1,
+          "tick": 3,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            0,
+            2
+          ],
+          "order_in_tick": 2,
+          "tick": 3,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            1,
+            -2
+          ],
+          "order_in_tick": 3,
+          "tick": 3,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            1,
+            -1
+          ],
+          "order_in_tick": 0,
+          "tick": 4,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            1,
+            0
+          ],
+          "order_in_tick": 1,
+          "tick": 4,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            1,
+            1
+          ],
+          "order_in_tick": 2,
+          "tick": 4,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            1,
+            2
+          ],
+          "order_in_tick": 3,
+          "tick": 4,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            2,
+            -2
+          ],
+          "order_in_tick": 0,
+          "tick": 5,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            2,
+            -1
+          ],
+          "order_in_tick": 1,
+          "tick": 5,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            2,
+            0
+          ],
+          "order_in_tick": 2,
+          "tick": 5,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            2,
+            1
+          ],
+          "order_in_tick": 3,
+          "tick": 5,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            2,
+            2
+          ],
+          "order_in_tick": 0,
+          "tick": 6,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            -1,
+            -3
+          ],
+          "order_in_tick": 0,
+          "tick": 1500,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            0,
+            -3
+          ],
+          "order_in_tick": 1,
+          "tick": 1500,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            1,
+            -3
+          ],
+          "order_in_tick": 2,
+          "tick": 1500,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            2,
+            -3
+          ],
+          "order_in_tick": 3,
+          "tick": 1500,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            3,
+            -3
+          ],
+          "order_in_tick": 0,
+          "tick": 1501,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            3,
+            -2
+          ],
+          "order_in_tick": 1,
+          "tick": 1501,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            3,
+            -1
+          ],
+          "order_in_tick": 2,
+          "tick": 1501,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            3,
+            0
+          ],
+          "order_in_tick": 3,
+          "tick": 1501,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            3,
+            1
+          ],
+          "order_in_tick": 0,
+          "tick": 1502,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            0,
+            -4
+          ],
+          "order_in_tick": 0,
+          "tick": 3000,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            1,
+            -4
+          ],
+          "order_in_tick": 1,
+          "tick": 3000,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            2,
+            -4
+          ],
+          "order_in_tick": 2,
+          "tick": 3000,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            3,
+            -4
+          ],
+          "order_in_tick": 3,
+          "tick": 3000,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            4,
+            -4
+          ],
+          "order_in_tick": 0,
+          "tick": 3001,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            4,
+            -3
+          ],
+          "order_in_tick": 1,
+          "tick": 3001,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            4,
+            -2
+          ],
+          "order_in_tick": 2,
+          "tick": 3001,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            4,
+            -1
+          ],
+          "order_in_tick": 3,
+          "tick": 3001,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            4,
+            0
+          ],
+          "order_in_tick": 0,
+          "tick": 3002,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            1,
+            -5
+          ],
+          "order_in_tick": 0,
+          "tick": 4500,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            2,
+            -5
+          ],
+          "order_in_tick": 1,
+          "tick": 4500,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            3,
+            -5
+          ],
+          "order_in_tick": 2,
+          "tick": 4500,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            4,
+            -5
+          ],
+          "order_in_tick": 3,
+          "tick": 4500,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            5,
+            -5
+          ],
+          "order_in_tick": 0,
+          "tick": 4501,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            5,
+            -4
+          ],
+          "order_in_tick": 1,
+          "tick": 4501,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            5,
+            -3
+          ],
+          "order_in_tick": 2,
+          "tick": 4501,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            5,
+            -2
+          ],
+          "order_in_tick": 3,
+          "tick": 4501,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            5,
+            -1
+          ],
+          "order_in_tick": 0,
+          "tick": 4502,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            2,
+            -6
+          ],
+          "order_in_tick": 0,
+          "tick": 6000,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            3,
+            -6
+          ],
+          "order_in_tick": 1,
+          "tick": 6000,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            4,
+            -6
+          ],
+          "order_in_tick": 2,
+          "tick": 6000,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            5,
+            -6
+          ],
+          "order_in_tick": 3,
+          "tick": 6000,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            6,
+            -6
+          ],
+          "order_in_tick": 0,
+          "tick": 6001,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            6,
+            -5
+          ],
+          "order_in_tick": 1,
+          "tick": 6001,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            6,
+            -4
+          ],
+          "order_in_tick": 2,
+          "tick": 6001,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            6,
+            -3
+          ],
+          "order_in_tick": 3,
+          "tick": 6001,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            6,
+            -2
+          ],
+          "order_in_tick": 0,
+          "tick": 6002,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            3,
+            -7
+          ],
+          "order_in_tick": 0,
+          "tick": 7500,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            4,
+            -7
+          ],
+          "order_in_tick": 1,
+          "tick": 7500,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            5,
+            -7
+          ],
+          "order_in_tick": 2,
+          "tick": 7500,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            6,
+            -7
+          ],
+          "order_in_tick": 3,
+          "tick": 7500,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            7,
+            -7
+          ],
+          "order_in_tick": 0,
+          "tick": 7501,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            7,
+            -6
+          ],
+          "order_in_tick": 1,
+          "tick": 7501,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            7,
+            -5
+          ],
+          "order_in_tick": 2,
+          "tick": 7501,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            7,
+            -4
+          ],
+          "order_in_tick": 3,
+          "tick": 7501,
+          "variant": "streamed_workers_8"
+        },
+        {
+          "cell": [
+            7,
+            -3
+          ],
+          "order_in_tick": 0,
+          "tick": 7502,
+          "variant": "streamed_workers_8"
+        }
+      ],
+      "name": "streamed_workers_8",
+      "out_of_order_ready_events": 27,
+      "stall_ticks": 2,
+      "tasks": {
+        "max_duration_ticks": 82,
+        "max_ready_tick": 6107,
+        "task_count": 114
+      },
+      "telemetry": [
+        {
+          "active_count": 25,
+          "active_hash": 17586912958198139931,
+          "cell": [
+            0,
+            0
+          ],
+          "front_probe_cell": [
+            1,
+            -1
+          ],
+          "position": [
+            0.0,
+            0.05,
+            0.0
+          ],
+          "ray_proxy_height": 0.0,
+          "route_index": 0,
+          "tick": 6
+        },
+        {
+          "active_count": 34,
+          "active_hash": 717177772374832854,
+          "cell": [
+            1,
+            -1
+          ],
+          "front_probe_cell": [
+            2,
+            -2
+          ],
+          "position": [
+            100.0,
+            0.051000000000000004,
+            -100.0
+          ],
+          "ray_proxy_height": 0.018557,
+          "route_index": 1,
+          "tick": 1502
+        },
+        {
+          "active_count": 43,
+          "active_hash": 4392655819429625422,
+          "cell": [
+            2,
+            -2
+          ],
+          "front_probe_cell": [
+            3,
+            -3
+          ],
+          "position": [
+            200.0,
+            0.052000000000000005,
+            -200.0
+          ],
+          "ray_proxy_height": 0.037113,
+          "route_index": 2,
+          "tick": 3002
+        },
+        {
+          "active_count": 52,
+          "active_hash": 9887548079649591617,
+          "cell": [
+            3,
+            -3
+          ],
+          "front_probe_cell": [
+            4,
+            -4
+          ],
+          "position": [
+            300.0,
+            0.053000000000000005,
+            -300.0
+          ],
+          "ray_proxy_height": 0.05567,
+          "route_index": 3,
+          "tick": 4502
+        },
+        {
+          "active_count": 61,
+          "active_hash": 5291586704625961795,
+          "cell": [
+            4,
+            -4
+          ],
+          "front_probe_cell": [
+            5,
+            -5
+          ],
+          "position": [
+            400.0,
+            0.054000000000000006,
+            -400.0
+          ],
+          "ray_proxy_height": 0.074227,
+          "route_index": 4,
+          "tick": 6002
+        },
+        {
+          "active_count": 70,
+          "active_hash": 6032522500198322764,
+          "cell": [
+            5,
+            -5
+          ],
+          "front_probe_cell": [
+            6,
+            -6
+          ],
+          "position": [
+            500.0,
+            0.055,
+            -500.0
+          ],
+          "ray_proxy_height": 0.092784,
+          "route_index": 5,
+          "tick": 7502
+        }
+      ],
+      "worker_count": 8
+    }
+  ]
+}

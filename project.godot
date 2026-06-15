@@ -82,10 +82,17 @@ mood_toggle={
 
 common/physics_ticks_per_second=120
 common/physics_interpolation=true
+3d/physics_engine="GodotPhysics3D"
+3d/run_on_separate_thread=false
 
 [rendering]
 
+anti_aliasing/quality/msaa_3d=1
+anti_aliasing/quality/use_taa=true
 mesh_lod/lod_change/threshold_pixels=2.0
+scaling_3d/mode=2
+scaling_3d/scale=0.99
+scaling_3d/fsr_sharpness=0.1
 
 [trailhead_render]
 
