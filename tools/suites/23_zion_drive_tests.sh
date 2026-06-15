@@ -11,10 +11,39 @@ run_sim "$out_dir/cedar_hollow_zion_pa_rus_flat_segment.json" \
 	--stuck-min-progress=0.02
 assert_metrics "$out_dir/cedar_hollow_zion_pa_rus_flat_segment.json" \
 	--predicate=scenario_passed \
-	--surface=packed_dirt:120 \
-	--source-min=tagged:120 \
+	--surface=packed_gravel:120 \
+	--source-min=terrain:120 \
+	--terrain-id-min=6:120 \
 	--metric-min=max_initial_forward_displacement:50 \
 	--metric-min=contact_normal_sample_ticks:120 \
+	--metric-max=max_flipped_ticks:0
+
+run_sim "$out_dir/zion_surface_map_probe.json" \
+	--scene=zion_surface_map_probe \
+	--controller=pd \
+	--spawn=flat_spawn \
+	--target=0,0,-11.4 \
+	--target-radius=0.35 \
+	--seed=12345 \
+	--max-ticks=2400 \
+	--stuck-window=180 \
+	--stuck-min-progress=0.05
+assert_metrics "$out_dir/zion_surface_map_probe.json" \
+	--surface=wet_stone:5 \
+	--surface=packed_gravel:20 \
+	--surface=packed_dirt:5 \
+	--surface=loose_rock:5 \
+	--surface=tall_grass:5 \
+	--surface-sequence=wet_stone,packed_gravel,packed_dirt,loose_rock,tall_grass,packed_gravel \
+	--source-min=terrain:120 \
+	--terrain-id-min=1:5 \
+	--terrain-id-min=2:5 \
+	--terrain-id-min=3:5 \
+	--terrain-id-min=4:5 \
+	--terrain-id-min=5:5 \
+	--terrain-id-min=6:5 \
+	--metric-min=max_vehicle_contamination.wetness:0.2 \
+	--metric-min=max_vehicle_contamination.dust:0.2 \
 	--metric-max=max_flipped_ticks:0
 
 run_watchman_grade_sim() {

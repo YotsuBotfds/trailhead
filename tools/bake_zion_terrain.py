@@ -722,8 +722,8 @@ def _write_terrain_def(config: ZionBakeConfig, collision_project_paths: list[str
         "collision_grid = Vector2i(" + str(COLLISION_GRID_SAMPLES) + ", " + str(COLLISION_GRID_SAMPLES) + ")\n"
         "visual_grid = Vector2i(" + str(COLLISION_GRID_SAMPLES) + ", " + str(COLLISION_GRID_SAMPLES) + ")\n"
         "surface_map_size = Vector2i(" + str(config.grid_width_samples) + ", " + str(config.grid_height_samples) + ")\n"
-        'surface_palette_path = ""\n'
-        'surface_id_map_path = ""\n'
+        'surface_palette_path = "res://data/surface_palettes/cedar_hollow_zion_surface_palette.tres"\n'
+        'surface_id_map_path = "res://data/terrain/cedar_hollow_zion_surface_id.png"\n'
         "collision_tile_paths = Array[String]([" + collision_paths + "])\n"
         "visual_tile_paths = Array[String]([])\n"
         "feature_override_surface_ids = Array[StringName]([])\n"

@@ -1,6 +1,9 @@
 extends Node
 
-const CedarPalette: Resource = preload("res://data/surface_palettes/cedar_hollow_terrain.tres")
+const PALETTE_PATHS: Array[String] = [
+	"res://data/surface_palettes/cedar_hollow_terrain.tres",
+	"res://data/surface_palettes/cedar_hollow_zion_surface_palette.tres"
+]
 const PNG_SIGNATURE: PackedByteArray = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
 const PNG_IDAT_COMPRESSION_ZLIB: int = FileAccess.COMPRESSION_DEFLATE # Godot 4.6 has no COMPRESSION_ZLIB enum.
 
@@ -12,49 +15,58 @@ func _ready() -> void:
 
 
 func _inspect() -> void:
-	var palette_errors: PackedStringArray = CedarPalette.call("validate")
-	for error in palette_errors:
-		_errors.append(error)
-	_require_surface_resources()
-	_require_png_ids_match_palette()
+	for palette_path in PALETTE_PATHS:
+		_inspect_palette(palette_path)
 	_finish()
 
 
-func _require_surface_resources() -> void:
-	var surface_ids: Array[StringName] = CedarPalette.get("surface_ids")
+func _inspect_palette(palette_path: String) -> void:
+	var palette: Resource = load(palette_path)
+	if palette == null:
+		_errors.append("failed to load terrain surface palette: " + palette_path)
+		return
+	var palette_errors: PackedStringArray = palette.call("validate")
+	for error in palette_errors:
+		_errors.append(palette_path + ": " + error)
+	_require_surface_resources(palette, palette_path)
+	_require_png_ids_match_palette(palette, palette_path)
+
+
+func _require_surface_resources(palette: Resource, palette_path: String) -> void:
+	var surface_ids: Array[StringName] = palette.get("surface_ids")
 	for surface_id in surface_ids:
 		var path: String = "res://data/surfaces/" + String(surface_id) + ".tres"
 		if not ResourceLoader.exists(path):
-			_errors.append("missing surface resource for palette id: " + String(surface_id))
+			_errors.append(palette_path + ": missing surface resource for palette id: " + String(surface_id))
 			continue
 		var surface: Resource = load(path)
 		if surface == null:
-			_errors.append("failed to load surface resource: " + path)
+			_errors.append(palette_path + ": failed to load surface resource: " + path)
 			continue
 		var loaded_id: StringName = surface.get("id")
 		if loaded_id != surface_id:
-			_errors.append(path + " id expected " + String(surface_id) + ", got " + String(loaded_id))
+			_errors.append(palette_path + ": " + path + " id expected " + String(surface_id) + ", got " + String(loaded_id))
 
 
-func _require_png_ids_match_palette() -> void:
-	var image_path: String = CedarPalette.get("image_path")
+func _require_png_ids_match_palette(palette: Resource, palette_path: String) -> void:
+	var image_path: String = palette.get("image_path")
 	if image_path.is_empty():
 		return
 	var file: FileAccess = FileAccess.open(image_path, FileAccess.READ)
 	if file == null:
-		_errors.append("failed to open surface-ID PNG: " + image_path)
+		_errors.append(palette_path + ": failed to open surface-ID PNG: " + image_path)
 		return
 	var bytes: PackedByteArray = file.get_buffer(file.get_length())
 	var observed_ids: Array[int] = _read_png_unique_samples(bytes)
-	var expected_ids: Array[int] = CedarPalette.get("id_values")
+	var expected_ids: Array[int] = palette.get("id_values")
 	observed_ids.sort()
 	expected_ids.sort()
 	if observed_ids.size() != expected_ids.size():
-		_errors.append("surface-ID PNG expected " + str(expected_ids.size()) + " ids, got " + str(observed_ids.size()))
+		_errors.append(palette_path + ": surface-ID PNG expected " + str(expected_ids.size()) + " ids, got " + str(observed_ids.size()))
 		return
 	for i in range(expected_ids.size()):
 		if observed_ids[i] != expected_ids[i]:
-			_errors.append("surface-ID PNG ids expected " + str(expected_ids) + ", got " + str(observed_ids))
+			_errors.append(palette_path + ": surface-ID PNG ids expected " + str(expected_ids) + ", got " + str(observed_ids))
 			return
 
 
@@ -192,7 +204,7 @@ func _read_u32_be(bytes: PackedByteArray, offset: int) -> int:
 
 func _finish() -> void:
 	if _errors.is_empty():
-		print("ok: Cedar terrain surface palette matches surface resources and surface-ID PNG")
+		print("ok: terrain surface palettes match surface resources and surface-ID PNGs")
 		get_tree().quit(0)
 		return
 	for error in _errors:

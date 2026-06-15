@@ -4,6 +4,7 @@ extends Node
 const DEFAULT_SURFACE_ID: StringName = &"packed_dirt"
 const TERRAIN_SURFACE_MAP_GROUP: StringName = &"terrain_surface_id_map"
 const TERRAIN_SURFACE_OVERRIDE_RECTS_META: StringName = &"terrain_surface_override_rects"
+const TERRAIN_SURFACE_WORLD_OFFSET_META: StringName = &"terrain_surface_world_offset"
 const PNG_SIGNATURE: PackedByteArray = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
 const SOURCE_TAGGED: String = "tagged"
 const SOURCE_TERRAIN: String = "terrain"
@@ -20,6 +21,7 @@ var _terrain_surface_height: int = 0
 var _terrain_bounds_min: Vector2 = Vector2.ZERO
 var _terrain_bounds_max: Vector2 = Vector2.ZERO
 var _terrain_sampler_ready: bool = false
+var _terrain_id_counts: Dictionary[String, int] = {}
 
 
 func _ready() -> void:
@@ -83,10 +85,11 @@ func surface_id_from_collider_at(collider: Object, world_position: Vector3) -> S
 	if node != null and node.is_in_group(TERRAIN_SURFACE_MAP_GROUP):
 		if _terrain_sampler_ready:
 			_increment_source_count(SOURCE_TERRAIN)
-			var override_surface_id: StringName = _surface_id_from_terrain_overrides(node, world_position)
+			var terrain_position: Vector3 = _terrain_position_for_collider(node, world_position)
+			var override_surface_id: StringName = _surface_id_from_terrain_overrides(node, terrain_position)
 			if override_surface_id != &"":
 				return override_surface_id
-			return surface_id_at_world_position(world_position, DEFAULT_SURFACE_ID)
+			return surface_id_at_world_position(terrain_position, DEFAULT_SURFACE_ID)
 		_increment_source_count(SOURCE_FALLBACK)
 		return DEFAULT_SURFACE_ID
 	_increment_source_count(SOURCE_FALLBACK)
@@ -105,6 +108,7 @@ func surface_id_at_world_position(world_position: Vector3, fallback: StringName 
 	if sample_index < 0 or sample_index >= _terrain_surface_samples.size():
 		return fallback
 	var id_value: int = _terrain_surface_samples[sample_index]
+	_increment_terrain_id_count(id_value)
 	return StringName(_terrain_palette.call("surface_id_for", id_value, fallback))
 
 
@@ -190,10 +194,31 @@ func reset_source_counts() -> void:
 		SOURCE_TERRAIN: 0,
 		SOURCE_FALLBACK: 0
 	}
+	_terrain_id_counts.clear()
 
 
 func source_counts() -> Dictionary[String, int]:
 	return _source_counts.duplicate()
+
+
+func terrain_id_counts() -> Dictionary[String, int]:
+	return _terrain_id_counts.duplicate()
+
+
+func _terrain_position_for_collider(node: Node, world_position: Vector3) -> Vector3:
+	var offset: Vector2 = _terrain_world_offset_for_collider(node)
+	return Vector3(world_position.x - offset.x, world_position.y, world_position.z - offset.y)
+
+
+func _terrain_world_offset_for_collider(node: Node) -> Vector2:
+	if not node.has_meta(TERRAIN_SURFACE_WORLD_OFFSET_META):
+		return Vector2.ZERO
+	var value: Variant = node.get_meta(TERRAIN_SURFACE_WORLD_OFFSET_META)
+	if value is Vector2:
+		return value
+	if value is Vector3:
+		return Vector2(value.x, value.z)
+	return Vector2.ZERO
 
 
 func _tagged_surface_id_from_collider(collider: Object) -> StringName:
@@ -266,6 +291,11 @@ func _missing_surface_defs_for_palette(palette: Resource) -> PackedStringArray:
 
 func _increment_source_count(source_id: String) -> void:
 	_source_counts[source_id] = int(_source_counts.get(source_id, 0)) + 1
+
+
+func _increment_terrain_id_count(id_value: int) -> void:
+	var key: String = str(id_value)
+	_terrain_id_counts[key] = int(_terrain_id_counts.get(key, 0)) + 1
 
 
 func _load_terrain_surface_id_png(path: String) -> bool:
