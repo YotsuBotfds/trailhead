@@ -21,6 +21,11 @@ const WAYFINDER_ACCENT_DARK_COLOR: Color = Color(0.08, 0.025, 0.012)
 const LABEL_PIXEL_SIZE: float = 0.0027
 const LABEL_BACKING_HEIGHT: float = 0.115
 const LABEL_BACKING_DEPTH_OFFSET: float = -0.006
+const OLD_CEDAR_ANCHOR_POSITION: Vector3 = Vector3(0.65, 0.0, -5.25)
+const OLD_CEDAR_ANCHOR_ROTATION: Vector3 = Vector3(0.0, 12.0, 0.0)
+const OLD_CEDAR_ANCHOR_SCALE: Vector3 = Vector3(0.78, 0.78, 0.78)
+const OLD_CEDAR_VISUAL_LOCAL_OFFSET: Vector3 = Vector3(0.68, 0.0, 0.0)
+const OLD_CEDAR_VISUAL_LOCAL_SCALE: Vector3 = Vector3(0.84, 0.84, 0.84)
 
 
 static func build_cedar_hollow(parent: Node3D) -> Node3D:
@@ -40,10 +45,11 @@ static func build_cedar_hollow(parent: Node3D) -> Node3D:
 	_instance_prop(root, CarabinerScene, "carabiner", Vector3(1.25, 0.02, -1.15), Vector3(0.0, -18.0, 0.0), Vector3.ONE)
 	_instance_prop(root, BottleCapScene, "bottle_cap", Vector3(-0.95, 0.0, -3.25), Vector3(0.0, 12.0, 0.0), Vector3.ONE)
 	_instance_prop(root, PicnicTableScene, "picnic_table", Vector3(-1.45, 0.0, 0.35), Vector3(0.0, 18.0, 0.0), Vector3.ONE)
-	_instance_prop(root, OldCedarStumpScene, "old_cedar_stump", Vector3(0.65, 0.0, -5.25), Vector3(0.0, 12.0, 0.0), Vector3(0.78, 0.78, 0.78))
+	_instance_old_cedar_stump(root)
 	_instance_prop(root, FireRingScene, "fire_ring", Vector3(-0.78, 0.0, 1.05), Vector3(0.0, 12.0, 0.0), Vector3.ONE)
 	_instance_prop(root, HikingBootScene, "hiking_boot", Vector3(0.75, 0.01, -4.65), Vector3(0.0, -32.0, 0.0), Vector3.ONE)
 	_instance_prop(root, WaterBottleScene, "water_bottle", Vector3(2.45, 0.0, -4.15), Vector3(0.0, 17.0, 78.0), Vector3.ONE)
+	_apply_prop_visibility_range(root)
 	return root
 
 
@@ -58,6 +64,33 @@ static func _instance_prop(parent: Node3D, scene: PackedScene, node_name: String
 	instance.scale = scale
 	parent.add_child(instance)
 	return instance
+
+
+static func _instance_old_cedar_stump(parent: Node3D) -> Node3D:
+	var anchor: Node3D = Node3D.new()
+	anchor.name = "old_cedar_stump"
+	anchor.position = OLD_CEDAR_ANCHOR_POSITION
+	anchor.rotation_degrees = OLD_CEDAR_ANCHOR_ROTATION
+	anchor.scale = OLD_CEDAR_ANCHOR_SCALE
+	parent.add_child(anchor)
+
+	var visual: Node3D = OldCedarStumpScene.instantiate() as Node3D
+	if visual == null:
+		push_error("PropVisualBuilder: failed to instantiate old_cedar_stump")
+		return anchor
+	visual.name = "old_cedar_stump_visual"
+	visual.position = OLD_CEDAR_VISUAL_LOCAL_OFFSET
+	visual.scale = OLD_CEDAR_VISUAL_LOCAL_SCALE
+	anchor.add_child(visual)
+	return anchor
+
+
+static func _apply_prop_visibility_range(parent: Node) -> void:
+	var geometry_instance: GeometryInstance3D = parent as GeometryInstance3D
+	if geometry_instance != null:
+		geometry_instance.visibility_range_end = GameConfig.vis_range_props
+	for child in parent.get_children():
+		_apply_prop_visibility_range(child)
 
 
 static func _add_trail_sign_labels(parent: Node3D) -> void:
