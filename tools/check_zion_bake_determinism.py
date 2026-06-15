@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -14,18 +16,27 @@ INPUT_MANIFEST = BAKE_INPUT_DIR / "zion_dem_input_manifest.json"
 OUTPUT_MANIFEST = BAKE_INPUT_DIR / "zion_bake_output_manifest.json"
 EXPECTED_NUMPY_VERSION = "2.4.6"
 EXPECTED_RASTERIO_VERSION = "1.4.3"
+EXPECTED_TNM_10M_SOURCE_URL = (
+    "https://prd-tnm.s3.amazonaws.com/StagedProducts/Elevation/13/TIFF/current/"
+    "n38w113/USGS_13_n38w113.tif"
+)
+SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 def main() -> int:
     try:
         _assert_python_deps()
-        missing = [path for path in (INPUT_MANIFEST, OUTPUT_MANIFEST) if not path.exists()]
-        if missing:
+        if not INPUT_MANIFEST.exists():
+            missing = [path for path in (INPUT_MANIFEST, OUTPUT_MANIFEST) if not path.exists()]
             names = ", ".join(str(path.relative_to(ROOT)) for path in missing)
             print("ok: zion bake not-yet-baked; missing manifest(s): " + names)
             return 0
+        _check_input_manifest(INPUT_MANIFEST)
         _check_manifest(INPUT_MANIFEST, base_dir=BAKE_INPUT_DIR)
-        _check_manifest(OUTPUT_MANIFEST, base_dir=ROOT)
+        if not OUTPUT_MANIFEST.exists():
+            print("ok: zion input manifest; output not-yet-baked: " + str(OUTPUT_MANIFEST.relative_to(ROOT)))
+            return 0
+        _check_output_manifest(OUTPUT_MANIFEST)
     except Exception as exc:
         print("fail: " + str(exc), file=sys.stderr)
         return 1
@@ -35,12 +46,42 @@ def main() -> int:
 
 def _assert_python_deps() -> None:
     import numpy as np
-    import rasterio
 
     if np.__version__ != EXPECTED_NUMPY_VERSION:
         raise RuntimeError("numpy " + np.__version__ + " != " + EXPECTED_NUMPY_VERSION)
+    try:
+        import rasterio
+    except ModuleNotFoundError:
+        if os.environ.get("TRAILHEAD_REQUIRE_BAKE_DEPS") == "1":
+            raise RuntimeError("rasterio is missing; expected " + EXPECTED_RASTERIO_VERSION)
+        return
     if rasterio.__version__ != EXPECTED_RASTERIO_VERSION:
         raise RuntimeError("rasterio " + rasterio.__version__ + " != " + EXPECTED_RASTERIO_VERSION)
+
+
+def _check_input_manifest(path: Path) -> None:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    source = data.get("source", {})
+    if not isinstance(source, dict):
+        raise ValueError(str(path.relative_to(ROOT)) + " source must be an object")
+    source_url = str(source.get("url", ""))
+    if source_url != EXPECTED_TNM_10M_SOURCE_URL:
+        raise ValueError("unexpected Zion 10m source URL: " + source_url)
+    _require_sha256(source, "sha256", "source")
+    if int(source.get("bytes", 0)) <= 0:
+        raise ValueError("source bytes must be positive")
+    clip = data.get("clip", {})
+    if not isinstance(clip, dict):
+        raise ValueError(str(path.relative_to(ROOT)) + " clip must be an object")
+    if str(clip.get("path", "")) != "data/bake_inputs/zion_dem_10m_corridor.tif":
+        raise ValueError("unexpected Zion clipped DEM path: " + str(clip.get("path", "")))
+    _require_sha256(clip, "sha256", "clip")
+    if int(clip.get("width", 0)) <= 0 or int(clip.get("height", 0)) <= 0:
+        raise ValueError("clip dimensions must be positive")
+
+
+def _check_output_manifest(path: Path) -> None:
+    _check_manifest(path, base_dir=ROOT)
 
 
 def _check_manifest(path: Path, base_dir: Path) -> None:
@@ -81,6 +122,12 @@ def _manifest_entries(data: dict[str, Any]) -> list[tuple[str, str]]:
             for filename, sha in values.items():
                 entries.append((str(filename), str(sha)))
     return entries
+
+
+def _require_sha256(data: dict[str, Any], key: str, label: str) -> None:
+    value = str(data.get(key, ""))
+    if SHA256_RE.fullmatch(value) is None:
+        raise ValueError(label + " " + key + " must be a lowercase SHA-256")
 
 
 def _resolve_manifest_path(filename: str, base_dir: Path) -> Path:

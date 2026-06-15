@@ -45,9 +45,9 @@ check "sim/render determinism boundary" sh -c '
 check "no sim-path render asset dependencies" sh -c '! rg -n "res://(systems/render|assets/models)" systems/sim systems/vehicle systems/world --glob "*.gd"'
 check "Python tool syntax" sh -c 'python3 -m py_compile tools/*.py'
 check "shell tool syntax" sh -c 'for path in tools/*.sh; do sh -n "$path" || exit 1; done'
+check "Zion bake determinism" python3 tools/check_zion_bake_determinism.py
 
 # Reserved future slots, per planning/forward-reserve-corrections.md:
-# 9.  check_zion_bake_determinism.py
 # 10. check_collision_tile_integrity.py
 # 11. Godot binary SHA pin (4.6.1.stable.official.14d19694e)
 # 12. check_surface_id_png.py
