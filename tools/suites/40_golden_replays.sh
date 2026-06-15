@@ -46,6 +46,20 @@ run_sim "$out_dir/golden_flat_flipped.json" \
 	--stuck-min-progress=0.05
 assert_golden_replay "$out_dir/golden_flat_flipped.json" "tests/golden/flat_flipped_replay.json"
 
+run_sim "$out_dir/golden_cedar_hollow_zion_pa_rus_flat_segment.json" \
+	--scene=cedar_hollow_zion \
+	--controller=replay \
+	--replay=tests/golden/cedar_hollow_zion_pa_rus_flat_segment_replay.json \
+	--scenario=real_terrain_flat_segment \
+	--spawn=trailhead \
+	--target=0,0,-50 \
+	--target-radius=0.05 \
+	--seed=12345 \
+	--max-ticks=6200 \
+	--stuck-window=240 \
+	--stuck-min-progress=0.02
+assert_golden_replay "$out_dir/golden_cedar_hollow_zion_pa_rus_flat_segment.json" "tests/golden/cedar_hollow_zion_pa_rus_flat_segment_replay.json"
+
 run_sim "$out_dir/golden_cedar_hollow_old_cedar.json" \
 	--scene=cedar_hollow \
 	--controller=replay \

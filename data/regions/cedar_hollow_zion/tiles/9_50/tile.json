@@ -1,0 +1,25 @@
+{
+  "bounds_utm": [
+    323381.824656,
+    4122712.509121,
+    323481.824656,
+    4122812.509121
+  ],
+  "cell_spacing_m": 1.0,
+  "collision_path": "res://data/collision/cedar_hollow_zion_tile_CX09_CZ50.res",
+  "crs": "EPSG:32612",
+  "dtype": "float32_le",
+  "height_max": 2183.450927734375,
+  "height_min": 2004.3668212890625,
+  "heightmap_path": "res://data/regions/cedar_hollow_zion/tiles/9_50/heightmap.bin",
+  "heightmap_sha256": "243cefb9d502393a573840353e456c5f29f435aa94834ed5f78dd3519945bdab",
+  "map_depth": 101,
+  "map_width": 101,
+  "region_id": "cedar_hollow_zion",
+  "schema_version": 1,
+  "source": "10m",
+  "tile": [
+    9,
+    50
+  ]
+}

@@ -1,0 +1,9 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://systems/world/cedar_hollow_10m_scene.gd" id="1_scene"]
+[ext_resource type="PackedScene" path="res://scenes/vehicle.tscn" id="2_vehicle"]
+
+[node name="CedarHollow10m" type="Node3D"]
+script = ExtResource("1_scene")
+
+[node name="Vehicle" parent="." instance=ExtResource("2_vehicle")]
