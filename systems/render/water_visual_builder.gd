@@ -25,6 +25,7 @@ static func _add_water_plane(parent: Node3D, node_name: String, position: Vector
 	instance.position = position
 	instance.rotation_degrees = Vector3(0.0, yaw_degrees, 0.0)
 	instance.material_override = _water_material(node_name)
+	instance.visibility_range_end = GameConfig.vis_range_water
 	instance.add_to_group(WATER_SURFACE_GROUP)
 	instance.set_meta("water_visual_kind", node_name)
 	parent.add_child(instance)
@@ -42,4 +43,13 @@ static func _water_material(resource_name: String) -> ShaderMaterial:
 	material.set_shader_parameter("foam_edge_width", GameConfig.water_foam_edge_width)
 	material.set_shader_parameter("flow_speed", GameConfig.water_flow_speed)
 	material.set_shader_parameter("wave_amplitude", GameConfig.water_wave_amplitude)
+	material.set_shader_parameter("foam_normal_strength", GameConfig.water_foam_normal_strength)
+	material.set_shader_parameter("foam_normal_scale", GameConfig.water_foam_normal_scale)
+	material.set_shader_parameter("foam_normal_flow_speed", GameConfig.water_foam_normal_flow_speed)
+	material.set_shader_parameter("ssr_enabled", GameConfig.water_ssr_enabled)
+	material.set_shader_parameter("ssr_intensity", GameConfig.water_ssr_intensity)
+	material.set_shader_parameter("ssr_max_steps", GameConfig.water_ssr_max_steps)
+	material.set_shader_parameter("ssr_step_size", GameConfig.water_ssr_step_size)
+	material.set_shader_parameter("ssr_thickness", GameConfig.water_ssr_thickness)
+	material.set_shader_parameter("water_roughness", GameConfig.water_roughness)
 	return material
