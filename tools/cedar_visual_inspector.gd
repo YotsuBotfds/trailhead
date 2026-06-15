@@ -9,7 +9,9 @@ const SurfaceMapScript: GDScript = preload("res://systems/world/surface_map.gd")
 const TerrainVisualBuilderScript: GDScript = preload("res://systems/render/terrain_visual_builder.gd")
 const FeatureVisualBuilderScript: GDScript = preload("res://systems/render/feature_visual_builder.gd")
 const ScatterVisualBuilderScript: GDScript = preload("res://systems/render/scatter_visual_builder.gd")
+const GroundDetailVisualBuilderScript: GDScript = preload("res://systems/render/ground_detail_visual_builder.gd")
 const BoundaryVisualBuilderScript: GDScript = preload("res://systems/render/boundary_visual_builder.gd")
+const DustTiltShiftVisualBuilderScript: GDScript = preload("res://systems/render/dust_tilt_shift_visual_builder.gd")
 const SURFACE_DIR_PATH: String = "res://data/surfaces"
 const EXPECTED_BOARDWALK_SEGMENTS: int = FeatureVisualBuilderScript.BOARDWALK_SEGMENT_COUNT
 const EXPECTED_STEPPING_STONES: int = FeatureVisualBuilderScript.STEPPING_STONE_COUNT
@@ -24,13 +26,13 @@ const EXPECTED_PINECONES: int = ScatterVisualBuilderScript.EXPECTED_PINECONES
 const EXPECTED_FERN_CLUMPS: int = ScatterVisualBuilderScript.EXPECTED_FERN_CLUMPS
 const EXPECTED_CATTAILS: int = ScatterVisualBuilderScript.EXPECTED_CATTAILS
 const EXPECTED_SCATTER_INSTANCED_CHILDREN: int = EXPECTED_GRASS_TUFTS + EXPECTED_GRASS_OCCLUDERS + EXPECTED_BOULDERS + EXPECTED_BRANCHES + EXPECTED_PINECONES + EXPECTED_FERN_CLUMPS + EXPECTED_CATTAILS
-const EXPECTED_MUD_PATCHES: int = 8
-const EXPECTED_TIRE_TRACK_PAIRS: int = 3
-const EXPECTED_GRAVEL_SPECKLES: int = 14
-const EXPECTED_LEAF_LITTER: int = 12
-const EXPECTED_ROOT_RIDGES: int = 5
-const EXPECTED_PUDDLE_SHEENS: int = 4
-const EXPECTED_WET_GLINTS: int = 6
+const EXPECTED_MUD_PATCHES: int = GroundDetailVisualBuilderScript.EXPECTED_MUD_PATCHES
+const EXPECTED_TIRE_TRACK_PAIRS: int = GroundDetailVisualBuilderScript.EXPECTED_TIRE_TRACK_PAIRS
+const EXPECTED_GRAVEL_SPECKLES: int = GroundDetailVisualBuilderScript.EXPECTED_GRAVEL_SPECKLES
+const EXPECTED_LEAF_LITTER: int = GroundDetailVisualBuilderScript.EXPECTED_LEAF_LITTER
+const EXPECTED_ROOT_RIDGES: int = GroundDetailVisualBuilderScript.EXPECTED_ROOT_RIDGES
+const EXPECTED_PUDDLE_SHEENS: int = GroundDetailVisualBuilderScript.EXPECTED_PUDDLE_SHEENS
+const EXPECTED_WET_GLINTS: int = GroundDetailVisualBuilderScript.EXPECTED_WET_GLINTS
 const EXPECTED_BOUNDARY_GRASS: int = BoundaryVisualBuilderScript.EXPECTED_BOUNDARY_GRASS
 const EXPECTED_BOUNDARY_BOULDERS: int = BoundaryVisualBuilderScript.EXPECTED_BOUNDARY_BOULDERS
 const EXPECTED_BOUNDARY_BRANCHES: int = BoundaryVisualBuilderScript.EXPECTED_BOUNDARY_BRANCHES
@@ -59,6 +61,14 @@ const EXPECTED_PROP_MESH_NODES: Array[String] = [
 const FLOAT_EPSILON: float = 0.001
 const LIGHTING_BAR_TOLERANCE: float = 0.01
 const LIGHTING_BAR_COLOR_TOLERANCE: float = 0.02
+const GROUND_DETAIL_MATERIAL_TOLERANCE: float = 0.05
+const MUD_PATCH_ALPHA_MIN: float = 0.45
+const MUD_PATCH_ALPHA_MAX: float = 0.65
+const MUD_PATCH_ROUGHNESS_MIN: float = 0.85
+const MUD_PATCH_ROUGHNESS_MAX: float = 0.99
+const PUDDLE_SHEEN_ROUGHNESS_MIN: float = 0.10
+const PUDDLE_SHEEN_ROUGHNESS_MAX: float = 0.35
+const WET_GLINT_RED_MIN: float = 0.5
 const DUSK_SUN_ENERGY_MIN: float = 2.0
 const DUSK_SUN_ENERGY_MAX: float = 2.6
 const GRADE_SATURATION_MIN: float = 1.20
@@ -297,15 +307,9 @@ func _inspect() -> void:
 			_errors.append("ScatterVisuals contains no mesh instances")
 	var ground_detail_root: Node = _require_node(_scene_root, "CedarHollow/GroundDetailVisuals")
 	if ground_detail_root != null:
-		_require_named_count(ground_detail_root, "mud_patch_", EXPECTED_MUD_PATCHES)
-		_require_named_count(ground_detail_root, "tire_track_", EXPECTED_TIRE_TRACK_PAIRS * 2)
-		_require_named_count(ground_detail_root, "gravel_speckle_", EXPECTED_GRAVEL_SPECKLES)
-		_require_named_count(ground_detail_root, "leaf_litter_", EXPECTED_LEAF_LITTER)
-		_require_named_count(ground_detail_root, "root_ridge_", EXPECTED_ROOT_RIDGES)
-		_require_named_count(ground_detail_root, "puddle_sheen_", EXPECTED_PUDDLE_SHEENS)
-		_require_named_count(ground_detail_root, "wet_glint_", EXPECTED_WET_GLINTS)
+		var ground_detail_chase_camera: Camera3D = _scene_root.get_node_or_null("ChaseCamera") as Camera3D
+		_inspect_ground_detail_bar(ground_detail_root, ground_detail_chase_camera, "Cedar")
 		_inspect_ground_detail_layout(ground_detail_root)
-		_require_geometry_visibility_range(ground_detail_root, "GroundDetailVisuals", GameConfig.vis_range_ground_detail)
 		var ground_detail_collision_count: int = _count_collision_objects(ground_detail_root)
 		if ground_detail_collision_count > 0:
 			_errors.append("GroundDetailVisuals contains collision objects: " + str(ground_detail_collision_count))
@@ -1001,6 +1005,78 @@ func _inspect_ground_detail_layout(ground_detail_root: Node) -> void:
 			var height: float = accumulator.bounds_max.y - accumulator.bounds_min.y
 			if height > GROUND_DETAIL_MAX_HEIGHT:
 				_errors.append("GroundDetailVisuals/" + String(child.name) + " should stay low to the ground, height was " + str(height))
+
+
+func _inspect_ground_detail_bar(ground_detail_root: Node, chase_camera: Camera3D, context: String) -> void:
+	_require_named_count(ground_detail_root, "mud_patch_", EXPECTED_MUD_PATCHES)
+	_require_named_count(ground_detail_root, "tire_track_", EXPECTED_TIRE_TRACK_PAIRS * 2)
+	_require_named_count(ground_detail_root, "gravel_speckle_", EXPECTED_GRAVEL_SPECKLES)
+	_require_named_count(ground_detail_root, "leaf_litter_", EXPECTED_LEAF_LITTER)
+	_require_named_count(ground_detail_root, "root_ridge_", EXPECTED_ROOT_RIDGES)
+	_require_named_count(ground_detail_root, "puddle_sheen_", EXPECTED_PUDDLE_SHEENS)
+	_require_named_count(ground_detail_root, "wet_glint_", EXPECTED_WET_GLINTS)
+	for child: Node in ground_detail_root.get_children():
+		var mesh_instance: MeshInstance3D = child as MeshInstance3D
+		if mesh_instance == null:
+			continue
+		_require_float_close(context + " GroundDetailVisuals/" + String(child.name) + " visibility range", mesh_instance.visibility_range_end, GameConfig.vis_range_ground_detail, FLOAT_EPSILON)
+	_require_ground_detail_material_ranges(ground_detail_root, context)
+	_require_dust_mote_field(chase_camera, context)
+
+
+func _require_ground_detail_material_ranges(ground_detail_root: Node, context: String) -> void:
+	var mud_material: StandardMaterial3D = _require_ground_detail_material(ground_detail_root, "mud_patch_1", context)
+	if mud_material != null:
+		_require_float_in_range_with_tolerance(context + " mud_patch_1 alpha", mud_material.albedo_color.a, MUD_PATCH_ALPHA_MIN, MUD_PATCH_ALPHA_MAX, GROUND_DETAIL_MATERIAL_TOLERANCE)
+		_require_float_in_range_with_tolerance(context + " mud_patch_1 roughness", mud_material.roughness, MUD_PATCH_ROUGHNESS_MIN, MUD_PATCH_ROUGHNESS_MAX, GROUND_DETAIL_MATERIAL_TOLERANCE)
+	var puddle_material: StandardMaterial3D = _require_ground_detail_material(ground_detail_root, "puddle_sheen_1", context)
+	if puddle_material != null:
+		_require_float_in_range_with_tolerance(context + " puddle_sheen_1 roughness", puddle_material.roughness, PUDDLE_SHEEN_ROUGHNESS_MIN, PUDDLE_SHEEN_ROUGHNESS_MAX, GROUND_DETAIL_MATERIAL_TOLERANCE)
+	var glint_material: StandardMaterial3D = _require_ground_detail_material(ground_detail_root, "wet_glint_1", context)
+	if glint_material != null and glint_material.albedo_color.r <= WET_GLINT_RED_MIN - GROUND_DETAIL_MATERIAL_TOLERANCE:
+		_errors.append(context + " wet_glint_1 albedo red expected greater than " + str(WET_GLINT_RED_MIN) + ", got " + str(glint_material.albedo_color.r))
+
+
+func _require_ground_detail_material(ground_detail_root: Node, node_name: String, context: String) -> StandardMaterial3D:
+	var child: Node = _require_node(ground_detail_root, node_name)
+	if child == null:
+		return null
+	var mesh_instance: MeshInstance3D = child as MeshInstance3D
+	if mesh_instance == null:
+		_errors.append(context + " GroundDetailVisuals/" + node_name + " should be a MeshInstance3D")
+		return null
+	var material: StandardMaterial3D = mesh_instance.material_override as StandardMaterial3D
+	if material == null:
+		_errors.append(context + " GroundDetailVisuals/" + node_name + " should use StandardMaterial3D material_override")
+		return null
+	return material
+
+
+func _require_dust_mote_field(chase_camera: Camera3D, context: String) -> void:
+	if chase_camera == null:
+		_errors.append(context + " ChaseCamera missing for DustMoteField inspection")
+		return
+	var field_node: Node = _require_node(chase_camera, DustTiltShiftVisualBuilderScript.DUST_FIELD_NAME)
+	if field_node == null:
+		return
+	var particles: GPUParticles3D = field_node as GPUParticles3D
+	if particles == null:
+		_errors.append(context + " ChaseCamera/" + DustTiltShiftVisualBuilderScript.DUST_FIELD_NAME + " should be GPUParticles3D")
+		return
+	if not particles.use_fixed_seed:
+		_errors.append(context + " DustMoteField should use a fixed seed")
+	if particles.seed != DustTiltShiftVisualBuilderScript.DUST_FIXED_SEED:
+		_errors.append(context + " DustMoteField seed expected " + str(DustTiltShiftVisualBuilderScript.DUST_FIXED_SEED) + ", got " + str(particles.seed))
+	if particles.randomness != 0.0:
+		_errors.append(context + " DustMoteField randomness expected 0.0, got " + str(particles.randomness))
+	if not particles.emitting:
+		_errors.append(context + " DustMoteField should emit by default")
+	_require_float_close(context + " DustMoteField visibility range", particles.visibility_range_end, GameConfig.vis_range_dust, FLOAT_EPSILON)
+
+
+func _require_float_in_range_with_tolerance(label: String, actual: float, minimum_value: float, maximum_value: float, tolerance: float) -> void:
+	if actual < minimum_value - tolerance or actual > maximum_value + tolerance:
+		_errors.append(label + " expected in [" + str(minimum_value) + ", " + str(maximum_value) + "] +/- " + str(tolerance) + ", got " + str(actual))
 
 
 func _name_begins_with_any(child_name: String, prefixes: Array[String]) -> bool:
