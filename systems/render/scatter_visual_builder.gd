@@ -35,21 +35,51 @@ const GRASS_PATTERN_CLUMP_STRIDE: int = 53
 const GRASS_WIND_CULL_MARGIN: float = 0.05
 const GRASS_BASE_COLOR: Color = Color(0.07, 0.18, 0.055, 1.0)
 const GRASS_TIP_COLOR: Color = Color(0.48, 0.66, 0.23, 1.0)
+const SCATTER_X_MIN: float = -2.8
+const SCATTER_X_MAX: float = 5.05
+const SCATTER_Z_MIN: float = -9.55
+const SCATTER_Z_MAX: float = -0.3
+const SCATTER_EDGE_MARGIN: float = 0.04
+const SCATTER_ANCHOR_EMPTY: Vector3 = Vector3(999.0, 999.0, 999.0)
+const SCATTER_MAX_ATTEMPTS: int = 180
+const SCATTER_PATTERN_MODULUS: int = 1543
+const SCATTER_PATTERN_INDEX_MULTIPLIER: int = 67
+const SCATTER_PATTERN_ATTEMPT_MULTIPLIER: int = 113
+const SCATTER_PATTERN_SALT_MULTIPLIER: int = 191
+const SCATTER_FULL_TURN_RADIANS: float = 6.28318530718
+const NEGATIVE_TRAIL_X_HALF_WIDTH: float = 0.58
+const NEGATIVE_TRAIL_Z_MIN: float = -5.85
+const NEGATIVE_TRAIL_Z_MAX: float = 0.35
+const NEGATIVE_OLD_CEDAR_APPROACH_CENTER: Vector2 = Vector2(0.0, -3.55)
+const NEGATIVE_OLD_CEDAR_APPROACH_RADIUS: float = 0.72
+const NEGATIVE_BOARDWALK_CENTER: Vector2 = Vector2(3.25, -4.15)
+const NEGATIVE_BOARDWALK_RADIUS_X: float = 0.48
+const NEGATIVE_BOARDWALK_RADIUS_Z: float = 0.76
+const CROSSING_CHASE_QA_POSITION: Vector3 = Vector3(4.25, 0.0, -6.55)
+const CROSSING_CHASE_QA_YAW_DEGREES: float = -70.0
+const CHASE_CLEAR_CORRIDOR_LENGTH: float = 0.7
+const CHASE_CLEAR_CORRIDOR_HALF_WIDTH: float = 0.18
 const GRASS_SHADER_CODE: String = "shader_type spatial;\n" \
 		+ "render_mode cull_disabled, diffuse_lambert, specular_schlick_ggx;\n" \
 		+ "uniform vec4 blade_base_color : source_color = vec4(0.07, 0.18, 0.055, 1.0);\n" \
 		+ "uniform vec4 blade_tip_color : source_color = vec4(0.48, 0.66, 0.23, 1.0);\n" \
 		+ "uniform float blade_height_reference = 0.42;\n" \
 		+ "uniform float wind_strength = 0.012;\n" \
+		+ "uniform float wind_speed = 0.65;\n" \
+		+ "uniform float wind_time_factor = 1.0;\n" \
+		+ "uniform vec4 backlight_color : source_color = vec4(1.0, 0.62, 0.30, 1.0);\n" \
+		+ "uniform float backlight_energy = 0.32;\n" \
 		+ "varying float blade_height;\n" \
 		+ "varying float tip_mix_shift;\n" \
 		+ "void vertex() {\n" \
 		+ "	blade_height = smoothstep(0.0, blade_height_reference, VERTEX.y);\n" \
 		+ "	tip_mix_shift = INSTANCE_CUSTOM.w;\n" \
-		+ "	float wind_phase = INSTANCE_CUSTOM.y * 6.28318530718;\n" \
-		+ "	float sway = sin(wind_phase);\n" \
-		+ "	float flutter = sin(wind_phase * 1.73 + INSTANCE_CUSTOM.z * 2.91);\n" \
-		+ "	float bend = (sway * 0.75 + flutter * 0.25) * wind_strength * blade_height * blade_height * INSTANCE_CUSTOM.x;\n" \
+		+ "	float wind_phase = INSTANCE_CUSTOM.y * TAU;\n" \
+		+ "	float wind_time = TIME * wind_speed * wind_time_factor;\n" \
+		+ "	float sway = sin(wind_phase + wind_time);\n" \
+		+ "	float flutter = sin(wind_phase * 1.73 + wind_time * 1.47 + INSTANCE_CUSTOM.z * 2.91);\n" \
+		+ "	float gust = 0.88 + sin(wind_time * 0.37 + INSTANCE_CUSTOM.w * TAU) * 0.12;\n" \
+		+ "	float bend = (sway * 0.72 + flutter * 0.28) * gust * wind_strength * blade_height * blade_height * INSTANCE_CUSTOM.x;\n" \
 		+ "	VERTEX.x += bend;\n" \
 		+ "	VERTEX.z += bend * (INSTANCE_CUSTOM.z * 0.7 - 0.35);\n" \
 		+ "}\n" \
@@ -60,6 +90,7 @@ const GRASS_SHADER_CODE: String = "shader_type spatial;\n" \
 		+ "	ALBEDO = blade_color * COLOR.rgb;\n" \
 		+ "	ROUGHNESS = 0.86;\n" \
 		+ "	SPECULAR = 0.16;\n" \
+		+ "	BACKLIGHT = backlight_color.rgb * backlight_energy * (0.35 + blade_height * 0.65) * COLOR.rgb;\n" \
 		+ "}\n"
 
 
@@ -131,77 +162,40 @@ static func _add_grass_occluders(parent: Node3D) -> void:
 
 
 static func _add_boulders(parent: Node3D) -> void:
-	var positions: Array[Vector3] = [
-		Vector3(-2.65, 0.3, -8.5),
-		Vector3(-0.85, 0.22, -8.2),
-		Vector3(-1.8, 0.16, -6.75),
-		Vector3(4.9, 0.0, -6.95),
-		Vector3(3.15, 0.0, -7.25)
-	]
+	var positions: Array[Vector3] = _boulder_positions(EXPECTED_BOULDERS)
 	for i in range(mini(EXPECTED_BOULDERS, positions.size())):
-		var scale_factor: float = 0.75 + float(i % 3) * 0.15
-		if i == 3:
-			scale_factor = 0.62
+		var scale_factor: float = 0.68 + _scatter_unit(i, 0, 71) * 0.32
 		var scale: Vector3 = Vector3.ONE * scale_factor
-		_instance_scatter(parent, BoulderScene, "boulder_" + str(i + 1), positions[i], Vector3(0.0, float(i) * 41.0, 0.0), scale)
+		_instance_scatter(parent, BoulderScene, "boulder_" + str(i + 1), positions[i], Vector3(0.0, _scatter_yaw_degrees(i, 73), 0.0), scale)
 
 
 static func _add_branches(parent: Node3D) -> void:
-	var positions: Array[Vector3] = [
-		Vector3(-1.95, 0.02, -0.35),
-		Vector3(1.9, 0.02, -3.75),
-		Vector3(0.95, 0.02, -5.85),
-		Vector3(3.95, 0.02, -5.85),
-		Vector3(-0.9, 0.02, -9.45)
-	]
+	var positions: Array[Vector3] = _branch_positions(EXPECTED_BRANCHES)
 	for i in range(mini(EXPECTED_BRANCHES, positions.size())):
-		_instance_scatter(parent, BranchScene, "branch_" + str(i + 1), positions[i], Vector3(0.0, float(i) * 29.0, 0.0), Vector3.ONE)
+		var scale: Vector3 = Vector3.ONE * (0.92 + _scatter_unit(i, 0, 89) * 0.18)
+		_instance_scatter(parent, BranchScene, "branch_" + str(i + 1), positions[i], Vector3(0.0, _scatter_yaw_degrees(i, 91), 0.0), scale)
 
 
 static func _add_pinecones(parent: Node3D) -> void:
-	var positions: Array[Vector3] = [
-		Vector3(-1.35, 0.02, -0.55),
-		Vector3(-2.55, 0.02, -1.2),
-		Vector3(1.35, 0.02, -1.55),
-		Vector3(2.45, 0.02, -2.75),
-		Vector3(1.55, 0.02, -4.75),
-		Vector3(3.15, 0.02, -4.4),
-		Vector3(4.4, 0.02, -6.0),
-		Vector3(-1.9, 0.24, -8.9)
-	]
+	var positions: Array[Vector3] = _pinecone_positions(EXPECTED_PINECONES)
 	for i in range(mini(EXPECTED_PINECONES, positions.size())):
-		var rotation: Vector3 = Vector3(float(i % 2) * 12.0, float(i) * 47.0, 0.0)
+		var rotation: Vector3 = Vector3((_scatter_unit(i, 0, 101) - 0.5) * 22.0, _scatter_yaw_degrees(i, 103), 0.0)
 		_instance_scatter(parent, PineconeScene, "pinecone_" + str(i + 1), positions[i], rotation, Vector3.ONE)
 
 
 static func _add_ferns(parent: Node3D) -> void:
-	var positions: Array[Vector3] = [
-		Vector3(2.2, 0.0, -4.65),
-		Vector3(3.45, 0.0, -4.95),
-		Vector3(2.75, 0.0, -6.45),
-		Vector3(3.75, 0.0, -6.95),
-		Vector3(4.85, 0.0, -6.65),
-		Vector3(3.05, 0.0, -7.65)
-	]
+	var positions: Array[Vector3] = _fern_positions(EXPECTED_FERN_CLUMPS)
 	for i in range(mini(EXPECTED_FERN_CLUMPS, positions.size())):
-		var scale_factor: float = 0.8 + float(i % 3) * 0.12
-		if i == 4:
-			scale_factor = 0.68
+		var scale_factor: float = 0.72 + _scatter_unit(i, 0, 127) * 0.28
 		var scale: Vector3 = Vector3.ONE * scale_factor
-		_instance_scatter(parent, FernClumpScene, "fern_clump_" + str(i + 1), positions[i], Vector3(0.0, float(i) * 53.0, 0.0), scale)
+		_instance_scatter(parent, FernClumpScene, "fern_clump_" + str(i + 1), positions[i], Vector3(0.0, _scatter_yaw_degrees(i, 131), 0.0), scale)
 
 
 static func _add_cattails(parent: Node3D) -> void:
-	var positions: Array[Vector3] = [
-		Vector3(3.95, 0.0, -6.25),
-		Vector3(4.55, 0.0, -6.1),
-		Vector3(4.9, 0.0, -7.05),
-		Vector3(3.85, 0.0, -7.35),
-		Vector3(4.45, 0.0, -7.55)
-	]
+	var positions: Array[Vector3] = _cattail_positions(EXPECTED_CATTAILS)
 	for i in range(mini(EXPECTED_CATTAILS, positions.size())):
-		var scale: Vector3 = Vector3.ONE * (0.75 + float(i % 2) * 0.1)
-		_instance_scatter(parent, CattailScene, "cattail_" + str(i + 1), positions[i], Vector3(0.0, float(i) * 29.0, 0.0), scale)
+		var scale: Vector3 = Vector3.ONE * (0.72 + _scatter_unit(i, 0, 149) * 0.16)
+		_instance_scatter(parent, CattailScene, "cattail_" + str(i + 1), positions[i], Vector3(0.0, _scatter_yaw_degrees(i, 151), 0.0), scale)
 
 
 static func _instance_scatter(parent: Node3D, scene: PackedScene, node_name: String, position: Vector3, rotation: Vector3, scale: Vector3) -> Node3D:
@@ -214,6 +208,7 @@ static func _instance_scatter(parent: Node3D, scene: PackedScene, node_name: Str
 	instance.rotation_degrees = rotation
 	instance.scale = scale
 	parent.add_child(instance)
+	_apply_visibility_range(instance, GameConfig.vis_range_scatter)
 	return instance
 
 
@@ -247,6 +242,20 @@ static func _create_grass_material() -> ShaderMaterial:
 	material.shader = shader
 	material.set_shader_parameter(&"blade_base_color", GRASS_BASE_COLOR)
 	material.set_shader_parameter(&"blade_tip_color", GRASS_TIP_COLOR)
+	var wind_strength: float = 0.0
+	var wind_time_factor: float = 0.0
+	if GameConfig.grass_wind_enabled:
+		wind_strength = maxf(GameConfig.grass_wind_strength, 0.0)
+		if not GameConfig.grass_wind_freeze_for_capture:
+			wind_time_factor = 1.0
+	var backlight_energy: float = 0.0
+	if GameConfig.grass_backlight_enabled:
+		backlight_energy = maxf(GameConfig.grass_backlight_energy, 0.0)
+	material.set_shader_parameter(&"wind_strength", wind_strength)
+	material.set_shader_parameter(&"wind_speed", maxf(GameConfig.grass_wind_speed, 0.0))
+	material.set_shader_parameter(&"wind_time_factor", wind_time_factor)
+	material.set_shader_parameter(&"backlight_color", GameConfig.grass_backlight_color)
+	material.set_shader_parameter(&"backlight_energy", backlight_energy)
 	return material
 
 
@@ -256,6 +265,7 @@ static func _create_grass_clump(node_name: String, mesh: Mesh, material: ShaderM
 	instance.position = position
 	instance.material_override = material
 	instance.extra_cull_margin = GRASS_WIND_CULL_MARGIN
+	instance.visibility_range_end = GameConfig.vis_range_grass
 	var primary_blade_count: int = maxi(blade_count * GRASS_PRIMARY_BLADE_MULTIPLIER, 1)
 	var low_blade_count: int = maxi(blade_count * GRASS_LOW_BLADE_MULTIPLIER, 0)
 	var total_blade_count: int = primary_blade_count + low_blade_count
@@ -337,7 +347,213 @@ static func _add_bounds_reference(parent: Node3D, mesh: Mesh, reference_scale: V
 	reference.mesh = mesh
 	reference.scale = reference_scale
 	reference.visible = false
+	reference.visibility_range_end = GameConfig.vis_range_grass
 	parent.add_child(reference)
+
+
+static func _boulder_positions(target_count: int) -> Array[Vector3]:
+	var anchors: Array[Vector3] = _empty_scatter_anchors(target_count)
+	if target_count > 0:
+		anchors[0] = Vector3(-2.65, 0.3, -8.5)
+	if target_count > 4:
+		anchors[4] = Vector3(3.15, 0.0, -7.25)
+	var macro_centers: Array[Vector3] = [
+		Vector3(-2.25, 0.24, -8.35),
+		Vector3(-1.65, 0.16, -6.95),
+		Vector3(3.75, 0.0, -7.15),
+		Vector3(4.72, 0.0, -6.82)
+	]
+	return _fractal_scatter_positions(target_count, anchors, macro_centers, 0.70, 0.82, 0.30, 17)
+
+
+static func _branch_positions(target_count: int) -> Array[Vector3]:
+	var anchors: Array[Vector3] = _empty_scatter_anchors(target_count)
+	if target_count > 4:
+		anchors[4] = Vector3(-0.9, 0.02, -9.45)
+	var macro_centers: Array[Vector3] = [
+		Vector3(-1.95, 0.02, -0.55),
+		Vector3(1.85, 0.02, -3.75),
+		Vector3(1.05, 0.02, -5.80),
+		Vector3(3.95, 0.02, -5.88),
+		Vector3(-1.10, 0.02, -9.10)
+	]
+	return _fractal_scatter_positions(target_count, anchors, macro_centers, 1.10, 0.46, 0.24, 29)
+
+
+static func _pinecone_positions(target_count: int) -> Array[Vector3]:
+	var anchors: Array[Vector3] = _empty_scatter_anchors(target_count)
+	if target_count > 7:
+		anchors[7] = Vector3(-1.9, 0.24, -8.9)
+	var macro_centers: Array[Vector3] = [
+		Vector3(-1.35, 0.02, -0.55),
+		Vector3(-2.55, 0.02, -1.20),
+		Vector3(1.35, 0.02, -1.55),
+		Vector3(2.45, 0.02, -2.75),
+		Vector3(1.55, 0.02, -4.75),
+		Vector3(3.15, 0.02, -4.40),
+		Vector3(4.40, 0.02, -6.00),
+		Vector3(-2.35, 0.24, -8.45),
+		Vector3(-1.35, 0.24, -9.25)
+	]
+	return _fractal_scatter_positions(target_count, anchors, macro_centers, 0.55, 0.34, 0.18, 43)
+
+
+static func _fern_positions(target_count: int) -> Array[Vector3]:
+	var anchors: Array[Vector3] = _empty_scatter_anchors(target_count)
+	if target_count > 0:
+		anchors[0] = Vector3(2.2, 0.0, -4.65)
+	if target_count > 5:
+		anchors[5] = Vector3(3.05, 0.0, -7.65)
+	var macro_centers: Array[Vector3] = [
+		Vector3(2.50, 0.0, -4.85),
+		Vector3(3.55, 0.0, -5.15),
+		Vector3(2.88, 0.0, -6.52),
+		Vector3(3.75, 0.0, -6.95),
+		Vector3(4.85, 0.0, -6.65),
+		Vector3(3.12, 0.0, -7.20),
+		Vector3(2.45, 0.0, -7.15)
+	]
+	return _fractal_scatter_positions(target_count, anchors, macro_centers, 0.70, 0.30, 0.18, 59)
+
+
+static func _cattail_positions(target_count: int) -> Array[Vector3]:
+	var anchors: Array[Vector3] = _empty_scatter_anchors(target_count)
+	if target_count > 0:
+		anchors[0] = Vector3(3.95, 0.0, -6.25)
+	if target_count > 4:
+		anchors[4] = Vector3(4.45, 0.0, -7.55)
+	var macro_centers: Array[Vector3] = [
+		Vector3(4.28, 0.0, -6.20),
+		Vector3(4.78, 0.0, -6.95),
+		Vector3(4.10, 0.0, -7.28),
+		Vector3(4.55, 0.0, -7.38),
+		Vector3(3.75, 0.0, -7.25)
+	]
+	return _fractal_scatter_positions(target_count, anchors, macro_centers, 0.35, 0.22, 0.12, 67)
+
+
+static func _empty_scatter_anchors(target_count: int) -> Array[Vector3]:
+	var anchors: Array[Vector3] = []
+	for i in range(target_count):
+		anchors.append(SCATTER_ANCHOR_EMPTY)
+	return anchors
+
+
+static func _fractal_scatter_positions(target_count: int, anchor_positions: Array[Vector3], macro_centers: Array[Vector3], min_spacing: float, macro_radius: float, micro_radius: float, salt: int) -> Array[Vector3]:
+	var positions: Array[Vector3] = _empty_scatter_anchors(target_count)
+	for i in range(mini(target_count, anchor_positions.size())):
+		if _has_scatter_position(anchor_positions[i]):
+			positions[i] = anchor_positions[i]
+	for i in range(target_count):
+		if _has_scatter_position(positions[i]):
+			continue
+		var placed: bool = false
+		for attempt in range(SCATTER_MAX_ATTEMPTS):
+			var candidate: Vector3 = _fractal_scatter_candidate(macro_centers, i, attempt, macro_radius, micro_radius, salt)
+			if _scatter_candidate_allowed(candidate, positions, min_spacing):
+				positions[i] = candidate
+				placed = true
+				break
+		if not placed:
+			push_error("ScatterVisualBuilder: failed to place fractal scatter index " + str(i))
+			positions[i] = _clamp_scatter_position(macro_centers[mini(i, maxi(macro_centers.size() - 1, 0))] if not macro_centers.is_empty() else Vector3.ZERO)
+	return positions
+
+
+static func _fractal_scatter_candidate(macro_centers: Array[Vector3], item_index: int, attempt: int, macro_radius: float, micro_radius: float, salt: int) -> Vector3:
+	if macro_centers.is_empty():
+		return Vector3.ZERO
+	var macro_index: int = (item_index + attempt + salt) % macro_centers.size()
+	var macro_center: Vector3 = macro_centers[macro_index]
+	var micro_angle: float = _scatter_unit(item_index, attempt, salt + 3) * SCATTER_FULL_TURN_RADIANS
+	var micro_distance: float = macro_radius * (0.18 + _scatter_unit(item_index, attempt, salt + 5) * 0.82)
+	var micro_center: Vector3 = macro_center + Vector3(cos(micro_angle) * micro_distance, 0.0, sin(micro_angle) * micro_distance)
+	var item_angle: float = _scatter_unit(item_index, attempt, salt + 7) * SCATTER_FULL_TURN_RADIANS
+	var item_distance: float = micro_radius * (0.22 + _scatter_unit(item_index, attempt, salt + 11) * 0.78)
+	var candidate: Vector3 = micro_center + Vector3(cos(item_angle) * item_distance, 0.0, sin(item_angle) * item_distance)
+	candidate.y = macro_center.y
+	return _clamp_scatter_position(candidate)
+
+
+static func _scatter_candidate_allowed(candidate: Vector3, positions: Array[Vector3], min_spacing: float) -> bool:
+	if candidate.x < SCATTER_X_MIN or candidate.x > SCATTER_X_MAX or candidate.z < SCATTER_Z_MIN or candidate.z > SCATTER_Z_MAX:
+		return false
+	if _is_protected_negative_space(candidate):
+		return false
+	for i in range(positions.size()):
+		if not _has_scatter_position(positions[i]):
+			continue
+		var existing: Vector3 = positions[i]
+		var delta: Vector2 = Vector2(candidate.x - existing.x, candidate.z - existing.z)
+		if delta.length() < min_spacing:
+			return false
+	return true
+
+
+static func _clamp_scatter_position(position: Vector3) -> Vector3:
+	return Vector3(
+		clampf(position.x, SCATTER_X_MIN + SCATTER_EDGE_MARGIN, SCATTER_X_MAX - SCATTER_EDGE_MARGIN),
+		position.y,
+		clampf(position.z, SCATTER_Z_MIN + SCATTER_EDGE_MARGIN, SCATTER_Z_MAX - SCATTER_EDGE_MARGIN)
+	)
+
+
+static func _has_scatter_position(position: Vector3) -> bool:
+	return position.x < SCATTER_ANCHOR_EMPTY.x - 1.0
+
+
+static func _scatter_unit(index: int, attempt: int, salt: int) -> float:
+	var value: int = (index * SCATTER_PATTERN_INDEX_MULTIPLIER + attempt * SCATTER_PATTERN_ATTEMPT_MULTIPLIER + salt * SCATTER_PATTERN_SALT_MULTIPLIER) % SCATTER_PATTERN_MODULUS
+	return float(value) / float(SCATTER_PATTERN_MODULUS - 1)
+
+
+static func _scatter_yaw_degrees(index: int, salt: int) -> float:
+	return _scatter_unit(index, 0, salt) * 360.0
+
+
+static func _is_protected_negative_space(position: Vector3) -> bool:
+	if position.z > NEGATIVE_TRAIL_Z_MIN and position.z < NEGATIVE_TRAIL_Z_MAX and absf(position.x) < NEGATIVE_TRAIL_X_HALF_WIDTH:
+		return true
+	if _inside_circle_xz(position, NEGATIVE_OLD_CEDAR_APPROACH_CENTER, NEGATIVE_OLD_CEDAR_APPROACH_RADIUS):
+		return true
+	if _inside_ellipse_xz(position, NEGATIVE_BOARDWALK_CENTER, NEGATIVE_BOARDWALK_RADIUS_X, NEGATIVE_BOARDWALK_RADIUS_Z):
+		return true
+	return _blocks_crossing_chase_corridor(position)
+
+
+static func _inside_circle_xz(position: Vector3, center: Vector2, radius: float) -> bool:
+	var dx: float = position.x - center.x
+	var dz: float = position.z - center.y
+	return dx * dx + dz * dz < radius * radius
+
+
+static func _inside_ellipse_xz(position: Vector3, center: Vector2, radius_x: float, radius_z: float) -> bool:
+	var dx: float = (position.x - center.x) / radius_x
+	var dz: float = (position.z - center.y) / radius_z
+	return dx * dx + dz * dz < 1.0
+
+
+static func _blocks_crossing_chase_corridor(position: Vector3) -> bool:
+	var basis: Basis = Basis(Vector3.UP, deg_to_rad(CROSSING_CHASE_QA_YAW_DEGREES))
+	var forward: Vector3 = -basis.z.normalized()
+	var forward_xz: Vector2 = Vector2(forward.x, forward.z).normalized()
+	var delta: Vector2 = Vector2(
+		position.x - CROSSING_CHASE_QA_POSITION.x,
+		position.z - CROSSING_CHASE_QA_POSITION.z
+	)
+	var along: float = delta.dot(forward_xz)
+	if along <= 0.0 or along > CHASE_CLEAR_CORRIDOR_LENGTH:
+		return false
+	var lateral: float = absf(delta.x * forward_xz.y - delta.y * forward_xz.x)
+	return lateral < CHASE_CLEAR_CORRIDOR_HALF_WIDTH
+
+
+static func _apply_visibility_range(parent: Node, visibility_range_end: float) -> void:
+	var geometry_instance: GeometryInstance3D = parent as GeometryInstance3D
+	if geometry_instance != null:
+		geometry_instance.visibility_range_end = visibility_range_end
+	for child in parent.get_children():
+		_apply_visibility_range(child, visibility_range_end)
 
 
 static func _grass_positions(target_count: int) -> Array[Vector3]:
