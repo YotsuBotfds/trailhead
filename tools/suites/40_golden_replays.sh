@@ -188,3 +188,16 @@ run_sim "$out_dir/golden_cedar_hollow_segment_pine_floor_to_far_mile_marker.json
 	--stuck-window=120 \
 	--stuck-min-progress=0.015
 assert_golden_replay "$out_dir/golden_cedar_hollow_segment_pine_floor_to_far_mile_marker.json" "tests/golden/cedar_hollow_segment_pine_floor_to_far_mile_marker_replay.json"
+
+run_sim "$out_dir/golden_cedar_hollow_segment_pine_floor_to_far_mile_marker_chain.json" \
+	--scene=cedar_hollow \
+	--controller=replay \
+	--replay=tests/golden/cedar_hollow_segment_pine_floor_to_far_mile_marker_chain.json \
+	--route-segment=pine_floor_to_far_mile_marker \
+	--seed=12345 \
+	--max-ticks=1000 \
+	--stuck-window=120 \
+	--stuck-min-progress=0.015
+assert_golden_replay "$out_dir/golden_cedar_hollow_segment_pine_floor_to_far_mile_marker_chain.json" "tests/golden/cedar_hollow_segment_pine_floor_to_far_mile_marker_chain.json"
+
+python3 tools/seam_chain_fixture.py

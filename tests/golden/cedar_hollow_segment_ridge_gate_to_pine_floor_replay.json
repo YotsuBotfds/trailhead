@@ -3967,5 +3967,15 @@
 			"ebrake": false,
 			"self_right": false
 		}
+	],
+	"collision_tiles": [
+		[
+			0,
+			-2
+		],
+		[
+			0,
+			-1
+		]
 	]
 }

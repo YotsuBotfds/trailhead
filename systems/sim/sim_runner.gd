@@ -128,6 +128,10 @@ var _fixture_has_spawn_from_state: bool = false
 var _fixture_spawn_transform: Transform3D = Transform3D.IDENTITY
 var _fixture_spawn_linear_velocity: Vector3 = Vector3.ZERO
 var _fixture_spawn_angular_velocity: Vector3 = Vector3.ZERO
+var _fixture_spawn_freeze_pending: bool = false
+var _fixture_has_expected_activation_ticks: bool = false
+var _fixture_expected_activation_ticks: Dictionary[String, int] = {}
+var _activation_ticks: Dictionary[String, int] = {}
 
 
 func _ready() -> void:
@@ -231,6 +235,7 @@ func _physics_process(_delta: float) -> void:
 		return
 	var input: RefCounted = _controller.call("next_input", state)
 	_vehicle.call("apply_input", input)
+	_release_fixture_spawn_freeze()
 	_last_input = input
 	_tick += 1
 
@@ -271,6 +276,10 @@ func _load_optional_segment_fixture_data() -> bool:
 	_fixture_spawn_transform = Transform3D.IDENTITY
 	_fixture_spawn_linear_velocity = Vector3.ZERO
 	_fixture_spawn_angular_velocity = Vector3.ZERO
+	_fixture_spawn_freeze_pending = false
+	_fixture_has_expected_activation_ticks = false
+	_fixture_expected_activation_ticks.clear()
+	_activation_ticks.clear()
 
 	var replay_path: String = String(_args.get("replay", ""))
 	if replay_path == "":
@@ -286,6 +295,8 @@ func _load_optional_segment_fixture_data() -> bool:
 	if data.has("collision_tiles") and not _configure_fixture_collision_tiles(data["collision_tiles"]):
 		return false
 	if data.has("spawn_from_state") and not _configure_fixture_spawn_from_state(data["spawn_from_state"]):
+		return false
+	if data.has("expected_activation_ticks") and not _configure_fixture_expected_activation_ticks(data["expected_activation_ticks"]):
 		return false
 	return true
 
@@ -322,6 +333,46 @@ func _configure_fixture_spawn_from_state(value: Variant) -> bool:
 		return false
 	_fixture_has_spawn_from_state = true
 	return true
+
+
+func _configure_fixture_expected_activation_ticks(value: Variant) -> bool:
+	var errors: Array[String] = []
+	var ticks: Dictionary[String, int] = _activation_ticks_from_fixture_value(value, "expected_activation_ticks", errors)
+	if not errors.is_empty():
+		_finish_runner_error(_join_strings(errors, "; "))
+		return false
+	_fixture_has_expected_activation_ticks = true
+	_fixture_expected_activation_ticks = ticks
+	return true
+
+
+func _activation_ticks_from_fixture_value(value: Variant, label: String, errors: Array[String]) -> Dictionary[String, int]:
+	var ticks: Dictionary[String, int] = {}
+	if not (value is Dictionary):
+		errors.append(label + " must be a dictionary of tile_key to tick")
+		return ticks
+	var data: Dictionary = value
+	if data.is_empty():
+		errors.append(label + " must contain at least one activation tick")
+		return ticks
+	for key_value in data.keys():
+		var key: String = String(key_value)
+		if not _is_activation_tile_key(key):
+			errors.append(label + " contains invalid tile key: " + key)
+			continue
+		var tick_value: Variant = data[key_value]
+		if not _is_number(tick_value):
+			errors.append(label + "." + key + " must be an integer tick")
+			continue
+		var tick: int = int(tick_value)
+		if absf(float(tick_value) - float(tick)) > 0.0:
+			errors.append(label + "." + key + " must be an integer tick")
+			continue
+		if tick < 0:
+			errors.append(label + "." + key + " must be >= 0")
+			continue
+		ticks[key] = tick
+	return _sorted_string_int_dictionary(ticks)
 
 
 func _collision_tiles_from_fixture_value(value: Variant, label: String, errors: Array[String]) -> Array[Vector2i]:
@@ -430,6 +481,26 @@ func _vec3_from_fixture_value(value: Variant, label: String, errors: Array[Strin
 func _is_number(value: Variant) -> bool:
 	var value_type: int = typeof(value)
 	return value_type == TYPE_INT or value_type == TYPE_FLOAT
+
+
+func _is_activation_tile_key(key: String) -> bool:
+	var parts: PackedStringArray = key.split("_", false, 1)
+	return parts.size() == 2 and parts[0].is_valid_int() and parts[1].is_valid_int()
+
+
+func _activation_tick_key(cell: Vector2i) -> String:
+	return str(cell.x) + "_" + str(cell.y)
+
+
+func _sorted_string_int_dictionary(values: Dictionary[String, int]) -> Dictionary[String, int]:
+	var out: Dictionary[String, int] = {}
+	var keys: Array[String] = []
+	for key_value in values.keys():
+		keys.append(String(key_value))
+	keys.sort()
+	for key in keys:
+		out[key] = values[key]
+	return out
 
 
 func _load_route(scene_id: String) -> Resource:
@@ -695,6 +766,7 @@ func _apply_fixture_spawn_from_state() -> bool:
 	if body == null:
 		_finish_runner_error("spawn_from_state could not find vehicle physics body")
 		return false
+	body.freeze = true
 	body.sleeping = false
 	PhysicsServer3D.body_set_state(body.get_rid(), PhysicsServer3D.BODY_STATE_SLEEPING, false)
 	PhysicsServer3D.body_set_state(body.get_rid(), PhysicsServer3D.BODY_STATE_TRANSFORM, _fixture_spawn_transform)
@@ -703,7 +775,39 @@ func _apply_fixture_spawn_from_state() -> bool:
 	body.global_transform = _fixture_spawn_transform
 	body.linear_velocity = _fixture_spawn_linear_velocity
 	body.angular_velocity = _fixture_spawn_angular_velocity
+	body.force_update_transform()
+	for child in body.get_children():
+		var ray: RayCast3D = child as RayCast3D
+		if ray != null:
+			ray.force_update_transform()
+			ray.force_raycast_update()
+	_fixture_spawn_freeze_pending = true
 	return true
+
+
+func _release_fixture_spawn_freeze() -> void:
+	if not _fixture_spawn_freeze_pending:
+		return
+	var body: RigidBody3D = _vehicle_physics_body()
+	if body == null:
+		_fixture_spawn_freeze_pending = false
+		return
+	body.freeze = false
+	body.sleeping = false
+	PhysicsServer3D.body_set_state(body.get_rid(), PhysicsServer3D.BODY_STATE_SLEEPING, false)
+	PhysicsServer3D.body_set_state(body.get_rid(), PhysicsServer3D.BODY_STATE_TRANSFORM, _fixture_spawn_transform)
+	PhysicsServer3D.body_set_state(body.get_rid(), PhysicsServer3D.BODY_STATE_LINEAR_VELOCITY, _fixture_spawn_linear_velocity)
+	PhysicsServer3D.body_set_state(body.get_rid(), PhysicsServer3D.BODY_STATE_ANGULAR_VELOCITY, _fixture_spawn_angular_velocity)
+	body.global_transform = _fixture_spawn_transform
+	body.linear_velocity = _fixture_spawn_linear_velocity
+	body.angular_velocity = _fixture_spawn_angular_velocity
+	body.force_update_transform()
+	for child in body.get_children():
+		var ray: RayCast3D = child as RayCast3D
+		if ray != null:
+			ray.force_update_transform()
+			ray.force_raycast_update()
+	_fixture_spawn_freeze_pending = false
 
 
 func _vehicle_physics_body() -> RigidBody3D:
@@ -1108,6 +1212,8 @@ func _finish(passed: bool) -> void:
 	var event_bus_contract_passed: bool = _event_bus_contract_passed()
 	var self_right_heading_preserved: bool = _self_right_heading_preserved()
 	var never_stuck_predicate_passed: bool = _never_stuck or _recovered_to_trail_event_count > 0 or _scenario_id == "standstill_yaw_rate" or _scenario_id == "hill_hold" or _scenario_id == "lateral_slide" or _scenario_id == "suspension_drop" or _scenario_id == "resting_ride_height"
+	var expected_activation_ticks: Dictionary = _expected_activation_ticks_result()
+	var expected_activation_ticks_matched: bool = bool(expected_activation_ticks.get("matched", true))
 	var predicates: Dictionary = {
 		"reached_target": target_predicate_passed,
 		"scenario_passed": scenario_predicate_passed,
@@ -1115,6 +1221,7 @@ func _finish(passed: bool) -> void:
 		"target_landmark_event_observed": target_landmark_event_observed,
 		"event_bus_contract": event_bus_contract_passed,
 		"self_right_heading_preserved": self_right_heading_preserved,
+		"expected_activation_ticks_matched": expected_activation_ticks_matched,
 		"never_stuck": never_stuck_predicate_passed,
 		"upright_or_recovered": _upright_or_recovered,
 		"stayed_in_bounds": _stayed_in_bounds
@@ -1122,7 +1229,7 @@ func _finish(passed: bool) -> void:
 	var golden_replay: Dictionary = _golden_replay_result(predicates)
 	var golden_replay_matched: bool = bool(golden_replay.get("matched", true))
 	predicates["golden_replay_matched"] = golden_replay_matched
-	var all_predicates_passed: bool = target_predicate_passed and scenario_predicate_passed and surface_event_observed and target_landmark_event_observed and event_bus_contract_passed and self_right_heading_preserved and never_stuck_predicate_passed and _upright_or_recovered and _stayed_in_bounds and golden_replay_matched
+	var all_predicates_passed: bool = target_predicate_passed and scenario_predicate_passed and surface_event_observed and target_landmark_event_observed and event_bus_contract_passed and self_right_heading_preserved and expected_activation_ticks_matched and never_stuck_predicate_passed and _upright_or_recovered and _stayed_in_bounds and golden_replay_matched
 	var result: Dictionary = {
 		"scene": _scene_id,
 		"controller": _controller_id,
@@ -1206,6 +1313,8 @@ func _finish(passed: bool) -> void:
 			"min_progress_window": _min_progress_window if _min_progress_window < 999998.0 else null,
 			"stuck_window_ticks": _stuck_window_ticks,
 			"stuck_min_progress": _stuck_min_progress,
+			"activation_ticks": _sorted_string_int_dictionary(_activation_ticks),
+			"expected_activation_ticks": expected_activation_ticks,
 			"golden_replay": golden_replay
 		},
 		"telemetry": _telemetry
@@ -1638,6 +1747,50 @@ func _surface_sequence_contains(expected: Array[String]) -> bool:
 	return expected_index == expected.size()
 
 
+func _expected_activation_ticks_result() -> Dictionary:
+	var failures: Array[String] = []
+	var expected: Dictionary[String, int] = _sorted_string_int_dictionary(_fixture_expected_activation_ticks)
+	var actual: Dictionary[String, int] = _sorted_string_int_dictionary(_activation_ticks)
+	var result: Dictionary = {
+		"matched": true,
+		"expected": expected,
+		"actual": actual,
+		"compared_tiles": 0,
+		"failures": failures
+	}
+	if not _fixture_has_expected_activation_ticks:
+		return result
+	for key in _activation_tick_key_union(expected, actual):
+		result["compared_tiles"] = int(result["compared_tiles"]) + 1
+		if not expected.has(key):
+			failures.append("unexpected activation tick for " + key + ": " + str(actual[key]))
+			continue
+		if not actual.has(key):
+			failures.append("missing activation tick for " + key + ": expected " + str(expected[key]))
+			continue
+		var expected_tick: int = expected[key]
+		var actual_tick: int = actual[key]
+		if actual_tick != expected_tick:
+			failures.append("activation tick " + key + " expected " + str(expected_tick) + " got " + str(actual_tick))
+	result["matched"] = failures.is_empty()
+	result["failures"] = failures
+	return result
+
+
+func _activation_tick_key_union(expected: Dictionary[String, int], actual: Dictionary[String, int]) -> Array[String]:
+	var keys: Array[String] = []
+	for key_value in expected.keys():
+		var key: String = String(key_value)
+		if not keys.has(key):
+			keys.append(key)
+	for other_key_value in actual.keys():
+		var other_key: String = String(other_key_value)
+		if not keys.has(other_key):
+			keys.append(other_key)
+	keys.sort()
+	return keys
+
+
 func _golden_replay_result(predicates: Dictionary) -> Dictionary:
 	var failures: Array[String] = []
 	var result: Dictionary = {
@@ -1881,6 +2034,8 @@ func _connect_event_bus() -> void:
 		EventBus.vehicle_self_righted.connect(_on_vehicle_self_righted)
 	if not EventBus.vehicle_recovered_to_trail.is_connected(_on_vehicle_recovered_to_trail):
 		EventBus.vehicle_recovered_to_trail.connect(_on_vehicle_recovered_to_trail)
+	if not EventBus.world_tile_activated.is_connected(_on_world_tile_activated):
+		EventBus.world_tile_activated.connect(_on_world_tile_activated)
 
 
 func _event_bus_contract_passed() -> bool:
@@ -1921,6 +2076,12 @@ func _on_world_reached_landmark(landmark_id: StringName) -> void:
 	var landmark_string: String = String(landmark_id)
 	if _landmark_event_sequence.is_empty() or _landmark_event_sequence[_landmark_event_sequence.size() - 1] != landmark_string:
 		_landmark_event_sequence.append(landmark_string)
+
+
+func _on_world_tile_activated(cell: Vector2i) -> void:
+	var key: String = _activation_tick_key(cell)
+	if not _activation_ticks.has(key):
+		_activation_ticks[key] = _tick
 
 
 func _on_vehicle_flipped_over() -> void:
