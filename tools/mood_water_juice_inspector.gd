@@ -5,6 +5,7 @@ const FLOAT_EPSILON: float = 0.001
 const WATER_SHADER_PATH: String = "res://systems/render/water_visual.gdshader"
 const WATER_SURFACE_COUNT: int = 3
 const DUST_MOTE_COUNT_FLOOR: int = 1
+const CONTACT_FILL_LIGHT_NAME: String = "VehicleContactFillLight"
 
 var _scene_root: Node = null
 var _errors: PackedStringArray = PackedStringArray()
@@ -24,8 +25,10 @@ func _inspect() -> void:
 	var world_environment: WorldEnvironment = _require_node(_scene_root, "GoldenHourEnvironment") as WorldEnvironment
 	var sun: DirectionalLight3D = _require_node(_scene_root, "GoldenHourSun") as DirectionalLight3D
 	_inspect_atmosphere(world_environment, sun)
+	_inspect_viewport_antialiasing()
 	_inspect_mood_toggle(world_environment)
 	_inspect_dust_and_tilt_shift()
+	_inspect_contact_fill_light()
 	_inspect_vehicle_juice()
 	_inspect_water_visuals()
 	_finish()
@@ -48,14 +51,59 @@ func _inspect_atmosphere(world_environment: WorldEnvironment, sun: DirectionalLi
 		_errors.append("atmosphere should configure volumetric fog density")
 	if not environment.glow_enabled:
 		_errors.append("atmosphere should enable subtle golden-hour glow")
+	if environment.tonemap_mode != Environment.TONE_MAPPER_AGX:
+		_errors.append("atmosphere should use AgX tonemapping")
+	if environment.adjustment_enabled != GameConfig.atmosphere_grade_enabled:
+		_errors.append("atmosphere grade enabled state should follow GameConfig")
+	if absf(environment.adjustment_saturation - GameConfig.atmosphere_grade_saturation) > FLOAT_EPSILON:
+		_errors.append("atmosphere grade saturation should follow GameConfig")
+	if absf(environment.adjustment_contrast - GameConfig.atmosphere_grade_contrast) > FLOAT_EPSILON:
+		_errors.append("atmosphere grade contrast should follow GameConfig")
+	if absf(environment.adjustment_brightness - GameConfig.atmosphere_grade_brightness) > FLOAT_EPSILON:
+		_errors.append("atmosphere grade brightness should follow GameConfig")
+	if environment.sdfgi_enabled:
+		_errors.append("atmosphere should keep SDFGI disabled")
+	if environment.ssao_enabled != GameConfig.atmosphere_ssao_enabled:
+		_errors.append("atmosphere SSAO enabled state should follow GameConfig")
+	if absf(environment.ssao_radius - maxf(GameConfig.atmosphere_ssao_radius, 0.0)) > FLOAT_EPSILON:
+		_errors.append("atmosphere SSAO radius should follow GameConfig")
+	if absf(environment.ssao_intensity - maxf(GameConfig.atmosphere_ssao_intensity, 0.0)) > FLOAT_EPSILON:
+		_errors.append("atmosphere SSAO intensity should follow GameConfig")
+	if absf(environment.ssao_light_affect - clampf(GameConfig.atmosphere_ssao_light_affect, 0.0, 1.0)) > FLOAT_EPSILON:
+		_errors.append("atmosphere SSAO light affect should follow GameConfig")
+	if environment.ssil_enabled != GameConfig.atmosphere_ssil_enabled:
+		_errors.append("atmosphere SSIL enabled state should follow GameConfig")
+	if absf(environment.ssil_radius - maxf(GameConfig.atmosphere_ssil_radius, 0.0)) > FLOAT_EPSILON:
+		_errors.append("atmosphere SSIL radius should follow GameConfig")
+	if absf(environment.ssil_intensity - maxf(GameConfig.atmosphere_ssil_intensity, 0.0)) > FLOAT_EPSILON:
+		_errors.append("atmosphere SSIL intensity should follow GameConfig")
+	if absf(environment.ssil_sharpness - clampf(GameConfig.atmosphere_ssil_sharpness, 0.0, 1.0)) > FLOAT_EPSILON:
+		_errors.append("atmosphere SSIL sharpness should follow GameConfig")
 	if sun == null:
 		return
 	if not sun.shadow_enabled:
 		_errors.append("GoldenHourSun should cast long shadows")
-	if sun.directional_shadow_max_distance < 20.0:
-		_errors.append("GoldenHourSun shadow distance should support long trail shadows")
+	if absf(sun.light_angular_distance - maxf(GameConfig.atmosphere_pcss_sun_angular_distance, 0.0)) > FLOAT_EPSILON:
+		_errors.append("GoldenHourSun angular distance should follow GameConfig")
+	if absf(sun.directional_shadow_max_distance - maxf(GameConfig.atmosphere_pcss_shadow_max_distance, 0.1)) > FLOAT_EPSILON:
+		_errors.append("GoldenHourSun shadow distance should follow GameConfig")
+	if absf(sun.shadow_blur - maxf(GameConfig.atmosphere_pcss_shadow_blur, 0.0)) > FLOAT_EPSILON:
+		_errors.append("GoldenHourSun shadow blur should follow GameConfig")
+	if absf(sun.shadow_opacity - clampf(GameConfig.atmosphere_pcss_shadow_opacity, 0.0, 1.0)) > FLOAT_EPSILON:
+		_errors.append("GoldenHourSun shadow opacity should follow GameConfig")
 	if sun.light_volumetric_fog_energy <= 0.0:
 		_errors.append("GoldenHourSun should contribute to volumetric fog")
+
+
+func _inspect_viewport_antialiasing() -> void:
+	var viewport: Viewport = _scene_root.get_viewport()
+	if viewport == null:
+		_errors.append("Cedar scene should have a viewport for antialiasing settings")
+		return
+	if viewport.msaa_3d != Viewport.MSAA_DISABLED:
+		_errors.append("Cedar viewport should disable 3D MSAA for SSAO/SSIL")
+	if not viewport.use_taa:
+		_errors.append("Cedar viewport should enable TAA for SSAO/SSIL")
 
 
 func _inspect_mood_toggle(world_environment: WorldEnvironment) -> void:
@@ -121,9 +169,40 @@ func _inspect_tilt_shift_camera(camera: Camera3D, label: String) -> void:
 		_errors.append(label + " should enable near and far DOF blur")
 	if attributes.dof_blur_amount <= 0.0:
 		_errors.append(label + " DOF blur amount should be positive")
+	if attributes.auto_exposure_enabled != GameConfig.atmosphere_auto_exposure_enabled:
+		_errors.append(label + " auto exposure should follow GameConfig")
 	var axis: Vector2 = camera.get_meta("tilt_shift_gradient_axis", Vector2.ZERO) as Vector2
 	if axis.distance_to(Vector2(0.0, 1.0)) > FLOAT_EPSILON:
 		_errors.append(label + " should declare a vertical tilt-shift gradient axis")
+
+
+func _inspect_contact_fill_light() -> void:
+	var body: Node = _require_node(_scene_root, "Vehicle/PhysicsBody")
+	if body == null:
+		return
+	var node: Node = body.get_node_or_null(CONTACT_FILL_LIGHT_NAME)
+	if not GameConfig.contact_fill_light_enabled:
+		if node != null:
+			_errors.append("VehicleContactFillLight should not exist when disabled")
+		return
+	var light: OmniLight3D = _require_node(body, CONTACT_FILL_LIGHT_NAME) as OmniLight3D
+	if light == null:
+		return
+	if light.get_parent() != body:
+		_errors.append("VehicleContactFillLight should be parented to the vehicle physics body")
+	var expected_position: Vector3 = Vector3(0.0, -maxf(GameConfig.contact_fill_light_height, 0.0), 0.0)
+	if light.position.distance_to(expected_position) > FLOAT_EPSILON:
+		_errors.append("VehicleContactFillLight position should follow GameConfig")
+	if absf(light.light_energy - maxf(GameConfig.contact_fill_light_energy, 0.0)) > FLOAT_EPSILON:
+		_errors.append("VehicleContactFillLight energy should follow GameConfig")
+	if absf(light.omni_range - maxf(GameConfig.contact_fill_light_range, 0.001)) > FLOAT_EPSILON:
+		_errors.append("VehicleContactFillLight range should follow GameConfig")
+	if light.light_color != GameConfig.contact_fill_light_color:
+		_errors.append("VehicleContactFillLight color should follow GameConfig")
+	if light.shadow_enabled:
+		_errors.append("VehicleContactFillLight should be a soft fill light without its own shadow map")
+	if light.get_meta("visual_contract", "") != "vehicle_parented_contact_fill_light":
+		_errors.append("VehicleContactFillLight should declare its vehicle-parented contract")
 
 
 func _inspect_vehicle_juice() -> void:

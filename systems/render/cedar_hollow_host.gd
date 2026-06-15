@@ -57,6 +57,7 @@ func _ready() -> void:
 	_setup_light()
 	_setup_camera()
 	_setup_vehicle_juice()
+	AtmosphereVisualBuilderScript.configure_render_support(self, _vehicle, _camera, _orbit_camera, _fpv_camera)
 	_setup_hud()
 
 
