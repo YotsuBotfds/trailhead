@@ -29,6 +29,7 @@ const TerrainTrackVisualPainterScript: GDScript = preload("res://systems/render/
 const FrequencyStickersScene: PackedScene = preload("res://scenes/world/easter_eggs/frequency_stickers.tscn")
 const FrequencyInputPanelScene: PackedScene = preload("res://ui/frequency_input_panel.tscn")
 const GrasshopperLiveryScript: GDScript = preload("res://systems/render/grasshopper_livery.gd")
+const CampfireSilenceZoneScene: PackedScene = preload("res://scenes/world/easter_eggs/campfire_silence_zone.tscn")
 const SurfaceMapScript: GDScript = preload("res://systems/world/surface_map.gd")
 const CAMERA_MODE_CHASE: int = 0
 const CAMERA_MODE_ORBIT: int = 1
@@ -149,6 +150,7 @@ func _setup_world() -> void:
 	BoundaryVisualBuilderScript.build_cedar_hollow(_world)
 	WaterVisualBuilderScript.build_cedar_hollow(_world)
 	_add_frequency_stickers()
+	_setup_campfire_silence_zone()
 	_setup_terrain_tracks(terrain_root)
 
 
@@ -176,6 +178,16 @@ func _setup_terrain_tracks(terrain_root: Node3D) -> void:
 	var track_bounds_min: Vector2 = _terrain_track_painter.call("render_bounds_min")
 	var track_bounds_max: Vector2 = _terrain_track_painter.call("render_bounds_max")
 	TerrainVisualBuilderScript.apply_track_texture(terrain_root, track_texture, track_bounds_min, track_bounds_max)
+
+
+func _setup_campfire_silence_zone() -> void:
+	if _world == null:
+		return
+	var zone: Node3D = CampfireSilenceZoneScene.instantiate() as Node3D
+	if zone == null:
+		push_error("CedarHollowHost failed to instantiate CampfireSilenceZone")
+		return
+	_world.add_child(zone)
 
 
 func _spawn_vehicle() -> void:
