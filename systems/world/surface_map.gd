@@ -3,6 +3,7 @@ extends Node
 
 const DEFAULT_SURFACE_ID: StringName = &"packed_dirt"
 const TERRAIN_SURFACE_MAP_GROUP: StringName = &"terrain_surface_id_map"
+const TERRAIN_SURFACE_OVERRIDE_RECTS_META: StringName = &"terrain_surface_override_rects"
 const PNG_SIGNATURE: PackedByteArray = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
 const SOURCE_TAGGED: String = "tagged"
 const SOURCE_TERRAIN: String = "terrain"
@@ -81,6 +82,9 @@ func surface_id_from_collider_at(collider: Object, world_position: Vector3) -> S
 	if node != null and node.is_in_group(TERRAIN_SURFACE_MAP_GROUP):
 		if _terrain_sampler_ready:
 			_increment_source_count(SOURCE_TERRAIN)
+			var override_surface_id: StringName = _surface_id_from_terrain_overrides(node, world_position)
+			if override_surface_id != &"":
+				return override_surface_id
 			return surface_id_at_world_position(world_position, DEFAULT_SURFACE_ID)
 		_increment_source_count(SOURCE_FALLBACK)
 		return DEFAULT_SURFACE_ID
@@ -166,6 +170,40 @@ func _tagged_surface_id_from_collider(collider: Object) -> StringName:
 	if marker_index != -1:
 		return StringName(node_name.substr(marker_index + 7))
 	return &""
+
+
+func _surface_id_from_terrain_overrides(node: Node, world_position: Vector3) -> StringName:
+	if not node.has_meta(TERRAIN_SURFACE_OVERRIDE_RECTS_META):
+		return &""
+	var overrides_value: Variant = node.get_meta(TERRAIN_SURFACE_OVERRIDE_RECTS_META)
+	if not (overrides_value is Array):
+		return &""
+	var point: Vector2 = Vector2(world_position.x, world_position.z)
+	for value in overrides_value:
+		if not (value is Dictionary):
+			continue
+		var override_data: Dictionary = value
+		var surface_id: StringName = StringName(override_data.get("surface_id", &""))
+		if surface_id == &"":
+			continue
+		var center: Vector2 = override_data.get("center", Vector2.ZERO)
+		var axis_x: Vector2 = override_data.get("axis_x", Vector2.RIGHT)
+		var axis_z: Vector2 = override_data.get("axis_z", Vector2.UP)
+		var half_extents: Vector2 = override_data.get("half_extents", Vector2.ZERO)
+		if _point_in_oriented_rect(point, center, axis_x, axis_z, half_extents):
+			return surface_id
+	return &""
+
+
+func _point_in_oriented_rect(point: Vector2, center: Vector2, axis_x: Vector2, axis_z: Vector2, half_extents: Vector2) -> bool:
+	if half_extents.x <= 0.0 or half_extents.y <= 0.0:
+		return false
+	if axis_x.length() <= 0.001 or axis_z.length() <= 0.001:
+		return false
+	var relative: Vector2 = point - center
+	var local_x: float = relative.dot(axis_x.normalized())
+	var local_z: float = relative.dot(axis_z.normalized())
+	return absf(local_x) <= half_extents.x and absf(local_z) <= half_extents.y
 
 
 func fallback() -> Resource:
