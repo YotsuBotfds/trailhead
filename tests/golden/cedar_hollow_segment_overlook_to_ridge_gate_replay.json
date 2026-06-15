@@ -3000,5 +3000,15 @@
 			"ebrake": false,
 			"self_right": false
 		}
+	],
+	"collision_tiles": [
+		[
+			0,
+			-1
+		],
+		[
+			0,
+			0
+		]
 	]
 }

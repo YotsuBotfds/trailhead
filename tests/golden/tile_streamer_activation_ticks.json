@@ -1,0 +1,43 @@
+{
+	"format": "trailhead_streaming_activation_fixture_v1",
+	"name": "tile_streamer_spike_1km_activation_ticks",
+	"source": "tools/tile_streamer_fixture.py",
+	"region_id": "spike_1km",
+	"worker_counts": [
+		1,
+		2,
+		8
+	],
+	"expected_activation_ticks": {
+		"2_2": 1,
+		"2_3": 1,
+		"2_4": 1,
+		"2_5": 1,
+		"2_6": 1,
+		"3_2": 1,
+		"3_3": 1,
+		"3_4": 1,
+		"3_5": 1,
+		"3_6": 1,
+		"4_2": 1,
+		"4_3": 1,
+		"4_4": 1,
+		"4_5": 1,
+		"4_6": 1,
+		"5_2": 1,
+		"5_3": 1,
+		"5_4": 1,
+		"5_5": 1,
+		"5_6": 1,
+		"6_2": 1,
+		"6_3": 1,
+		"6_4": 1,
+		"6_5": 1,
+		"6_6": 1,
+		"7_2": 5,
+		"7_3": 5,
+		"7_4": 5,
+		"7_5": 5,
+		"7_6": 5
+	}
+}
