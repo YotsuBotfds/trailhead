@@ -48,7 +48,7 @@ func _ready() -> void:
 
 func configure(bounds_min: Vector2, bounds_max: Vector2) -> void:
 	_configure_bounds(bounds_min, bounds_max)
-	_max_stamp_count = maxi(GameConfig.terrain_track_painter_resolution, WHEEL_COUNT * MIN_STAMPS_PER_WHEEL)
+	_max_stamp_count = maxi(_target_viewport_resolution(), WHEEL_COUNT * MIN_STAMPS_PER_WHEEL)
 	_ensure_viewport()
 	_configure_viewport()
 
@@ -136,7 +136,7 @@ func _ensure_viewport() -> void:
 
 
 func _configure_viewport() -> void:
-	var resolution: int = maxi(GameConfig.terrain_track_painter_resolution, MIN_VIEWPORT_RESOLUTION)
+	var resolution: int = _target_viewport_resolution()
 	_viewport.size = Vector2i(resolution, resolution)
 	_viewport.own_world_3d = true
 	_viewport.transparent_bg = true
@@ -150,6 +150,24 @@ func _configure_viewport() -> void:
 	_camera.size = extent
 	_camera.near = 0.01
 	_camera.far = TRACK_CAMERA_HEIGHT * 2.0
+
+
+func _target_viewport_resolution() -> int:
+	var pixels_per_meter: float = maxf(GameConfig.terrain_track_painter_pixels_per_meter, 0.0)
+	var extent_resolution: int = _ceil_positive_to_int(_render_square_extent() * pixels_per_meter)
+	return maxi(maxi(GameConfig.terrain_track_painter_resolution, extent_resolution), MIN_VIEWPORT_RESOLUTION)
+
+
+func _render_square_extent() -> float:
+	var bounds_size: Vector2 = _render_bounds_max - _render_bounds_min
+	return maxf(maxf(bounds_size.x, bounds_size.y), MIN_BOUNDS_EXTENT)
+
+
+func _ceil_positive_to_int(value: float) -> int:
+	var truncated: int = int(value)
+	if float(truncated) < value:
+		return truncated + 1
+	return truncated
 
 
 func _age_stamps(fixed_delta: float) -> void:

@@ -29,6 +29,34 @@ assert_metrics "$out_dir/stability_seed_${stability_seed}_cedar_hollow_segment_o
 	--surface=loose_rock:150 \
 	--landmark=old_cedar
 
+run_sim "$out_dir/stability_seed_${stability_seed}_cedar_hollow_segment_overlook_to_ridge_gate.json" \
+	--scene=cedar_hollow \
+	--controller=pd \
+	--route-segment=overlook_to_ridge_gate \
+	--seed="$stability_seed" \
+	--max-ticks=900 \
+	--stuck-window=120 \
+	--stuck-min-progress=0.015
+
+assert_metrics "$out_dir/stability_seed_${stability_seed}_cedar_hollow_segment_overlook_to_ridge_gate.json" \
+	--surface=packed_dirt:20 \
+	--source-min=terrain:40 \
+	--landmark=ridge_gate
+
+run_sim "$out_dir/stability_seed_${stability_seed}_cedar_hollow_segment_ridge_gate_to_pine_floor.json" \
+	--scene=cedar_hollow \
+	--controller=pd \
+	--route-segment=ridge_gate_to_pine_floor \
+	--seed="$stability_seed" \
+	--max-ticks=2200 \
+	--stuck-window=120 \
+	--stuck-min-progress=0.015
+
+assert_metrics "$out_dir/stability_seed_${stability_seed}_cedar_hollow_segment_ridge_gate_to_pine_floor.json" \
+	--surface=packed_dirt:120 \
+	--source-min=terrain:120 \
+	--landmark=pine_floor
+
 run_sim "$out_dir/stability_seed_${stability_seed}_cedar_hollow_segment_pine_floor_to_far_mile_marker.json" \
 	--scene=cedar_hollow \
 	--controller=pd \

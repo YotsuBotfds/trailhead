@@ -29,6 +29,12 @@ static func build_cedar_hollow(parent: Node3D) -> Node3D:
 	root.name = "TerrainVisuals"
 	parent.add_child(root)
 
+	var terrain_errors: PackedStringArray = CedarTerrainDef.call("validate_render")
+	if terrain_errors.size() > 0:
+		for error in terrain_errors:
+			push_error("TerrainVisualBuilder TerrainDef invalid: " + error)
+		return root
+
 	var active_tiles: Array[Vector2i] = CedarTerrainDef.call("active_tile_indices")
 	for tile_array_index in range(active_tiles.size()):
 		var tile_index: Vector2i = active_tiles[tile_array_index]

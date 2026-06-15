@@ -135,6 +135,125 @@ assert_metrics "$out_dir/suspension_drop.json" \
 	--metric-max=post_settle_y_amplitude:0.02 \
 	--metric-max=max_post_settle_vertical_speed:0.08
 
+airborne_brake_control_replay="$out_dir/airborne_brake_control_replay.json"
+airborne_brake_probe_replay="$out_dir/airborne_brake_probe_replay.json"
+python3 - "$airborne_brake_control_replay" "$airborne_brake_probe_replay" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+control_path = Path(sys.argv[1])
+probe_path = Path(sys.argv[2])
+brake_start_tick = 8
+brake_end_tick = 28
+drive_start_tick = 60
+total_ticks = 420
+
+
+def input_rows(apply_airborne_brake):
+    rows = []
+    for tick in range(total_ticks):
+        row = {
+            "throttle": 0.0,
+            "steer": 0.0,
+            "brake": 0.0,
+            "ebrake": False,
+            "self_right": False,
+        }
+        if apply_airborne_brake and brake_start_tick <= tick < brake_end_tick:
+            row["brake"] = 1.0
+        elif tick >= drive_start_tick:
+            row["throttle"] = 1.0
+        rows.append(row)
+    return rows
+
+
+base = {
+    "format": "trailhead_replay_v1",
+    "ticks": total_ticks,
+    "tolerances": {"ticks": total_ticks},
+}
+control = dict(base)
+control["name"] = "airborne_brake_control"
+control["inputs"] = input_rows(False)
+probe = dict(base)
+probe["name"] = "airborne_brake_probe"
+probe["inputs"] = input_rows(True)
+control_path.write_text(json.dumps(control, indent="\t") + "\n")
+probe_path.write_text(json.dumps(probe, indent="\t") + "\n")
+PY
+
+run_sim "$out_dir/airborne_brake_control.json" \
+	--scene=flat_plane \
+	--controller=replay \
+	--replay="$airborne_brake_control_replay" \
+	--spawn=suspension_drop \
+	--target=0,0,-3 \
+	--target-radius=0.45 \
+	--seed=12345 \
+	--max-ticks=520 \
+	--stuck-window=120 \
+	--stuck-min-progress=0.05
+assert_metrics "$out_dir/airborne_brake_control.json" \
+	--surface=packed_dirt:40 \
+	--metric-min=max_speed:2.0
+
+run_sim "$out_dir/airborne_brake_probe.json" \
+	--scene=flat_plane \
+	--controller=replay \
+	--replay="$airborne_brake_probe_replay" \
+	--spawn=suspension_drop \
+	--target=0,0,-3 \
+	--target-radius=0.45 \
+	--seed=12345 \
+	--max-ticks=520 \
+	--stuck-window=120 \
+	--stuck-min-progress=0.05
+assert_metrics "$out_dir/airborne_brake_probe.json" \
+	--surface=packed_dirt:40 \
+	--metric-min=max_speed:2.0
+
+python3 - "$out_dir/airborne_brake_control.json" "$out_dir/airborne_brake_probe.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+control = json.loads(Path(sys.argv[1]).read_text())
+probe = json.loads(Path(sys.argv[2]).read_text())
+control_rows = {int(row.get("tick", -1)): row for row in control.get("telemetry", [])}
+samples = []
+errors = []
+epsilon = 0.0005
+
+for row in probe.get("telemetry", []):
+    tick = int(row.get("tick", -1))
+    input_row = row.get("input", {})
+    if float(input_row.get("brake", 0.0)) < 0.99 or bool(row.get("on_ground", True)):
+        continue
+    control_row = control_rows.get(tick)
+    if control_row is None or bool(control_row.get("on_ground", True)):
+        continue
+    probe_speed = float(row.get("speed", 0.0))
+    control_speed = float(control_row.get("speed", 0.0))
+    delta = probe_speed - control_speed
+    samples.append((tick, delta))
+    if delta < -epsilon:
+        errors.append(
+            f"tick {tick}: airborne brake speed {probe_speed:.6f} below control {control_speed:.6f}"
+        )
+
+if len(samples) < 8:
+    errors.append(f"expected at least 8 airborne brake samples, saw {len(samples)}")
+
+if errors:
+    print("fail: airborne brake invariant")
+    for error in errors:
+        print(f"- {error}")
+    sys.exit(1)
+
+print(f"ok: airborne brake invariant ({len(samples)} samples)")
+PY
+
 run_sim "$out_dir/roll_stability.json" \
 	--scene=roll_stability_probe \
 	--controller=scripted \

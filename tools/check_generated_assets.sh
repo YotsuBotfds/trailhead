@@ -11,15 +11,17 @@ printf 'run: generated asset freshness\n'
 
 if ! dependency_error="$(python3 - <<'PY' 2>&1
 try:
-    import PIL  # noqa: F401
+    import PIL
     import numpy as np
 except ImportError as exc:
     raise SystemExit(f"ImportError: {exc}")
+if PIL.__version__ != "12.2.0":
+    raise SystemExit(f"Pillow version mismatch: {PIL.__version__}, expected 12.2.0")
 if np.__version__ != "2.4.6":
     raise SystemExit(f"numpy version mismatch: {np.__version__}, expected 2.4.6")
 PY
 )"; then
-	printf 'error: Pillow and pinned numpy are required for generated asset checks.\n' >&2
+	printf 'error: pinned Pillow and pinned numpy are required for generated asset checks.\n' >&2
 	printf 'Install dependencies with: python3 -m pip install -r requirements.txt\n' >&2
 	printf '%s\n' "$dependency_error" >&2
 	exit 1

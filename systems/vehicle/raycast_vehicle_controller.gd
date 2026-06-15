@@ -257,21 +257,22 @@ func _apply_drive_forces() -> void:
 	var throttle: float = float(_pending_input.get("throttle"))
 	var steer: float = float(_pending_input.get("steer"))
 	var brake: float = float(_pending_input.get("brake"))
+	var on_ground: bool = bool(_state.get("on_ground"))
 	_apply_traction_force(forward, throttle)
-	if brake > 0.0:
+	if on_ground and brake > 0.0:
 		var brake_factor: float = clampf(1.0 - brake * GameConfig.brake_damping_per_second * GameConfig.FIXED_DT, 0.0, 1.0)
 		_body.linear_velocity *= brake_factor
-	if bool(_state.get("on_ground")):
+	if on_ground:
 		_apply_surface_drag()
 		_apply_hill_hold(throttle, brake)
-	var surface_grip: float = _surface_friction * maxf(1.0 - _surface_slip, GameConfig.surface_min_lateral_grip)
-	var lateral_grip: float = surface_grip
-	if bool(_pending_input.get("ebrake")):
-		lateral_grip *= GameConfig.ebrake_factor
-	_apply_lateral_grip(right, lateral_grip)
-	if bool(_state.get("on_ground")):
+	if on_ground:
+		var surface_grip: float = _surface_friction * maxf(1.0 - _surface_slip, GameConfig.surface_min_lateral_grip)
+		var lateral_grip: float = surface_grip
+		if bool(_pending_input.get("ebrake")):
+			lateral_grip *= GameConfig.ebrake_factor
+		_apply_lateral_grip(right, lateral_grip)
 		_apply_steering_torque(steer, surface_grip)
-	if bool(_state.get("on_ground")) and throttle >= GameConfig.launch_wheelie_min_throttle and absf(steer) <= GameConfig.launch_wheelie_max_steer and _body.linear_velocity.length() <= GameConfig.launch_wheelie_speed_max:
+	if on_ground and throttle >= GameConfig.launch_wheelie_min_throttle and absf(steer) <= GameConfig.launch_wheelie_max_steer and _body.linear_velocity.length() <= GameConfig.launch_wheelie_speed_max:
 		_body.apply_torque(right * GameConfig.launch_wheelie_torque)
 
 
@@ -300,7 +301,7 @@ func _apply_hill_hold(throttle: float, brake: float) -> void:
 		if kinetic_limit > 0.0:
 			_body.apply_central_force(-velocity_plane.normalized() * kinetic_limit)
 		return
-	var gravity: Vector3 = Vector3.DOWN * float(ProjectSettings.get_setting("physics/3d/default_gravity", 9.8))
+	var gravity: Vector3 = GameConfig.GRAVITY_VECTOR
 	var gravity_plane: Vector3 = gravity - normal * gravity.dot(normal)
 	var requested_force: Vector3 = -_body.mass * ((velocity_plane / GameConfig.FIXED_DT) + gravity_plane)
 	var hold_limit: float = static_limit

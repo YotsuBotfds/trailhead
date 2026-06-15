@@ -37,6 +37,7 @@ var _spawn_id: String = "flat_spawn"
 var _controller_config_error: String = ""
 var _stuck_window_ticks: int = 180
 var _stuck_min_progress: float = 0.05
+# All sim-runner randomness must flow through this seeded RNG.
 var _rng: RandomNumberGenerator = RandomNumberGenerator.new()
 var _last_input: RefCounted = VehicleInputScript.new()
 var _done: bool = false

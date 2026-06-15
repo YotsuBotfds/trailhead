@@ -7,6 +7,8 @@ const CEDAR_SCENE_ID: String = "cedar_hollow"
 const CEDAR_TERRAIN_DEF_PATH: String = "res://data/terrain/cedar_hollow_terrain_def.tres"
 const CedarTerrainDef: Resource = preload(CEDAR_TERRAIN_DEF_PATH)
 
+static var _heightmap_collision_shapes_by_tile: Dictionary[Vector2i, HeightMapShape3D] = {}
+
 
 static func build_cedar_hollow(parent: Node) -> Array[StaticBody3D]:
 	var bodies: Array[StaticBody3D] = []
@@ -31,6 +33,7 @@ static func _build_heightmap_collision(parent: Node) -> StaticBody3D:
 	parent.add_child(body)
 
 	var active_tiles: Array[Vector2i] = CedarTerrainDef.call("active_tile_indices")
+	_cache_heightmap_collision_shapes(active_tiles)
 	for tile_index in active_tiles:
 		var collision: CollisionShape3D = CollisionShape3D.new()
 		collision.name = _collision_node_name(tile_index)
@@ -51,10 +54,21 @@ static func cedar_terrain_def() -> Resource:
 
 
 static func heightmap_collision_shape_for_tile(tile_index: Vector2i) -> HeightMapShape3D:
-	var collision_path: String = CedarTerrainDef.call("collision_tile_path_for_tile", tile_index)
-	if collision_path.is_empty():
+	if not _heightmap_collision_shapes_by_tile.has(tile_index):
 		return null
-	return load(collision_path) as HeightMapShape3D
+	return _heightmap_collision_shapes_by_tile[tile_index]
+
+
+static func _cache_heightmap_collision_shapes(active_tiles: Array[Vector2i]) -> void:
+	_heightmap_collision_shapes_by_tile.clear()
+	for tile_index in active_tiles:
+		var collision_path: String = CedarTerrainDef.call("collision_tile_path_for_tile", tile_index)
+		if collision_path.is_empty():
+			continue
+		var shape: HeightMapShape3D = ResourceLoader.load(collision_path) as HeightMapShape3D
+		if shape == null:
+			continue
+		_heightmap_collision_shapes_by_tile[tile_index] = shape
 
 
 static func _heightmap_collision_scale(shape: HeightMapShape3D, tile_index: Vector2i) -> Vector3:

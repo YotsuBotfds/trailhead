@@ -10,6 +10,7 @@ const TRACK_BOUNDS_MIN_UNIFORM: StringName = &"track_bounds_min"
 const TRACK_BOUNDS_MAX_UNIFORM: StringName = &"track_bounds_max"
 const STAMP_COLOR_UNIFORM: StringName = &"stamp_color"
 const FLOAT_EPSILON: float = 0.001
+const MIN_STAMP_FOOTPRINT_PIXELS: float = 1.0
 
 var _scene_root: Node = null
 var _errors: PackedStringArray = PackedStringArray()
@@ -47,9 +48,15 @@ func _inspect_painter_node(painter: Node) -> void:
 	if viewport == null:
 		_errors.append("TerrainTrackVisualPainter should expose a SubViewport")
 		return
-	var expected_resolution: int = maxi(GameConfig.terrain_track_painter_resolution, 16)
-	if viewport.size != Vector2i(expected_resolution, expected_resolution):
-		_errors.append("track viewport resolution expected " + str(expected_resolution) + ", got " + str(viewport.size))
+	var minimum_resolution: int = maxi(GameConfig.terrain_track_painter_resolution, 16)
+	if viewport.size.x != viewport.size.y:
+		_errors.append("track viewport should be square, got " + str(viewport.size))
+	if viewport.size.x < minimum_resolution or viewport.size.y < minimum_resolution:
+		_errors.append("track viewport resolution expected at least " + str(minimum_resolution) + ", got " + str(viewport.size))
+	var actual_pixels_per_meter: float = _actual_pixels_per_meter(painter, viewport)
+	var target_pixels_per_meter: float = maxf(GameConfig.terrain_track_painter_pixels_per_meter, 0.0)
+	if actual_pixels_per_meter + FLOAT_EPSILON < target_pixels_per_meter:
+		_errors.append("track viewport density expected at least " + str(target_pixels_per_meter) + " px/m, got " + str(actual_pixels_per_meter))
 	if not viewport.own_world_3d:
 		_errors.append("track viewport should render in its own 3D world")
 	if not viewport.transparent_bg:
@@ -106,16 +113,29 @@ func _inspect_painter_stamp_response(painter: Node) -> void:
 		_errors.append("track painter should stamp deterministic moved wheel hit points")
 	var stamp_root: Node = _require_node(painter, "TrackPaintViewport/TrackStampRoot")
 	if stamp_root != null:
-		_inspect_stamp_materials(stamp_root)
+		var viewport: SubViewport = painter.call("debug_viewport") as SubViewport
+		var pixels_per_meter: float = 0.0
+		if viewport == null:
+			_errors.append("TerrainTrackVisualPainter should expose a SubViewport for stamp footprint inspection")
+		else:
+			pixels_per_meter = _actual_pixels_per_meter(painter, viewport)
+		_inspect_stamp_materials(stamp_root, pixels_per_meter)
 
 
-func _inspect_stamp_materials(stamp_root: Node) -> void:
+func _inspect_stamp_materials(stamp_root: Node, pixels_per_meter: float) -> void:
 	var stamp_count: int = 0
 	for child in stamp_root.get_children():
 		var stamp: MeshInstance3D = child as MeshInstance3D
 		if stamp == null:
 			continue
 		stamp_count += 1
+		var plane_mesh: PlaneMesh = stamp.mesh as PlaneMesh
+		if plane_mesh == null:
+			_errors.append("track stamp " + String(stamp.name) + " should use PlaneMesh")
+		else:
+			var stamp_footprint_pixels: float = minf(plane_mesh.size.x * pixels_per_meter, plane_mesh.size.y * pixels_per_meter)
+			if stamp_footprint_pixels + FLOAT_EPSILON < MIN_STAMP_FOOTPRINT_PIXELS:
+				_errors.append("track stamp " + String(stamp.name) + " footprint expected at least " + str(MIN_STAMP_FOOTPRINT_PIXELS) + " px, got " + str(stamp_footprint_pixels))
 		var material: ShaderMaterial = stamp.material_override as ShaderMaterial
 		if material == null:
 			_errors.append("track stamp " + String(stamp.name) + " should use ShaderMaterial")
@@ -207,6 +227,15 @@ func _count_collision_objects(parent: Node) -> int:
 			count += 1
 		count += _count_collision_objects(child)
 	return count
+
+
+func _actual_pixels_per_meter(painter: Node, viewport: SubViewport) -> float:
+	var render_bounds_min: Vector2 = painter.call("render_bounds_min")
+	var render_bounds_max: Vector2 = painter.call("render_bounds_max")
+	var bounds_size: Vector2 = render_bounds_max - render_bounds_min
+	var square_extent: float = maxf(maxf(bounds_size.x, bounds_size.y), FLOAT_EPSILON)
+	var limiting_viewport_axis: float = minf(float(viewport.size.x), float(viewport.size.y))
+	return limiting_viewport_axis / square_extent
 
 
 func _finish() -> void:

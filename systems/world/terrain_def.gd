@@ -29,6 +29,19 @@ const SIZE_EPSILON: float = 0.001
 
 func validate() -> PackedStringArray:
 	var errors: PackedStringArray = PackedStringArray()
+	var active_tiles: Array[Vector2i] = _validate_core_data(errors)
+	_validate_sim_data(errors, active_tiles)
+	return errors
+
+
+func validate_render() -> PackedStringArray:
+	var errors: PackedStringArray = PackedStringArray()
+	var active_tiles: Array[Vector2i] = _validate_core_data(errors)
+	_validate_render_data(errors, active_tiles)
+	return errors
+
+
+func _validate_core_data(errors: PackedStringArray) -> Array[Vector2i]:
 	if id == &"":
 		errors.append("id is empty")
 	if scene_id == &"":
@@ -44,20 +57,6 @@ func validate() -> PackedStringArray:
 		var expected_tile_size: Vector2 = Vector2(size.x / float(tile_grid.x), size.y / float(tile_grid.y))
 		if absf(tile_size.x - expected_tile_size.x) > SIZE_EPSILON or absf(tile_size.y - expected_tile_size.y) > SIZE_EPSILON:
 			errors.append("tile_size must match extent divided by tile_grid")
-	if collision_grid.x <= 1 or collision_grid.y <= 1:
-		errors.append("collision_grid must be at least 2x2")
-	if visual_grid.x <= 1 or visual_grid.y <= 1:
-		errors.append("visual_grid must be at least 2x2")
-	if surface_map_size.x <= 1 or surface_map_size.y <= 1:
-		errors.append("surface_map_size must be at least 2x2")
-	if surface_palette_path.is_empty():
-		errors.append("surface_palette_path is empty")
-	elif not ResourceLoader.exists(surface_palette_path):
-		errors.append("surface_palette_path does not exist: " + surface_palette_path)
-	if surface_id_map_path.is_empty():
-		errors.append("surface_id_map_path is empty")
-	elif not FileAccess.file_exists(surface_id_map_path):
-		errors.append("surface_id_map_path does not exist: " + surface_id_map_path)
 	var active_tiles: Array[Vector2i] = active_tile_indices()
 	if active_tiles.is_empty():
 		errors.append("at least one active tile is required")
@@ -68,27 +67,47 @@ func validate() -> PackedStringArray:
 		if seen_tiles.has(tile_index):
 			errors.append("duplicate tile index: " + str(tile_index))
 		seen_tiles.append(tile_index)
+	return active_tiles
+
+
+func _validate_sim_data(errors: PackedStringArray, active_tiles: Array[Vector2i]) -> void:
+	if collision_grid.x <= 1 or collision_grid.y <= 1:
+		errors.append("collision_grid must be at least 2x2")
+	if surface_map_size.x <= 1 or surface_map_size.y <= 1:
+		errors.append("surface_map_size must be at least 2x2")
+	if surface_palette_path.is_empty():
+		errors.append("surface_palette_path is empty")
+	elif not ResourceLoader.exists(surface_palette_path):
+		errors.append("surface_palette_path does not exist: " + surface_palette_path)
+	if surface_id_map_path.is_empty():
+		errors.append("surface_id_map_path is empty")
+	elif not FileAccess.file_exists(surface_id_map_path):
+		errors.append("surface_id_map_path does not exist: " + surface_id_map_path)
 	if collision_tile_paths.size() != active_tiles.size():
 		errors.append("collision_tile_paths must match active tile count")
-	if visual_tile_paths.size() != active_tiles.size():
-		errors.append("visual_tile_paths must match active tile count")
 	for path in collision_tile_paths:
 		if path.is_empty():
 			errors.append("collision tile path is empty")
 		elif not ResourceLoader.exists(path):
 			errors.append("collision tile path does not exist: " + path)
-	for path in visual_tile_paths:
-		if path.is_empty():
-			errors.append("visual tile path is empty")
-		elif not FileAccess.file_exists(path):
-			errors.append("visual tile path does not exist: " + path)
 	_validate_feature_overrides(errors)
 	if route_section_ids.is_empty():
 		errors.append("route_section_ids is empty")
 	for route_section_id in route_section_ids:
 		if route_section_id == &"":
 			errors.append("route_section_ids contains an empty id")
-	return errors
+
+
+func _validate_render_data(errors: PackedStringArray, active_tiles: Array[Vector2i]) -> void:
+	if visual_grid.x <= 1 or visual_grid.y <= 1:
+		errors.append("visual_grid must be at least 2x2")
+	if visual_tile_paths.size() != active_tiles.size():
+		errors.append("visual_tile_paths must match active tile count")
+	for path in visual_tile_paths:
+		if path.is_empty():
+			errors.append("visual tile path is empty")
+		elif not FileAccess.file_exists(path):
+			errors.append("visual tile path does not exist: " + path)
 
 
 func extent_size() -> Vector2:

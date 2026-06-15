@@ -206,6 +206,40 @@ run_overlook_to_old_cedar_segment() {
 		--landmark=old_cedar
 }
 
+run_overlook_to_ridge_gate_segment() {
+	seed="$1"
+	out_file="$out_dir/seed_${seed}_cedar_hollow_segment_overlook_to_ridge_gate.json"
+	run_sim "$out_file" \
+		--scene=cedar_hollow \
+		--controller=pd \
+		--route-segment=overlook_to_ridge_gate \
+		--seed="$seed" \
+		--max-ticks=900 \
+		--stuck-window=120 \
+		--stuck-min-progress=0.015
+	assert_metrics "$out_file" \
+		--surface=packed_dirt:20 \
+		--source-min=terrain:40 \
+		--landmark=ridge_gate
+}
+
+run_ridge_gate_to_pine_floor_segment() {
+	seed="$1"
+	out_file="$out_dir/seed_${seed}_cedar_hollow_segment_ridge_gate_to_pine_floor.json"
+	run_sim "$out_file" \
+		--scene=cedar_hollow \
+		--controller=pd \
+		--route-segment=ridge_gate_to_pine_floor \
+		--seed="$seed" \
+		--max-ticks=2200 \
+		--stuck-window=120 \
+		--stuck-min-progress=0.015
+	assert_metrics "$out_file" \
+		--surface=packed_dirt:120 \
+		--source-min=terrain:120 \
+		--landmark=pine_floor
+}
+
 for seed in $seeds; do
 	printf 'seed: %s\n' "$seed"
 	run_flat_flipped_yawed "$seed"
@@ -218,6 +252,8 @@ for seed in $seeds; do
 	run_culvert_mouth "$seed"
 	run_trailhead_to_culvert_segment "$seed"
 	run_overlook_to_old_cedar_segment "$seed"
+	run_overlook_to_ridge_gate_segment "$seed"
+	run_ridge_gate_to_pine_floor_segment "$seed"
 done
 
 printf 'ok: Cedar Hollow stability sweep passed for seeds: %s\n' "$seeds"

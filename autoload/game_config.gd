@@ -3,6 +3,8 @@ extends Node
 const PHYSICS_TICKS_PER_SECOND: int = 120
 const FIXED_DT: float = 1.0 / 120.0
 const UNITS_PER_METER: float = 1.0
+const GRAVITY_MAGNITUDE: float = 9.8
+const GRAVITY_VECTOR: Vector3 = Vector3.DOWN * GRAVITY_MAGNITUDE
 
 var chassis_mass: float = 1.5
 var chassis_collision_size: Vector3 = Vector3(0.18, 0.06, 0.30)
@@ -198,6 +200,7 @@ var terrain_pom_min_layers: int = 8
 var terrain_pom_max_layers: int = 24
 var terrain_track_painter_enabled: bool = true
 var terrain_track_painter_resolution: int = 512
+var terrain_track_painter_pixels_per_meter: float = 14.0
 var terrain_track_stamp_radius: float = 0.055
 var terrain_track_stamp_strength: float = 0.34
 var terrain_track_decay_per_second: float = 0.018
