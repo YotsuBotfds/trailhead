@@ -20,6 +20,7 @@ const VehicleResidueVisualScript: GDScript = preload("res://systems/render/vehic
 const VehicleJuiceRigScript: GDScript = preload("res://systems/render/vehicle_juice_rig.gd")
 const CedarAudioRigScript: GDScript = preload("res://systems/render/cedar_audio_rig.gd")
 const LandmarkHintHudScript: GDScript = preload("res://systems/render/landmark_hint_hud.gd")
+const TerrainTrackVisualPainterScript: GDScript = preload("res://systems/render/terrain_track_visual_painter.gd")
 const SurfaceMapScript: GDScript = preload("res://systems/world/surface_map.gd")
 const CAMERA_MODE_CHASE: int = 0
 const CAMERA_MODE_ORBIT: int = 1
@@ -45,6 +46,7 @@ var _landmark_hint_hud: CanvasLayer = null
 var _world_environment: WorldEnvironment = null
 var _sun: DirectionalLight3D = null
 var _mood: int = MOOD_DUSK
+var _terrain_track_painter: Node = null
 
 
 func _ready() -> void:
@@ -70,6 +72,7 @@ func _physics_process(delta: float) -> void:
 	_update_mood_input()
 	_vehicle.call("apply_input", _vehicle_input)
 	_update_visual_wheels(delta)
+	_update_terrain_tracks()
 	_update_camera(delta)
 
 
@@ -112,13 +115,29 @@ func _setup_world() -> void:
 		return
 	_world.name = "CedarHollow"
 	add_child(_world)
-	TerrainVisualBuilderScript.build_cedar_hollow(_world)
+	var terrain_root: Node3D = TerrainVisualBuilderScript.build_cedar_hollow(_world)
 	GroundDetailVisualBuilderScript.build_cedar_hollow(_world)
 	FeatureVisualBuilderScript.build_cedar_hollow(_world)
 	PropVisualBuilderScript.build_cedar_hollow(_world)
 	ScatterVisualBuilderScript.build_cedar_hollow(_world)
 	BoundaryVisualBuilderScript.build_cedar_hollow(_world)
 	WaterVisualBuilderScript.build_cedar_hollow(_world)
+	_setup_terrain_tracks(terrain_root)
+
+
+func _setup_terrain_tracks(terrain_root: Node3D) -> void:
+	if terrain_root == null or not GameConfig.terrain_track_painter_enabled:
+		return
+	_terrain_track_painter = TerrainTrackVisualPainterScript.new() as Node
+	if _terrain_track_painter == null:
+		return
+	_terrain_track_painter.name = "TerrainTrackVisualPainter"
+	_world.add_child(_terrain_track_painter)
+	_terrain_track_painter.call("configure", GameConfig.terrain_track_bounds_min, GameConfig.terrain_track_bounds_max)
+	var track_texture: Texture2D = _terrain_track_painter.call("track_texture") as Texture2D
+	var track_bounds_min: Vector2 = _terrain_track_painter.call("render_bounds_min")
+	var track_bounds_max: Vector2 = _terrain_track_painter.call("render_bounds_max")
+	TerrainVisualBuilderScript.apply_track_texture(terrain_root, track_texture, track_bounds_min, track_bounds_max)
 
 
 func _spawn_vehicle() -> void:
@@ -328,6 +347,13 @@ func _update_vehicle_residue_visual(state: RefCounted) -> void:
 	if _vehicle_visual_root == null:
 		return
 	_vehicle_residue_visual.call("apply_state", _vehicle_visual_root, state)
+
+
+func _update_terrain_tracks() -> void:
+	if _terrain_track_painter == null:
+		return
+	var state: RefCounted = _vehicle.call("get_state")
+	_terrain_track_painter.call("apply_vehicle_state", state, GameConfig.FIXED_DT)
 
 
 func _wheel_mesh_for_socket(socket: Node3D) -> Node3D:
