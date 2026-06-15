@@ -5,11 +5,17 @@ const START_CELL: Vector2i = Vector2i(4, 4)
 const END_CELL: Vector2i = Vector2i(5, 4)
 const START_SETTLE_TICKS: int = 5
 const END_SETTLE_TICKS: int = 5
+const PREFETCH_READY_TIMEOUT_TICKS: int = 120
 const CELL_CENTER_OFFSET: float = 0.5
+const WORKER_COUNT_ARG: String = "--tile-streamer-workers="
 
 var _errors: PackedStringArray = PackedStringArray()
 var _activated_cells: Array[Vector2i] = []
 var _evicted_cells: Array[Vector2i] = []
+var _all_activated_keys: PackedStringArray = PackedStringArray()
+var _activation_ticks: Dictionary[String, int] = {}
+var _physics_tick: int = 0
+var _worker_count: int = 1
 
 
 func _ready() -> void:
@@ -23,6 +29,9 @@ func _run() -> void:
 		_finish(null)
 		return
 
+	_worker_count = _read_worker_count_arg()
+	streamer.call("set_worker_count_for_tests", _worker_count)
+
 	if not EventBus.world_tile_activated.is_connected(_on_world_tile_activated):
 		EventBus.world_tile_activated.connect(_on_world_tile_activated)
 	if not EventBus.world_tile_evicted.is_connected(_on_world_tile_evicted):
@@ -33,9 +42,8 @@ func _run() -> void:
 
 	var expected_start_cells: Array[Vector2i] = _cells_in_radius(START_CELL, GameConfig.STREAM_ACTIVE_RADIUS)
 	_require_cells("start active set", streamer.call("active_cells"), expected_start_cells)
-	_require_cells("start activation event order", _activated_cells, expected_start_cells)
+	_require_cells_exact_order("start activation event order", _activated_cells, expected_start_cells)
 	_require_int("start eviction event count", _evicted_cells.size(), 0)
-	_require_bool("start ready flags include prefetch ring", _ready_includes_prefetch(streamer, START_CELL))
 	_require_no_load_failures(streamer)
 
 	_activated_cells.clear()
@@ -47,11 +55,12 @@ func _run() -> void:
 	var expected_loaded_cells: Array[Vector2i] = _cell_difference(expected_end_cells, expected_start_cells)
 	var expected_evicted_cells: Array[Vector2i] = _cell_difference(expected_start_cells, expected_end_cells)
 	_require_cells("end active set", streamer.call("active_cells"), expected_end_cells)
-	_require_cells("end activation event order", _activated_cells, expected_loaded_cells)
-	_require_cells("end eviction event order", _evicted_cells, expected_evicted_cells)
+	_require_cells_exact_order("end activation event order", _activated_cells, expected_loaded_cells)
+	_require_cells_exact_order("end eviction event order", _evicted_cells, expected_evicted_cells)
 	var empty_cells: Array[Vector2i] = []
 	_require_cells("last to_load", streamer.call("last_to_load"), empty_cells)
 	_require_cells("last to_unload", streamer.call("last_to_unload"), empty_cells)
+	await _wait_for_prefetch_ready(streamer, END_CELL)
 	_require_bool("end ready flags include prefetch ring", _ready_includes_prefetch(streamer, END_CELL))
 	_require_no_load_failures(streamer)
 
@@ -61,10 +70,22 @@ func _run() -> void:
 func _advance_physics_ticks(count: int) -> void:
 	for _tick in range(count):
 		await get_tree().physics_frame
+		_physics_tick += 1
+
+
+func _wait_for_prefetch_ready(streamer: Node, center_cell: Vector2i) -> void:
+	for _tick in range(PREFETCH_READY_TIMEOUT_TICKS):
+		if _ready_includes_prefetch(streamer, center_cell):
+			return
+		await _advance_physics_ticks(1)
 
 
 func _on_world_tile_activated(cell: Vector2i) -> void:
 	_activated_cells.append(cell)
+	var key: String = _cell_key(cell)
+	_all_activated_keys.append(key)
+	if not _activation_ticks.has(key):
+		_activation_ticks[key] = _physics_tick
 
 
 func _on_world_tile_evicted(cell: Vector2i) -> void:
@@ -116,6 +137,33 @@ func _require_cells(label: String, observed_value: Variant, expected_cells: Arra
 			return
 
 
+func _require_cells_exact_order(label: String, observed_value: Variant, expected_cells: Array[Vector2i]) -> void:
+	var observed_cells: Array[Vector2i] = _variant_to_cell_array_unsorted(observed_value)
+	if observed_cells.size() != expected_cells.size():
+		_errors.append(
+			label
+			+ " expected "
+			+ str(expected_cells.size())
+			+ " cells, got "
+			+ str(observed_cells.size())
+			+ ": "
+			+ _cells_to_string(observed_cells)
+		)
+		return
+	for index in range(expected_cells.size()):
+		if observed_cells[index] != expected_cells[index]:
+			_errors.append(
+				label
+				+ " mismatch at index "
+				+ str(index)
+				+ ": expected "
+				+ str(expected_cells[index])
+				+ ", got "
+				+ str(observed_cells[index])
+			)
+			return
+
+
 func _require_int(label: String, actual: int, expected: int) -> void:
 	if actual != expected:
 		_errors.append(label + " expected " + str(expected) + ", got " + str(actual))
@@ -135,6 +183,12 @@ func _finish(streamer: Node) -> void:
 		streamer.call("reset")
 
 	if _errors.is_empty():
+		var result: Dictionary = {
+			"worker_count": _worker_count,
+			"activation_order": _all_activated_keys,
+			"activation_ticks": _activation_ticks,
+		}
+		print("tile_streamer_fixture_result=" + JSON.stringify(result))
 		print("ok: TileStreamer active set and sorted lifecycle events")
 		get_tree().quit(0)
 		return
@@ -182,6 +236,17 @@ func _variant_to_cell_array(value: Variant) -> Array[Vector2i]:
 	return cells
 
 
+func _variant_to_cell_array_unsorted(value: Variant) -> Array[Vector2i]:
+	var cells: Array[Vector2i] = []
+	if not (value is Array):
+		return cells
+	var raw_cells: Array = value as Array
+	for item in raw_cells:
+		if item is Vector2i:
+			cells.append(item)
+	return cells
+
+
 func _copy_cells(cells: Array[Vector2i]) -> Array[Vector2i]:
 	var copy: Array[Vector2i] = []
 	for cell in cells:
@@ -204,3 +269,14 @@ func _cells_to_string(cells: Array[Vector2i]) -> String:
 	for cell in cells:
 		parts.append(str(cell))
 	return ", ".join(parts)
+
+
+func _read_worker_count_arg() -> int:
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with(WORKER_COUNT_ARG):
+			return maxi(int(arg.substr(WORKER_COUNT_ARG.length())), 1)
+	return 1
+
+
+func _cell_key(cell: Vector2i) -> String:
+	return str(cell.x) + "_" + str(cell.y)
