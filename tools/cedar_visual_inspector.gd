@@ -1160,6 +1160,8 @@ func _require_dust_mote_field(chase_camera: Camera3D, context: String) -> void:
 	if particles == null:
 		_errors.append(context + " ChaseCamera/" + DustTiltShiftVisualBuilderScript.DUST_FIELD_NAME + " should be GPUParticles3D")
 		return
+	if particles.amount != GameConfig.dust_mote_count:
+		_errors.append(context + " DustMoteField amount expected " + str(GameConfig.dust_mote_count) + ", got " + str(particles.amount))
 	if not particles.use_fixed_seed:
 		_errors.append(context + " DustMoteField should use a fixed seed")
 	if particles.seed != DustTiltShiftVisualBuilderScript.DUST_FIXED_SEED:
