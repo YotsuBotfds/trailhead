@@ -1,4 +1,13 @@
 #!/usr/bin/env python3
+"""Seam-chain harness for S4 spec toleranced seam continuity.
+
+Compares the final state of a full replay against a chained replay and asserts
+that the position/velocity/speed deltas stay within the tolerances defined by
+the S4 spec (POSITION_TOLERANCE_M, VELOCITY_TOLERANCE_MPS, SPEED_TOLERANCE_MPS).
+
+This is NOT a byte-identical determinism check: bounded deltas within tolerance
+are treated as passing seam continuity, not exact reproduction.
+"""
 import json
 import math
 import os
@@ -14,6 +23,8 @@ FULL_REPLAY = "tests/golden/cedar_hollow_segment_pine_floor_to_far_mile_marker_r
 CHAIN_REPLAY = "tests/golden/cedar_hollow_segment_pine_floor_to_far_mile_marker_chain.json"
 ROUTE_SEGMENT = "pine_floor_to_far_mile_marker"
 
+# Toleranced deltas per the S4 spec. The checks below verify seam continuity
+# within these bounds, not byte-identical determinism.
 POSITION_TOLERANCE_M = 0.08
 VELOCITY_TOLERANCE_MPS = 0.25
 SPEED_TOLERANCE_MPS = 0.20
@@ -74,7 +85,7 @@ def main() -> int:
         return report_failures(errors)
 
     print(
-        "ok: seam chain final-state deltas "
+        "ok: seam chain final-state deltas within S4 tolerances "
         f"position={position_delta:.9f}m "
         f"velocity={velocity_delta:.9f}m/s "
         f"speed={speed_delta:.9f}m/s"
@@ -135,7 +146,7 @@ def vector_distance(left: list[float], right: list[float]) -> float:
 
 
 def report_failures(errors: list[str]) -> int:
-    print("fail: seam chain final-state comparison", file=sys.stderr)
+    print("fail: seam chain final-state deltas exceed S4 tolerances", file=sys.stderr)
     for error in errors:
         print(f"- {error}", file=sys.stderr)
     return 1
