@@ -19,6 +19,7 @@ config/features=PackedStringArray("4.6")
 GameConfig="*res://autoload/game_config.gd"
 EventBus="*res://autoload/event_bus.gd"
 GameManager="*res://autoload/game_manager.gd"
+TileStreamer="*res://systems/world/tile_streamer.gd"
 
 [input]
 
