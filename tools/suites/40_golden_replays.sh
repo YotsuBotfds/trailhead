@@ -60,6 +60,26 @@ run_sim "$out_dir/golden_cedar_hollow_zion_pa_rus_flat_segment.json" \
 	--stuck-min-progress=0.02
 assert_golden_replay "$out_dir/golden_cedar_hollow_zion_pa_rus_flat_segment.json" "tests/golden/cedar_hollow_zion_pa_rus_flat_segment_replay.json"
 
+run_watchman_grade_sim() {
+	out_file="$1"
+	shift
+	printf 'run: %s\n' "$out_file"
+	"$godot_bin" --headless --fixed-fps 120 --path . res://scenes/test_zion_watchman_grade.tscn -- "$@" --out="$out_file"
+}
+
+run_watchman_grade_sim "$out_dir/golden_cedar_hollow_zion_watchman_grade.json" \
+	--scene=heightmap_ramp_probe \
+	--controller=replay \
+	--replay=tests/golden/cedar_hollow_zion_watchman_grade_replay.json \
+	--scenario=clip_descent \
+	--spawn=heightmap_ramp_start \
+	--target=0,0,-5.25 \
+	--seed=12345 \
+	--max-ticks=700 \
+	--stuck-window=120 \
+	--stuck-min-progress=0.02
+assert_golden_replay "$out_dir/golden_cedar_hollow_zion_watchman_grade.json" "tests/golden/cedar_hollow_zion_watchman_grade_replay.json"
+
 run_sim "$out_dir/golden_cedar_hollow_old_cedar.json" \
 	--scene=cedar_hollow \
 	--controller=replay \

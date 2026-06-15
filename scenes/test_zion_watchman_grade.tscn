@@ -1,0 +1,39 @@
+[gd_scene load_steps=2 format=3]
+
+[sub_resource type="GDScript" id="GDScript_watchman_grade_runner"]
+script/source = "extends \"res://systems/sim/sim_runner.gd\"
+
+const WATCHMAN_GRADE_PERCENT: float = 24.0
+const WATCHMAN_RAMP_SIZE_M: float = 100.0
+const WATCHMAN_RAMP_GRID_SAMPLES: int = 101
+const WATCHMAN_RAMP_SPAWN_Z: float = 20.0
+const WATCHMAN_RAMP_BOUNDS_MIN: Vector3 = Vector3(-6.0, -10.0, -32.0)
+const WATCHMAN_RAMP_BOUNDS_MAX: Vector3 = Vector3(6.0, 12.0, 24.0)
+const WATCHMAN_CLIP_DESCENT_TARGET: Vector3 = Vector3(0.0, 0.0, -5.25)
+const WATCHMAN_CLIP_DESCENT_TICKS: int = 600
+const WATCHMAN_CLIP_DESCENT_THROTTLE: float = 0.6
+
+
+func _ready() -> void:
+	GameConfig.heightmap_ramp_probe_grade_percent = WATCHMAN_GRADE_PERCENT
+	GameConfig.heightmap_ramp_probe_size_m = WATCHMAN_RAMP_SIZE_M
+	GameConfig.heightmap_ramp_probe_grid_samples = WATCHMAN_RAMP_GRID_SAMPLES
+	GameConfig.heightmap_ramp_probe_spawn_z = WATCHMAN_RAMP_SPAWN_Z
+	GameConfig.heightmap_ramp_probe_bounds_min = WATCHMAN_RAMP_BOUNDS_MIN
+	GameConfig.heightmap_ramp_probe_bounds_max = WATCHMAN_RAMP_BOUNDS_MAX
+	GameConfig.clip_descent_probe_target = WATCHMAN_CLIP_DESCENT_TARGET
+	GameConfig.clip_descent_probe_ticks = WATCHMAN_CLIP_DESCENT_TICKS
+	GameConfig.clip_descent_probe_throttle = WATCHMAN_CLIP_DESCENT_THROTTLE
+	super._ready()
+
+
+func _heightmap_ramp_spawn_transform() -> Transform3D:
+	var spawn_z: float = GameConfig.heightmap_ramp_probe_spawn_z
+	var grade_deg: float = rad_to_deg(atan(WATCHMAN_GRADE_PERCENT * 0.01))
+	var height: float = spawn_z * WATCHMAN_GRADE_PERCENT * 0.01
+	var basis: Basis = Basis(Vector3.RIGHT, -deg_to_rad(grade_deg))
+	return Transform3D(basis, Vector3(0.0, height + _vehicle_spawn_clearance(grade_deg), spawn_z))
+"
+
+[node name="WatchmanGradeSimRunner" type="Node"]
+script = SubResource("GDScript_watchman_grade_runner")
