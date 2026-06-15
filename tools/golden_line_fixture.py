@@ -13,6 +13,7 @@ OUT_DIR = ROOT / "tests" / "out"
 SIM_OUTPUT = OUT_DIR / "golden_line_bog_bottom_fixture.json"
 FIXTURE_SCRIPT = OUT_DIR / "golden_line_fixture.gd"
 FIXTURE_SCENE = OUT_DIR / "golden_line_fixture.tscn"
+SUCCESS_LINE = "ok: golden line tracker and ghost fixture"
 
 
 SCRIPT_SOURCE = r'''extends Node
@@ -188,11 +189,22 @@ def main() -> int:
         "--stuck-min-progress=0.05",
         f"--out={SIM_OUTPUT.relative_to(ROOT)}",
     ]
-    sim_result = subprocess.run(sim_command, cwd=ROOT, check=False)
+    sim_result = subprocess.run(
+        sim_command,
+        cwd=ROOT,
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    sim_output = sim_result.stdout
+    sys.stdout.write(sim_output)
     if sim_result.returncode != 0:
-        return sim_result.returncode
-    FIXTURE_SCRIPT.write_text(SCRIPT_SOURCE)
-    FIXTURE_SCENE.write_text(SCENE_SOURCE)
+        return int(sim_result.returncode)
+    if "SCRIPT ERROR:" in sim_output or "\nERROR:" in sim_output or sim_output.startswith("ERROR:"):
+        return 1
+    FIXTURE_SCRIPT.write_text(SCRIPT_SOURCE, encoding="utf-8")
+    FIXTURE_SCENE.write_text(SCENE_SOURCE, encoding="utf-8")
     command = [
         GODOT_BIN,
         "--headless",
@@ -202,7 +214,24 @@ def main() -> int:
         str(ROOT),
         "res://tests/out/golden_line_fixture.tscn",
     ]
-    return subprocess.run(command, cwd=ROOT, check=False).returncode
+    completed = subprocess.run(
+        command,
+        cwd=ROOT,
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    output = completed.stdout
+    sys.stdout.write(output)
+    if completed.returncode != 0:
+        return int(completed.returncode)
+    if "SCRIPT ERROR:" in output or "\nERROR:" in output or output.startswith("ERROR:"):
+        return 1
+    if SUCCESS_LINE not in output:
+        print("fail: golden line fixture did not report success", file=sys.stderr)
+        return 1
+    return 0
 
 
 if __name__ == "__main__":

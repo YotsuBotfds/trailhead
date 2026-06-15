@@ -17,4 +17,4 @@ python3 tools/mud_key_fixture.py
 printf 'run: golden line fixture\n'
 python3 tools/golden_line_fixture.py
 printf 'run: campfire silence zone fixture\n'
-"$godot_bin" --headless --path . res://tools/campfire_silence_zone_fixture.tscn
+python3 tools/campfire_silence_zone_fixture.py
