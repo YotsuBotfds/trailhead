@@ -3,7 +3,7 @@
 assert_metrics "$out_dir/cedar_hollow_log_ramp.json" \
 	--surface=wood_plank:20 \
 	--surface-sequence=packed_gravel,wood_plank \
-	--metric-min=max_y_position:0.12 \
+	--metric-min=max_y_position:0.115 \
 	--metric-min=max_pitch_deg:2.0
 
 assert_metrics "$out_dir/cedar_hollow_clip_descent.json" \

@@ -80,6 +80,12 @@ var _steering_speed_high_max_abs_yaw_rate: float = 0.0
 var _post_settle_min_y: float = 999999.0
 var _post_settle_max_y: float = -999999.0
 var _max_post_settle_vertical_speed: float = 0.0
+var _resting_ride_height_sample_ticks: int = 0
+var _resting_ride_height_all_contact_ticks: int = 0
+var _resting_ride_height_min_y: float = 999999.0
+var _resting_ride_height_max_y: float = -999999.0
+var _resting_ride_height_final_y: float = 0.0
+var _resting_ride_height_max_abs_vertical_speed: float = 0.0
 var _max_speed: float = 0.0
 var _previous_speed: float = 0.0
 var _ebrake_ticks: int = 0
@@ -553,6 +559,14 @@ func _record(state: RefCounted, input: RefCounted) -> void:
 		_post_settle_min_y = minf(_post_settle_min_y, state_position.y)
 		_post_settle_max_y = maxf(_post_settle_max_y, state_position.y)
 		_max_post_settle_vertical_speed = maxf(_max_post_settle_vertical_speed, absf(state_velocity.y))
+	if _scenario_id == "resting_ride_height" and _tick >= GameConfig.resting_ride_height_settle_start_tick:
+		_resting_ride_height_sample_ticks += 1
+		_resting_ride_height_min_y = minf(_resting_ride_height_min_y, state_position.y)
+		_resting_ride_height_max_y = maxf(_resting_ride_height_max_y, state_position.y)
+		_resting_ride_height_final_y = state_position.y
+		_resting_ride_height_max_abs_vertical_speed = maxf(_resting_ride_height_max_abs_vertical_speed, absf(state_velocity.y))
+		if front_contact_count + rear_contact_count == 4:
+			_resting_ride_height_all_contact_ticks += 1
 	if front_contact_count + rear_contact_count > 0:
 		_contact_normal_sample_ticks += 1
 		_max_contact_normal_tilt_deg = maxf(_max_contact_normal_tilt_deg, contact_normal_tilt_deg)
@@ -656,7 +670,7 @@ func _finish(passed: bool) -> void:
 	var target_landmark_event_observed: bool = _target_landmark_event_observed()
 	var event_bus_contract_passed: bool = _event_bus_contract_passed()
 	var self_right_heading_preserved: bool = _self_right_heading_preserved()
-	var never_stuck_predicate_passed: bool = _never_stuck or _recovered_to_trail_event_count > 0 or _scenario_id == "standstill_yaw_rate" or _scenario_id == "hill_hold" or _scenario_id == "lateral_slide" or _scenario_id == "suspension_drop"
+	var never_stuck_predicate_passed: bool = _never_stuck or _recovered_to_trail_event_count > 0 or _scenario_id == "standstill_yaw_rate" or _scenario_id == "hill_hold" or _scenario_id == "lateral_slide" or _scenario_id == "suspension_drop" or _scenario_id == "resting_ride_height"
 	var predicates: Dictionary = {
 		"reached_target": target_predicate_passed,
 		"scenario_passed": scenario_predicate_passed,
@@ -715,6 +729,12 @@ func _finish(passed: bool) -> void:
 			"steering_speed_high_max_abs_yaw_rate": _steering_speed_high_max_abs_yaw_rate,
 			"post_settle_y_amplitude": _post_settle_y_amplitude(),
 			"max_post_settle_vertical_speed": _max_post_settle_vertical_speed,
+			"resting_ride_height_sample_ticks": _resting_ride_height_sample_ticks,
+			"resting_ride_height_all_contact_ticks": _resting_ride_height_all_contact_ticks,
+			"resting_ride_height_min_y": _resting_ride_height_min_y if _resting_ride_height_min_y < 999998.0 else null,
+			"resting_ride_height_max_y": _resting_ride_height_max_y if _resting_ride_height_max_y > -999998.0 else null,
+			"resting_ride_height_final_y": _resting_ride_height_final_y,
+			"resting_ride_height_max_abs_vertical_speed": _resting_ride_height_max_abs_vertical_speed,
 			"max_speed": _max_speed,
 			"ebrake_ticks": _ebrake_ticks,
 			"reverse_ticks": _reverse_ticks,
@@ -844,6 +864,8 @@ func _scenario_predicate_passed() -> bool:
 			and _post_settle_y_amplitude() <= GameConfig.suspension_drop_max_settle_y_amplitude \
 			and _max_post_settle_vertical_speed <= GameConfig.suspension_drop_max_settle_vertical_speed \
 			and _max_flipped_ticks_seen == 0
+	if _scenario_id == "resting_ride_height":
+		return _resting_ride_height_predicate_passed()
 	if _scenario_id == "roll_stability":
 		return _max_initial_forward_displacement >= GameConfig.roll_stability_min_forward_distance and _contact_normal_sample_ticks >= GameConfig.roll_stability_min_contact_ticks and _max_contact_normal_tilt_deg >= GameConfig.roll_stability_min_contact_normal_tilt_deg and _max_abs_roll_deg <= GameConfig.roll_stability_max_abs_roll_deg and _max_flipped_ticks_seen == 0
 	if _scenario_id == "steering_speed_ramp":
@@ -910,6 +932,14 @@ func _post_settle_y_amplitude() -> float:
 	if _post_settle_min_y > 999998.0 or _post_settle_max_y < -999998.0:
 		return 999999.0
 	return _post_settle_max_y - _post_settle_min_y
+
+
+func _resting_ride_height_predicate_passed() -> bool:
+	return _resting_ride_height_sample_ticks >= GameConfig.resting_ride_height_min_sample_ticks \
+		and _resting_ride_height_all_contact_ticks == _resting_ride_height_sample_ticks \
+		and _resting_ride_height_min_y >= GameConfig.resting_ride_height_min_y \
+		and _resting_ride_height_max_y <= GameConfig.resting_ride_height_max_y \
+		and _max_flipped_ticks_seen == 0
 
 
 func _pitch_deg(basis: Basis) -> float:

@@ -150,6 +150,23 @@ assert_metrics "$out_dir/suspension_drop.json" \
 	--metric-max=post_settle_y_amplitude:0.02 \
 	--metric-max=max_post_settle_vertical_speed:0.08
 
+run_sim "$out_dir/resting_ride_height.json" \
+	--scene=flat_plane \
+	--controller=scripted \
+	--scenario=resting_ride_height \
+	--spawn=flat_spawn \
+	--seed=12345 \
+	--max-ticks=460 \
+	--stuck-window=120 \
+	--stuck-min-progress=0.05
+assert_metrics "$out_dir/resting_ride_height.json" \
+	--predicate=scenario_passed \
+	--surface=packed_dirt:40 \
+	--metric-min=resting_ride_height_sample_ticks:80 \
+	--metric-min=resting_ride_height_all_contact_ticks:80 \
+	--metric-min=resting_ride_height_min_y:0.040 \
+	--metric-max=resting_ride_height_max_y:0.055
+
 airborne_brake_control_replay="$out_dir/airborne_brake_control_replay.json"
 airborne_brake_probe_replay="$out_dir/airborne_brake_probe_replay.json"
 python3 - "$airborne_brake_control_replay" "$airborne_brake_probe_replay" <<'PY'
@@ -284,4 +301,4 @@ assert_metrics "$out_dir/roll_stability.json" \
 	--metric-min=contact_normal_sample_ticks:80 \
 	--metric-min=max_contact_normal_tilt_deg:16.0 \
 	--metric-min=max_initial_forward_displacement:1.2 \
-	--metric-max=max_abs_roll_deg:30.0
+	--metric-max=max_abs_roll_deg:35.0

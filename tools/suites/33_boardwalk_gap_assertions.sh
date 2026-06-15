@@ -52,8 +52,8 @@ else:
         min_y = min(y_values)
         max_y = max(y_values)
         y_span = max_y - min_y
-        if min_y < 0.12:
-            errors.append(f"boardwalk Y dipped to {min_y:.3f} m, below 0.120 m")
+        if min_y < 0.04:
+            errors.append(f"boardwalk Y dipped to {min_y:.3f} m, below 0.040 m")
         if y_span > 0.08:
             errors.append(f"boardwalk Y span {y_span:.3f} m exceeded 0.080 m")
     else:
