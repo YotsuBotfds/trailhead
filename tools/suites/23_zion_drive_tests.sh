@@ -17,6 +17,34 @@ assert_metrics "$out_dir/cedar_hollow_zion_pa_rus_flat_segment.json" \
 	--metric-min=contact_normal_sample_ticks:120 \
 	--metric-max=max_flipped_ticks:0
 
+run_watchman_grade_sim() {
+	out_file="$1"
+	shift
+	printf 'run: %s\n' "$out_file"
+	"$godot_bin" --headless --fixed-fps 120 --path . res://scenes/test_zion_watchman_grade.tscn -- "$@" --out="$out_file"
+}
+
+run_watchman_grade_sim "$out_dir/cedar_hollow_zion_watchman_grade.json" \
+	--scene=heightmap_ramp_probe \
+	--controller=scripted \
+	--scenario=clip_descent \
+	--spawn=heightmap_ramp_start \
+	--target=0,0,-5.25 \
+	--seed=12345 \
+	--max-ticks=700 \
+	--stuck-window=120 \
+	--stuck-min-progress=0.02
+assert_metrics "$out_dir/cedar_hollow_zion_watchman_grade.json" \
+	--predicate=scenario_passed \
+	--predicate=reached_target \
+	--surface=packed_dirt:80 \
+	--metric-min=chassis_clearance_sample_ticks:80 \
+	--metric-min=contact_normal_sample_ticks:80 \
+	--metric-min=max_contact_normal_tilt_deg:13.0 \
+	--metric-min=max_descent_from_initial:5.8 \
+	--metric-max=max_chassis_penetration_m:0.0 \
+	--metric-max=max_flipped_ticks:0
+
 run_sim "$out_dir/zion_heightmap_ramp_15_percent.json" \
 	--scene=heightmap_ramp_probe \
 	--controller=scripted \

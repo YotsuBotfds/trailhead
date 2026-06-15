@@ -57,6 +57,11 @@ GOLDENS = [
         "cedar_hollow_zion_pa_rus_flat_segment.json",
         "cedar_hollow_zion_pa_rus_flat_segment_replay.json",
     ),
+    (
+        "cedar_hollow_zion_watchman_grade",
+        "cedar_hollow_zion_watchman_grade.json",
+        "cedar_hollow_zion_watchman_grade_replay.json",
+    ),
 ]
 
 
