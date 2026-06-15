@@ -71,6 +71,13 @@ static func _material_for_visual_def(visual_def: Resource) -> StandardMaterial3D
 	material.metallic = 0.0
 	material.texture_repeat = true
 	material.normal_scale = float(visual_def.get("normal_scale"))
+	_apply_uv_mapping(material, visual_def)
+	_apply_wetness(material, wetness)
+	_apply_texture_paths(material, visual_def)
+	return material
+
+
+static func _apply_uv_mapping(material: StandardMaterial3D, visual_def: Resource) -> void:
 	var texture_uv_scale: Vector2 = visual_def.get("texture_uv_scale")
 	material.uv1_scale = Vector3(texture_uv_scale.x, texture_uv_scale.y, 1.0)
 	var detail_uv_scale: Vector2 = visual_def.get("detail_uv_scale")
@@ -80,9 +87,6 @@ static func _material_for_visual_def(visual_def: Resource) -> StandardMaterial3D
 	material.uv1_world_triplanar = triplanar
 	material.uv2_triplanar = triplanar
 	material.uv2_world_triplanar = triplanar
-	_apply_wetness(material, wetness)
-	_apply_texture_paths(material, visual_def)
-	return material
 
 
 static func _apply_texture_paths(material: StandardMaterial3D, visual_def: Resource) -> void:
@@ -102,8 +106,12 @@ static func _apply_texture_paths(material: StandardMaterial3D, visual_def: Resou
 	var detail_normal_texture_path: String = visual_def.get("detail_normal_texture_path")
 	var detail_normal_texture: Texture2D = _load_texture(detail_normal_texture_path)
 	if detail_albedo_texture != null or detail_normal_texture != null:
+		var detail_mask_texture: Texture2D = _load_texture(DETAIL_MASK_TEXTURE_PATH)
+		if detail_mask_texture == null:
+			push_error("Terrain detail mapping skipped because the detail mask could not load: " + DETAIL_MASK_TEXTURE_PATH)
+			return
 		material.detail_enabled = true
-		material.detail_mask = _load_texture(DETAIL_MASK_TEXTURE_PATH)
+		material.detail_mask = detail_mask_texture
 		material.detail_blend_mode = BaseMaterial3D.BLEND_MODE_MUL
 		material.detail_uv_layer = BaseMaterial3D.DETAIL_UV_2
 		if detail_albedo_texture != null:
