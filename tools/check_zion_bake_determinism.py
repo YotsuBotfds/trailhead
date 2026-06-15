@@ -30,6 +30,32 @@ EXPECTED_OUTPUT_ROLES = {
     "terrain_def": 1,
 }
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+PROVENANCE_HASHES: dict[str, str] = {
+    "data/surface_palettes/cedar_hollow_zion_surface_palette.tres": (
+        "c193b677555c851d5f2d1896638f9bd89e6d6cc414a7af0d2aa00bd21b6843b6"
+    ),
+    "data/surfaces/wet_stone.tres": (
+        "2592d94b733a55e807d20a8b41a8001e56a589f38f47a41c8cc8c4ac746949bc"
+    ),
+    "data/surfaces/packed_gravel.tres": (
+        "53a9a7b59f42a4ce6a04c0e0310bdf9a8b8469c27c1e1538c591cdfc8c27909b"
+    ),
+    "data/surfaces/packed_dirt.tres": (
+        "45ec569e0be0fe55025ab89e7482f41f3d939ac43d1478e55cc82b47ee3c37bf"
+    ),
+    "data/surfaces/loose_rock.tres": (
+        "f95c1434345f229e6f84763df87e1b9cdc8075d2cc05cc745a55372c7a0ba6d9"
+    ),
+    "data/surfaces/tall_grass.tres": (
+        "b43b60328b9e147346d50731bcdc3a3cc82a6013fd5fb3bfc467ce931ede87b2"
+    ),
+    "data/terrain/cedar_hollow_zion_surface_id.png": (
+        "8f6d89991da0fde23f8593c0605406ec8c0c6b2ef02fc598289e61cb7901e88d"
+    ),
+    "data/bake_inputs/zion_nlcd_remapped.tif": (
+        "aa95cab15aded363c94311448a477c5caaa0ec9a2d493e8d8bd585e1d9211a3b"
+    ),
+}
 
 
 def main() -> int:
@@ -46,6 +72,7 @@ def main() -> int:
             print("ok: zion input manifest; output not-yet-baked: " + str(OUTPUT_MANIFEST.relative_to(ROOT)))
             return 0
         _check_output_manifest(OUTPUT_MANIFEST)
+        _check_provenance_hashes()
     except Exception as exc:
         print("fail: " + str(exc), file=sys.stderr)
         return 1
@@ -93,6 +120,23 @@ def _check_output_manifest(path: Path) -> None:
     data = json.loads(path.read_text(encoding="utf-8"))
     _check_output_shape(path, data)
     _check_manifest(path, base_dir=ROOT)
+
+
+def _check_provenance_hashes() -> None:
+    for repo_relative, expected_sha in PROVENANCE_HASHES.items():
+        path = ROOT / repo_relative
+        if not path.is_file():
+            raise FileNotFoundError("provenance file is missing: " + repo_relative)
+        actual_sha = _sha256(path)
+        if actual_sha != expected_sha:
+            raise ValueError(
+                "provenance sha256 mismatch for "
+                + repo_relative
+                + ": "
+                + actual_sha
+                + " != "
+                + expected_sha
+            )
 
 
 def _check_manifest(path: Path, base_dir: Path) -> None:
