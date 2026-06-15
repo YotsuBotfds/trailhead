@@ -52,7 +52,7 @@ run_sim "$out_dir/golden_cedar_hollow_zion_pa_rus_flat_segment.json" \
 	--replay=tests/golden/cedar_hollow_zion_pa_rus_flat_segment_replay.json \
 	--scenario=real_terrain_flat_segment \
 	--spawn=trailhead \
-	--target=0,0,-50 \
+	--target=0,0,-50.1 \
 	--target-radius=0.05 \
 	--seed=12345 \
 	--max-ticks=6200 \

@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 from collections import deque
+from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -21,6 +22,7 @@ GAME_CONFIG_PATH = ROOT / "autoload/game_config.gd"
 INPUT_MANIFEST_PATH = ROOT / "data/bake_inputs/zion_dem_input_manifest.json"
 OUTPUT_MANIFEST_PATH = ROOT / "data/bake_inputs/zion_bake_output_manifest.json"
 INPUT_DEM_PATH = ROOT / "data/bake_inputs/zion_dem_10m_corridor.tif"
+ONE_METER_TILES_DIR = ROOT / "data/bake_inputs/zion_1m_tiles"
 TERRAIN_DEF_PATH = ROOT / "data/terrain/cedar_hollow_zion_terrain_def.tres"
 REGION_BASE_DIR = ROOT / "data/regions"
 COLLISION_OUT_DIR = ROOT / "data/collision"
@@ -91,6 +93,14 @@ class ZionBakeConfig:
         )
 
 
+@dataclass(frozen=True)
+class LoadedDem:
+    heightfield: Any
+    edge_fill_samples: int
+    source_void_fill_samples: int
+    input_files: list[dict[str, Any]]
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Bake the Cedar Hollow Zion-inspired terrain corridor.")
     parser.add_argument("--source", choices=("10m", "1m"), default="10m", help="DEM source tier to bake.")
@@ -129,18 +139,17 @@ def main() -> int:
         return 0
 
     try:
-        if args.source != "10m":
-            raise ValueError("1m source is gated to Z3-B; run Z2-B with --source 10m")
-        result = _bake_10m(config, args.godot_bin)
+        result = _bake(config, args.godot_bin, args.source)
     except Exception as exc:
         print("fail: " + str(exc), file=sys.stderr)
         return 1
 
-    print("ok: zion 10m bake")
+    print("ok: zion " + args.source + " bake")
     print("region: " + config.region_id)
     print("tile_grid: " + str(config.tile_cols) + "x" + str(config.tile_rows))
     print("heightmap_tiles: " + str(result["tile_count"]))
     print("edge_fill_samples: " + str(result["edge_fill_samples"]))
+    print("source_void_fill_samples: " + str(result["source_void_fill_samples"]))
     print("manifest: " + str(OUTPUT_MANIFEST_PATH.relative_to(ROOT)))
     return 0
 
@@ -169,14 +178,13 @@ def _load_bake_config(region_id: str) -> ZionBakeConfig:
     )
 
 
-def _bake_10m(config: ZionBakeConfig, godot_bin: str) -> dict[str, Any]:
+def _bake(config: ZionBakeConfig, godot_bin: str, source: str) -> dict[str, Any]:
     import numpy as np
 
     input_manifest = _load_json(INPUT_MANIFEST_PATH)
-    _verify_input_manifest(input_manifest)
-    dem, edge_fill_samples = _load_reprojected_dem(config)
-    detail = _build_erosion_detail(config, dem.shape[1], dem.shape[0])
-    composited = (dem + detail * EROSION_ALPHA).astype(np.float32)
+    loaded_dem = _load_dem(config, source, input_manifest)
+    detail = _build_erosion_detail(config, loaded_dem.heightfield.shape[1], loaded_dem.heightfield.shape[0])
+    composited = (loaded_dem.heightfield + detail * EROSION_ALPHA).astype(np.float32)
     _assert_tile_seams(composited, config)
 
     region_dir = REGION_BASE_DIR / config.region_id
@@ -184,7 +192,7 @@ def _bake_10m(config: ZionBakeConfig, godot_bin: str) -> dict[str, Any]:
     region_dir.mkdir(parents=True, exist_ok=True)
     COLLISION_OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    tile_entries = _write_heightmap_tiles(composited, config, region_dir)
+    tile_entries = _write_heightmap_tiles(composited, config, region_dir, source)
     collision_project_paths = [entry["collision_path"] for entry in tile_entries]
     _write_terrain_def(config, collision_project_paths)
     _write_collision_resources(tile_entries, godot_bin)
@@ -193,7 +201,7 @@ def _bake_10m(config: ZionBakeConfig, godot_bin: str) -> dict[str, Any]:
     files.append(_artifact_entry(TERRAIN_DEF_PATH, "terrain_def"))
     output_manifest = {
         "schema_version": 1,
-        "source": "10m",
+        "source": source,
         "region_id": config.region_id,
         "crs": EXPECTED_CRS,
         "tile_grid": [config.tile_cols, config.tile_rows],
@@ -213,8 +221,9 @@ def _bake_10m(config: ZionBakeConfig, godot_bin: str) -> dict[str, Any]:
             config.tile_max_northing,
         ],
         "input_manifest_sha256": _sha256(INPUT_MANIFEST_PATH),
-        "input_dem_sha256": _sha256(INPUT_DEM_PATH),
-        "edge_fill_samples": edge_fill_samples,
+        "input_files": loaded_dem.input_files,
+        "edge_fill_samples": loaded_dem.edge_fill_samples,
+        "source_void_fill_samples": loaded_dem.source_void_fill_samples,
         "erosion": {
             "alpha": EROSION_ALPHA,
             "seed": EROSION_SEED,
@@ -224,12 +233,46 @@ def _bake_10m(config: ZionBakeConfig, godot_bin: str) -> dict[str, Any]:
         },
         "files": sorted(files, key=lambda item: str(item["path"])),
     }
+    if source == "10m":
+        output_manifest["input_dem_sha256"] = loaded_dem.input_files[0]["sha256"]
+    else:
+        output_manifest["input_1m_tile_count"] = len(loaded_dem.input_files)
+        output_manifest["input_1m_tile_sha256"] = {
+            str(entry["path"]): str(entry["sha256"]) for entry in loaded_dem.input_files
+        }
     OUTPUT_MANIFEST_PATH.parent.mkdir(parents=True, exist_ok=True)
     _write_json(OUTPUT_MANIFEST_PATH, output_manifest)
-    return {"tile_count": len(tile_entries), "edge_fill_samples": edge_fill_samples}
+    return {
+        "tile_count": len(tile_entries),
+        "edge_fill_samples": loaded_dem.edge_fill_samples,
+        "source_void_fill_samples": loaded_dem.source_void_fill_samples,
+    }
 
 
-def _verify_input_manifest(input_manifest: dict[str, Any]) -> None:
+def _load_dem(config: ZionBakeConfig, source: str, input_manifest: dict[str, Any]) -> LoadedDem:
+    if source == "10m":
+        input_files = _verify_10m_input_manifest(input_manifest)
+        heightfield, edge_fill_samples = _load_reprojected_10m_dem(config)
+        return LoadedDem(
+            heightfield=heightfield,
+            edge_fill_samples=edge_fill_samples,
+            source_void_fill_samples=0,
+            input_files=input_files,
+        )
+    if source == "1m":
+        input_files = _verify_1m_input_manifest(input_manifest)
+        paths = [ROOT / str(entry["path"]) for entry in input_files]
+        heightfield, edge_fill_samples, source_void_fill_samples = _load_reprojected_1m_mosaic(config, paths)
+        return LoadedDem(
+            heightfield=heightfield,
+            edge_fill_samples=edge_fill_samples,
+            source_void_fill_samples=source_void_fill_samples,
+            input_files=input_files,
+        )
+    raise ValueError("unsupported Zion DEM source: " + source)
+
+
+def _verify_10m_input_manifest(input_manifest: dict[str, Any]) -> list[dict[str, Any]]:
     clip = input_manifest.get("clip", {})
     if not isinstance(clip, dict):
         raise ValueError("input manifest clip must be an object")
@@ -240,9 +283,44 @@ def _verify_input_manifest(input_manifest: dict[str, Any]) -> None:
     actual_sha = _sha256(INPUT_DEM_PATH)
     if actual_sha != expected_sha:
         raise ValueError("input DEM sha256 mismatch: " + actual_sha + " != " + expected_sha)
+    return [_input_artifact_entry(INPUT_DEM_PATH, "clipped_10m_dem_input", actual_sha)]
 
 
-def _load_reprojected_dem(config: ZionBakeConfig):
+def _verify_1m_input_manifest(input_manifest: dict[str, Any]) -> list[dict[str, Any]]:
+    one_meter = input_manifest.get("one_meter", {})
+    if not isinstance(one_meter, dict):
+        raise ValueError("input manifest one_meter must be an object")
+    files = one_meter.get("files", [])
+    if not isinstance(files, list) or not files:
+        raise ValueError("input manifest one_meter.files must be a non-empty list")
+    verified: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    tiles_dir = ONE_METER_TILES_DIR.resolve()
+    for raw_entry in files:
+        if not isinstance(raw_entry, dict):
+            raise ValueError("input manifest one_meter file entry must be an object")
+        relative_path = str(raw_entry.get("path", ""))
+        if not relative_path:
+            raise ValueError("input manifest one_meter file entry missing path")
+        path = (ROOT / relative_path).resolve()
+        try:
+            path.relative_to(tiles_dir)
+        except ValueError as exc:
+            raise ValueError("1m tile must live under " + str(ONE_METER_TILES_DIR.relative_to(ROOT))) from exc
+        if str(path) in seen:
+            raise ValueError("duplicate 1m tile in input manifest: " + relative_path)
+        seen.add(str(path))
+        if not path.is_file():
+            raise FileNotFoundError("missing 1m tile: " + str(path.relative_to(ROOT)))
+        expected_sha = str(raw_entry.get("sha256", ""))
+        actual_sha = _sha256(path)
+        if actual_sha != expected_sha:
+            raise ValueError("1m tile sha256 mismatch: " + actual_sha + " != " + expected_sha)
+        verified.append(_input_artifact_entry(path, "source_1m_dem_tile", actual_sha))
+    return sorted(verified, key=lambda entry: str(entry["path"]))
+
+
+def _load_reprojected_10m_dem(config: ZionBakeConfig):
     import numpy as np
     import rasterio
     from rasterio.transform import from_origin
@@ -279,6 +357,67 @@ def _load_reprojected_dem(config: ZionBakeConfig):
     return z_increasing, edge_fill_samples
 
 
+def _load_reprojected_1m_mosaic(config: ZionBakeConfig, paths: list[Path]):
+    import numpy as np
+    import rasterio
+    from rasterio.merge import merge
+    from rasterio.transform import from_origin
+    from rasterio.warp import Resampling, reproject, transform_bounds
+
+    if not paths:
+        raise ValueError("1m mosaic needs at least one source tile")
+    width = config.grid_width_samples
+    height = config.grid_height_samples
+    destination = np.full((height, width), np.nan, dtype=np.float32)
+    dst_transform = from_origin(
+        config.origin_easting,
+        config.tile_max_northing,
+        CELL_SPACING_M,
+        CELL_SPACING_M,
+    )
+    with ExitStack() as stack:
+        sources = [stack.enter_context(rasterio.open(path)) for path in paths]
+        source_crs = sources[0].crs
+        if source_crs is None:
+            raise ValueError("1m source tile missing CRS: " + str(paths[0].relative_to(ROOT)))
+        for src in sources:
+            if src.crs != source_crs:
+                raise ValueError("1m source tiles must share one CRS")
+            if src.count < 1:
+                raise ValueError("1m source tile has no raster band: " + src.name)
+        source_bounds = transform_bounds(EXPECTED_CRS, source_crs, *config.tile_bounds, densify_pts=21)
+        mosaic, mosaic_transform = merge(
+            sources,
+            bounds=source_bounds,
+            res=(CELL_SPACING_M, CELL_SPACING_M),
+            nodata=np.nan,
+            dtype="float32",
+            masked=True,
+            method="first",
+            target_aligned_pixels=True,
+            resampling=Resampling.bilinear,
+        )
+        source_array = np.ma.filled(mosaic[0], np.nan).astype(np.float32, copy=False)
+        reproject(
+            source=source_array,
+            destination=destination,
+            src_transform=mosaic_transform,
+            src_crs=source_crs,
+            src_nodata=np.nan,
+            dst_transform=dst_transform,
+            dst_crs=EXPECTED_CRS,
+            dst_nodata=np.nan,
+            resampling=Resampling.bilinear,
+            num_threads=2,
+        )
+    z_increasing = np.flipud(destination).astype(np.float32, copy=False)
+    edge_fill_samples = _fill_missing_edge_samples(z_increasing)
+    source_void_fill_samples = _fill_remaining_missing_samples_from_nearest(z_increasing)
+    if not np.isfinite(z_increasing).all():
+        raise ValueError("reprojected 1m mosaic still contains nodata after deterministic source-void fill")
+    return z_increasing, edge_fill_samples, source_void_fill_samples
+
+
 def _fill_missing_edge_samples(heightfield) -> int:
     import numpy as np
 
@@ -308,6 +447,61 @@ def _fill_missing_edge_samples(heightfield) -> int:
             heightfield[:first, col] = heightfield[first, col]
         if last < heightfield.shape[0] - 1:
             heightfield[last + 1 :, col] = heightfield[last, col]
+    return missing_count
+
+
+def _fill_remaining_missing_samples_from_nearest(heightfield) -> int:
+    import numpy as np
+
+    finite = np.isfinite(heightfield)
+    missing_coords = np.argwhere(~finite)
+    missing_count = int(missing_coords.shape[0])
+    if missing_count == 0:
+        return 0
+    if not bool(finite.any()):
+        raise ValueError("cannot fill nodata when the whole heightfield is missing")
+    height = int(heightfield.shape[0])
+    width = int(heightfield.shape[1])
+    max_radius = max(height, width)
+    for coord in missing_coords:
+        row = int(coord[0])
+        col = int(coord[1])
+        best_key: tuple[int, int, int] | None = None
+        best_value = np.float32(0.0)
+        radius = 1
+        while radius <= max_radius:
+            if best_key is not None and radius * radius > best_key[0]:
+                break
+            r0 = max(0, row - radius)
+            r1 = min(height - 1, row + radius)
+            c0 = max(0, col - radius)
+            c1 = min(width - 1, col + radius)
+            for candidate_col in range(c0, c1 + 1):
+                if bool(finite[r0, candidate_col]):
+                    key = ((r0 - row) * (r0 - row) + (candidate_col - col) * (candidate_col - col), r0, candidate_col)
+                    if best_key is None or key < best_key:
+                        best_key = key
+                        best_value = heightfield[r0, candidate_col]
+                if r1 != r0 and bool(finite[r1, candidate_col]):
+                    key = ((r1 - row) * (r1 - row) + (candidate_col - col) * (candidate_col - col), r1, candidate_col)
+                    if best_key is None or key < best_key:
+                        best_key = key
+                        best_value = heightfield[r1, candidate_col]
+            for candidate_row in range(r0 + 1, r1):
+                if bool(finite[candidate_row, c0]):
+                    key = ((candidate_row - row) * (candidate_row - row) + (c0 - col) * (c0 - col), candidate_row, c0)
+                    if best_key is None or key < best_key:
+                        best_key = key
+                        best_value = heightfield[candidate_row, c0]
+                if c1 != c0 and bool(finite[candidate_row, c1]):
+                    key = ((candidate_row - row) * (candidate_row - row) + (c1 - col) * (c1 - col), candidate_row, c1)
+                    if best_key is None or key < best_key:
+                        best_key = key
+                        best_value = heightfield[candidate_row, c1]
+            radius += 1
+        if best_key is None:
+            raise ValueError("unable to find a finite neighbor for source void sample")
+        heightfield[row, col] = best_value
     return missing_count
 
 
@@ -410,7 +604,7 @@ def _clear_previous_outputs(region_dir: Path) -> None:
         path.unlink()
 
 
-def _write_heightmap_tiles(composited, config: ZionBakeConfig, region_dir: Path) -> list[dict[str, Any]]:
+def _write_heightmap_tiles(composited, config: ZionBakeConfig, region_dir: Path, source: str) -> list[dict[str, Any]]:
     import numpy as np
 
     tiles_dir = region_dir / "tiles"
@@ -437,7 +631,7 @@ def _write_heightmap_tiles(composited, config: ZionBakeConfig, region_dir: Path)
             sidecar = {
                 "schema_version": 1,
                 "region_id": config.region_id,
-                "source": "10m",
+                "source": source,
                 "tile": [col, row],
                 "crs": EXPECTED_CRS,
                 "bounds_utm": list(bounds),
@@ -559,6 +753,17 @@ def _artifact_entry(path: Path, role: str) -> dict[str, Any]:
         "role": role,
         "bytes": path.stat().st_size,
         "sha256": _sha256(path),
+    }
+
+
+def _input_artifact_entry(path: Path, role: str, sha256: str) -> dict[str, Any]:
+    if not path.is_file():
+        raise FileNotFoundError("missing input artifact: " + str(path.relative_to(ROOT)))
+    return {
+        "path": str(path.relative_to(ROOT)),
+        "role": role,
+        "bytes": path.stat().st_size,
+        "sha256": sha256,
     }
 
 
