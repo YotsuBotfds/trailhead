@@ -1,6 +1,9 @@
 printf 'run: cedar feature visuals\n'
 "$godot_bin" --headless --path . res://tools/cedar_visual_inspector.tscn
 
+printf 'run: visual bar assertions\n'
+"$godot_bin" --headless --path . res://tools/cedar_visual_inspector.tscn
+
 printf 'run: flat visuals\n'
 "$godot_bin" --headless --path . res://tools/flat_visual_inspector.tscn
 
