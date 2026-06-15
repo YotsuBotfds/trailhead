@@ -50,7 +50,7 @@ func _ready() -> void:
 	_is_headless = DisplayServer.get_name() == "headless"
 	if not EventBus.world_recoverable_object_tagged.is_connected(_on_world_recoverable_object_tagged):
 		EventBus.world_recoverable_object_tagged.connect(_on_world_recoverable_object_tagged)
-	if not _is_headless:
+	if not _is_headless and GameConfig.recover_tag_cue_enabled:
 		_setup_tag_cue()
 	_register_recoverables()
 
@@ -255,6 +255,8 @@ func _start_tag_cue_player() -> void:
 
 func _play_tag_cue() -> void:
 	if _is_headless:
+		return
+	if not GameConfig.recover_tag_cue_enabled:
 		return
 	_cue_envelope = 1.0
 

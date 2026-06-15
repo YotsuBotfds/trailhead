@@ -68,6 +68,7 @@ var recover_lift: float = 0.12
 var recover_speed_retention: float = 0.2
 var recover_min_throttle: float = 0.2
 var recover_event_min_displacement: float = 0.025
+var recover_tag_cue_enabled: bool = false
 var motor_rpm_speed_scale: float = 100.0
 
 var photo_hold_ticks: int = 24
