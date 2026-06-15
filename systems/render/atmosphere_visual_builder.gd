@@ -10,9 +10,8 @@ const VOLUMETRIC_FOG_LENGTH: float = 32.0
 const FOG_HEIGHT: float = 0.06
 const FOG_AERIAL_PERSPECTIVE: float = 0.38
 const FOG_SUN_SCATTER: float = 0.42
-const SHADOW_MAX_DISTANCE: float = 36.0
 const SHADOW_FADE_START: float = 0.72
-const SHADOW_BLUR: float = 1.25
+const CONTACT_FILL_LIGHT_NAME: String = "VehicleContactFillLight"
 
 
 static func apply_mood(world_environment: WorldEnvironment, sun: DirectionalLight3D, mood: int) -> void:
@@ -20,17 +19,31 @@ static func apply_mood(world_environment: WorldEnvironment, sun: DirectionalLigh
 		_apply_sun_atmosphere(sun)
 	if world_environment == null or world_environment.environment == null:
 		return
+	_apply_viewport_antialiasing(world_environment.get_viewport())
 	var environment: Environment = world_environment.environment
 	_apply_height_fog(environment, mood)
 	_apply_volumetric_fog(environment)
 	_apply_golden_hour_glow(environment, mood)
+	_apply_color_grade(environment)
+	_apply_screen_space_grounding(environment)
+
+
+static func configure_render_support(root: Node, vehicle: Node, chase_camera: Camera3D, orbit_camera: Camera3D, fpv_camera: Camera3D) -> void:
+	if root != null:
+		_apply_viewport_antialiasing(root.get_viewport())
+	_apply_camera_attributes(chase_camera)
+	_apply_camera_attributes(orbit_camera)
+	_apply_camera_attributes(fpv_camera)
+	_attach_contact_fill_light(vehicle)
 
 
 static func _apply_sun_atmosphere(sun: DirectionalLight3D) -> void:
 	sun.shadow_enabled = true
-	sun.directional_shadow_max_distance = SHADOW_MAX_DISTANCE
+	sun.light_angular_distance = maxf(GameConfig.atmosphere_pcss_sun_angular_distance, 0.0)
+	sun.directional_shadow_max_distance = maxf(GameConfig.atmosphere_pcss_shadow_max_distance, 0.1)
 	sun.directional_shadow_fade_start = SHADOW_FADE_START
-	sun.shadow_blur = SHADOW_BLUR
+	sun.shadow_blur = maxf(GameConfig.atmosphere_pcss_shadow_blur, 0.0)
+	sun.shadow_opacity = clampf(GameConfig.atmosphere_pcss_shadow_opacity, 0.0, 1.0)
 	sun.light_volumetric_fog_energy = 0.82
 
 
@@ -47,7 +60,7 @@ static func _apply_height_fog(environment: Environment, mood: int) -> void:
 
 
 static func _apply_volumetric_fog(environment: Environment) -> void:
-	environment.volumetric_fog_enabled = true
+	environment.volumetric_fog_enabled = GameConfig.atmosphere_volumetric_fog_enabled
 	environment.volumetric_fog_density = _positive_float_or(GameConfig.atmosphere_volumetric_fog_density, VOLUMETRIC_FOG_DENSITY_FLOOR)
 	environment.volumetric_fog_length = VOLUMETRIC_FOG_LENGTH
 	environment.volumetric_fog_albedo = GameConfig.dusk_fog_light_color
@@ -65,6 +78,79 @@ static func _apply_golden_hour_glow(environment: Environment, mood: int) -> void
 	environment.glow_intensity = 0.18 if mood == MOOD_DUSK else 0.10
 	environment.glow_strength = 0.32 if mood == MOOD_DUSK else 0.20
 	environment.glow_bloom = 0.06
+
+
+static func _apply_color_grade(environment: Environment) -> void:
+	environment.tonemap_mode = Environment.TONE_MAPPER_AGX
+	environment.adjustment_enabled = GameConfig.atmosphere_grade_enabled
+	environment.adjustment_saturation = GameConfig.atmosphere_grade_saturation
+	environment.adjustment_contrast = GameConfig.atmosphere_grade_contrast
+	environment.adjustment_brightness = GameConfig.atmosphere_grade_brightness
+	environment.adjustment_color_correction = _load_color_correction_texture(GameConfig.atmosphere_grade_color_correction_path)
+
+
+static func _apply_screen_space_grounding(environment: Environment) -> void:
+	environment.sdfgi_enabled = false
+	environment.ssao_enabled = GameConfig.atmosphere_ssao_enabled
+	environment.ssao_radius = maxf(GameConfig.atmosphere_ssao_radius, 0.0)
+	environment.ssao_intensity = maxf(GameConfig.atmosphere_ssao_intensity, 0.0)
+	environment.ssao_light_affect = clampf(GameConfig.atmosphere_ssao_light_affect, 0.0, 1.0)
+	environment.ssil_enabled = GameConfig.atmosphere_ssil_enabled
+	environment.ssil_radius = maxf(GameConfig.atmosphere_ssil_radius, 0.0)
+	environment.ssil_intensity = maxf(GameConfig.atmosphere_ssil_intensity, 0.0)
+	environment.ssil_sharpness = clampf(GameConfig.atmosphere_ssil_sharpness, 0.0, 1.0)
+
+
+static func _apply_viewport_antialiasing(viewport: Viewport) -> void:
+	if viewport == null:
+		return
+	viewport.msaa_3d = Viewport.MSAA_DISABLED
+	viewport.use_taa = true
+
+
+static func _apply_camera_attributes(camera: Camera3D) -> void:
+	if camera == null:
+		return
+	var attributes: CameraAttributesPractical = camera.attributes as CameraAttributesPractical
+	if attributes == null:
+		attributes = CameraAttributesPractical.new()
+		camera.attributes = attributes
+	attributes.auto_exposure_enabled = GameConfig.atmosphere_auto_exposure_enabled
+
+
+static func _attach_contact_fill_light(vehicle: Node) -> void:
+	if vehicle == null:
+		return
+	var body: Node3D = vehicle.get_node_or_null("PhysicsBody") as Node3D
+	if body == null:
+		return
+	var existing: OmniLight3D = body.get_node_or_null(CONTACT_FILL_LIGHT_NAME) as OmniLight3D
+	if not GameConfig.contact_fill_light_enabled:
+		if existing != null:
+			existing.queue_free()
+		return
+	var light: OmniLight3D = existing
+	if light == null:
+		light = OmniLight3D.new()
+		light.name = CONTACT_FILL_LIGHT_NAME
+		body.add_child(light)
+	light.position = Vector3(0.0, -maxf(GameConfig.contact_fill_light_height, 0.0), 0.0)
+	light.light_color = GameConfig.contact_fill_light_color
+	light.light_energy = maxf(GameConfig.contact_fill_light_energy, 0.0)
+	light.omni_range = maxf(GameConfig.contact_fill_light_range, 0.001)
+	light.shadow_enabled = false
+	light.light_volumetric_fog_energy = 0.0
+	light.set_meta("visual_contract", "vehicle_parented_contact_fill_light")
+
+
+static func _load_color_correction_texture(path: String) -> Texture3D:
+	if path.is_empty():
+		return null
+	var resource: Resource = ResourceLoader.load(path) as Resource
+	var texture: Texture3D = resource as Texture3D
+	if texture == null:
+		push_warning("Atmosphere color correction path is not a Texture3D: " + path)
+	return texture
 
 
 static func _positive_float_or(value: float, fallback: float) -> float:
