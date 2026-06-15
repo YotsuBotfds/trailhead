@@ -8,3 +8,5 @@ printf 'run: pace clock fixture\n'
 python3 tools/pace_clock_fixture.py
 printf 'run: photo stationary fixture\n'
 python3 tools/photo_stationary_fixture.py
+printf 'run: golden line fixture\n'
+python3 tools/golden_line_fixture.py

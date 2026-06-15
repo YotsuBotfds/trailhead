@@ -23,6 +23,8 @@ const CedarAudioRigScript: GDScript = preload("res://systems/render/cedar_audio_
 const LandmarkHintHudScript: GDScript = preload("res://systems/render/landmark_hint_hud.gd")
 const PhotographSystemScript: GDScript = preload("res://systems/render/photograph_system.gd")
 const RecoverableObjectRenderScript: GDScript = preload("res://systems/render/recoverable_object_render.gd")
+const GoldenLineTrackerScript: GDScript = preload("res://systems/sim/golden_line_tracker.gd")
+const GoldenLineGhostScript: GDScript = preload("res://systems/render/golden_line_ghost.gd")
 const TerrainTrackVisualPainterScript: GDScript = preload("res://systems/render/terrain_track_visual_painter.gd")
 const SurfaceMapScript: GDScript = preload("res://systems/world/surface_map.gd")
 const CAMERA_MODE_CHASE: int = 0
@@ -53,6 +55,9 @@ var _mood: int = MOOD_DUSK
 var _terrain_track_painter: Node = null
 var _photograph_system: Node = null
 var _recoverable_object_render: Node = null
+var _golden_line_tracker: Node = null
+var _golden_line_ghost: Node = null
+var _sim_tick: int = 0
 
 
 func _ready() -> void:
@@ -62,6 +67,7 @@ func _ready() -> void:
 	_spawn_vehicle()
 	_setup_audio()
 	_setup_recoverable_object_render()
+	_setup_golden_line_systems()
 	_setup_environment()
 	_setup_light()
 	_setup_camera()
@@ -79,6 +85,7 @@ func _physics_process(delta: float) -> void:
 	_update_hud_input()
 	_update_mood_input()
 	_vehicle.call("apply_input", _vehicle_input)
+	_sample_golden_line()
 	_update_visual_wheels(delta)
 	_update_terrain_tracks()
 	_update_camera(delta)
@@ -182,6 +189,18 @@ func _setup_recoverable_object_render() -> void:
 	_recoverable_object_render.call("configure", _world)
 
 
+func _setup_golden_line_systems() -> void:
+	_golden_line_tracker = GoldenLineTrackerScript.new() as Node
+	if _golden_line_tracker != null:
+		_golden_line_tracker.name = "GoldenLineTracker"
+		add_child(_golden_line_tracker)
+		_golden_line_tracker.call("configure")
+	_golden_line_ghost = GoldenLineGhostScript.new() as Node
+	if _golden_line_ghost != null:
+		_golden_line_ghost.name = "GoldenLineGhost"
+		add_child(_golden_line_ghost)
+
+
 func _setup_environment() -> void:
 	_world_environment = WorldEnvironment.new()
 	_world_environment.name = "GoldenHourEnvironment"
@@ -237,6 +256,15 @@ func _setup_hud() -> void:
 	_landmark_hint_hud.visible = GameConfig.minimap_enabled_by_default
 	add_child(_landmark_hint_hud)
 	_landmark_hint_hud.call("configure", CedarRoute, _vehicle)
+
+
+func _sample_golden_line() -> void:
+	if _golden_line_tracker == null:
+		_sim_tick += 1
+		return
+	var state: RefCounted = _vehicle.call("get_state")
+	_golden_line_tracker.call("sample_vehicle_state", state, _sim_tick)
+	_sim_tick += 1
 
 
 func _update_vehicle_input() -> void:
