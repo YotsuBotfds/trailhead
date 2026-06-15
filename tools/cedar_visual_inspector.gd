@@ -1060,8 +1060,54 @@ func _inspect_vehicle_visuals(host: Node, vehicle: Node) -> void:
 	var visual_mesh_count: int = _count_mesh_instances(visual_root)
 	if visual_mesh_count < 9:
 		_errors.append("vehicle VisualRoot should include chassis, roll cage, and wheel meshes")
+	_require_vehicle_body_clearcoat(visual_root)
 	_require_vehicle_steering_visuals(host, visual_root)
 	_require_vehicle_residue_visuals(host, vehicle, visual_root)
+
+
+func _require_vehicle_body_clearcoat(visual_root: Node) -> void:
+	var clearcoat_material_count: int = _count_vehicle_body_clearcoat_materials(visual_root)
+	if clearcoat_material_count == 0:
+		_errors.append("vehicle body paint should include at least one clearcoat StandardMaterial3D")
+
+
+func _count_vehicle_body_clearcoat_materials(parent: Node) -> int:
+	var count: int = 0
+	var mesh_instance: MeshInstance3D = parent as MeshInstance3D
+	if mesh_instance != null and _is_vehicle_body_paint_node(String(mesh_instance.name)):
+		count += _count_mesh_clearcoat_materials(mesh_instance)
+	for child in parent.get_children():
+		count += _count_vehicle_body_clearcoat_materials(child)
+	return count
+
+
+func _count_mesh_clearcoat_materials(mesh_instance: MeshInstance3D) -> int:
+	var mesh: Mesh = mesh_instance.mesh
+	if mesh == null:
+		return 0
+	var count: int = 0
+	for surface_index in range(mesh.get_surface_count()):
+		var material: StandardMaterial3D = mesh.surface_get_material(surface_index) as StandardMaterial3D
+		if material == null:
+			continue
+		if not material.clearcoat_enabled:
+			continue
+		if absf(material.clearcoat - GameConfig.buggy_clearcoat) > FLOAT_EPSILON:
+			continue
+		if absf(material.clearcoat_roughness - GameConfig.buggy_clearcoat_roughness) > FLOAT_EPSILON:
+			continue
+		count += 1
+	return count
+
+
+func _is_vehicle_body_paint_node(node_name: String) -> bool:
+	var lower_name: String = node_name.to_lower()
+	return lower_name.contains("body") \
+		or lower_name.contains("nose") \
+		or lower_name.contains("side_panel") \
+		or lower_name.contains("paint_stripe") \
+		or lower_name.contains("fender_flare") \
+		or lower_name.contains("side_number_plate")
 
 
 func _require_vehicle_steering_visuals(host: Node, visual_root: Node) -> void:
