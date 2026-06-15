@@ -199,3 +199,5 @@ run_sim "$out_dir/golden_cedar_hollow_segment_pine_floor_to_far_mile_marker_chai
 	--stuck-window=120 \
 	--stuck-min-progress=0.015
 assert_golden_replay "$out_dir/golden_cedar_hollow_segment_pine_floor_to_far_mile_marker_chain.json" "tests/golden/cedar_hollow_segment_pine_floor_to_far_mile_marker_chain.json"
+
+python3 tools/seam_chain_fixture.py

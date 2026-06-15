@@ -128,6 +128,7 @@ var _fixture_has_spawn_from_state: bool = false
 var _fixture_spawn_transform: Transform3D = Transform3D.IDENTITY
 var _fixture_spawn_linear_velocity: Vector3 = Vector3.ZERO
 var _fixture_spawn_angular_velocity: Vector3 = Vector3.ZERO
+var _fixture_spawn_freeze_pending: bool = false
 var _fixture_has_expected_activation_ticks: bool = false
 var _fixture_expected_activation_ticks: Dictionary[String, int] = {}
 var _activation_ticks: Dictionary[String, int] = {}
@@ -234,6 +235,7 @@ func _physics_process(_delta: float) -> void:
 		return
 	var input: RefCounted = _controller.call("next_input", state)
 	_vehicle.call("apply_input", input)
+	_release_fixture_spawn_freeze()
 	_last_input = input
 	_tick += 1
 
@@ -274,6 +276,7 @@ func _load_optional_segment_fixture_data() -> bool:
 	_fixture_spawn_transform = Transform3D.IDENTITY
 	_fixture_spawn_linear_velocity = Vector3.ZERO
 	_fixture_spawn_angular_velocity = Vector3.ZERO
+	_fixture_spawn_freeze_pending = false
 	_fixture_has_expected_activation_ticks = false
 	_fixture_expected_activation_ticks.clear()
 	_activation_ticks.clear()
@@ -763,6 +766,7 @@ func _apply_fixture_spawn_from_state() -> bool:
 	if body == null:
 		_finish_runner_error("spawn_from_state could not find vehicle physics body")
 		return false
+	body.freeze = true
 	body.sleeping = false
 	PhysicsServer3D.body_set_state(body.get_rid(), PhysicsServer3D.BODY_STATE_SLEEPING, false)
 	PhysicsServer3D.body_set_state(body.get_rid(), PhysicsServer3D.BODY_STATE_TRANSFORM, _fixture_spawn_transform)
@@ -771,7 +775,39 @@ func _apply_fixture_spawn_from_state() -> bool:
 	body.global_transform = _fixture_spawn_transform
 	body.linear_velocity = _fixture_spawn_linear_velocity
 	body.angular_velocity = _fixture_spawn_angular_velocity
+	body.force_update_transform()
+	for child in body.get_children():
+		var ray: RayCast3D = child as RayCast3D
+		if ray != null:
+			ray.force_update_transform()
+			ray.force_raycast_update()
+	_fixture_spawn_freeze_pending = true
 	return true
+
+
+func _release_fixture_spawn_freeze() -> void:
+	if not _fixture_spawn_freeze_pending:
+		return
+	var body: RigidBody3D = _vehicle_physics_body()
+	if body == null:
+		_fixture_spawn_freeze_pending = false
+		return
+	body.freeze = false
+	body.sleeping = false
+	PhysicsServer3D.body_set_state(body.get_rid(), PhysicsServer3D.BODY_STATE_SLEEPING, false)
+	PhysicsServer3D.body_set_state(body.get_rid(), PhysicsServer3D.BODY_STATE_TRANSFORM, _fixture_spawn_transform)
+	PhysicsServer3D.body_set_state(body.get_rid(), PhysicsServer3D.BODY_STATE_LINEAR_VELOCITY, _fixture_spawn_linear_velocity)
+	PhysicsServer3D.body_set_state(body.get_rid(), PhysicsServer3D.BODY_STATE_ANGULAR_VELOCITY, _fixture_spawn_angular_velocity)
+	body.global_transform = _fixture_spawn_transform
+	body.linear_velocity = _fixture_spawn_linear_velocity
+	body.angular_velocity = _fixture_spawn_angular_velocity
+	body.force_update_transform()
+	for child in body.get_children():
+		var ray: RayCast3D = child as RayCast3D
+		if ray != null:
+			ray.force_update_transform()
+			ray.force_raycast_update()
+	_fixture_spawn_freeze_pending = false
 
 
 func _vehicle_physics_body() -> RigidBody3D:
