@@ -164,9 +164,15 @@ func _apply_wheel_forces() -> void:
 			var empty_surface: Array[StringName] = _state.get("wheel_surface")
 			empty_surface[i] = &""
 			_state.set("wheel_surface", empty_surface)
+			var empty_hit_points: Array[Vector3] = _state.get("wheel_hit_point")
+			empty_hit_points[i] = Vector3.ZERO
+			_state.set("wheel_hit_point", empty_hit_points)
 			continue
 		contact_count += 1
 		var hit_point: Vector3 = ray.get_collision_point()
+		var wheel_hit_points: Array[Vector3] = _state.get("wheel_hit_point")
+		wheel_hit_points[i] = hit_point
+		_state.set("wheel_hit_point", wheel_hit_points)
 		var dist: float = ray.global_position.distance_to(hit_point)
 		var compression: float = clampf((ray_length - dist) / maxf(GameConfig.susp_travel, 0.001), 0.0, 1.0)
 		var spring_force: float = compression * GameConfig.susp_stiffness

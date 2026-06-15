@@ -366,6 +366,7 @@ func _record(state: RefCounted, input: RefCounted) -> void:
 	var input_throttle: float = float(input.get("throttle"))
 	var wheel_contact: Variant = state.get("wheel_contact")
 	var wheel_surface: Variant = state.get("wheel_surface")
+	var wheel_hit_point: Variant = state.get("wheel_hit_point")
 	var vehicle_contamination: Dictionary[String, float] = _vehicle_contamination_dictionary(state)
 	var surface_id: StringName = _dominant_surface_from_array(wheel_surface)
 	var front_contact_count: int = _contact_count(wheel_contact, 0, 2)
@@ -389,6 +390,7 @@ func _record(state: RefCounted, input: RefCounted) -> void:
 		"rear_contact_count": rear_contact_count,
 		"wheel_contact": _bool_array_to_array(wheel_contact),
 		"wheel_surface": _surface_array_to_array(wheel_surface),
+		"wheel_hit_point": _vec3_array_to_array(wheel_hit_point),
 		"surface_id": String(surface_id),
 		"vehicle_contamination": vehicle_contamination,
 		"on_ground": bool(state.get("on_ground")),
@@ -769,6 +771,18 @@ func _surface_array_to_array(values: Variant) -> Array[String]:
 		return out
 	for value in values:
 		out.append(String(value))
+	return out
+
+
+func _vec3_array_to_array(values: Variant) -> Array[Variant]:
+	var out: Array[Variant] = []
+	if not (values is Array):
+		return out
+	for value in values:
+		if value is Vector3:
+			out.append(_vec3_to_array(value))
+		else:
+			out.append(_vec3_to_array(Vector3.ZERO))
 	return out
 
 

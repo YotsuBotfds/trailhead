@@ -4,6 +4,7 @@ const CedarHollowPlayableScene: PackedScene = preload("res://scenes/cedar_hollow
 const CedarRoute: Resource = preload("res://data/routes/cedar_hollow.tres")
 const CedarSurfaceVisualCatalog: Resource = preload("res://data/surface_visuals/cedar_hollow_surface_visuals.tres")
 const VehicleStateScript: GDScript = preload("res://systems/vehicle/vehicle_state.gd")
+const SurfaceMapScript: GDScript = preload("res://systems/world/surface_map.gd")
 const FeatureVisualBuilderScript: GDScript = preload("res://systems/render/feature_visual_builder.gd")
 const ScatterVisualBuilderScript: GDScript = preload("res://systems/render/scatter_visual_builder.gd")
 const BoundaryVisualBuilderScript: GDScript = preload("res://systems/render/boundary_visual_builder.gd")
@@ -60,7 +61,6 @@ const CAMERA_COMPOSITION_TOLERANCE: float = 0.01
 const CAMERA_LOOK_TOLERANCE: float = 0.01
 const CAMERA_PITCH_TOLERANCE_DEG: float = 0.25
 const FEATURE_TRANSFORM_TOLERANCE: float = 0.01
-const FEATURE_COLLISION_ALIGNMENT_TOLERANCE: float = 0.05
 const SCATTER_X_MIN: float = -2.8
 const SCATTER_X_MAX: float = 5.05
 const SCATTER_Z_MIN: float = -9.55
@@ -90,6 +90,8 @@ const HEIGHTMESH_ROUTE_MARGIN: float = 0.35
 const EXPECTED_BOUNDARY_LEFT_VISUALS: int = 15
 const EXPECTED_BOUNDARY_RIGHT_VISUALS: int = 16
 const EXPECTED_BOUNDARY_BACK_VISUALS: int = 7
+const TERRAIN_HEIGHTMAP_COLLISION_NODE: String = "cedar_hollow_heightmap_collision"
+const TERRAIN_HEIGHTMAP_COLLISION_PATH: String = "res://data/collision/cedar_hollow_heightmap_collision.tres"
 const RESIDUE_SHADER_PATH: String = "res://systems/render/vehicle_contamination_visual.gdshader"
 const RESIDUE_BODY_OVERLAY: String = "body/residue_body_contamination_overlay"
 const RESIDUE_NOSE_OVERLAY: String = "nose/residue_body_contamination_overlay"
@@ -134,6 +136,9 @@ func _inspect() -> void:
 		_errors.append("failed to instantiate Cedar Hollow playable scene")
 		_finish()
 		return
+	var cedar_world: Node = _require_node(_scene_root, "CedarHollow")
+	if cedar_world != null:
+		_inspect_terrain_heightmap_collision(cedar_world)
 	var terrain_root: Node = _require_node(_scene_root, "CedarHollow/TerrainVisuals")
 	if terrain_root != null:
 		_require_named_count(terrain_root, "terrain_patch_", 0)
@@ -162,9 +167,6 @@ func _inspect() -> void:
 		_require_node_position(feature_root, "stepping_stone_1", Vector3(3.45, 0.01, -7.05), FEATURE_TRANSFORM_TOLERANCE)
 		_require_node_position(feature_root, "stepping_stone_5", Vector3(5.0, 0.01, -7.2), FEATURE_TRANSFORM_TOLERANCE)
 		_inspect_feature_sequences(feature_root)
-		var cedar_world: Node = _require_node(_scene_root, "CedarHollow")
-		if cedar_world != null:
-			_inspect_feature_collision_alignment(cedar_world, feature_root)
 		var collision_count: int = _count_collision_objects(feature_root)
 		if collision_count > 0:
 			_errors.append("FeatureVisuals contains collision objects: " + str(collision_count))
@@ -697,14 +699,35 @@ func _include_bounds_point(accumulator: BoundsAccumulator, point: Vector3) -> vo
 	)
 
 
-func _inspect_feature_collision_alignment(cedar_world: Node, feature_root: Node) -> void:
-	_require_node_xz_matches_body(feature_root, "boardwalk_segment_5", cedar_world, "boardwalk__surf_wood_plank", FEATURE_COLLISION_ALIGNMENT_TOLERANCE)
-	_require_node_xz_matches_body(feature_root, "culvert_pipe", cedar_world, "culvert_mouth_floor__surf_packed_dirt", FEATURE_COLLISION_ALIGNMENT_TOLERANCE)
-	_require_node_xz_matches_body(feature_root, "log_ramp", cedar_world, "log_ramp__surf_wood_plank", FEATURE_COLLISION_ALIGNMENT_TOLERANCE)
-	_require_node_inside_body_xz(feature_root, "boardwalk_segment_1", cedar_world, "boardwalk__surf_wood_plank", FEATURE_COLLISION_ALIGNMENT_TOLERANCE)
-	_require_node_inside_body_xz(feature_root, "boardwalk_segment_9", cedar_world, "boardwalk__surf_wood_plank", FEATURE_COLLISION_ALIGNMENT_TOLERANCE)
-	_require_node_inside_body_xz(feature_root, "stepping_stone_1", cedar_world, "wet_stone_crossing__surf_wet_stone", FEATURE_COLLISION_ALIGNMENT_TOLERANCE)
-	_require_node_inside_body_xz(feature_root, "stepping_stone_5", cedar_world, "wet_stone_crossing__surf_wet_stone", FEATURE_COLLISION_ALIGNMENT_TOLERANCE)
+func _inspect_terrain_heightmap_collision(cedar_world: Node) -> void:
+	var static_body_count: int = _count_static_bodies(cedar_world)
+	if static_body_count != 1:
+		_errors.append("Cedar Hollow should expose exactly one terrain StaticBody3D, got " + str(static_body_count))
+	var box_collision_count: int = _count_box_collision_shapes(cedar_world)
+	if box_collision_count > 0:
+		_errors.append("Cedar Hollow terrain collision should not retain BoxShape3D collision shapes: " + str(box_collision_count))
+	var body: StaticBody3D = _require_node(cedar_world, TERRAIN_HEIGHTMAP_COLLISION_NODE) as StaticBody3D
+	if body == null:
+		return
+	if not body.is_in_group(SurfaceMapScript.TERRAIN_SURFACE_MAP_GROUP):
+		_errors.append(TERRAIN_HEIGHTMAP_COLLISION_NODE + " should be in the terrain surface-id map group")
+	if not body.has_meta(SurfaceMapScript.TERRAIN_SURFACE_OVERRIDE_RECTS_META):
+		_errors.append(TERRAIN_HEIGHTMAP_COLLISION_NODE + " should expose terrain surface override rects")
+	var collision: CollisionShape3D = _require_node(body, "Collision") as CollisionShape3D
+	if collision == null:
+		return
+	if collision.disabled:
+		_errors.append(TERRAIN_HEIGHTMAP_COLLISION_NODE + " Collision should be enabled")
+	var heightmap: HeightMapShape3D = collision.shape as HeightMapShape3D
+	if heightmap == null:
+		_errors.append(TERRAIN_HEIGHTMAP_COLLISION_NODE + " Collision should use HeightMapShape3D")
+		return
+	if heightmap.resource_path != TERRAIN_HEIGHTMAP_COLLISION_PATH:
+		_errors.append(TERRAIN_HEIGHTMAP_COLLISION_NODE + " should use committed heightmap collision resource")
+	if heightmap.map_width <= 1 or heightmap.map_depth <= 1:
+		_errors.append(TERRAIN_HEIGHTMAP_COLLISION_NODE + " heightmap dimensions should be populated")
+	if heightmap.map_data.size() != heightmap.map_width * heightmap.map_depth:
+		_errors.append(TERRAIN_HEIGHTMAP_COLLISION_NODE + " map_data size should match heightmap dimensions")
 
 
 func _inspect_feature_sequences(feature_root: Node) -> void:
@@ -954,36 +977,6 @@ func _require_boundary_bands(boundary_root: Node) -> void:
 		_errors.append("expected " + str(EXPECTED_BOUNDARY_RIGHT_VISUALS) + " right boundary visuals, got " + str(right_count))
 	if back_count != EXPECTED_BOUNDARY_BACK_VISUALS:
 		_errors.append("expected " + str(EXPECTED_BOUNDARY_BACK_VISUALS) + " back boundary visuals, got " + str(back_count))
-
-
-func _require_node_xz_matches_body(visual_parent: Node, visual_path: String, body_parent: Node, body_path: String, tolerance: float) -> void:
-	var visual: Node3D = _require_node(visual_parent, visual_path) as Node3D
-	var body: Node3D = _require_node(body_parent, body_path) as Node3D
-	if visual == null or body == null:
-		return
-	var delta: Vector2 = Vector2(visual.global_position.x - body.global_position.x, visual.global_position.z - body.global_position.z)
-	if delta.length() > tolerance:
-		_errors.append(visual_path + " should align with " + body_path + " in XZ, delta was " + str(delta.length()))
-
-
-func _require_node_inside_body_xz(visual_parent: Node, visual_path: String, body_parent: Node, body_path: String, margin: float) -> void:
-	var visual: Node3D = _require_node(visual_parent, visual_path) as Node3D
-	var body: Node3D = _require_node(body_parent, body_path) as Node3D
-	if visual == null or body == null:
-		return
-	var collision: CollisionShape3D = body.get_node_or_null("Collision") as CollisionShape3D
-	if collision == null:
-		_errors.append(body_path + " is missing Collision")
-		return
-	var box: BoxShape3D = collision.shape as BoxShape3D
-	if box == null:
-		_errors.append(body_path + " Collision should use BoxShape3D")
-		return
-	var local_position: Vector3 = body.global_transform.affine_inverse() * visual.global_position
-	var half_x: float = box.size.x * 0.5 + margin
-	var half_z: float = box.size.z * 0.5 + margin
-	if absf(local_position.x) > half_x or absf(local_position.z) > half_z:
-		_errors.append(visual_path + " should sit inside " + body_path + " XZ bounds, local position was " + str(local_position))
 
 
 func _inspect_default_environment(world_environment: WorldEnvironment) -> void:
@@ -1822,6 +1815,25 @@ func _count_collision_objects(parent: Node) -> int:
 		if child is CollisionObject3D:
 			count += 1
 		count += _count_collision_objects(child)
+	return count
+
+
+func _count_static_bodies(parent: Node) -> int:
+	var count: int = 0
+	for child in parent.get_children():
+		if child is StaticBody3D:
+			count += 1
+		count += _count_static_bodies(child)
+	return count
+
+
+func _count_box_collision_shapes(parent: Node) -> int:
+	var count: int = 0
+	for child in parent.get_children():
+		var collision: CollisionShape3D = child as CollisionShape3D
+		if collision != null and collision.shape is BoxShape3D:
+			count += 1
+		count += _count_box_collision_shapes(child)
 	return count
 
 
