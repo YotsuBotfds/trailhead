@@ -90,12 +90,10 @@ const HEIGHTMESH_ROUTE_MARGIN: float = 0.35
 const EXPECTED_BOUNDARY_LEFT_VISUALS: int = 15
 const EXPECTED_BOUNDARY_RIGHT_VISUALS: int = 16
 const EXPECTED_BOUNDARY_BACK_VISUALS: int = 7
-const RESIDUE_MUD_OVERLAY: String = "residue_mud_overlay"
-const RESIDUE_DUST_OVERLAY: String = "residue_dust_overlay"
-const RESIDUE_WETNESS_OVERLAY: String = "residue_wetness_overlay"
-const RESIDUE_MUD_TIRE_OVERLAY: String = "residue_mud_tire"
-const RESIDUE_DUST_TIRE_OVERLAY: String = "residue_dust_tire"
-const RESIDUE_WETNESS_TIRE_OVERLAY: String = "residue_wetness_tire"
+const RESIDUE_SHADER_PATH: String = "res://systems/render/vehicle_contamination_visual.gdshader"
+const RESIDUE_BODY_OVERLAY: String = "body/residue_body_contamination_overlay"
+const RESIDUE_NOSE_OVERLAY: String = "nose/residue_body_contamination_overlay"
+const RESIDUE_TIRE_OVERLAY: String = "residue_tire_contamination_overlay"
 const RESIDUE_MUD_BODY_MASK: String = "res://assets/textures/vehicle/residue/mud_body_mask.png"
 const RESIDUE_DUST_BODY_MASK: String = "res://assets/textures/vehicle/residue/dust_body_mask.png"
 const RESIDUE_WETNESS_BODY_MASK: String = "res://assets/textures/vehicle/residue/wetness_body_mask.png"
@@ -1134,91 +1132,169 @@ func _require_vehicle_residue_visuals(host: Node, vehicle: Node, visual_root: No
 		return
 	contamination.call("set_values", 0.5, 0.25, 0.75)
 	host.call("_update_vehicle_residue_visual", state)
-	_require_residue_overlay_alpha(visual_root, RESIDUE_MUD_OVERLAY, 0.5 * GameConfig.vehicle_residue_mud_visual_alpha, RESIDUE_MUD_BODY_MASK)
-	_require_residue_overlay_alpha(visual_root, RESIDUE_DUST_OVERLAY, 0.25 * GameConfig.vehicle_residue_dust_visual_alpha, RESIDUE_DUST_BODY_MASK)
-	_require_residue_overlay_alpha(visual_root, RESIDUE_WETNESS_OVERLAY, 0.75 * GameConfig.vehicle_residue_wetness_visual_alpha, RESIDUE_WETNESS_BODY_MASK)
+	_require_residue_overlay_alpha(
+		visual_root,
+		RESIDUE_BODY_OVERLAY,
+		0.5,
+		0.25,
+		0.75,
+		GameConfig.vehicle_residue_mud_visual_alpha,
+		GameConfig.vehicle_residue_dust_visual_alpha,
+		GameConfig.vehicle_residue_wetness_visual_alpha,
+		RESIDUE_MUD_BODY_MASK,
+		RESIDUE_DUST_BODY_MASK,
+		RESIDUE_WETNESS_BODY_MASK
+	)
+	_require_residue_overlay_visible(
+		visual_root,
+		RESIDUE_NOSE_OVERLAY,
+		0.5,
+		0.25,
+		0.75,
+		GameConfig.vehicle_residue_mud_visual_alpha,
+		GameConfig.vehicle_residue_dust_visual_alpha,
+		GameConfig.vehicle_residue_wetness_visual_alpha,
+		RESIDUE_MUD_BODY_MASK,
+		RESIDUE_DUST_BODY_MASK,
+		RESIDUE_WETNESS_BODY_MASK
+	)
 	_require_tire_residue_overlays(visual_root)
 	contamination.call("reset")
 	host.call("_update_vehicle_residue_visual", state)
-	_require_residue_overlay_hidden(visual_root, RESIDUE_MUD_OVERLAY)
-	_require_residue_overlay_hidden(visual_root, RESIDUE_DUST_OVERLAY)
-	_require_residue_overlay_hidden(visual_root, RESIDUE_WETNESS_OVERLAY)
+	_require_residue_overlay_hidden(visual_root, RESIDUE_BODY_OVERLAY)
+	_require_residue_overlay_hidden(visual_root, RESIDUE_NOSE_OVERLAY)
 	_require_tire_residue_overlays_hidden(visual_root)
 
 
 func _require_tire_residue_overlays(visual_root: Node) -> void:
 	for wheel_socket_name in WHEEL_SOCKET_NAMES:
-		_require_residue_overlay_visible(visual_root, wheel_socket_name.path_join(RESIDUE_MUD_TIRE_OVERLAY), RESIDUE_MUD_TIRE_MASK)
-		_require_residue_overlay_visible(visual_root, wheel_socket_name.path_join(RESIDUE_DUST_TIRE_OVERLAY), RESIDUE_DUST_TIRE_MASK)
-		_require_residue_overlay_visible(visual_root, wheel_socket_name.path_join(RESIDUE_WETNESS_TIRE_OVERLAY), RESIDUE_WETNESS_TIRE_MASK)
+		_require_tire_residue_overlay_visible(
+			visual_root,
+			wheel_socket_name,
+			0.5,
+			0.25,
+			0.75,
+			GameConfig.vehicle_residue_mud_visual_alpha * 0.82,
+			GameConfig.vehicle_residue_dust_visual_alpha * 0.9,
+			GameConfig.vehicle_residue_wetness_visual_alpha * 0.7,
+			RESIDUE_MUD_TIRE_MASK,
+			RESIDUE_DUST_TIRE_MASK,
+			RESIDUE_WETNESS_TIRE_MASK
+		)
 
 
 func _require_tire_residue_overlays_hidden(visual_root: Node) -> void:
 	for wheel_socket_name in WHEEL_SOCKET_NAMES:
-		_require_residue_overlay_hidden(visual_root, wheel_socket_name.path_join(RESIDUE_MUD_TIRE_OVERLAY))
-		_require_residue_overlay_hidden(visual_root, wheel_socket_name.path_join(RESIDUE_DUST_TIRE_OVERLAY))
-		_require_residue_overlay_hidden(visual_root, wheel_socket_name.path_join(RESIDUE_WETNESS_TIRE_OVERLAY))
+		_require_tire_residue_overlay_hidden(visual_root, wheel_socket_name)
 
 
-func _require_residue_overlay_visible(parent: Node, path: String, expected_texture_path: String) -> void:
+func _require_tire_residue_overlay_visible(visual_root: Node, wheel_socket_name: String, expected_mud_amount: float, expected_dust_amount: float, expected_wetness_amount: float, expected_mud_alpha_scale: float, expected_dust_alpha_scale: float, expected_wetness_alpha_scale: float, expected_mud_texture_path: String, expected_dust_texture_path: String, expected_wetness_texture_path: String) -> void:
+	var socket: Node = _require_node(visual_root, wheel_socket_name)
+	if socket == null:
+		return
+	var overlay: MeshInstance3D = _find_named_residue_overlay(socket, RESIDUE_TIRE_OVERLAY)
+	if overlay == null:
+		_errors.append(wheel_socket_name + " should contain " + RESIDUE_TIRE_OVERLAY)
+		return
+	_require_residue_overlay_instance_visible(overlay, wheel_socket_name.path_join(String(overlay.name)), expected_mud_amount, expected_dust_amount, expected_wetness_amount, expected_mud_alpha_scale, expected_dust_alpha_scale, expected_wetness_alpha_scale, expected_mud_texture_path, expected_dust_texture_path, expected_wetness_texture_path)
+
+
+func _require_tire_residue_overlay_hidden(visual_root: Node, wheel_socket_name: String) -> void:
+	var socket: Node = _require_node(visual_root, wheel_socket_name)
+	if socket == null:
+		return
+	var overlay: MeshInstance3D = _find_named_residue_overlay(socket, RESIDUE_TIRE_OVERLAY)
+	if overlay == null:
+		_errors.append(wheel_socket_name + " should contain " + RESIDUE_TIRE_OVERLAY)
+		return
+	_require_residue_overlay_instance_hidden(overlay, wheel_socket_name.path_join(String(overlay.name)))
+
+
+func _find_named_residue_overlay(parent: Node, overlay_name: String) -> MeshInstance3D:
+	for index: int in range(parent.get_child_count()):
+		var child: Node = parent.get_child(index)
+		var overlay: MeshInstance3D = child as MeshInstance3D
+		if overlay != null and String(overlay.name) == overlay_name:
+			return overlay
+		var nested: MeshInstance3D = _find_named_residue_overlay(child, overlay_name)
+		if nested != null:
+			return nested
+	return null
+
+
+func _require_residue_overlay_visible(parent: Node, path: String, expected_mud_amount: float, expected_dust_amount: float, expected_wetness_amount: float, expected_mud_alpha_scale: float, expected_dust_alpha_scale: float, expected_wetness_alpha_scale: float, expected_mud_texture_path: String, expected_dust_texture_path: String, expected_wetness_texture_path: String) -> void:
 	var overlay: MeshInstance3D = _require_node(parent, path) as MeshInstance3D
 	if overlay == null:
 		return
-	if not overlay.visible:
-		_errors.append(path + " should be visible when contamination is nonzero")
-	var material: StandardMaterial3D = _require_residue_material(overlay, path)
-	if material == null:
-		return
-	if material.albedo_color.a <= FLOAT_EPSILON:
-		_errors.append(path + " alpha should be above zero when contamination is nonzero")
-	_require_residue_texture(material, path, expected_texture_path)
+	_require_residue_overlay_instance_visible(overlay, path, expected_mud_amount, expected_dust_amount, expected_wetness_amount, expected_mud_alpha_scale, expected_dust_alpha_scale, expected_wetness_alpha_scale, expected_mud_texture_path, expected_dust_texture_path, expected_wetness_texture_path)
 
 
-func _require_residue_overlay_alpha(parent: Node, path: String, expected_alpha: float, expected_texture_path: String) -> void:
-	var overlay: MeshInstance3D = _require_node(parent, path) as MeshInstance3D
-	if overlay == null:
-		return
+func _require_residue_overlay_instance_visible(overlay: MeshInstance3D, path: String, expected_mud_amount: float, expected_dust_amount: float, expected_wetness_amount: float, expected_mud_alpha_scale: float, expected_dust_alpha_scale: float, expected_wetness_alpha_scale: float, expected_mud_texture_path: String, expected_dust_texture_path: String, expected_wetness_texture_path: String) -> void:
 	if not overlay.visible:
 		_errors.append(path + " should be visible when contamination is nonzero")
-	var material: StandardMaterial3D = _require_residue_material(overlay, path)
+	var material: ShaderMaterial = _require_residue_material(overlay, path)
 	if material == null:
 		return
-	if absf(material.albedo_color.a - expected_alpha) > FLOAT_EPSILON:
-		_errors.append(path + " alpha expected " + str(expected_alpha) + ", got " + str(material.albedo_color.a))
-	_require_residue_texture(material, path, expected_texture_path)
+	_require_shader_float(material, "mud_amount", expected_mud_amount, path)
+	_require_shader_float(material, "dust_amount", expected_dust_amount, path)
+	_require_shader_float(material, "wetness_amount", expected_wetness_amount, path)
+	_require_shader_float(material, "mud_alpha_scale", expected_mud_alpha_scale, path)
+	_require_shader_float(material, "dust_alpha_scale", expected_dust_alpha_scale, path)
+	_require_shader_float(material, "wetness_alpha_scale", expected_wetness_alpha_scale, path)
+	_require_residue_texture(material, path, "mud_mask", expected_mud_texture_path)
+	_require_residue_texture(material, path, "dust_mask", expected_dust_texture_path)
+	_require_residue_texture(material, path, "wetness_mask", expected_wetness_texture_path)
+
+
+func _require_residue_overlay_alpha(parent: Node, path: String, expected_mud_amount: float, expected_dust_amount: float, expected_wetness_amount: float, expected_mud_alpha_scale: float, expected_dust_alpha_scale: float, expected_wetness_alpha_scale: float, expected_mud_texture_path: String, expected_dust_texture_path: String, expected_wetness_texture_path: String) -> void:
+	_require_residue_overlay_visible(parent, path, expected_mud_amount, expected_dust_amount, expected_wetness_amount, expected_mud_alpha_scale, expected_dust_alpha_scale, expected_wetness_alpha_scale, expected_mud_texture_path, expected_dust_texture_path, expected_wetness_texture_path)
 
 
 func _require_residue_overlay_hidden(parent: Node, path: String) -> void:
 	var overlay: MeshInstance3D = _require_node(parent, path) as MeshInstance3D
 	if overlay == null:
 		return
-	var material: StandardMaterial3D = _require_residue_material(overlay, path)
+	_require_residue_overlay_instance_hidden(overlay, path)
+
+
+func _require_residue_overlay_instance_hidden(overlay: MeshInstance3D, path: String) -> void:
+	var material: ShaderMaterial = _require_residue_material(overlay, path)
 	if material == null:
 		return
 	if overlay.visible:
 		_errors.append(path + " should hide after contamination reset")
-	if material.albedo_color.a > FLOAT_EPSILON:
-		_errors.append(path + " alpha should reset to zero, got " + str(material.albedo_color.a))
+	_require_shader_float(material, "mud_amount", 0.0, path)
+	_require_shader_float(material, "dust_amount", 0.0, path)
+	_require_shader_float(material, "wetness_amount", 0.0, path)
 
 
-func _require_residue_material(overlay: MeshInstance3D, path: String) -> StandardMaterial3D:
-	var material: StandardMaterial3D = overlay.material_override as StandardMaterial3D
+func _require_residue_material(overlay: MeshInstance3D, path: String) -> ShaderMaterial:
+	if overlay.mesh is BoxMesh:
+		_errors.append(path + " should use a conformed duplicate source mesh, not BoxMesh")
+	var material: ShaderMaterial = overlay.material_override as ShaderMaterial
 	if material == null:
-		_errors.append(path + " should use StandardMaterial3D")
+		_errors.append(path + " should use ShaderMaterial")
 		return null
-	if material.transparency != BaseMaterial3D.TRANSPARENCY_ALPHA:
-		_errors.append(path + " material should use alpha transparency")
-	if absf(material.metallic) > FLOAT_EPSILON:
-		_errors.append(path + " material metallic should be 0")
+	if material.shader == null:
+		_errors.append(path + " should have a residue shader")
+	elif material.shader.resource_path != RESIDUE_SHADER_PATH:
+		_errors.append(path + " shader expected " + RESIDUE_SHADER_PATH + ", got " + material.shader.resource_path)
 	return material
 
 
-func _require_residue_texture(material: StandardMaterial3D, path: String, expected_texture_path: String) -> void:
-	if material.albedo_texture == null:
-		_errors.append(path + " should use a residue mask texture")
+func _require_residue_texture(material: ShaderMaterial, path: String, parameter_name: String, expected_texture_path: String) -> void:
+	var texture: Texture2D = material.get_shader_parameter(parameter_name) as Texture2D
+	if texture == null:
+		_errors.append(path + " should set shader texture " + parameter_name)
 		return
-	if material.albedo_texture.resource_path != expected_texture_path:
-		_errors.append(path + " mask expected " + expected_texture_path + ", got " + material.albedo_texture.resource_path)
+	if texture.resource_path != expected_texture_path:
+		_errors.append(path + " " + parameter_name + " expected " + expected_texture_path + ", got " + texture.resource_path)
+
+
+func _require_shader_float(material: ShaderMaterial, parameter_name: String, expected: float, label: String) -> void:
+	var value: float = float(material.get_shader_parameter(parameter_name))
+	if absf(value - expected) > FLOAT_EPSILON:
+		_errors.append(label + " shader parameter " + parameter_name + " expected " + str(expected) + ", got " + str(value))
 
 
 func _require_wheel_socket_mesh(parent: Node, path: String) -> void:
