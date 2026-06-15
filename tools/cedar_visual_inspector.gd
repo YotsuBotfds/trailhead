@@ -110,6 +110,9 @@ const RESIDUE_WETNESS_TIRE_MASK: String = "res://assets/textures/vehicle/residue
 const TERRAIN_MATERIAL_PREFIX: String = "terrain_mat_"
 const TERRAIN_DETAIL_MASK_TEXTURE: String = "res://assets/textures/surface_visuals/generated/terrain_detail_mask.png"
 const TEXTURE_SOURCE_PATH_META: StringName = &"trailhead_source_path"
+const VEHICLE_BODY_BASE_POSITION: Vector3 = Vector3(0.0, 0.010, 0.015)
+const VEHICLE_NOSE_BASE_POSITION: Vector3 = Vector3(0.0, 0.018, -0.155)
+const VEHICLE_FRONT_LEFT_WHEEL_SOCKET_POSITION: Vector3 = Vector3(-0.08, -0.015, -0.10)
 const WET_DIFFUSE_MULTIPLIER: float = 0.2
 const WET_ROUGHNESS: float = 0.12
 const WET_CLEARCOAT: float = 0.58
@@ -1170,7 +1173,8 @@ func _inspect_vehicle_visuals(host: Node, vehicle: Node) -> void:
 	_require_node(visual_root, "body")
 	_require_node(visual_root, "nose")
 	_require_node(visual_root, "roll_cage")
-	_require_node_position(visual_root, "wheel_front_left", Vector3(-0.08, -0.015, -0.10), FLOAT_EPSILON)
+	_require_vehicle_chassis_drop(visual_root)
+	_require_node_position(visual_root, "wheel_front_left", VEHICLE_FRONT_LEFT_WHEEL_SOCKET_POSITION, FLOAT_EPSILON)
 	_require_node_position(visual_root, "wheel_front_right", Vector3(0.08, -0.015, -0.10), FLOAT_EPSILON)
 	_require_node_position(visual_root, "wheel_rear_left", Vector3(-0.08, -0.015, 0.10), FLOAT_EPSILON)
 	_require_node_position(visual_root, "wheel_rear_right", Vector3(0.08, -0.015, 0.10), FLOAT_EPSILON)
@@ -1187,6 +1191,19 @@ func _inspect_vehicle_visuals(host: Node, vehicle: Node) -> void:
 	_require_vehicle_body_clearcoat(visual_root)
 	_require_vehicle_steering_visuals(host, visual_root)
 	_require_vehicle_residue_visuals(host, vehicle, visual_root)
+
+
+func _require_vehicle_chassis_drop(visual_root: Node) -> void:
+	var drop_offset: Vector3 = Vector3(0.0, GameConfig.vehicle_visual_chassis_drop, 0.0)
+	_require_node_position(visual_root, "body", VEHICLE_BODY_BASE_POSITION - drop_offset, FLOAT_EPSILON)
+	_require_node_position(visual_root, "nose", VEHICLE_NOSE_BASE_POSITION - drop_offset, FLOAT_EPSILON)
+	var body: Node3D = _require_node(visual_root, "body") as Node3D
+	var wheel_socket: Node3D = _require_node(visual_root, "wheel_front_left") as Node3D
+	if body == null or wheel_socket == null:
+		return
+	var visual_gap: float = body.position.y - wheel_socket.position.y
+	if visual_gap > GameConfig.vehicle_visual_chassis_wheel_socket_max_gap:
+		_errors.append("vehicle visual chassis-to-wheel socket gap expected <= " + str(GameConfig.vehicle_visual_chassis_wheel_socket_max_gap) + ", got " + str(visual_gap))
 
 
 func _require_vehicle_body_clearcoat(visual_root: Node) -> void:

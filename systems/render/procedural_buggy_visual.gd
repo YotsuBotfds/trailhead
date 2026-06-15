@@ -11,6 +11,30 @@ const CLEARCOAT_MATERIAL_TOKENS: Array[String] = [
 	"fender_flare",
 	"side_number_plate"
 ]
+const CHASSIS_DROP_NODE_NAMES: Array[StringName] = [
+	&"body",
+	&"nose",
+	&"top_deck",
+	&"side_panel_left",
+	&"side_panel_right",
+	&"canopy",
+	&"roll_cage",
+	&"rear_wing",
+	&"front_bumper",
+	&"skid_plate",
+	&"body_pin_front",
+	&"body_pin_rear",
+	&"body_stripe",
+	&"fender_flares",
+	&"fender_lips",
+	&"headlights",
+	&"tail_lights",
+	&"front_grille",
+	&"side_number_plates",
+	&"side_number_marks",
+	&"body_vents",
+	&"antenna"
+]
 
 
 func attach(vehicle: Node) -> void:
@@ -28,9 +52,23 @@ func attach(vehicle: Node) -> void:
 		visual_root = imported_buggy
 	visual_root.name = "VisualRoot"
 	body.add_child(visual_root)
+	_apply_chassis_drop(visual_root)
 	_apply_vehicle_render_tuning(visual_root)
 	var residue_visual: RefCounted = VehicleResidueVisualScript.new()
 	residue_visual.call("attach", visual_root)
+
+
+static func _apply_chassis_drop(visual_root: Node) -> void:
+	var drop: float = maxf(GameConfig.vehicle_visual_chassis_drop, 0.0)
+	if drop <= 0.0:
+		return
+	for node_name in CHASSIS_DROP_NODE_NAMES:
+		var node: Node3D = visual_root.get_node_or_null(NodePath(String(node_name))) as Node3D
+		if node == null:
+			continue
+		var local_position: Vector3 = node.position
+		local_position.y -= drop
+		node.position = local_position
 
 
 static func _apply_vehicle_render_tuning(node: Node) -> void:

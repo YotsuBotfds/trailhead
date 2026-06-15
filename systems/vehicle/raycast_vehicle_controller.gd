@@ -324,11 +324,13 @@ func _apply_lateral_grip(right: Vector3, surface_grip: float) -> void:
 func _apply_steering_torque(steer: float, surface_grip: float) -> void:
 	if absf(steer) <= GameConfig.self_right_forward_epsilon and absf(_body.angular_velocity.dot(Vector3.UP)) <= GameConfig.self_right_forward_epsilon:
 		return
+	var forward: Vector3 = -_body.global_transform.basis.z.normalized()
 	var speed: float = Vector3(_body.linear_velocity.x, 0.0, _body.linear_velocity.z).length()
 	_clamp_inplace_yaw_rate(speed)
 	var speed_scale: float = _steer_yaw_speed_scale(speed)
 	var current_yaw_rate: float = _body.angular_velocity.dot(Vector3.UP)
-	var target_yaw_rate: float = steer * GameConfig.steer_max_yaw_rate * speed_scale
+	var reverse_direction: float = -1.0 if _body.linear_velocity.dot(forward) < -maxf(GameConfig.steer_reverse_velocity_threshold, 0.0) else 1.0
+	var target_yaw_rate: float = steer * reverse_direction * GameConfig.steer_max_yaw_rate * speed_scale
 	if speed <= GameConfig.v_stick:
 		var inplace_limit: float = maxf(GameConfig.steer_inplace_yaw_rate_max, 0.0)
 		target_yaw_rate = clampf(target_yaw_rate, -inplace_limit, inplace_limit)

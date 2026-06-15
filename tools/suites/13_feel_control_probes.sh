@@ -30,6 +30,21 @@ assert_metrics "$out_dir/steering_speed_ramp.json" \
 	--metric-min=steering_speed_high_sample_ticks:6 \
 	--metric-min=steering_speed_high_max_abs_yaw_rate:0.30
 
+run_sim "$out_dir/reverse_steer_right.json" \
+	--scene=flat_plane \
+	--controller=scripted \
+	--scenario=reverse_steer_right \
+	--spawn=flat_spawn \
+	--seed=12345 \
+	--max-ticks=360 \
+	--stuck-window=120 \
+	--stuck-min-progress=0.05
+assert_metrics "$out_dir/reverse_steer_right.json" \
+	--predicate=scenario_passed \
+	--surface=packed_dirt:40 \
+	--metric-min=max_reverse_distance:0.35 \
+	--metric-min=final_control_right_displacement:0.04
+
 run_sim "$out_dir/offtrail_escape_tall_grass.json" \
 	--scene=offtrail_escape \
 	--controller=scripted \

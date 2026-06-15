@@ -14,6 +14,9 @@ const RESIDUE_WETNESS_BODY_MASK: String = "res://assets/textures/vehicle/residue
 const RESIDUE_MUD_TIRE_MASK: String = "res://assets/textures/vehicle/residue/mud_tire_mask.png"
 const RESIDUE_DUST_TIRE_MASK: String = "res://assets/textures/vehicle/residue/dust_tire_mask.png"
 const RESIDUE_WETNESS_TIRE_MASK: String = "res://assets/textures/vehicle/residue/wetness_tire_mask.png"
+const VEHICLE_BODY_BASE_POSITION: Vector3 = Vector3(0.0, 0.010, 0.015)
+const VEHICLE_NOSE_BASE_POSITION: Vector3 = Vector3(0.0, 0.018, -0.155)
+const VEHICLE_FRONT_LEFT_WHEEL_SOCKET_POSITION: Vector3 = Vector3(-0.08, -0.015, -0.10)
 const WHEEL_SOCKET_NAMES: Array[String] = [
 	"wheel_front_left",
 	"wheel_front_right",
@@ -77,7 +80,8 @@ func _inspect_vehicle_visuals(host: Node, vehicle: Node) -> void:
 	_require_node(visual_root, "body")
 	_require_node(visual_root, "nose")
 	_require_node(visual_root, "roll_cage")
-	_require_node_position(visual_root, "wheel_front_left", Vector3(-0.08, -0.015, -0.10), FLOAT_EPSILON)
+	_require_vehicle_chassis_drop(visual_root)
+	_require_node_position(visual_root, "wheel_front_left", VEHICLE_FRONT_LEFT_WHEEL_SOCKET_POSITION, FLOAT_EPSILON)
 	_require_node_position(visual_root, "wheel_front_right", Vector3(0.08, -0.015, -0.10), FLOAT_EPSILON)
 	_require_node_position(visual_root, "wheel_rear_left", Vector3(-0.08, -0.015, 0.10), FLOAT_EPSILON)
 	_require_node_position(visual_root, "wheel_rear_right", Vector3(0.08, -0.015, 0.10), FLOAT_EPSILON)
@@ -93,6 +97,19 @@ func _inspect_vehicle_visuals(host: Node, vehicle: Node) -> void:
 		_errors.append("flat vehicle VisualRoot should include chassis, roll cage, and wheel meshes")
 	_require_vehicle_steering_visuals(host, visual_root)
 	_require_vehicle_residue_visuals(host, vehicle, visual_root)
+
+
+func _require_vehicle_chassis_drop(visual_root: Node) -> void:
+	var drop_offset: Vector3 = Vector3(0.0, GameConfig.vehicle_visual_chassis_drop, 0.0)
+	_require_node_position(visual_root, "body", VEHICLE_BODY_BASE_POSITION - drop_offset, FLOAT_EPSILON)
+	_require_node_position(visual_root, "nose", VEHICLE_NOSE_BASE_POSITION - drop_offset, FLOAT_EPSILON)
+	var body: Node3D = _require_node(visual_root, "body") as Node3D
+	var wheel_socket: Node3D = _require_node(visual_root, "wheel_front_left") as Node3D
+	if body == null or wheel_socket == null:
+		return
+	var visual_gap: float = body.position.y - wheel_socket.position.y
+	if visual_gap > GameConfig.vehicle_visual_chassis_wheel_socket_max_gap:
+		_errors.append("flat vehicle visual chassis-to-wheel socket gap expected <= " + str(GameConfig.vehicle_visual_chassis_wheel_socket_max_gap) + ", got " + str(visual_gap))
 
 
 func _require_vehicle_steering_visuals(host: Node, visual_root: Node) -> void:

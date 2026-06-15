@@ -22,6 +22,8 @@ func next_input(state: RefCounted) -> RefCounted:
 		_fill_launch_wheelie(input)
 	elif scenario_id == "reverse_drive":
 		_fill_reverse_drive(input)
+	elif scenario_id == "reverse_steer_right":
+		_fill_reverse_steer_right(input)
 	elif scenario_id == "standstill_yaw_rate":
 		_fill_standstill_yaw_rate(input)
 	elif scenario_id == "offtrail_escape":
@@ -84,6 +86,15 @@ func _fill_launch_wheelie(input: RefCounted) -> void:
 func _fill_reverse_drive(input: RefCounted) -> void:
 	if _tick < GameConfig.reverse_probe_ticks:
 		input.set("throttle", GameConfig.reverse_probe_throttle)
+	else:
+		input.set("brake", GameConfig.scripted_stop_brake)
+		_done = true
+
+
+func _fill_reverse_steer_right(input: RefCounted) -> void:
+	if _tick < GameConfig.reverse_steer_probe_ticks:
+		input.set("throttle", GameConfig.reverse_steer_probe_throttle)
+		input.set("steer", GameConfig.reverse_steer_probe_steer)
 	else:
 		input.set("brake", GameConfig.scripted_stop_brake)
 		_done = true

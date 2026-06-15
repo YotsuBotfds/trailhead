@@ -54,6 +54,7 @@ var _started_flipped: bool = false
 var _self_right_input_count: int = 0
 var _initial_position: Vector3 = Vector3.ZERO
 var _initial_forward: Vector3 = Vector3.FORWARD
+var _initial_control_right: Vector3 = Vector3.LEFT
 var _initial_heading_deg: float = 0.0
 var _self_right_heading_error_deg: float = 999999.0
 var _self_right_heading_captured: bool = false
@@ -89,6 +90,9 @@ var _max_descent_from_initial: float = 0.0
 var _max_reverse_distance: float = 0.0
 var _max_flat_displacement_from_initial: float = 0.0
 var _final_flat_displacement_from_initial: float = 0.0
+var _min_control_right_displacement: float = 999999.0
+var _max_control_right_displacement: float = -999999.0
+var _final_control_right_displacement: float = 0.0
 var _front_air_rear_contact_ticks: int = 0
 var _surface_event_count: int = 0
 var _landmark_event_count: int = 0
@@ -176,6 +180,7 @@ func _begin_run() -> void:
 	var initial_basis: Basis = initial_state.get("basis")
 	_initial_position = initial_state.get("position")
 	_initial_forward = _horizontal_forward(initial_basis)
+	_initial_control_right = -_horizontal_right(initial_basis)
 	_initial_heading_deg = _heading_deg(initial_basis)
 	_controller = _make_controller(_controller_id)
 	if _controller == null:
@@ -472,6 +477,7 @@ func _record(state: RefCounted, input: RefCounted) -> void:
 	var front_contact_count: int = _contact_count(wheel_contact, 0, 2)
 	var rear_contact_count: int = _contact_count(wheel_contact, 2, 4)
 	var initial_forward_displacement: float = (state_position - _initial_position).dot(_initial_forward)
+	var control_right_displacement: float = (state_position - _initial_position).dot(_initial_control_right)
 	var descent_from_initial: float = _initial_position.y - state_position.y
 	var flat_displacement_from_initial: float = Vector2(state_position.x - _initial_position.x, state_position.z - _initial_position.z).length()
 	var row: Dictionary = {
@@ -487,6 +493,7 @@ func _record(state: RefCounted, input: RefCounted) -> void:
 		"speed_delta": speed_delta,
 		"motor_rpm": motor_rpm,
 		"initial_forward_displacement": initial_forward_displacement,
+		"control_right_displacement": control_right_displacement,
 		"flat_displacement_from_initial": flat_displacement_from_initial,
 		"slip_angle_deg": slip_angle_deg,
 		"wheel_contact_count": front_contact_count + rear_contact_count,
@@ -526,6 +533,9 @@ func _record(state: RefCounted, input: RefCounted) -> void:
 	_max_reverse_distance = maxf(_max_reverse_distance, -initial_forward_displacement)
 	_max_flat_displacement_from_initial = maxf(_max_flat_displacement_from_initial, flat_displacement_from_initial)
 	_final_flat_displacement_from_initial = flat_displacement_from_initial
+	_min_control_right_displacement = minf(_min_control_right_displacement, control_right_displacement)
+	_max_control_right_displacement = maxf(_max_control_right_displacement, control_right_displacement)
+	_final_control_right_displacement = control_right_displacement
 	if front_contact_count == 0 and rear_contact_count > 0:
 		_front_air_rear_contact_ticks += 1
 	_max_abs_slip_angle_deg = maxf(_max_abs_slip_angle_deg, absf(slip_angle_deg))
@@ -714,6 +724,9 @@ func _finish(passed: bool) -> void:
 			"max_reverse_distance": _max_reverse_distance,
 			"max_flat_displacement_from_initial": _max_flat_displacement_from_initial,
 			"final_flat_displacement_from_initial": _final_flat_displacement_from_initial,
+			"min_control_right_displacement": _min_control_right_displacement if _min_control_right_displacement < 999998.0 else null,
+			"max_control_right_displacement": _max_control_right_displacement if _max_control_right_displacement > -999998.0 else null,
+			"final_control_right_displacement": _final_control_right_displacement,
 			"front_air_rear_contact_ticks": _front_air_rear_contact_ticks,
 			"surface_event_count": _surface_event_count,
 			"last_surface_event": String(_last_surface_event),
@@ -807,6 +820,11 @@ func _scenario_predicate_passed() -> bool:
 		return _max_pitch_deg >= GameConfig.wheelie_min_peak_pitch_deg and _front_air_rear_contact_ticks >= GameConfig.wheelie_min_front_air_rear_contact_ticks and _max_flipped_ticks_seen == 0
 	if _scenario_id == "reverse_drive":
 		return _reverse_ticks >= GameConfig.reverse_min_ticks and _max_reverse_distance >= GameConfig.reverse_min_distance
+	if _scenario_id == "reverse_steer_right":
+		return _reverse_ticks >= GameConfig.reverse_min_ticks \
+			and _max_reverse_distance >= GameConfig.reverse_steer_min_reverse_distance \
+			and _final_control_right_displacement >= GameConfig.reverse_steer_min_control_right_displacement \
+			and _max_flipped_ticks_seen == 0
 	if _scenario_id == "standstill_yaw_rate":
 		var yaw_rate_limit: float = GameConfig.steer_inplace_yaw_rate_max * GameConfig.standstill_yaw_probe_max_multiplier
 		return _max_abs_yaw_rate <= yaw_rate_limit and _max_abs_yaw_rate >= GameConfig.standstill_yaw_probe_min_rate
@@ -821,7 +839,11 @@ func _scenario_predicate_passed() -> bool:
 	if _scenario_id == "lateral_slide":
 		return _max_abs_lateral_speed >= GameConfig.lateral_slide_min_peak_lateral_speed and _final_abs_lateral_speed <= GameConfig.lateral_slide_max_final_lateral_speed and _max_flipped_ticks_seen == 0
 	if _scenario_id == "suspension_drop":
-		return _max_speed >= GameConfig.suspension_drop_min_peak_speed and _contact_normal_sample_ticks >= GameConfig.suspension_drop_min_contact_ticks and _post_settle_y_amplitude() <= GameConfig.suspension_drop_max_settle_y_amplitude and _max_post_settle_vertical_speed <= GameConfig.suspension_drop_max_settle_vertical_speed and _max_flipped_ticks_seen == 0
+		return _max_speed >= GameConfig.suspension_drop_min_peak_speed \
+			and _contact_normal_sample_ticks >= GameConfig.suspension_drop_min_contact_ticks \
+			and _post_settle_y_amplitude() <= GameConfig.suspension_drop_max_settle_y_amplitude \
+			and _max_post_settle_vertical_speed <= GameConfig.suspension_drop_max_settle_vertical_speed \
+			and _max_flipped_ticks_seen == 0
 	if _scenario_id == "roll_stability":
 		return _max_initial_forward_displacement >= GameConfig.roll_stability_min_forward_distance and _contact_normal_sample_ticks >= GameConfig.roll_stability_min_contact_ticks and _max_contact_normal_tilt_deg >= GameConfig.roll_stability_min_contact_normal_tilt_deg and _max_abs_roll_deg <= GameConfig.roll_stability_max_abs_roll_deg and _max_flipped_ticks_seen == 0
 	if _scenario_id == "steering_speed_ramp":
@@ -918,6 +940,14 @@ func _horizontal_forward(basis: Basis) -> Vector3:
 	if forward.length() <= GameConfig.reverse_probe_forward_epsilon:
 		return Vector3.FORWARD
 	return forward.normalized()
+
+
+func _horizontal_right(basis: Basis) -> Vector3:
+	var right: Vector3 = basis.x
+	right.y = 0.0
+	if right.length() <= GameConfig.reverse_probe_forward_epsilon:
+		return Vector3.RIGHT
+	return right.normalized()
 
 
 func _heading_deg(basis: Basis) -> float:
