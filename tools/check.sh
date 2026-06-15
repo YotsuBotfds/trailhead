@@ -48,8 +48,6 @@ check "shell tool syntax" sh -c 'for path in tools/*.sh; do sh -n "$path" || exi
 check "Zion bake determinism" python3 tools/check_zion_bake_determinism.py
 check "collision tile integrity" python3 tools/check_collision_tile_integrity.py data/regions/spike_1km
 check "Godot binary SHA pin" tools/check_godot_binary_sha.sh
-
-# Reserved future slots, per planning/forward-reserve-corrections.md:
-# 12. check_surface_id_png.py
+check "Zion surface-ID PNG" python3 tools/check_surface_id_png.py data/terrain/cedar_hollow_zion_surface_id.png --require-grayscale --min-ids 4 --expected-ids 1,2,3,4,5,6 --forbid-zero
 
 exit "$status"
