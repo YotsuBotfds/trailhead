@@ -1,23 +1,58 @@
 class_name VehicleResidueVisual
 extends RefCounted
 
-const MUD_OVERLAY_NAME: String = "residue_mud_overlay"
-const DUST_OVERLAY_NAME: String = "residue_dust_overlay"
-const WETNESS_OVERLAY_NAME: String = "residue_wetness_overlay"
-const MUD_TIRE_OVERLAY_NAME: String = "residue_mud_tire"
-const DUST_TIRE_OVERLAY_NAME: String = "residue_dust_tire"
-const WETNESS_TIRE_OVERLAY_NAME: String = "residue_wetness_tire"
+const ContaminationShader: Shader = preload("res://systems/render/vehicle_contamination_visual.gdshader")
 const MudBodyMask: Texture2D = preload("res://assets/textures/vehicle/residue/mud_body_mask.png")
 const DustBodyMask: Texture2D = preload("res://assets/textures/vehicle/residue/dust_body_mask.png")
 const WetnessBodyMask: Texture2D = preload("res://assets/textures/vehicle/residue/wetness_body_mask.png")
 const MudTireMask: Texture2D = preload("res://assets/textures/vehicle/residue/mud_tire_mask.png")
 const DustTireMask: Texture2D = preload("res://assets/textures/vehicle/residue/dust_tire_mask.png")
 const WetnessTireMask: Texture2D = preload("res://assets/textures/vehicle/residue/wetness_tire_mask.png")
-const MUD_KIND: String = "mud"
-const DUST_KIND: String = "dust"
-const WETNESS_KIND: String = "wetness"
-const RESIDUE_KIND_META: String = "residue_kind"
-const MAX_ALPHA_META: String = "max_alpha"
+const BODY_OVERLAY_NAME: String = "residue_body_contamination_overlay"
+const TIRE_OVERLAY_NAME: String = "residue_tire_contamination_overlay"
+const TIRE_SOURCE_NAME: String = "wheel_mesh"
+const OVERLAY_META: String = "vehicle_contamination_overlay"
+const SURFACE_META: String = "residue_surface"
+const BODY_SURFACE: String = "body"
+const TIRE_SURFACE: String = "tire"
+const NORMAL_OFFSET_METERS: float = 0.0015
+const DRY_ROUGHNESS: float = 0.88
+const WET_ROUGHNESS: float = 0.12
+const WET_SPECULAR: float = 0.72
+const BODY_SOURCE_PATHS: Array[String] = [
+	"body",
+	"nose",
+	"top_deck",
+	"side_panel_left",
+	"side_panel_right",
+	"canopy",
+	"roll_cage/cage_left",
+	"roll_cage/cage_right",
+	"roll_cage/cage_top",
+	"roll_cage/cage_front",
+	"roll_cage/cage_rear",
+	"rear_wing/wing_panel",
+	"front_bumper/front_bumper_bar",
+	"front_bumper/front_bumper_loop",
+	"skid_plate",
+	"shock_front_left",
+	"shock_front_right",
+	"shock_rear_left",
+	"shock_rear_right",
+	"front_left_arm",
+	"front_right_arm",
+	"rear_left_arm",
+	"rear_right_arm",
+	"body_pin_front",
+	"body_pin_rear",
+	"body_stripe",
+	"fender_flares",
+	"fender_lips",
+	"front_grille",
+	"side_number_plates",
+	"side_number_marks",
+	"body_vents"
+]
 const WHEEL_SOCKET_NAMES: Array[String] = [
 	"wheel_front_left",
 	"wheel_front_right",
@@ -29,133 +64,141 @@ const WHEEL_SOCKET_NAMES: Array[String] = [
 func attach(visual_root: Node) -> void:
 	if visual_root == null:
 		return
-	_ensure_overlay(
-		visual_root,
-		MUD_OVERLAY_NAME,
-		MUD_KIND,
-		Vector3(0.0, 0.018, 0.01),
-		Vector3(0.17, 0.006, 0.22),
-		GameConfig.vehicle_residue_mud_color,
-		GameConfig.vehicle_residue_mud_visual_alpha,
-		0.92,
-		MudBodyMask
-	)
-	_ensure_overlay(
-		visual_root,
-		DUST_OVERLAY_NAME,
-		DUST_KIND,
-		Vector3(0.0, 0.021, 0.0),
-		Vector3(0.19, 0.004, 0.24),
-		GameConfig.vehicle_residue_dust_color,
-		GameConfig.vehicle_residue_dust_visual_alpha,
-		0.96,
-		DustBodyMask
-	)
-	_ensure_overlay(
-		visual_root,
-		WETNESS_OVERLAY_NAME,
-		WETNESS_KIND,
-		Vector3(0.0, 0.024, -0.01),
-		Vector3(0.15, 0.003, 0.20),
-		GameConfig.vehicle_residue_wetness_color,
-		GameConfig.vehicle_residue_wetness_visual_alpha,
-		0.18,
-		WetnessBodyMask
-	)
+	_ensure_chassis_overlays(visual_root)
 	_ensure_tire_overlays(visual_root)
 
 
 func apply_state(visual_root: Node, state: RefCounted) -> void:
 	if visual_root == null or state == null:
 		return
+	var mud_amount: float = 0.0
+	var dust_amount: float = 0.0
+	var wetness_amount: float = 0.0
 	var contamination: RefCounted = state.get("contamination") as RefCounted
-	if contamination == null:
-		_set_residue_alpha(visual_root, MUD_KIND, 0.0)
-		_set_residue_alpha(visual_root, DUST_KIND, 0.0)
-		_set_residue_alpha(visual_root, WETNESS_KIND, 0.0)
-		return
-	_set_residue_alpha(visual_root, MUD_KIND, float(contamination.get("mud")) * GameConfig.vehicle_residue_mud_visual_alpha)
-	_set_residue_alpha(visual_root, DUST_KIND, float(contamination.get("dust")) * GameConfig.vehicle_residue_dust_visual_alpha)
-	_set_residue_alpha(visual_root, WETNESS_KIND, float(contamination.get("wetness")) * GameConfig.vehicle_residue_wetness_visual_alpha)
+	if contamination != null:
+		mud_amount = clampf(float(contamination.get("mud")), 0.0, 1.0)
+		dust_amount = clampf(float(contamination.get("dust")), 0.0, 1.0)
+		wetness_amount = clampf(float(contamination.get("wetness")), 0.0, 1.0)
+	_set_contamination_amounts(visual_root, mud_amount, dust_amount, wetness_amount)
+
+
+func _ensure_chassis_overlays(visual_root: Node) -> void:
+	for index: int in range(BODY_SOURCE_PATHS.size()):
+		var source_path: String = BODY_SOURCE_PATHS[index]
+		var source: MeshInstance3D = visual_root.get_node_or_null(source_path) as MeshInstance3D
+		if source == null:
+			continue
+		_ensure_mesh_overlay(
+			source,
+			BODY_OVERLAY_NAME,
+			BODY_SURFACE,
+			MudBodyMask,
+			DustBodyMask,
+			WetnessBodyMask,
+			GameConfig.vehicle_residue_mud_visual_alpha,
+			GameConfig.vehicle_residue_dust_visual_alpha,
+			GameConfig.vehicle_residue_wetness_visual_alpha
+		)
 
 
 func _ensure_tire_overlays(visual_root: Node) -> void:
-	for socket_name in WHEEL_SOCKET_NAMES:
-		var socket: Node3D = visual_root.get_node_or_null(socket_name) as Node3D
+	for index: int in range(WHEEL_SOCKET_NAMES.size()):
+		var socket_name: String = WHEEL_SOCKET_NAMES[index]
+		var socket: Node = visual_root.get_node_or_null(socket_name)
 		if socket == null:
 			continue
-		var side_sign: float = -1.0 if socket_name.ends_with("_left") else 1.0
-		_ensure_overlay(
-			socket,
-			MUD_TIRE_OVERLAY_NAME,
-			MUD_KIND,
-			Vector3(0.021 * side_sign, 0.0, 0.0),
-			Vector3(0.003, 0.067, 0.067),
-			GameConfig.vehicle_residue_mud_color,
+		var tire_source: MeshInstance3D = _find_tire_source(socket)
+		if tire_source == null:
+			continue
+		_ensure_mesh_overlay(
+			tire_source,
+			TIRE_OVERLAY_NAME,
+			TIRE_SURFACE,
+			MudTireMask,
+			DustTireMask,
+			WetnessTireMask,
 			GameConfig.vehicle_residue_mud_visual_alpha * 0.82,
-			0.9,
-			MudTireMask
-		)
-		_ensure_overlay(
-			socket,
-			DUST_TIRE_OVERLAY_NAME,
-			DUST_KIND,
-			Vector3(0.024 * side_sign, 0.0, 0.0),
-			Vector3(0.003, 0.07, 0.07),
-			GameConfig.vehicle_residue_dust_color,
 			GameConfig.vehicle_residue_dust_visual_alpha * 0.9,
-			0.96,
-			DustTireMask
-		)
-		_ensure_overlay(
-			socket,
-			WETNESS_TIRE_OVERLAY_NAME,
-			WETNESS_KIND,
-			Vector3(0.027 * side_sign, 0.0, 0.0),
-			Vector3(0.003, 0.064, 0.064),
-			GameConfig.vehicle_residue_wetness_color,
-			GameConfig.vehicle_residue_wetness_visual_alpha * 0.7,
-			0.12,
-			WetnessTireMask
+			GameConfig.vehicle_residue_wetness_visual_alpha * 0.7
 		)
 
 
-func _ensure_overlay(parent: Node, overlay_name: String, residue_kind: String, local_position: Vector3, size: Vector3, color: Color, max_alpha: float, roughness: float, albedo_texture: Texture2D) -> void:
-	if parent.get_node_or_null(overlay_name) != null:
+func _find_tire_source(socket: Node) -> MeshInstance3D:
+	var named_source: MeshInstance3D = socket.get_node_or_null(TIRE_SOURCE_NAME) as MeshInstance3D
+	if named_source != null:
+		return named_source
+	for index: int in range(socket.get_child_count()):
+		var child: MeshInstance3D = socket.get_child(index) as MeshInstance3D
+		if child != null and child.mesh != null:
+			return child
+	return null
+
+
+func _ensure_mesh_overlay(source: MeshInstance3D, overlay_name: String, surface_kind: String, mud_mask: Texture2D, dust_mask: Texture2D, wetness_mask: Texture2D, mud_alpha_scale: float, dust_alpha_scale: float, wetness_alpha_scale: float) -> void:
+	if source.mesh == null or source.get_node_or_null(overlay_name) != null:
 		return
 	var overlay: MeshInstance3D = MeshInstance3D.new()
 	overlay.name = overlay_name
-	var mesh: BoxMesh = BoxMesh.new()
-	mesh.size = size
-	overlay.mesh = mesh
-	overlay.position = local_position
-	var material: StandardMaterial3D = StandardMaterial3D.new()
-	material.resource_name = overlay_name + "_material"
-	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	material.albedo_color = Color(color.r, color.g, color.b, 0.0)
-	material.albedo_texture = albedo_texture
-	material.roughness = roughness
-	material.metallic = 0.0
-	overlay.material_override = material
+	overlay.mesh = source.mesh
 	overlay.visible = false
-	overlay.set_meta(MAX_ALPHA_META, max_alpha)
-	overlay.set_meta(RESIDUE_KIND_META, residue_kind)
-	parent.add_child(overlay)
+	overlay.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	overlay.material_override = _contamination_material(
+		overlay_name + "_" + surface_kind,
+		mud_mask,
+		dust_mask,
+		wetness_mask,
+		mud_alpha_scale,
+		dust_alpha_scale,
+		wetness_alpha_scale
+	)
+	overlay.set_meta(OVERLAY_META, true)
+	overlay.set_meta(SURFACE_META, surface_kind)
+	source.add_child(overlay)
 
 
-func _set_residue_alpha(parent: Node, residue_kind: String, alpha: float) -> void:
-	for child in parent.get_children():
+func _contamination_material(resource_name: String, mud_mask: Texture2D, dust_mask: Texture2D, wetness_mask: Texture2D, mud_alpha_scale: float, dust_alpha_scale: float, wetness_alpha_scale: float) -> ShaderMaterial:
+	var material: ShaderMaterial = ShaderMaterial.new()
+	material.resource_name = resource_name + "_material"
+	material.shader = ContaminationShader
+	material.set_shader_parameter("mud_mask", mud_mask)
+	material.set_shader_parameter("dust_mask", dust_mask)
+	material.set_shader_parameter("wetness_mask", wetness_mask)
+	material.set_shader_parameter("mud_color", GameConfig.vehicle_residue_mud_color)
+	material.set_shader_parameter("dust_color", GameConfig.vehicle_residue_dust_color)
+	material.set_shader_parameter("wetness_color", GameConfig.vehicle_residue_wetness_color)
+	material.set_shader_parameter("mud_alpha_scale", mud_alpha_scale)
+	material.set_shader_parameter("dust_alpha_scale", dust_alpha_scale)
+	material.set_shader_parameter("wetness_alpha_scale", wetness_alpha_scale)
+	material.set_shader_parameter("normal_offset_meters", NORMAL_OFFSET_METERS)
+	material.set_shader_parameter("dry_roughness", DRY_ROUGHNESS)
+	material.set_shader_parameter("wet_roughness", WET_ROUGHNESS)
+	material.set_shader_parameter("wet_specular", WET_SPECULAR)
+	_apply_material_amounts(material, 0.0, 0.0, 0.0)
+	return material
+
+
+func _set_contamination_amounts(parent: Node, mud_amount: float, dust_amount: float, wetness_amount: float) -> void:
+	for index: int in range(parent.get_child_count()):
+		var child: Node = parent.get_child(index)
 		var overlay: MeshInstance3D = child as MeshInstance3D
-		if overlay != null and String(overlay.get_meta(RESIDUE_KIND_META, "")) == residue_kind:
-			_set_overlay_alpha(overlay, alpha)
-		_set_residue_alpha(child, residue_kind, alpha)
+		if overlay != null and bool(overlay.get_meta(OVERLAY_META, false)):
+			_set_overlay_amounts(overlay, mud_amount, dust_amount, wetness_amount)
+		_set_contamination_amounts(child, mud_amount, dust_amount, wetness_amount)
 
 
-func _set_overlay_alpha(overlay: MeshInstance3D, alpha: float) -> void:
-	var material: StandardMaterial3D = overlay.material_override as StandardMaterial3D
+func _set_overlay_amounts(overlay: MeshInstance3D, mud_amount: float, dust_amount: float, wetness_amount: float) -> void:
+	var material: ShaderMaterial = overlay.material_override as ShaderMaterial
 	if material == null:
 		return
-	var color: Color = material.albedo_color
-	color.a = clampf(alpha, 0.0, float(overlay.get_meta(MAX_ALPHA_META, 1.0)))
-	material.albedo_color = color
-	overlay.visible = color.a > GameConfig.vehicle_residue_visible_epsilon
+	_apply_material_amounts(material, mud_amount, dust_amount, wetness_amount)
+	var mud_alpha_scale: float = float(material.get_shader_parameter("mud_alpha_scale"))
+	var dust_alpha_scale: float = float(material.get_shader_parameter("dust_alpha_scale"))
+	var wetness_alpha_scale: float = float(material.get_shader_parameter("wetness_alpha_scale"))
+	var strongest_alpha: float = maxf(maxf(mud_amount * mud_alpha_scale, dust_amount * dust_alpha_scale), wetness_amount * wetness_alpha_scale)
+	overlay.visible = strongest_alpha > GameConfig.vehicle_residue_visible_epsilon
+
+
+func _apply_material_amounts(material: ShaderMaterial, mud_amount: float, dust_amount: float, wetness_amount: float) -> void:
+	material.set_shader_parameter("mud_amount", mud_amount)
+	material.set_shader_parameter("dust_amount", dust_amount)
+	material.set_shader_parameter("wetness_amount", wetness_amount)
