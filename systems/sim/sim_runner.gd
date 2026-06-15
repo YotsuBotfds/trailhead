@@ -5,6 +5,7 @@ const DEFAULT_TARGET: Vector3 = Vector3(3.0, 0.0, 0.0)
 const CEDAR_ROUTE_PATH: String = "res://data/routes/cedar_hollow.tres"
 const CEDAR_TERRAIN_DEF_PATH: String = "res://data/terrain/cedar_hollow_terrain_def.tres"
 const CedarHollowSceneResource: PackedScene = preload("res://scenes/cedar_hollow.tscn")
+const CedarHollow10mSceneResource: PackedScene = preload("res://scenes/test_zion_10m.tscn")
 const VehicleScene: PackedScene = preload("res://scenes/vehicle.tscn")
 const VehicleInputScript: GDScript = preload("res://systems/vehicle/vehicle_input.gd")
 const SurfaceMapScript: GDScript = preload("res://systems/world/surface_map.gd")
@@ -296,6 +297,10 @@ func _target_radius_for_id(target_id: String) -> float:
 func _spawn_transform(spawn_id: String) -> Transform3D:
 	if _route != null:
 		return _route.call("spawn_transform", StringName(spawn_id))
+	if _scene_id == TerrainBuilderScript.CEDAR_HOLLOW_10M_SCENE_ID:
+		return TerrainBuilderScript.cedar_hollow_10m_spawn_transform()
+	if _scene_id == "heightmap_ramp_probe":
+		return _heightmap_ramp_spawn_transform()
 	if spawn_id == "flat_flipped":
 		var flipped_basis: Basis = Basis(Vector3.FORWARD, PI)
 		return Transform3D(flipped_basis, Vector3(0.0, GameConfig.flat_spawn_height, 0.0))
@@ -321,13 +326,35 @@ func _hill_hold_spawn_height(grade_deg: float) -> float:
 	return _tilted_ground_spawn_height(grade_deg, GameConfig.hill_hold_ground_size.y)
 
 
+func _heightmap_ramp_spawn_transform() -> Transform3D:
+	var spawn_z: float = GameConfig.heightmap_ramp_probe_spawn_z
+	var height: float = _heightmap_ramp_height_at_z(spawn_z)
+	return Transform3D(Basis.IDENTITY, Vector3(0.0, height + _vehicle_spawn_clearance(_heightmap_ramp_grade_deg()), spawn_z))
+
+
+func _heightmap_ramp_grade_deg() -> float:
+	return rad_to_deg(atan(GameConfig.heightmap_ramp_probe_grade_percent * 0.01))
+
+
+func _heightmap_ramp_height_at_z(z: float) -> float:
+	return z * GameConfig.heightmap_ramp_probe_grade_percent * 0.01
+
+
 func _tilted_ground_spawn_height(tilt_deg: float, ground_height: float) -> float:
+	var tilt_cos: float = maxf(cos(deg_to_rad(tilt_deg)), 0.2)
+	return (ground_height * 0.5 + _vehicle_spawn_ray_distance()) / tilt_cos
+
+
+func _vehicle_spawn_clearance(tilt_deg: float) -> float:
+	var tilt_cos: float = maxf(cos(deg_to_rad(tilt_deg)), 0.2)
+	return _vehicle_spawn_ray_distance() / tilt_cos
+
+
+func _vehicle_spawn_ray_distance() -> float:
 	var ray_length: float = GameConfig.susp_rest_length + GameConfig.susp_travel + GameConfig.wheel_radius
 	var gravity: float = float(ProjectSettings.get_setting("physics/3d/default_gravity", 9.8))
 	var static_compression: float = clampf((GameConfig.chassis_mass * gravity * 0.25) / maxf(GameConfig.susp_stiffness, 0.001), 0.0, 1.0)
-	var ray_distance: float = ray_length - static_compression * GameConfig.susp_travel
-	var tilt_cos: float = maxf(cos(deg_to_rad(tilt_deg)), 0.2)
-	return (ground_height * 0.5 + ray_distance) / tilt_cos
+	return ray_length - static_compression * GameConfig.susp_travel
 
 
 func _setup_flat_scene() -> void:
@@ -335,6 +362,12 @@ func _setup_flat_scene() -> void:
 		var cedar_scene: Node = CedarHollowSceneResource.instantiate()
 		cedar_scene.name = "CedarHollow"
 		add_child(cedar_scene)
+		return
+	if _scene_id == TerrainBuilderScript.CEDAR_HOLLOW_10M_SCENE_ID:
+		var cedar_10m_scene: Node = CedarHollow10mSceneResource.instantiate()
+		cedar_10m_scene.name = "CedarHollow10m"
+		cedar_10m_scene.set("host_preview_vehicle", false)
+		add_child(cedar_10m_scene)
 		return
 	if _scene_id == "offtrail_escape":
 		_setup_offtrail_escape_scene()
@@ -347,6 +380,9 @@ func _setup_flat_scene() -> void:
 		return
 	if _scene_id == "roll_stability_probe":
 		_setup_roll_stability_probe_scene()
+		return
+	if _scene_id == "heightmap_ramp_probe":
+		_setup_heightmap_ramp_probe_scene()
 		return
 	if _scene_id == "surface_strips":
 		FlatWorldBuilderScript.build_surface_strip_collision(self)
@@ -393,6 +429,33 @@ func _setup_hill_hold_probe_scene() -> void:
 
 func _setup_roll_stability_probe_scene() -> void:
 	_build_sim_surface_side_slope("roll_stability_ground", &"packed_dirt", GameConfig.roll_stability_side_slope_deg)
+
+
+func _setup_heightmap_ramp_probe_scene() -> void:
+	var body: StaticBody3D = StaticBody3D.new()
+	body.name = "heightmap_ramp_ground__surf_packed_dirt"
+	body.add_to_group("surf_packed_dirt")
+	add_child(body)
+
+	var collision: CollisionShape3D = CollisionShape3D.new()
+	collision.name = "Collision"
+	var shape: HeightMapShape3D = HeightMapShape3D.new()
+	var samples: int = maxi(GameConfig.heightmap_ramp_probe_grid_samples, 2)
+	shape.map_width = samples
+	shape.map_depth = samples
+	var spacing: float = GameConfig.heightmap_ramp_probe_size_m / float(samples - 1)
+	var half_size: float = GameConfig.heightmap_ramp_probe_size_m * 0.5
+	var map_data: PackedFloat32Array = PackedFloat32Array()
+	map_data.resize(samples * samples)
+	for z_index in range(samples):
+		var z_pos: float = -half_size + float(z_index) * spacing
+		var height: float = _heightmap_ramp_height_at_z(z_pos)
+		for x_index in range(samples):
+			map_data[z_index * samples + x_index] = height
+	shape.map_data = map_data
+	collision.shape = shape
+	collision.scale = Vector3(spacing, 1.0, spacing)
+	body.add_child(collision)
 
 
 func _build_sim_surface_box(prefix: String, surface_id: StringName, center: Vector3, size: Vector3) -> StaticBody3D:
@@ -551,7 +614,7 @@ func _record(state: RefCounted, input: RefCounted) -> void:
 	_max_abs_yaw_rate = maxf(_max_abs_yaw_rate, absf(yaw_rate))
 	_max_abs_lateral_speed = maxf(_max_abs_lateral_speed, abs_lateral_speed)
 	_final_abs_lateral_speed = abs_lateral_speed
-	if _scene_id == TerrainBuilderScript.CEDAR_SCENE_ID:
+	if _uses_heightfield_clearance():
 		_record_chassis_heightfield_clearance(state_position, state_basis)
 	if _scenario_id == "steering_speed_ramp":
 		_record_steering_speed_ramp_bucket(speed, absf(yaw_rate))
@@ -630,6 +693,13 @@ func _configure_flat_bounds() -> void:
 		_bounds_min = _route.get("bounds_min")
 		_bounds_max = _route.get("bounds_max")
 		return
+	if _scene_id == TerrainBuilderScript.CEDAR_HOLLOW_10M_SCENE_ID:
+		_configure_local_probe_bounds()
+		return
+	if _scene_id == "heightmap_ramp_probe":
+		_bounds_min = GameConfig.heightmap_ramp_probe_bounds_min
+		_bounds_max = GameConfig.heightmap_ramp_probe_bounds_max
+		return
 	if _scene_id == "surface_strips":
 		_bounds_min = GameConfig.surface_probe_bounds_min
 		_bounds_max = GameConfig.surface_probe_bounds_max
@@ -652,6 +722,22 @@ func _configure_flat_bounds() -> void:
 	var max_z: float = maxf(0.0, _target.z) + 1.0
 	_bounds_min = Vector3(min_x, GameConfig.flat_target_bounds_y_min, min_z)
 	_bounds_max = Vector3(max_x, GameConfig.flat_target_bounds_y_max, max_z)
+
+
+func _configure_local_probe_bounds() -> void:
+	var spawn_position: Vector3 = _spawn_transform(_spawn_id).origin
+	var margin_xz: float = GameConfig.real_terrain_probe_bounds_margin_xz
+	var margin_y: float = GameConfig.real_terrain_probe_bounds_margin_y
+	_bounds_min = Vector3(
+		minf(spawn_position.x, _target.x) - margin_xz,
+		spawn_position.y - margin_y,
+		minf(spawn_position.z, _target.z) - margin_xz
+	)
+	_bounds_max = Vector3(
+		maxf(spawn_position.x, _target.x) + margin_xz,
+		spawn_position.y + margin_y,
+		maxf(spawn_position.z, _target.z) + margin_xz
+	)
 
 
 func _finish(passed: bool) -> void:
@@ -868,6 +954,8 @@ func _scenario_predicate_passed() -> bool:
 		return _resting_ride_height_predicate_passed()
 	if _scenario_id == "roll_stability":
 		return _max_initial_forward_displacement >= GameConfig.roll_stability_min_forward_distance and _contact_normal_sample_ticks >= GameConfig.roll_stability_min_contact_ticks and _max_contact_normal_tilt_deg >= GameConfig.roll_stability_min_contact_normal_tilt_deg and _max_abs_roll_deg <= GameConfig.roll_stability_max_abs_roll_deg and _max_flipped_ticks_seen == 0
+	if _scenario_id == "real_terrain_flat_segment":
+		return _real_terrain_flat_segment_predicate_passed()
 	if _scenario_id == "steering_speed_ramp":
 		return _steering_speed_ramp_predicate_passed()
 	if _scenario_id == "clip_descent":
@@ -895,6 +983,12 @@ func _steering_speed_ramp_predicate_passed() -> bool:
 	if _steering_speed_high_max_abs_yaw_rate < _steering_speed_low_max_abs_yaw_rate + GameConfig.steering_speed_probe_min_high_yaw_gain:
 		return false
 	return _max_flipped_ticks_seen == 0
+
+
+func _real_terrain_flat_segment_predicate_passed() -> bool:
+	return _max_initial_forward_displacement >= GameConfig.real_terrain_flat_segment_distance_m \
+		and _contact_normal_sample_ticks >= GameConfig.real_terrain_flat_segment_min_contact_ticks \
+		and _max_flipped_ticks_seen == 0
 
 
 func _surface_sweep_predicate_passed() -> bool:
@@ -1073,9 +1167,9 @@ func _record_chassis_heightfield_clearance(position: Vector3, basis: Basis) -> v
 	var sampled_this_tick: bool = false
 	for local_point in local_points:
 		var world_point: Vector3 = position + basis * local_point
-		if not _cedar_heightmap_contains(world_point.x, world_point.z):
+		if not _heightfield_contains(world_point.x, world_point.z):
 			continue
-		var terrain_height: float = _cedar_heightmap_height(world_point.x, world_point.z)
+		var terrain_height: float = _heightfield_height(world_point.x, world_point.z)
 		var clearance: float = world_point.y - terrain_height
 		_min_chassis_clearance_m = minf(_min_chassis_clearance_m, clearance)
 		_max_chassis_penetration_m = maxf(_max_chassis_penetration_m, maxf(0.0, -clearance))
@@ -1084,38 +1178,44 @@ func _record_chassis_heightfield_clearance(position: Vector3, basis: Basis) -> v
 		_chassis_clearance_sample_ticks += 1
 
 
-func _cedar_heightmap_contains(x: float, z: float) -> bool:
-	var terrain_def: Resource = TerrainBuilderScript.cedar_terrain_def()
-	return bool(terrain_def.call("contains_world_xz", Vector2(x, z)))
+func _uses_heightfield_clearance() -> bool:
+	return _scene_id == TerrainBuilderScript.CEDAR_SCENE_ID \
+		or _scene_id == TerrainBuilderScript.CEDAR_HOLLOW_10M_SCENE_ID \
+		or _scene_id == "heightmap_ramp_probe"
 
 
-func _cedar_heightmap_height(x: float, z: float) -> float:
-	var terrain_def: Resource = TerrainBuilderScript.cedar_terrain_def()
-	var tile_index: Vector2i = terrain_def.call("tile_index_for_world_xz", Vector2(x, z))
-	var shape: HeightMapShape3D = TerrainBuilderScript.heightmap_collision_shape_for_tile(tile_index)
-	if shape == null:
+func _heightfield_contains(x: float, z: float) -> bool:
+	if _scene_id == "heightmap_ramp_probe":
+		var half_size: float = GameConfig.heightmap_ramp_probe_size_m * 0.5
+		return x >= -half_size and x <= half_size and z >= -half_size and z <= half_size
+	var terrain_def: Resource = _heightfield_terrain_def()
+	if terrain_def == null:
+		return false
+	var terrain_xz: Vector2 = Vector2(x, z) - _heightfield_horizontal_offset()
+	return bool(terrain_def.call("contains_world_xz", terrain_xz))
+
+
+func _heightfield_height(x: float, z: float) -> float:
+	if _scene_id == "heightmap_ramp_probe":
+		return _heightmap_ramp_height_at_z(z)
+	var terrain_def: Resource = _heightfield_terrain_def()
+	if terrain_def == null:
 		return 0.0
-	var width: int = maxi(shape.map_width, 1)
-	var depth: int = maxi(shape.map_depth, 1)
-	var data: PackedFloat32Array = shape.map_data
-	if data.size() != width * depth:
-		return 0.0
-	var uv: Vector2 = terrain_def.call("world_to_tile_heightmap_uv", Vector2(x, z), tile_index)
-	var u: float = clampf(uv.x, 0.0, 1.0) * float(width - 1)
-	var v: float = clampf(uv.y, 0.0, 1.0) * float(depth - 1)
-	var x0: int = clampi(int(floor(u)), 0, width - 1)
-	var z0: int = clampi(int(floor(v)), 0, depth - 1)
-	var x1: int = mini(x0 + 1, width - 1)
-	var z1: int = mini(z0 + 1, depth - 1)
-	var tx: float = u - float(x0)
-	var tz: float = v - float(z0)
-	var h00: float = data[z0 * width + x0]
-	var h10: float = data[z0 * width + x1]
-	var h01: float = data[z1 * width + x0]
-	var h11: float = data[z1 * width + x1]
-	var h0: float = lerpf(h00, h10, tx)
-	var h1: float = lerpf(h01, h11, tx)
-	return lerpf(h0, h1, tz)
+	return TerrainBuilderScript.heightmap_height_at_world_xz(terrain_def, Vector2(x, z), _heightfield_horizontal_offset())
+
+
+func _heightfield_terrain_def() -> Resource:
+	if _scene_id == TerrainBuilderScript.CEDAR_SCENE_ID:
+		return TerrainBuilderScript.cedar_terrain_def()
+	if _scene_id == TerrainBuilderScript.CEDAR_HOLLOW_10M_SCENE_ID:
+		return TerrainBuilderScript.cedar_hollow_10m_terrain_def()
+	return null
+
+
+func _heightfield_horizontal_offset() -> Vector2:
+	if _scene_id == TerrainBuilderScript.CEDAR_HOLLOW_10M_SCENE_ID:
+		return TerrainBuilderScript.cedar_hollow_10m_horizontal_offset()
+	return Vector2.ZERO
 
 
 func _record_steering_speed_ramp_bucket(speed: float, abs_yaw_rate: float) -> void:

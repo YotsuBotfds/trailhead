@@ -52,6 +52,11 @@ GOLDENS = [
         "cedar_hollow_segment_pine_floor_to_far_mile_marker.json",
         "cedar_hollow_segment_pine_floor_to_far_mile_marker_replay.json",
     ),
+    (
+        "cedar_hollow_zion_pa_rus_flat_segment",
+        "cedar_hollow_zion_pa_rus_flat_segment.json",
+        "cedar_hollow_zion_pa_rus_flat_segment_replay.json",
+    ),
 ]
 
 

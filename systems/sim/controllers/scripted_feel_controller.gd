@@ -6,12 +6,18 @@ const VehicleInputScript: GDScript = preload("res://systems/vehicle/vehicle_inpu
 var scenario_id: String = "ebrake_drift"
 var _tick: int = 0
 var _done: bool = false
+var _initial_position_captured: bool = false
+var _initial_position: Vector3 = Vector3.ZERO
+var _initial_forward: Vector3 = Vector3.FORWARD
 
 
 func configure(id: String) -> void:
 	scenario_id = id
 	_tick = 0
 	_done = false
+	_initial_position_captured = false
+	_initial_position = Vector3.ZERO
+	_initial_forward = Vector3.FORWARD
 
 
 func next_input(state: RefCounted) -> RefCounted:
@@ -40,6 +46,8 @@ func next_input(state: RefCounted) -> RefCounted:
 		_fill_resting_ride_height(input)
 	elif scenario_id == "roll_stability":
 		_fill_roll_stability(input)
+	elif scenario_id == "real_terrain_flat_segment":
+		_fill_real_terrain_flat_segment(input, state)
 	elif scenario_id == "steering_speed_ramp":
 		_fill_steering_speed_ramp(input)
 	elif scenario_id == "surface_sweep":
@@ -172,6 +180,21 @@ func _fill_roll_stability(input: RefCounted) -> void:
 		_done = true
 
 
+func _fill_real_terrain_flat_segment(input: RefCounted, state: RefCounted) -> void:
+	_capture_initial_state(state)
+	if _tick >= GameConfig.real_terrain_flat_segment_max_ticks:
+		input.set("brake", GameConfig.scripted_stop_brake)
+		_done = true
+		return
+	var state_position: Vector3 = state.get("position")
+	var forward_displacement: float = (state_position - _initial_position).dot(_initial_forward)
+	if forward_displacement >= GameConfig.real_terrain_flat_segment_distance_m:
+		input.set("brake", GameConfig.scripted_stop_brake)
+		_done = true
+		return
+	input.set("throttle", GameConfig.real_terrain_flat_segment_throttle)
+
+
 func _fill_steering_speed_ramp(input: RefCounted) -> void:
 	if _tick < GameConfig.steering_speed_probe_ticks:
 		input.set("throttle", GameConfig.steering_speed_probe_throttle)
@@ -233,3 +256,16 @@ func _fill_clip_descent(input: RefCounted, state: RefCounted) -> void:
 	var heading_error: float = signf(fwd.cross(desired).y) * fwd.angle_to(desired)
 	input.set("steer", clampf(heading_error * GameConfig.clip_descent_probe_steer_gain, -1.0, 1.0))
 	input.set("throttle", GameConfig.clip_descent_probe_throttle)
+
+
+func _capture_initial_state(state: RefCounted) -> void:
+	if _initial_position_captured:
+		return
+	_initial_position = state.get("position")
+	var state_basis: Basis = state.get("basis")
+	var forward: Vector3 = -state_basis.z
+	forward.y = 0.0
+	if forward.length() <= GameConfig.pd_waypoint_forward_epsilon:
+		forward = Vector3.FORWARD
+	_initial_forward = forward.normalized()
+	_initial_position_captured = true
