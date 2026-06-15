@@ -19,39 +19,44 @@ const EXPECTED_GRASS_OCCLUDERS: int = 16
 const GRASS_MIN_SPACING: float = 0.45
 const GRASS_OCCLUDER_MIN_SPACING: float = 0.75
 const BLADE_SPIRAL_DEGREES: float = 137.5
-const GRASS_PRIMARY_BLADE_MULTIPLIER: int = 2
-const GRASS_LOW_BLADE_MULTIPLIER: int = 1
-const GRASS_LOW_BLADE_HEIGHT_FACTOR: float = 0.42
-const GRASS_LOW_BLADE_WIDTH_FACTOR: float = 1.32
-const GRASS_LOW_BLADE_RADIUS_FACTOR: float = 1.18
-const GRASS_BLADE_YAW_JITTER_DEGREES: float = 19.0
-const GRASS_BLADE_LEAN_DEGREES: float = 7.0
+const GRASS_PRIMARY_BLADE_MULTIPLIER: int = 4
+const GRASS_LOW_BLADE_MULTIPLIER: int = 4
+const GRASS_LOW_BLADE_HEIGHT_FACTOR: float = 0.34
+const GRASS_LOW_BLADE_WIDTH_FACTOR: float = 1.55
+const GRASS_LOW_BLADE_RADIUS_FACTOR: float = 1.36
+const GRASS_BLADE_YAW_JITTER_DEGREES: float = 42.0
+const GRASS_BLADE_LEAN_DEGREES: float = 11.0
+const GRASS_BLADE_RADIAL_JITTER: float = 0.14
+const GRASS_BLADE_ANGLE_JITTER_DEGREES: float = 32.0
 const GRASS_PATTERN_MODULUS: int = 997
 const GRASS_PATTERN_INDEX_MULTIPLIER: int = 37
 const GRASS_PATTERN_SALT_MULTIPLIER: int = 101
 const GRASS_PATTERN_CLUMP_STRIDE: int = 53
 const GRASS_WIND_CULL_MARGIN: float = 0.05
-const GRASS_BASE_COLOR: Color = Color(0.10, 0.23, 0.08, 1.0)
-const GRASS_TIP_COLOR: Color = Color(0.42, 0.58, 0.21, 1.0)
+const GRASS_BASE_COLOR: Color = Color(0.07, 0.18, 0.055, 1.0)
+const GRASS_TIP_COLOR: Color = Color(0.48, 0.66, 0.23, 1.0)
 const GRASS_SHADER_CODE: String = "shader_type spatial;\n" \
 		+ "render_mode cull_disabled, diffuse_lambert, specular_schlick_ggx;\n" \
-		+ "uniform vec4 blade_base_color : source_color = vec4(0.10, 0.23, 0.08, 1.0);\n" \
-		+ "uniform vec4 blade_tip_color : source_color = vec4(0.42, 0.58, 0.21, 1.0);\n" \
+		+ "uniform vec4 blade_base_color : source_color = vec4(0.07, 0.18, 0.055, 1.0);\n" \
+		+ "uniform vec4 blade_tip_color : source_color = vec4(0.48, 0.66, 0.23, 1.0);\n" \
 		+ "uniform float blade_height_reference = 0.42;\n" \
-		+ "uniform float wind_strength = 0.018;\n" \
-		+ "uniform float wind_speed = 1.15;\n" \
+		+ "uniform float wind_strength = 0.012;\n" \
 		+ "varying float blade_height;\n" \
+		+ "varying float tip_mix_shift;\n" \
 		+ "void vertex() {\n" \
 		+ "	blade_height = smoothstep(0.0, blade_height_reference, VERTEX.y);\n" \
+		+ "	tip_mix_shift = INSTANCE_CUSTOM.w;\n" \
 		+ "	float wind_phase = INSTANCE_CUSTOM.y * 6.28318530718;\n" \
-		+ "	float sway = sin(TIME * wind_speed + wind_phase);\n" \
-		+ "	float flutter = sin(TIME * wind_speed * 1.73 + wind_phase * 0.41);\n" \
+		+ "	float sway = sin(wind_phase);\n" \
+		+ "	float flutter = sin(wind_phase * 1.73 + INSTANCE_CUSTOM.z * 2.91);\n" \
 		+ "	float bend = (sway * 0.75 + flutter * 0.25) * wind_strength * blade_height * blade_height * INSTANCE_CUSTOM.x;\n" \
 		+ "	VERTEX.x += bend;\n" \
 		+ "	VERTEX.z += bend * (INSTANCE_CUSTOM.z * 0.7 - 0.35);\n" \
 		+ "}\n" \
 		+ "void fragment() {\n" \
-		+ "	vec3 blade_color = mix(blade_base_color.rgb, blade_tip_color.rgb, blade_height);\n" \
+		+ "	float tip_mix = smoothstep(0.0, 1.0, blade_height + (tip_mix_shift - 0.5) * 0.22);\n" \
+		+ "	vec3 blade_color = mix(blade_base_color.rgb, blade_tip_color.rgb, tip_mix);\n" \
+		+ "	blade_color = mix(blade_color, blade_base_color.rgb * 0.72, (1.0 - blade_height) * 0.24);\n" \
 		+ "	ALBEDO = blade_color * COLOR.rgb;\n" \
 		+ "	ROUGHNESS = 0.86;\n" \
 		+ "	SPECULAR = 0.16;\n" \
@@ -275,35 +280,48 @@ static func _create_grass_clump(node_name: String, mesh: Mesh, material: ShaderM
 		var lean_x: float = (_pattern_unit(pattern_index, 5) - 0.5) * GRASS_BLADE_LEAN_DEGREES
 		var lean_z: float = (_pattern_unit(pattern_index, 7) - 0.5) * GRASS_BLADE_LEAN_DEGREES
 		blade_basis = blade_basis * Basis(Vector3(1.0, 0.0, 0.0), deg_to_rad(lean_x)) * Basis(Vector3(0.0, 0.0, 1.0), deg_to_rad(lean_z))
-		var blade_scale_factor: float = 0.78 + _pattern_unit(pattern_index, 11) * 0.34
-		var blade_height_factor: float = 0.82 + _pattern_unit(pattern_index, 13) * 0.32
+		var blade_scale_factor: float = 0.62 + _pattern_unit(pattern_index, 11) * 0.66
+		var blade_height_factor: float = 0.70 + _pattern_unit(pattern_index, 13) * 0.58
 		blade_basis = blade_basis.scaled(Vector3(
 			base_scale.x * blade_scale_factor * pass_width_factor,
 			base_scale.y * blade_height_factor * pass_height_factor,
 			base_scale.z * blade_scale_factor * pass_width_factor
 		))
-		var blade_transform: Transform3D = Transform3D(blade_basis, _blade_offset(i, total_blade_count, pass_radius))
+		var pass_index: int = i
+		var pass_count: int = primary_blade_count
+		if low_pass:
+			pass_index = i - primary_blade_count
+			pass_count = low_blade_count
+		var blade_transform: Transform3D = Transform3D(blade_basis, _blade_offset(pass_index, pass_count, pass_radius, pattern_index))
 		multimesh.set_instance_transform(i, blade_transform)
-		var color_factor: float = 0.82 + _pattern_unit(pattern_index, 17) * 0.30
+		var color_factor: float = 0.78 + _pattern_unit(pattern_index, 17) * 0.36
+		var warm_shift: float = _pattern_unit(pattern_index, 31) - 0.5
+		var cool_shift: float = _pattern_unit(pattern_index, 37) - 0.5
 		if low_pass:
-			color_factor *= 0.84
-		multimesh.set_instance_color(i, Color(color_factor, color_factor, color_factor, 1.0))
-		var wind_weight: float = 0.62 + _pattern_unit(pattern_index, 19) * 0.48
+			color_factor *= 0.76
+			warm_shift -= 0.08
+		var red_factor: float = color_factor + warm_shift * 0.08
+		var green_factor: float = color_factor + warm_shift * 0.04
+		var blue_factor: float = color_factor + cool_shift * 0.05
+		multimesh.set_instance_color(i, Color(red_factor, green_factor, blue_factor, 1.0))
+		var wind_weight: float = 0.54 + _pattern_unit(pattern_index, 19) * 0.64
 		if low_pass:
-			wind_weight *= 0.55
-		multimesh.set_instance_custom_data(i, Color(wind_weight, _pattern_unit(pattern_index, 23), _pattern_unit(pattern_index, 29), 1.0))
+			wind_weight *= 0.44
+		multimesh.set_instance_custom_data(i, Color(wind_weight, _pattern_unit(pattern_index, 23), _pattern_unit(pattern_index, 29), _pattern_unit(pattern_index, 41)))
 	instance.multimesh = multimesh
 	_add_bounds_reference(instance, mesh, base_scale)
 	return instance
 
 
-static func _blade_offset(blade_index: int, blade_count: int, radius: float) -> Vector3:
+static func _blade_offset(blade_index: int, blade_count: int, radius: float, pattern_index: int) -> Vector3:
 	if blade_index == 0:
 		return Vector3.ZERO
-	var angle: float = deg_to_rad(float(blade_index) * BLADE_SPIRAL_DEGREES)
-	var denominator: float = maxf(float(blade_count - 1), 1.0)
-	var ring_fraction: float = float(blade_index) / denominator
-	var offset_radius: float = radius * (0.35 + ring_fraction * 0.65)
+	var angle_jitter: float = (_pattern_unit(pattern_index, 43) - 0.5) * GRASS_BLADE_ANGLE_JITTER_DEGREES
+	var angle: float = deg_to_rad(float(blade_index) * BLADE_SPIRAL_DEGREES + angle_jitter)
+	var denominator: float = maxf(float(blade_count), 1.0)
+	var ring_fraction: float = (float(blade_index) + 0.5) / denominator
+	var radial_jitter: float = 1.0 + (_pattern_unit(pattern_index, 47) - 0.5) * GRASS_BLADE_RADIAL_JITTER
+	var offset_radius: float = radius * (0.20 + ring_fraction * 0.80) * radial_jitter
 	return Vector3(cos(angle) * offset_radius, 0.0, sin(angle) * offset_radius)
 
 
