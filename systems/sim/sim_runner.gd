@@ -3,6 +3,7 @@ extends Node
 
 const DEFAULT_TARGET: Vector3 = Vector3(3.0, 0.0, 0.0)
 const CEDAR_ROUTE_PATH: String = "res://data/routes/cedar_hollow.tres"
+const SPIKE_ROUTE_PATH: String = "res://data/routes/spike_1km_route.tres"
 const CEDAR_TERRAIN_DEF_PATH: String = "res://data/terrain/cedar_hollow_terrain_def.tres"
 const ZION_TERRAIN_DEF_PATH: String = "res://data/terrain/cedar_hollow_zion_terrain_def.tres"
 const CEDAR_COLLISION_BODY_NAME: String = "cedar_hollow_heightmap_collision"
@@ -142,6 +143,12 @@ func _ready() -> void:
 	_controller_id = String(_args.get("controller", "pd"))
 	_scenario_id = String(_args.get("scenario", ""))
 	_scene_id = String(_args.get("scene", "flat_plane"))
+	var route_key: String = String(_args.get("route", ""))
+	if route_key != "":
+		if not _configure_route_smoke(route_key):
+			return
+		_finish_route_smoke(route_key)
+		return
 	_route = _load_route(_scene_id)
 	_route_segment_id = String(_args.get("route-segment", ""))
 	if _route != null:
@@ -243,13 +250,71 @@ func _physics_process(_delta: float) -> void:
 
 func _parse_args(raw: PackedStringArray) -> Dictionary[String, Variant]:
 	var out: Dictionary[String, Variant] = {}
-	for arg in raw:
-		var s: String = String(arg)
+	var i: int = 0
+	while i < raw.size():
+		var s: String = String(raw[i])
 		if s.begins_with("--") and s.contains("="):
 			var kv: PackedStringArray = s.substr(2).split("=", true, 1)
 			if kv.size() == 2:
 				out[kv[0]] = kv[1]
+		elif s.begins_with("--"):
+			var key: String = s.substr(2)
+			if i + 1 < raw.size():
+				var next: String = String(raw[i + 1])
+				if not next.begins_with("--"):
+					out[key] = next
+					i += 1
+				else:
+					out[key] = "true"
+			else:
+				out[key] = "true"
+		i += 1
 	return out
+
+
+func _configure_route_smoke(route_key: String) -> bool:
+	_route = _load_route_by_key(route_key)
+	if _route == null:
+		_finish_runner_error("Unsupported route: " + route_key)
+		return false
+	_scene_id = String(_route.get("scene_id"))
+	var route_errors: PackedStringArray = _route.call("validate")
+	if route_errors.size() > 0:
+		_finish_runner_error("Invalid route " + _scene_id + ": " + _join_packed_strings(route_errors, "; "))
+		return false
+	var segment_arg: String = String(_args.get("segment", _args.get("route-segment", "")))
+	if segment_arg == "":
+		_finish_runner_error("Route smoke requires --segment=<index-or-id>")
+		return false
+	if not _select_route_segment(segment_arg):
+		return false
+	_spawn_id = String(_route.call("segment_spawn_id", StringName(_route_segment_id), &""))
+	_target_id = String(_route.call("segment_target_landmark_id", StringName(_route_segment_id), &""))
+	_target = _parse_target(_target_id)
+	_target_radius = float(_route.call("segment_target_radius_for", StringName(_route_segment_id), _target_radius_for_id(_target_id)))
+	var segment_points_value: Variant = _route.call("segment_waypoint_path", StringName(_route_segment_id))
+	if segment_points_value is Array:
+		var segment_points: Array = segment_points_value
+		for point in segment_points:
+			if point is Vector3:
+				_waypoints.append(point)
+	return true
+
+
+func _select_route_segment(segment_arg: String) -> bool:
+	if segment_arg.is_valid_int():
+		var segment_index: int = int(segment_arg)
+		var segment_ids: Array[StringName] = _route.get("segment_ids")
+		if segment_index < 0 or segment_index >= segment_ids.size():
+			_finish_runner_error("Route segment index out of range for route " + _scene_id + ": " + segment_arg)
+			return false
+		_route_segment_id = String(segment_ids[segment_index])
+	else:
+		_route_segment_id = segment_arg
+	if not bool(_route.call("has_segment", StringName(_route_segment_id))):
+		_finish_runner_error("Unsupported route segment for route " + _scene_id + ": " + _route_segment_id)
+		return false
+	return true
 
 
 func _join_packed_strings(values: PackedStringArray, separator: String) -> String:
@@ -508,6 +573,22 @@ func _load_route(scene_id: String) -> Resource:
 	if scene_id == TerrainBuilderScript.CEDAR_SCENE_ID:
 		return load(CEDAR_ROUTE_PATH) as Resource
 	return null
+
+
+func _load_route_by_key(route_key: String) -> Resource:
+	var route_path: String = route_key
+	if not route_path.begins_with("res://"):
+		if route_key == "cedar_hollow":
+			route_path = CEDAR_ROUTE_PATH
+		elif route_key == "spike_1km_route":
+			route_path = SPIKE_ROUTE_PATH
+		elif route_key.ends_with(".tres"):
+			route_path = "res://data/routes/" + route_key
+		else:
+			route_path = "res://data/routes/" + route_key + ".tres"
+	if not ResourceLoader.exists(route_path):
+		return null
+	return load(route_path) as Resource
 
 
 func _make_controller(controller_id: String) -> RefCounted:
@@ -1329,8 +1410,47 @@ func _finish(passed: bool) -> void:
 		},
 		"telemetry": _telemetry
 	}
-	_write_json(path, result)
+	if not _write_json(path, result):
+		return
 	get_tree().quit(0 if result["result"] == "pass" else 1)
+
+
+func _finish_route_smoke(route_key: String) -> void:
+	set_physics_process(false)
+	var path: String = String(_args.get("out", "tests/out/route_smoke.json"))
+	var segment_ids: Array[StringName] = _route.get("segment_ids")
+	var segment_index: int = segment_ids.find(StringName(_route_segment_id))
+	var route_bounds_min: Vector3 = _route.get("bounds_min")
+	var route_bounds_max: Vector3 = _route.get("bounds_max")
+	var result: Dictionary = {
+		"scene": _scene_id,
+		"controller": _controller_id,
+		"scenario": _scenario_id,
+		"route": route_key,
+		"route_segment": _route_segment_id,
+		"route_segment_index": segment_index,
+		"spawn": _spawn_id,
+		"target": _target_id,
+		"seed": int(_args.get("seed", 0)),
+		"ticks": 0,
+		"result": "pass",
+		"predicates": {
+			"route_valid": true,
+			"route_segment_exists": true
+		},
+		"metrics": {
+			"target": _vec3_to_array(_target),
+			"target_radius": _target_radius,
+			"waypoint_count": _waypoints.size(),
+			"bounds_min": _vec3_to_array(route_bounds_min),
+			"bounds_max": _vec3_to_array(route_bounds_max)
+		},
+		"telemetry": []
+	}
+	if not _write_json(path, result):
+		return
+	print("ok: route smoke " + route_key + " segment " + _route_segment_id)
+	get_tree().quit(0)
 
 
 func _finish_runner_error(message: String) -> void:
@@ -1361,18 +1481,28 @@ func _finish_runner_error(message: String) -> void:
 		"metrics": {},
 		"telemetry": _telemetry
 	}
-	_write_json(path, result)
+	if not _write_json(path, result):
+		return
 	get_tree().quit(2)
 
 
-func _write_json(path: String, result: Dictionary) -> void:
+func _write_json(path: String, result: Dictionary) -> bool:
+	var base_dir: String = path.get_base_dir()
+	if not base_dir.is_empty():
+		var absolute_dir: String = ProjectSettings.globalize_path(base_dir)
+		var dir_error: Error = DirAccess.make_dir_recursive_absolute(absolute_dir)
+		if dir_error != OK and dir_error != ERR_ALREADY_EXISTS:
+			push_error("Failed to create sim output directory: " + base_dir)
+			get_tree().quit(2)
+			return false
 	var file: FileAccess = FileAccess.open(path, FileAccess.WRITE)
 	if file == null:
 		push_error("Failed to write sim output: " + path)
 		get_tree().quit(2)
-		return
+		return false
 	file.store_string(JSON.stringify(result, "\t"))
 	file.close()
+	return true
 
 
 func _vec3_to_array(v: Vector3) -> Array[float]:
