@@ -22,6 +22,7 @@ const VehicleJuiceRigScript: GDScript = preload("res://systems/render/vehicle_ju
 const CedarAudioRigScript: GDScript = preload("res://systems/render/cedar_audio_rig.gd")
 const LandmarkHintHudScript: GDScript = preload("res://systems/render/landmark_hint_hud.gd")
 const PhotographSystemScript: GDScript = preload("res://systems/render/photograph_system.gd")
+const RecoverableObjectRenderScript: GDScript = preload("res://systems/render/recoverable_object_render.gd")
 const TerrainTrackVisualPainterScript: GDScript = preload("res://systems/render/terrain_track_visual_painter.gd")
 const SurfaceMapScript: GDScript = preload("res://systems/world/surface_map.gd")
 const CAMERA_MODE_CHASE: int = 0
@@ -51,6 +52,7 @@ var _sun: DirectionalLight3D = null
 var _mood: int = MOOD_DUSK
 var _terrain_track_painter: Node = null
 var _photograph_system: Node = null
+var _recoverable_object_render: Node = null
 
 
 func _ready() -> void:
@@ -59,6 +61,7 @@ func _ready() -> void:
 	_setup_world()
 	_spawn_vehicle()
 	_setup_audio()
+	_setup_recoverable_object_render()
 	_setup_environment()
 	_setup_light()
 	_setup_camera()
@@ -168,6 +171,15 @@ func _setup_audio() -> void:
 	audio_rig.name = "CedarAudioRig"
 	add_child(audio_rig)
 	audio_rig.call("configure", _vehicle)
+
+
+func _setup_recoverable_object_render() -> void:
+	_recoverable_object_render = RecoverableObjectRenderScript.new() as Node
+	if _recoverable_object_render == null:
+		return
+	_recoverable_object_render.name = "RecoverableObjectRender"
+	add_child(_recoverable_object_render)
+	_recoverable_object_render.call("configure", _world)
 
 
 func _setup_environment() -> void:
