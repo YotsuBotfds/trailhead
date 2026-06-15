@@ -57,6 +57,19 @@ const EXPECTED_PROP_MESH_NODES: Array[String] = [
 	"water_bottle"
 ]
 const FLOAT_EPSILON: float = 0.001
+const LIGHTING_BAR_TOLERANCE: float = 0.01
+const LIGHTING_BAR_COLOR_TOLERANCE: float = 0.02
+const DUSK_SUN_ENERGY_MIN: float = 2.0
+const DUSK_SUN_ENERGY_MAX: float = 2.6
+const GRADE_SATURATION_MIN: float = 1.20
+const GRADE_SATURATION_MAX: float = 1.35
+const GRADE_CONTRAST_MIN: float = 1.08
+const GRADE_CONTRAST_MAX: float = 1.20
+const DUSK_GLOW_INTENSITY: float = 0.18
+const DUSK_GLOW_STRENGTH: float = 0.32
+const DUSK_GLOW_BLOOM: float = 0.06
+const DUSK_SUN_VOLUMETRIC_FOG_ENERGY: float = 0.82
+const VOLUMETRIC_FOG_DENSITY_FLOOR: float = 0.006
 const LABEL_MIN_CONTRAST_RATIO: float = 7.0
 const ACCENT_MIN_CONTRAST_RATIO: float = 4.5
 const CAMERA_COMPOSITION_TOLERANCE: float = 0.01
@@ -1448,8 +1461,24 @@ func _require_shader_float(material: ShaderMaterial, parameter_name: String, exp
 		_errors.append(label + " shader parameter " + parameter_name + " expected " + str(expected) + ", got " + str(value))
 
 
+func _require_float_close(label: String, actual: float, expected: float, tolerance: float) -> void:
+	if absf(actual - expected) > tolerance:
+		_errors.append(label + " expected " + str(expected) + ", got " + str(actual))
+
+
+func _require_float_in_range(label: String, actual: float, minimum_value: float, maximum_value: float) -> void:
+	if actual < minimum_value or actual > maximum_value:
+		_errors.append(label + " expected in [" + str(minimum_value) + ", " + str(maximum_value) + "], got " + str(actual))
+
+
+func _require_color_close(label: String, actual: Color, expected: Color, tolerance: float) -> void:
+	if absf(actual.r - expected.r) > tolerance or absf(actual.g - expected.g) > tolerance or absf(actual.b - expected.b) > tolerance or absf(actual.a - expected.a) > tolerance:
+		_errors.append(label + " expected " + str(expected) + ", got " + str(actual))
+
+
 func _inspect_render_camera_contract(host: Node, chase_camera: Camera3D, orbit_camera: Camera3D, fpv_camera: Camera3D, context: String) -> void:
 	_inspect_tilt_shift_layer(host, context)
+	_inspect_lighting_bar(host, context)
 	_inspect_viewport_antialiasing(host, context)
 	_inspect_project_scaling_settings(context)
 	_inspect_fov_range(context)
@@ -1484,6 +1513,95 @@ func _inspect_tilt_shift_layer(host: Node, context: String) -> void:
 	_require_shader_float(material, "center", GameConfig.tilt_shift_band_center, context + " TiltShiftOverlay")
 	_require_shader_float(material, "band", GameConfig.tilt_shift_focus_band, context + " TiltShiftOverlay")
 	_require_shader_float(material, "blur", GameConfig.tilt_shift_blur_amount, context + " TiltShiftOverlay")
+
+
+func _inspect_lighting_bar(host: Node, context: String) -> void:
+	if host == null:
+		return
+	var sun: DirectionalLight3D = _require_node(host, "GoldenHourSun") as DirectionalLight3D
+	if sun != null:
+		_require_lighting_bar_sun(sun, context)
+	var world_environment: WorldEnvironment = _require_node(host, "GoldenHourEnvironment") as WorldEnvironment
+	if world_environment != null:
+		_require_lighting_bar_environment(world_environment, context)
+	_require_lighting_bar_contact_fill(host, context)
+
+
+func _require_lighting_bar_sun(sun: DirectionalLight3D, context: String) -> void:
+	if not sun.shadow_enabled:
+		_errors.append(context + " GoldenHourSun should enable shadows")
+	_require_float_in_range(context + " GoldenHourSun dusk energy", sun.light_energy, DUSK_SUN_ENERGY_MIN, DUSK_SUN_ENERGY_MAX)
+	_require_float_close(context + " GoldenHourSun dusk energy", sun.light_energy, GameConfig.dusk_sun_energy, LIGHTING_BAR_TOLERANCE)
+	if sun.light_color != GameConfig.dusk_sun_color:
+		_errors.append(context + " GoldenHourSun dusk color should follow GameConfig")
+	if sun.rotation_degrees.distance_to(GameConfig.dusk_sun_rotation_degrees) > LIGHTING_BAR_TOLERANCE:
+		_errors.append(context + " GoldenHourSun dusk rotation expected " + str(GameConfig.dusk_sun_rotation_degrees) + ", got " + str(sun.rotation_degrees))
+	_require_float_close(context + " GoldenHourSun angular distance", sun.light_angular_distance, GameConfig.atmosphere_pcss_sun_angular_distance, LIGHTING_BAR_TOLERANCE)
+	_require_float_close(context + " GoldenHourSun shadow blur", sun.shadow_blur, GameConfig.atmosphere_pcss_shadow_blur, LIGHTING_BAR_TOLERANCE)
+	_require_float_close(context + " GoldenHourSun shadow opacity", sun.shadow_opacity, GameConfig.atmosphere_pcss_shadow_opacity, LIGHTING_BAR_TOLERANCE)
+	_require_float_close(context + " GoldenHourSun shadow max distance", sun.directional_shadow_max_distance, GameConfig.atmosphere_pcss_shadow_max_distance, LIGHTING_BAR_TOLERANCE)
+	_require_float_close(context + " GoldenHourSun volumetric fog energy", sun.light_volumetric_fog_energy, DUSK_SUN_VOLUMETRIC_FOG_ENERGY, LIGHTING_BAR_TOLERANCE)
+
+
+func _require_lighting_bar_environment(world_environment: WorldEnvironment, context: String) -> void:
+	var environment: Environment = world_environment.environment
+	if environment == null:
+		_errors.append(context + " GoldenHourEnvironment has no Environment resource for lighting bar")
+		return
+	if not environment.fog_enabled:
+		_errors.append(context + " GoldenHourEnvironment should enable fog")
+	if environment.volumetric_fog_enabled != GameConfig.atmosphere_volumetric_fog_enabled:
+		_errors.append(context + " GoldenHourEnvironment volumetric fog should follow GameConfig")
+	_require_float_close(context + " GoldenHourEnvironment volumetric fog density", environment.volumetric_fog_density, maxf(GameConfig.atmosphere_volumetric_fog_density, VOLUMETRIC_FOG_DENSITY_FLOOR), LIGHTING_BAR_TOLERANCE)
+	if not environment.glow_enabled:
+		_errors.append(context + " GoldenHourEnvironment should enable glow")
+	if not environment.glow_normalized:
+		_errors.append(context + " GoldenHourEnvironment glow should be normalized")
+	_require_float_close(context + " GoldenHourEnvironment dusk glow intensity", environment.glow_intensity, DUSK_GLOW_INTENSITY, LIGHTING_BAR_TOLERANCE)
+	_require_float_close(context + " GoldenHourEnvironment dusk glow strength", environment.glow_strength, DUSK_GLOW_STRENGTH, LIGHTING_BAR_TOLERANCE)
+	_require_float_close(context + " GoldenHourEnvironment glow bloom", environment.glow_bloom, DUSK_GLOW_BLOOM, LIGHTING_BAR_TOLERANCE)
+	if environment.tonemap_mode != Environment.TONE_MAPPER_AGX:
+		_errors.append(context + " GoldenHourEnvironment tonemap_mode expected AGX, got " + str(environment.tonemap_mode))
+	if environment.adjustment_enabled != GameConfig.atmosphere_grade_enabled:
+		_errors.append(context + " GoldenHourEnvironment color grade enabled should follow GameConfig")
+	_require_float_in_range(context + " GoldenHourEnvironment grade saturation", environment.adjustment_saturation, GRADE_SATURATION_MIN, GRADE_SATURATION_MAX)
+	_require_float_close(context + " GoldenHourEnvironment grade saturation", environment.adjustment_saturation, GameConfig.atmosphere_grade_saturation, LIGHTING_BAR_TOLERANCE)
+	_require_float_in_range(context + " GoldenHourEnvironment grade contrast", environment.adjustment_contrast, GRADE_CONTRAST_MIN, GRADE_CONTRAST_MAX)
+	_require_float_close(context + " GoldenHourEnvironment grade contrast", environment.adjustment_contrast, GameConfig.atmosphere_grade_contrast, LIGHTING_BAR_TOLERANCE)
+	_require_float_close(context + " GoldenHourEnvironment grade brightness", environment.adjustment_brightness, GameConfig.atmosphere_grade_brightness, LIGHTING_BAR_TOLERANCE)
+	if environment.ssao_enabled != GameConfig.atmosphere_ssao_enabled:
+		_errors.append(context + " GoldenHourEnvironment SSAO enabled should follow GameConfig")
+	_require_float_close(context + " GoldenHourEnvironment SSAO radius", environment.ssao_radius, GameConfig.atmosphere_ssao_radius, LIGHTING_BAR_TOLERANCE)
+	_require_float_close(context + " GoldenHourEnvironment SSAO intensity", environment.ssao_intensity, GameConfig.atmosphere_ssao_intensity, LIGHTING_BAR_TOLERANCE)
+	_require_float_close(context + " GoldenHourEnvironment SSAO light affect", environment.ssao_light_affect, GameConfig.atmosphere_ssao_light_affect, LIGHTING_BAR_TOLERANCE)
+	if environment.ssil_enabled != GameConfig.atmosphere_ssil_enabled:
+		_errors.append(context + " GoldenHourEnvironment SSIL enabled should follow GameConfig")
+	_require_float_close(context + " GoldenHourEnvironment SSIL radius", environment.ssil_radius, GameConfig.atmosphere_ssil_radius, LIGHTING_BAR_TOLERANCE)
+	_require_float_close(context + " GoldenHourEnvironment SSIL intensity", environment.ssil_intensity, GameConfig.atmosphere_ssil_intensity, LIGHTING_BAR_TOLERANCE)
+	_require_float_close(context + " GoldenHourEnvironment SSIL sharpness", environment.ssil_sharpness, GameConfig.atmosphere_ssil_sharpness, LIGHTING_BAR_TOLERANCE)
+	if environment.sdfgi_enabled:
+		_errors.append(context + " GoldenHourEnvironment should keep SDFGI disabled")
+
+
+func _require_lighting_bar_contact_fill(host: Node, context: String) -> void:
+	var body_node: Node = _require_node(host, "Vehicle/PhysicsBody")
+	var body: PhysicsBody3D = body_node as PhysicsBody3D
+	if body_node != null and body == null:
+		_errors.append(context + " Vehicle/PhysicsBody should be a PhysicsBody3D")
+		return
+	if body == null:
+		return
+	var light: OmniLight3D = _require_node(body, "VehicleContactFillLight") as OmniLight3D
+	if light == null:
+		return
+	if light.shadow_enabled:
+		_errors.append(context + " VehicleContactFillLight should not cast shadows")
+	_require_float_close(context + " VehicleContactFillLight energy", light.light_energy, GameConfig.contact_fill_light_energy, LIGHTING_BAR_TOLERANCE)
+	_require_float_close(context + " VehicleContactFillLight range", light.omni_range, GameConfig.contact_fill_light_range, LIGHTING_BAR_TOLERANCE)
+	_require_color_close(context + " VehicleContactFillLight color", light.light_color, GameConfig.contact_fill_light_color, LIGHTING_BAR_COLOR_TOLERANCE)
+	var expected_position: Vector3 = Vector3(0.0, -maxf(GameConfig.contact_fill_light_height, 0.0), 0.0)
+	if light.position.distance_to(expected_position) > LIGHTING_BAR_TOLERANCE:
+		_errors.append(context + " VehicleContactFillLight position expected " + str(expected_position) + ", got " + str(light.position))
 
 
 func _inspect_viewport_antialiasing(host: Node, context: String) -> void:
