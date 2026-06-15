@@ -138,45 +138,102 @@ def flat_triangles(vertices, triangles):
     return out_vertices, out_indices
 
 
-def boulder_a_face_groups():
-    radius_x = 0.27
-    radius_z = 0.245
-    height = 0.205
-    segments = 12
+BOULDER_ANGLE_FRACTIONS = [0.00, 0.105, 0.225, 0.345, 0.465, 0.585, 0.700, 0.815, 0.925]
+BOULDER_VARIANTS = [
+    {
+        "radius_x": 0.318,
+        "radius_z": 0.258,
+        "height": 0.148,
+        "angle_offset": 0.00,
+        "ring_offsets": [
+            [-0.08, 0.05, 0.14, -0.05, 0.11, -0.12, 0.03, -0.16, 0.09],
+            [0.15, -0.07, 0.18, -0.11, 0.10, -0.05, 0.13, -0.14, 0.06],
+            [0.08, -0.12, 0.04, 0.13, -0.08, 0.16, -0.06, 0.10, -0.14],
+            [-0.10, 0.12, -0.04, 0.16, -0.13, 0.06, 0.11, -0.08, 0.02],
+        ],
+        "y_steps": [
+            [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            [0.00, 0.02, -0.01, 0.03, -0.02, 0.01, 0.02, -0.03, 0.01],
+            [0.02, -0.02, 0.01, 0.00, 0.03, -0.01, 0.02, -0.02, 0.01],
+            [0.00, 0.03, -0.02, 0.02, -0.01, 0.01, 0.03, -0.03, 0.00],
+        ],
+        "color_shift": 0.00,
+    },
+    {
+        "radius_x": 0.296,
+        "radius_z": 0.274,
+        "height": 0.137,
+        "angle_offset": 0.035,
+        "ring_offsets": [
+            [0.05, -0.11, 0.08, 0.14, -0.15, 0.04, -0.07, 0.12, -0.03],
+            [-0.12, 0.18, -0.05, 0.10, -0.08, 0.15, -0.16, 0.06, 0.11],
+            [0.14, -0.06, 0.11, -0.13, 0.05, -0.10, 0.17, -0.04, 0.08],
+            [0.06, -0.14, 0.13, -0.05, 0.15, -0.09, 0.03, 0.10, -0.12],
+        ],
+        "y_steps": [
+            [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            [0.01, -0.02, 0.02, 0.00, 0.03, -0.01, 0.01, -0.03, 0.02],
+            [-0.01, 0.03, -0.02, 0.01, 0.00, 0.02, -0.02, 0.03, -0.01],
+            [0.02, -0.01, 0.00, 0.03, -0.03, 0.02, -0.01, 0.01, 0.00],
+        ],
+        "color_shift": -0.03,
+    },
+    {
+        "radius_x": 0.334,
+        "radius_z": 0.238,
+        "height": 0.154,
+        "angle_offset": -0.025,
+        "ring_offsets": [
+            [0.12, -0.04, -0.14, 0.09, 0.03, -0.10, 0.16, -0.08, 0.06],
+            [0.07, 0.15, -0.12, 0.05, -0.16, 0.11, -0.06, 0.18, -0.09],
+            [-0.10, 0.06, 0.13, -0.15, 0.09, -0.04, 0.12, -0.11, 0.16],
+            [0.15, -0.08, 0.04, 0.11, -0.06, 0.14, -0.13, 0.02, -0.10],
+        ],
+        "y_steps": [
+            [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            [-0.02, 0.02, 0.00, 0.03, -0.01, 0.02, -0.03, 0.01, 0.00],
+            [0.03, -0.01, 0.02, -0.02, 0.01, 0.00, 0.03, -0.03, 0.02],
+            [-0.01, 0.00, 0.03, -0.02, 0.02, -0.03, 0.01, 0.02, -0.01],
+        ],
+        "color_shift": 0.04,
+    },
+]
+
+
+def boulder_face_groups(variant_index):
+    variant = BOULDER_VARIANTS[variant_index % len(BOULDER_VARIANTS)]
+    radius_x = variant["radius_x"]
+    radius_z = variant["radius_z"]
+    height = variant["height"]
     ring_specs = [
-        (0.0, 0.76),
-        (0.032, 1.04),
-        (0.088, 0.98),
-        (0.136, 0.76),
-        (0.176, 0.50),
-        (0.198, 0.28),
+        (0.0, 0.72),
+        (0.25, 1.02),
+        (0.60, 0.82),
+        (0.93, 0.38),
     ]
-    segment_lumps = [0.16, -0.07, 0.10, -0.15, 0.18, -0.04, 0.11, -0.16, 0.07, -0.10, 0.14, -0.12]
-    segment_y_offsets = [0.0, 0.03, -0.02, 0.025, -0.015, 0.035, -0.01, 0.02, -0.025, 0.015, -0.02, 0.01]
-    ring_offsets = [0.0, 0.018, -0.026, 0.014, -0.018, 0.0]
     vertices = []
     for ring_index, ring_spec in enumerate(ring_specs):
-        base_y, ring_radius = ring_spec
-        vertical_weight = float(ring_index) / float(len(ring_specs) - 1)
-        for segment in range(segments):
-            angle = math.tau * float(segment) / float(segments)
-            segment_lump = segment_lumps[segment]
-            angular_radius = 1.0 + segment_lump * (0.82 + vertical_weight * 0.20) + ring_offsets[ring_index]
-            y = base_y
-            if ring_index > 0:
-                y += segment_y_offsets[segment] * height * vertical_weight
-            x = math.cos(angle) * radius_x * ring_radius * angular_radius
-            z = math.sin(angle) * radius_z * ring_radius * (1.0 + segment_lump * 0.64 - ring_offsets[ring_index] * 0.5)
+        height_t, ring_radius = ring_spec
+        ring_offsets = variant["ring_offsets"][ring_index]
+        y_steps = variant["y_steps"][ring_index]
+        for segment, angle_fraction in enumerate(BOULDER_ANGLE_FRACTIONS):
+            angle = math.tau * (angle_fraction + variant["angle_offset"] * float(ring_index))
+            radial_step = 1.0 + ring_offsets[segment]
+            y = height * (height_t + y_steps[segment] * float(ring_index) / float(len(ring_specs) - 1))
+            x = math.cos(angle) * radius_x * ring_radius * radial_step
+            z = math.sin(angle) * radius_z * ring_radius * (1.0 + ring_offsets[(segment + 3) % len(ring_offsets)] * 0.65)
             vertices.append((x, y, z))
+
+    segments = len(BOULDER_ANGLE_FRACTIONS)
     bottom_center = len(vertices)
     vertices.append((0.0, 0.0, 0.0))
-    top_center = len(vertices)
-    vertices.append((0.0, height * 0.98, 0.0))
+    crown_center = len(vertices)
+    vertices.append((0.018 * radius_x, height, -0.026 * radius_z))
     face_groups = [[], [], []]
-    highlight_segments = {0, 4, 8}
     for segment in range(segments):
         next_segment = (segment + 1) % segments
         face_groups[0].append((bottom_center, next_segment, segment))
+
     for ring_index in range(len(ring_specs) - 1):
         current_start = ring_index * segments
         next_start = current_start + segments
@@ -186,27 +243,50 @@ def boulder_a_face_groups():
             b = current_start + next_segment
             c = next_start + segment
             d = next_start + next_segment
-            group_index = 1
-            if ring_index <= 1:
+            if ring_index == 0:
                 group_index = 0
-            elif ring_index >= 3 and segment in highlight_segments:
+            elif ring_index == 2 and segment in {1, 3, 6}:
                 group_index = 2
-            face_groups[group_index].extend([(a, b, d), (a, d, c)])
+            else:
+                group_index = 1
+            if (segment + ring_index) % 2 == 0:
+                face_groups[group_index].extend([(a, b, d), (a, d, c)])
+            else:
+                face_groups[group_index].extend([(a, b, c), (b, d, c)])
+
     top_ring = (len(ring_specs) - 1) * segments
     for segment in range(segments):
         next_segment = (segment + 1) % segments
-        group_index = 2 if segment in highlight_segments else 1
-        face_groups[group_index].append((top_center, top_ring + segment, top_ring + next_segment))
+        group_index = 2 if segment in {0, 2, 5, 7} else 1
+        face_groups[group_index].append((crown_center, top_ring + segment, top_ring + next_segment))
     return vertices, face_groups
 
 
-def boulder_a_parts():
-    vertices, face_groups = boulder_a_face_groups()
+def boulder_parts(variant_index, asset_name):
+    variant = BOULDER_VARIANTS[variant_index % len(BOULDER_VARIANTS)]
+    color_shift = variant["color_shift"]
+    vertices, face_groups = boulder_face_groups(variant_index)
     return [
-        part(flat_triangles(vertices, face_groups[0]), [0.25, 0.25, 0.23, 1.0], "boulder_a_shadow_facets"),
-        part(flat_triangles(vertices, face_groups[1]), [0.36, 0.36, 0.32, 1.0], "boulder_a_mid_facets"),
-        part(flat_triangles(vertices, face_groups[2]), [0.46, 0.45, 0.39, 1.0], "boulder_a_lit_facets"),
+        part(
+            flat_triangles(vertices, face_groups[0]),
+            [0.22 + color_shift, 0.23 + color_shift, 0.21 + color_shift, 1.0],
+            asset_name + "_shadow_facets",
+        ),
+        part(
+            flat_triangles(vertices, face_groups[1]),
+            [0.34 + color_shift, 0.35 + color_shift, 0.31 + color_shift, 1.0],
+            asset_name + "_mid_facets",
+        ),
+        part(
+            flat_triangles(vertices, face_groups[2]),
+            [0.45 + color_shift, 0.44 + color_shift, 0.38 + color_shift, 1.0],
+            asset_name + "_lit_facets",
+        ),
     ]
+
+
+def boulder_a_parts():
+    return boulder_parts(0, "boulder_a")
 
 
 def pinecone():
