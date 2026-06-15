@@ -21,6 +21,7 @@ const VehicleResidueVisualScript: GDScript = preload("res://systems/render/vehic
 const VehicleJuiceRigScript: GDScript = preload("res://systems/render/vehicle_juice_rig.gd")
 const CedarAudioRigScript: GDScript = preload("res://systems/render/cedar_audio_rig.gd")
 const LandmarkHintHudScript: GDScript = preload("res://systems/render/landmark_hint_hud.gd")
+const PhotographSystemScript: GDScript = preload("res://systems/render/photograph_system.gd")
 const TerrainTrackVisualPainterScript: GDScript = preload("res://systems/render/terrain_track_visual_painter.gd")
 const SurfaceMapScript: GDScript = preload("res://systems/world/surface_map.gd")
 const CAMERA_MODE_CHASE: int = 0
@@ -49,6 +50,7 @@ var _world_environment: WorldEnvironment = null
 var _sun: DirectionalLight3D = null
 var _mood: int = MOOD_DUSK
 var _terrain_track_painter: Node = null
+var _photograph_system: Node = null
 
 
 func _ready() -> void:
@@ -62,6 +64,7 @@ func _ready() -> void:
 	_setup_camera()
 	_setup_vehicle_juice()
 	AtmosphereVisualBuilderScript.configure_render_support(self, _vehicle, _camera, _orbit_camera, _fpv_camera)
+	_setup_photograph_system()
 	_setup_hud()
 
 
@@ -205,6 +208,15 @@ func _setup_vehicle_juice() -> void:
 	juice_rig.name = "VehicleJuiceRig"
 	add_child(juice_rig)
 	juice_rig.call("configure", _vehicle, _camera, _vehicle_visual_root as Node3D)
+
+
+func _setup_photograph_system() -> void:
+	_photograph_system = PhotographSystemScript.new() as Node
+	if _photograph_system == null:
+		return
+	_photograph_system.name = "PhotographSystem"
+	add_child(_photograph_system)
+	_photograph_system.call("configure", CedarRoute, _vehicle)
 
 
 func _setup_hud() -> void:
