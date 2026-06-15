@@ -27,6 +27,47 @@ PY
 	exit 1
 fi
 
+pillow_version="$(python3 -c 'import PIL; print(PIL.__version__)')"
+numpy_version="$(python3 -c 'import numpy as np; print(np.__version__)')"
+
+input_list=""
+for pattern in \
+	'tools/generate_*.py' \
+	'tools/erosion.py' \
+	'tools/asset_manifest.py' \
+	'tools/terrain_def_parser.py' \
+	'tools/check_erosion_determinism.py' \
+	'data/terrain/*.tres' \
+	'requirements.txt' ; do
+	for candidate in $pattern ; do
+		if [ ! -f "$candidate" ]; then
+			printf 'error: fingerprint input missing: %s\n' "$pattern" >&2
+			exit 1
+		fi
+		input_list="${input_list}${candidate}
+"
+	done
+done
+
+fingerprint="$(
+	{
+		printf '%s' "$input_list" | LC_ALL=C sort | while IFS= read -r f; do
+			cat "$f"
+		done
+		printf 'Pillow=%s\nnumpy=%s\n' "$pillow_version" "$numpy_version"
+	} | shasum -a 256 | awk '{print $1}'
+)"
+
+stamp_dir="$root/.cache"
+stamp_file="$stamp_dir/generated_assets.stamp"
+
+if [ "${GENERATED_ASSETS_FORCE:-0}" != "1" ] \
+	&& [ -f "$stamp_file" ] \
+	&& [ "$(cat "$stamp_file")" = "$fingerprint" ]; then
+	printf 'ok: generated assets fresh (fingerprint match, regen skipped)\n'
+	exit 0
+fi
+
 python3 tools/generate_feature_glbs.py --out-dir "$tmp_dir/features" >/dev/null
 python3 tools/generate_prop_glbs.py --out-dir "$tmp_dir/props" >/dev/null
 python3 tools/generate_scatter_glbs.py --out-dir "$tmp_dir/scatter" >/dev/null
@@ -161,3 +202,6 @@ check_file "$tmp_dir/surface_detail/SOURCES.md" "assets/textures/surface_visuals
 check_file "$tmp_dir/surface_detail/terrain_detail_albedo.png" "assets/textures/surface_visuals/generated/terrain_detail_albedo.png"
 check_file "$tmp_dir/surface_detail/terrain_detail_normal.png" "assets/textures/surface_visuals/generated/terrain_detail_normal.png"
 check_file "$tmp_dir/surface_detail/terrain_detail_mask.png" "assets/textures/surface_visuals/generated/terrain_detail_mask.png"
+
+mkdir -p "$stamp_dir"
+printf '%s\n' "$fingerprint" > "$stamp_file"
