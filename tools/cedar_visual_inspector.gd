@@ -1796,6 +1796,8 @@ func _inspect_input_map() -> void:
 	_require_input_action_keys(&"cam_toggle", [KEY_C])
 	_require_input_action_keys(&"map_toggle", [KEY_M])
 	_require_input_action_keys(&"mood_toggle", [KEY_N])
+	_require_input_action_keys(&"logbook_open", [KEY_TAB])
+	_require_input_action_keys(&"photograph", [KEY_F])
 
 
 func _require_input_action_keys(action_name: StringName, expected_keycodes: Array[int]) -> void:

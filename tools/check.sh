@@ -30,9 +30,26 @@ check "no untyped member vars" sh -c '
 '
 check "no generic float/int math helpers" sh -c '! rg -n "\\b(max|min|abs|clamp|snapped)\\s*\\(" --glob "*.gd" .'
 check "EventBus signal names are snake_case groups" sh -c '! rg -n -P "^signal[[:space:]]+(?!vehicle_|world_|camera_|sim_)[A-Za-z0-9_]+" autoload systems --glob "*.gd"'
-check "no sim-path render/input/audio access" sh -c '! rg -n "\\b(Input|Camera3D|AudioStreamPlayer|MeshInstance3D)\\b" systems/sim systems/vehicle systems/world --glob "*.gd"'
+check "sim/render determinism boundary" sh -c '
+	! rg -n "\\b(Input|Camera3D|AudioStreamPlayer|MeshInstance3D)\\b" systems/sim systems/vehicle systems/world --glob "*.gd" &&
+	time_findings="$(rg -n "\\bTIME\\b" systems scenes data --glob "*.gdshader" --glob "*.shader" --glob "*.gd" || true)" &&
+	time_filtered="" &&
+	if [ -n "$time_findings" ]; then
+		time_filtered="$(printf "%s\n" "$time_findings" | rg -v "^systems/render/water_visual\\.gdshader:|^systems/render/scatter_visual_builder\\.gd:" || true)"
+	fi &&
+	if [ -n "$time_filtered" ]; then
+		printf "%s\n" "$time_filtered" >&2
+		exit 1
+	fi
+'
 check "no sim-path render asset dependencies" sh -c '! rg -n "res://(systems/render|assets/models)" systems/sim systems/vehicle systems/world --glob "*.gd"'
 check "Python tool syntax" sh -c 'python3 -m py_compile tools/*.py'
 check "shell tool syntax" sh -c 'for path in tools/*.sh; do sh -n "$path" || exit 1; done'
+
+# Reserved future slots, per planning/forward-reserve-corrections.md:
+# 9.  check_zion_bake_determinism.py
+# 10. check_collision_tile_integrity.py
+# 11. Godot binary SHA pin (4.6.1.stable.official.14d19694e)
+# 12. check_surface_id_png.py
 
 exit "$status"

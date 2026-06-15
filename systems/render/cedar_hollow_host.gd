@@ -89,6 +89,8 @@ func _ensure_default_input_map() -> void:
 	_ensure_action(&"cam_toggle", [KEY_C])
 	_ensure_action(&"map_toggle", [KEY_M])
 	_ensure_action(&"mood_toggle", [KEY_N])
+	_ensure_action(&"logbook_open", [KEY_TAB])
+	_ensure_action(&"photograph", [KEY_F])
 
 
 func _ensure_action(action_name: StringName, keycodes: Array[int]) -> void:

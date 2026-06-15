@@ -43,6 +43,8 @@ var self_right_forward_epsilon: float = 0.001
 var self_right_heading_tolerance_deg: float = 8.0
 var self_right_velocity_retention: float = 0.25
 var recover_to_trail_enabled: bool = true
+var recover_radius: float = 0.4
+var recover_hold_ticks: int = 36
 var recover_stuck_window_ticks: int = 240
 var recover_min_progress: float = 0.03
 var recover_lift: float = 0.12
@@ -50,6 +52,19 @@ var recover_speed_retention: float = 0.2
 var recover_min_throttle: float = 0.2
 var recover_event_min_displacement: float = 0.025
 var motor_rpm_speed_scale: float = 100.0
+
+var photo_hold_ticks: int = 24
+var photo_max_speed_mps: float = 0.08
+var photo_freeze_render_frames: int = 6
+var logbook_route_seed_base: int = 36
+var pace_clock_display_ticks_per_second: int = 120
+var egg_default_trigger_radius_m: float = 0.3
+var egg_default_dwell_ticks: int = 0
+var egg_mud_key_threshold: float = 0.55
+var egg_buried_receiver_dwell_ticks: int = 360
+var egg_frequency_spot_count: int = 4
+var egg_golden_run_tolerance_m: float = 0.12
+var egg_dev_line_ghost_fade_ticks: int = 360
 
 var susp_rest_length: float = 0.010
 var susp_travel: float = 0.012
@@ -214,6 +229,7 @@ var terrain_track_decay_per_second: float = 0.018
 var terrain_track_surface_mud_strength: float = 1.0
 var terrain_track_surface_dust_strength: float = 0.45
 var terrain_track_surface_wet_strength: float = 0.55
+var visual_bar_lighting_spec_version: int = 1
 
 var audio_mix_rate: float = 22050.0
 var audio_buffer_length: float = 0.08
