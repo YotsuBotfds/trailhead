@@ -267,6 +267,8 @@ func _inspect_water_visuals() -> void:
 func _inspect_water_surface(water: MeshInstance3D) -> void:
 	if not water.is_in_group("render_water_surface"):
 		_errors.append(String(water.name) + " should be in render_water_surface group")
+	if absf(water.visibility_range_end - GameConfig.vis_range_water) > FLOAT_EPSILON:
+		_errors.append(String(water.name) + " visibility range should follow GameConfig")
 	if _count_collision_objects(water) > 0:
 		_errors.append(String(water.name) + " should be render-only and collision-free")
 	var material: ShaderMaterial = water.material_override as ShaderMaterial
@@ -283,6 +285,17 @@ func _inspect_water_surface(water: MeshInstance3D) -> void:
 	_require_shader_float(material, "water_alpha", GameConfig.water_alpha, String(water.name))
 	_require_shader_float(material, "depth_fade_distance", GameConfig.water_depth_fade_distance, String(water.name))
 	_require_shader_float(material, "foam_edge_width", GameConfig.water_foam_edge_width, String(water.name))
+	_require_shader_float(material, "flow_speed", GameConfig.water_flow_speed, String(water.name))
+	_require_shader_float(material, "wave_amplitude", GameConfig.water_wave_amplitude, String(water.name))
+	_require_shader_float(material, "foam_normal_strength", GameConfig.water_foam_normal_strength, String(water.name))
+	_require_shader_float(material, "foam_normal_scale", GameConfig.water_foam_normal_scale, String(water.name))
+	_require_shader_float(material, "foam_normal_flow_speed", GameConfig.water_foam_normal_flow_speed, String(water.name))
+	_require_shader_bool(material, "ssr_enabled", GameConfig.water_ssr_enabled, String(water.name))
+	_require_shader_int(material, "ssr_max_steps", GameConfig.water_ssr_max_steps, String(water.name))
+	_require_shader_float(material, "ssr_intensity", GameConfig.water_ssr_intensity, String(water.name))
+	_require_shader_float(material, "ssr_step_size", GameConfig.water_ssr_step_size, String(water.name))
+	_require_shader_float(material, "ssr_thickness", GameConfig.water_ssr_thickness, String(water.name))
+	_require_shader_float(material, "water_roughness", GameConfig.water_roughness, String(water.name))
 
 
 func _require_shader_color(material: ShaderMaterial, parameter_name: String, expected: Color, label: String) -> void:
@@ -294,6 +307,18 @@ func _require_shader_color(material: ShaderMaterial, parameter_name: String, exp
 func _require_shader_float(material: ShaderMaterial, parameter_name: String, expected: float, label: String) -> void:
 	var value: float = float(material.get_shader_parameter(parameter_name))
 	if absf(value - expected) > FLOAT_EPSILON:
+		_errors.append(label + " shader parameter " + parameter_name + " expected " + str(expected) + ", got " + str(value))
+
+
+func _require_shader_int(material: ShaderMaterial, parameter_name: String, expected: int, label: String) -> void:
+	var value: int = int(material.get_shader_parameter(parameter_name))
+	if value != expected:
+		_errors.append(label + " shader parameter " + parameter_name + " expected " + str(expected) + ", got " + str(value))
+
+
+func _require_shader_bool(material: ShaderMaterial, parameter_name: String, expected: bool, label: String) -> void:
+	var value: bool = bool(material.get_shader_parameter(parameter_name))
+	if value != expected:
 		_errors.append(label + " shader parameter " + parameter_name + " expected " + str(expected) + ", got " + str(value))
 
 
