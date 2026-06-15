@@ -47,9 +47,9 @@ check "Python tool syntax" sh -c 'python3 -m py_compile tools/*.py'
 check "shell tool syntax" sh -c 'for path in tools/*.sh; do sh -n "$path" || exit 1; done'
 check "Zion bake determinism" python3 tools/check_zion_bake_determinism.py
 check "collision tile integrity" python3 tools/check_collision_tile_integrity.py data/regions/spike_1km
+check "Godot binary SHA pin" tools/check_godot_binary_sha.sh
 
 # Reserved future slots, per planning/forward-reserve-corrections.md:
-# 11. Godot binary SHA pin (4.6.1.stable.official.14d19694e)
 # 12. check_surface_id_png.py
 
 exit "$status"
