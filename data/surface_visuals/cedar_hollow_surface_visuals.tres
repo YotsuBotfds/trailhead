@@ -18,10 +18,10 @@ albedo_texture_path = "res://assets/textures/surface_visuals/ambientcg/packed_gr
 normal_texture_path = "res://assets/textures/surface_visuals/ambientcg/packed_gravel_default_normal.jpg"
 detail_albedo_texture_path = "res://assets/textures/surface_visuals/generated/terrain_detail_albedo.png"
 detail_normal_texture_path = "res://assets/textures/surface_visuals/generated/terrain_detail_normal.png"
-texture_uv_scale = Vector2(56.0, 56.0)
-detail_uv_scale = Vector2(176.0, 176.0)
+texture_uv_scale = Vector2(72.0, 72.0)
+detail_uv_scale = Vector2(224.0, 224.0)
 triplanar = true
-normal_scale = 1.45
+normal_scale = 1.85
 
 [sub_resource type="Resource" id="SurfaceVisualDef_packed_dirt"]
 script = ExtResource("2_visual")
@@ -38,10 +38,10 @@ albedo_texture_path = "res://assets/textures/surface_visuals/ambientcg/packed_di
 normal_texture_path = "res://assets/textures/surface_visuals/ambientcg/packed_dirt_default_normal.jpg"
 detail_albedo_texture_path = "res://assets/textures/surface_visuals/generated/terrain_detail_albedo.png"
 detail_normal_texture_path = "res://assets/textures/surface_visuals/generated/terrain_detail_normal.png"
-texture_uv_scale = Vector2(52.0, 52.0)
-detail_uv_scale = Vector2(168.0, 168.0)
+texture_uv_scale = Vector2(68.0, 68.0)
+detail_uv_scale = Vector2(216.0, 216.0)
 triplanar = true
-normal_scale = 1.55
+normal_scale = 1.9
 
 [sub_resource type="Resource" id="SurfaceVisualDef_pine_floor_dirt"]
 script = ExtResource("2_visual")
@@ -58,10 +58,10 @@ albedo_texture_path = "res://assets/textures/surface_visuals/ambientcg/pine_floo
 normal_texture_path = "res://assets/textures/surface_visuals/ambientcg/pine_floor_dirt_normal.jpg"
 detail_albedo_texture_path = "res://assets/textures/surface_visuals/generated/terrain_detail_albedo.png"
 detail_normal_texture_path = "res://assets/textures/surface_visuals/generated/terrain_detail_normal.png"
-texture_uv_scale = Vector2(58.0, 58.0)
-detail_uv_scale = Vector2(184.0, 184.0)
+texture_uv_scale = Vector2(74.0, 74.0)
+detail_uv_scale = Vector2(232.0, 232.0)
 triplanar = true
-normal_scale = 1.45
+normal_scale = 1.75
 
 [sub_resource type="Resource" id="SurfaceVisualDef_tall_grass"]
 script = ExtResource("2_visual")
@@ -78,10 +78,10 @@ albedo_texture_path = "res://assets/textures/surface_visuals/ambientcg/tall_gras
 normal_texture_path = "res://assets/textures/surface_visuals/ambientcg/tall_grass_default_normal.jpg"
 detail_albedo_texture_path = "res://assets/textures/surface_visuals/generated/terrain_detail_albedo.png"
 detail_normal_texture_path = "res://assets/textures/surface_visuals/generated/terrain_detail_normal.png"
-texture_uv_scale = Vector2(48.0, 48.0)
-detail_uv_scale = Vector2(160.0, 160.0)
+texture_uv_scale = Vector2(64.0, 64.0)
+detail_uv_scale = Vector2(216.0, 216.0)
 triplanar = true
-normal_scale = 1.35
+normal_scale = 1.65
 
 [sub_resource type="Resource" id="SurfaceVisualDef_mud"]
 script = ExtResource("2_visual")
@@ -98,10 +98,10 @@ albedo_texture_path = "res://assets/textures/surface_visuals/ambientcg/mud_defau
 normal_texture_path = "res://assets/textures/surface_visuals/ambientcg/mud_default_normal.jpg"
 detail_albedo_texture_path = "res://assets/textures/surface_visuals/generated/terrain_detail_albedo.png"
 detail_normal_texture_path = "res://assets/textures/surface_visuals/generated/terrain_detail_normal.png"
-texture_uv_scale = Vector2(46.0, 46.0)
-detail_uv_scale = Vector2(148.0, 148.0)
+texture_uv_scale = Vector2(62.0, 62.0)
+detail_uv_scale = Vector2(208.0, 208.0)
 triplanar = true
-normal_scale = 1.75
+normal_scale = 2.15
 
 [sub_resource type="Resource" id="SurfaceVisualDef_dried_mud"]
 script = ExtResource("2_visual")
@@ -118,10 +118,10 @@ albedo_texture_path = "res://assets/textures/surface_visuals/ambientcg/dried_mud
 normal_texture_path = "res://assets/textures/surface_visuals/ambientcg/dried_mud_normal.jpg"
 detail_albedo_texture_path = "res://assets/textures/surface_visuals/generated/terrain_detail_albedo.png"
 detail_normal_texture_path = "res://assets/textures/surface_visuals/generated/terrain_detail_normal.png"
-texture_uv_scale = Vector2(50.0, 50.0)
-detail_uv_scale = Vector2(156.0, 156.0)
+texture_uv_scale = Vector2(66.0, 66.0)
+detail_uv_scale = Vector2(212.0, 212.0)
 triplanar = true
-normal_scale = 1.6
+normal_scale = 1.9
 
 [sub_resource type="Resource" id="SurfaceVisualDef_loose_rock"]
 script = ExtResource("2_visual")
@@ -138,10 +138,10 @@ albedo_texture_path = "res://assets/textures/surface_visuals/ambientcg/loose_roc
 normal_texture_path = "res://assets/textures/surface_visuals/ambientcg/loose_rock_default_normal.jpg"
 detail_albedo_texture_path = "res://assets/textures/surface_visuals/generated/terrain_detail_albedo.png"
 detail_normal_texture_path = "res://assets/textures/surface_visuals/generated/terrain_detail_normal.png"
-texture_uv_scale = Vector2(44.0, 44.0)
-detail_uv_scale = Vector2(144.0, 144.0)
+texture_uv_scale = Vector2(60.0, 60.0)
+detail_uv_scale = Vector2(208.0, 208.0)
 triplanar = true
-normal_scale = 1.6
+normal_scale = 2.0
 
 [sub_resource type="Resource" id="SurfaceVisualDef_wet_stone"]
 script = ExtResource("2_visual")
@@ -158,10 +158,10 @@ albedo_texture_path = "res://assets/textures/surface_visuals/ambientcg/wet_stone
 normal_texture_path = "res://assets/textures/surface_visuals/ambientcg/wet_stone_default_normal.jpg"
 detail_albedo_texture_path = "res://assets/textures/surface_visuals/generated/terrain_detail_albedo.png"
 detail_normal_texture_path = "res://assets/textures/surface_visuals/generated/terrain_detail_normal.png"
-texture_uv_scale = Vector2(42.0, 42.0)
-detail_uv_scale = Vector2(152.0, 152.0)
+texture_uv_scale = Vector2(58.0, 58.0)
+detail_uv_scale = Vector2(220.0, 220.0)
 triplanar = true
-normal_scale = 1.8
+normal_scale = 2.25
 
 [sub_resource type="Resource" id="SurfaceVisualDef_mossy_wet_stone"]
 script = ExtResource("2_visual")
@@ -178,10 +178,10 @@ albedo_texture_path = "res://assets/textures/surface_visuals/ambientcg/mossy_wet
 normal_texture_path = "res://assets/textures/surface_visuals/ambientcg/mossy_wet_stone_normal.jpg"
 detail_albedo_texture_path = "res://assets/textures/surface_visuals/generated/terrain_detail_albedo.png"
 detail_normal_texture_path = "res://assets/textures/surface_visuals/generated/terrain_detail_normal.png"
-texture_uv_scale = Vector2(44.0, 44.0)
-detail_uv_scale = Vector2(152.0, 152.0)
+texture_uv_scale = Vector2(60.0, 60.0)
+detail_uv_scale = Vector2(220.0, 220.0)
 triplanar = true
-normal_scale = 1.65
+normal_scale = 2.0
 
 [sub_resource type="Resource" id="SurfaceVisualDef_wood_plank"]
 script = ExtResource("2_visual")
@@ -199,10 +199,10 @@ albedo_texture_path = "res://assets/textures/surface_visuals/ambientcg/wood_plan
 normal_texture_path = "res://assets/textures/surface_visuals/ambientcg/wood_plank_default_normal.jpg"
 detail_albedo_texture_path = "res://assets/textures/surface_visuals/generated/terrain_detail_albedo.png"
 detail_normal_texture_path = "res://assets/textures/surface_visuals/generated/terrain_detail_normal.png"
-texture_uv_scale = Vector2(34.0, 34.0)
-detail_uv_scale = Vector2(128.0, 128.0)
+texture_uv_scale = Vector2(42.0, 42.0)
+detail_uv_scale = Vector2(160.0, 160.0)
 triplanar = true
-normal_scale = 1.35
+normal_scale = 1.55
 
 [resource]
 script = ExtResource("1_catalog")
