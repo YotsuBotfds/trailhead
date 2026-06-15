@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="TerrainDef" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://systems/world/terrain_def.gd" id="1_script"]
+
+[resource]
+script = ExtResource("1_script")
+id = &"cedar_hollow_zion"
+scene_id = &"cedar_hollow_zion"
+bounds_min_xz = Vector2(322481.824656, 4117712.509121)
+bounds_max_xz = Vector2(327981.824656, 4123412.509121)
+tile_grid = Vector2i(55, 57)
+tile_grid_origin = Vector2i(0, 0)
+tile_size = Vector2(100.0, 100.0)
+tile_indices = Array[Vector2i]([])
+collision_grid = Vector2i(101, 101)
+visual_grid = Vector2i(101, 101)
+surface_map_size = Vector2i(5501, 5701)
+surface_palette_path = ""
+surface_id_map_path = ""
+collision_tile_paths = Array[String]([])
+visual_tile_paths = Array[String]([])
+feature_override_surface_ids = Array[StringName]([])
+feature_override_centers = Array[Vector2]([])
+feature_override_axes_x = Array[Vector2]([])
+feature_override_axes_z = Array[Vector2]([])
+feature_override_half_extents = Array[Vector2]([])
+route_section_ids = Array[StringName]([&"cedar_hollow_zion_main"])
