@@ -18,6 +18,10 @@ const ZION_SURFACE_ID_FOREST: int = 3
 const ZION_SURFACE_ID_LOOSE: int = 4
 const ZION_SURFACE_ID_GRASS: int = 5
 const ZION_SURFACE_ID_PAVEMENT: int = 6
+const STREAM_TILE_SIZE_M: float = 100.0
+const STREAM_ACTIVE_RADIUS: int = 2
+const STREAM_PREFETCH_RADIUS: int = 3
+const STREAM_TILE_DATA_BASE: String = "res://data/regions/"
 
 var chassis_mass: float = 1.5
 var chassis_collision_size: Vector3 = Vector3(0.18, 0.06, 0.30)
