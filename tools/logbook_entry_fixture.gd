@@ -1,6 +1,7 @@
 extends Node
 
 const LogbookSystemScript: GDScript = preload("res://systems/sim/logbook_system.gd")
+const LogbookDataScript: GDScript = preload("res://systems/sim/logbook_data.gd")
 const PaceClockSystemScript: GDScript = preload("res://systems/sim/pace_clock_system.gd")
 const OLD_CEDAR_TICK: int = 12
 const DUPLICATE_LANDMARK_TICK: int = 18
@@ -70,11 +71,11 @@ func _run() -> void:
 	EventBus.world_reached_landmark.emit(&"overlook_ridge")
 	_require_entry_count(5, "second landmark")
 
-	_require_entry(0, LogbookData.ENTRY_LANDMARK_VISIT, &"old_cedar", OLD_CEDAR_TICK, "[0:00] Reached old_cedar.")
-	_require_entry(1, LogbookData.ENTRY_RECOVER, &"ro_01_water_bottle", RECOVER_TICK, "[0:00] Tagged: ro_01_water_bottle.")
-	_require_entry(2, LogbookData.ENTRY_PHOTOGRAPH, &"old_cedar", PHOTO_SIGNAL_TICK, "[0:01] Photo near old_cedar.")
-	_require_entry(3, LogbookData.ENTRY_INCIDENT, &"vehicle_flipped_over", INCIDENT_TICK, "[0:00] vehicle_flipped_over.")
-	_require_entry(4, LogbookData.ENTRY_LANDMARK_VISIT, &"overlook_ridge", SECOND_LANDMARK_TICK, "[0:00] Reached overlook_ridge.")
+	_require_entry(0, LogbookDataScript.ENTRY_LANDMARK_VISIT, &"old_cedar", OLD_CEDAR_TICK, "[0:00] Reached old_cedar.")
+	_require_entry(1, LogbookDataScript.ENTRY_RECOVER, &"ro_01_water_bottle", RECOVER_TICK, "[0:00] Tagged: ro_01_water_bottle.")
+	_require_entry(2, LogbookDataScript.ENTRY_PHOTOGRAPH, &"old_cedar", PHOTO_SIGNAL_TICK, "[0:01] Photo near old_cedar.")
+	_require_entry(3, LogbookDataScript.ENTRY_INCIDENT, &"vehicle_flipped_over", INCIDENT_TICK, "[0:00] vehicle_flipped_over.")
+	_require_entry(4, LogbookDataScript.ENTRY_LANDMARK_VISIT, &"overlook_ridge", SECOND_LANDMARK_TICK, "[0:00] Reached overlook_ridge.")
 	_require_written_events_match_entries()
 	_finish()
 

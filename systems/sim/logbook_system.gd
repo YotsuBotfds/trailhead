@@ -1,12 +1,13 @@
 class_name LogbookSystem
 extends Node
 
+const LogbookDataScript: GDScript = preload("res://systems/sim/logbook_data.gd")
 const ROUTE_SEED_LENGTH: int = 6
 const BASE36_DIGITS: String = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 @export var pace_clock_path: NodePath = NodePath("")
 
-var data: LogbookData:
+var data: Resource:
 	get:
 		return _data
 
@@ -15,7 +16,7 @@ var session_seed: String:
 		return _data.session_seed
 
 var _pace_clock: Node = null
-var _data: LogbookData = LogbookData.new()
+var _data: Resource = LogbookDataScript.new()
 var _visited_landmarks: Dictionary[StringName, bool] = {}
 var _recovered_objects: Dictionary[StringName, bool] = {}
 
@@ -95,26 +96,26 @@ func _on_world_recoverable_object_tagged(object_id: StringName) -> void:
 	if object_id == &"" or _recovered_objects.has(object_id):
 		return
 	_recovered_objects[object_id] = true
-	_write_entry(LogbookData.ENTRY_RECOVER, object_id, _elapsed_ticks())
+	_write_entry(LogbookDataScript.ENTRY_RECOVER, object_id, _elapsed_ticks())
 
 
 func _on_world_photograph_taken(nearest_landmark_id: StringName, sim_tick: int) -> void:
 	if nearest_landmark_id == &"":
 		return
-	_write_entry(LogbookData.ENTRY_PHOTOGRAPH, nearest_landmark_id, sim_tick)
+	_write_entry(LogbookDataScript.ENTRY_PHOTOGRAPH, nearest_landmark_id, sim_tick)
 
 
 func _on_world_reached_landmark(landmark_id: StringName) -> void:
 	if landmark_id == &"" or _visited_landmarks.has(landmark_id):
 		return
 	_visited_landmarks[landmark_id] = true
-	_write_entry(LogbookData.ENTRY_LANDMARK_VISIT, landmark_id, _elapsed_ticks())
+	_write_entry(LogbookDataScript.ENTRY_LANDMARK_VISIT, landmark_id, _elapsed_ticks())
 
 
 func _on_sim_pace_clock_incident(incident_type: StringName, elapsed_ticks: int) -> void:
 	if incident_type == &"":
 		return
-	_write_entry(LogbookData.ENTRY_INCIDENT, incident_type, elapsed_ticks)
+	_write_entry(LogbookDataScript.ENTRY_INCIDENT, incident_type, elapsed_ticks)
 
 
 func _write_entry(entry_type: StringName, key: StringName, sim_tick: int) -> void:
