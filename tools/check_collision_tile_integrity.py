@@ -190,7 +190,7 @@ def _require_sha_mapping(manifest: dict[str, Any], key: str, tiles: list[tuple[i
     if not isinstance(raw_mapping, dict):
         raise ValueError("manifest " + key + " must be an object")
     expected_keys = [_tile_key(cx, cy) for cx, cy in tiles]
-    actual_keys = sorted(str(value) for value in raw_mapping.keys())
+    actual_keys = sorted((str(k) for k in raw_mapping.keys()), key=lambda k: tuple(int(p) for p in k.split('_')))
     if actual_keys != expected_keys:
         raise ValueError("manifest " + key + " keys do not match tiles")
     mapping: dict[str, str] = {}
