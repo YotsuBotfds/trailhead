@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="RouteDef" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://systems/world/route_def.gd" id="1_script"]
+
+[resource]
+script = ExtResource("1_script")
+scene_id = &"spike_1km"
+terrain_def_path = "res://data/terrain/cedar_hollow_zion_terrain_def.tres"
+bounds_min = Vector3(0.0, -2.0, 0.0)
+bounds_max = Vector3(1000.0, 2.0, 1000.0)
+landmark_ids = Array[StringName]([&"west_gate", &"seam_x_4_5", &"east_gate", &"seam_z_5_4", &"north_gate"])
+landmark_display_names = Array[String](["West Gate", "4-5 Seam", "East Gate", "5-4 North Seam", "North Gate"])
+landmark_positions = Array[Vector3]([Vector3(455.0, -0.271566, 450.0), Vector3(500.0, -0.291476, 450.0), Vector3(545.0, 0.207418, 450.0), Vector3(545.0, 0.125311, 500.0), Vector3(545.0, -0.241888, 545.0)])
+landmark_radii = Array[float]([7.0, 5.0, 8.0, 5.0, 8.0])

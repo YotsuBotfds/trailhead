@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="RouteDef" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://systems/world/route_def.gd" id="1_script"]
+
+[resource]
+script = ExtResource("1_script")
+scene_id = &"spike_1km"
+terrain_def_path = "res://data/terrain/cedar_hollow_zion_terrain_def.tres"
+bounds_min = Vector3(0.0, -2.0, 0.0)
+bounds_max = Vector3(1000.0, 2.0, 1000.0)
+spawn_ids = Array[StringName]([&"west_gate", &"east_gate", &"north_gate"])
+spawn_positions = Array[Vector3]([Vector3(455.0, -0.201566, 450.0), Vector3(545.0, 0.277418, 450.0), Vector3(545.0, -0.171888, 545.0)])
+spawn_yaw_degrees = Array[float]([-90.0, 180.0, 180.0])
+landmark_ids = Array[StringName]([&"west_gate", &"seam_x_4_5", &"east_gate", &"seam_z_5_4", &"north_gate"])
+landmark_display_names = Array[String](["West Gate", "4-5 Seam", "East Gate", "5-4 North Seam", "North Gate"])
+landmark_positions = Array[Vector3]([Vector3(455.0, -0.271566, 450.0), Vector3(500.0, -0.291476, 450.0), Vector3(545.0, 0.207418, 450.0), Vector3(545.0, 0.125311, 500.0), Vector3(545.0, -0.241888, 545.0)])
+landmark_radii = Array[float]([7.0, 5.0, 8.0, 5.0, 8.0])
+segment_ids = Array[StringName]([&"west_gate_to_east_gate", &"east_gate_to_north_gate"])
+segment_spawn_ids = Array[StringName]([&"west_gate", &"east_gate"])
+segment_target_landmark_ids = Array[StringName]([&"east_gate", &"north_gate"])
+segment_waypoint_offsets = Array[int]([0, 1])
+segment_waypoint_counts = Array[int]([1, 1])
+segment_waypoints = Array[Vector3]([Vector3(500.0, -0.291476, 450.0), Vector3(545.0, 0.125311, 500.0)])
+segment_max_ticks = Array[int]([2400, 2400])
+segment_target_radii = Array[float]([8.0, 8.0])
+segment_rough_throttle = Array[bool]([true, true])
