@@ -4,6 +4,8 @@ extends Node
 const DEFAULT_TARGET: Vector3 = Vector3(3.0, 0.0, 0.0)
 const CEDAR_ROUTE_PATH: String = "res://data/routes/cedar_hollow.tres"
 const CEDAR_TERRAIN_DEF_PATH: String = "res://data/terrain/cedar_hollow_terrain_def.tres"
+const CEDAR_COLLISION_BODY_NAME: String = "cedar_hollow_heightmap_collision"
+const INVALID_COLLISION_TILE: Vector2i = Vector2i(2147483647, 2147483647)
 const CedarHollowSceneResource: PackedScene = preload("res://scenes/cedar_hollow.tscn")
 const VehicleScene: PackedScene = preload("res://scenes/vehicle.tscn")
 const VehicleInputScript: GDScript = preload("res://systems/vehicle/vehicle_input.gd")
@@ -119,6 +121,12 @@ var _max_contamination_mud: float = 0.0
 var _max_contamination_dust: float = 0.0
 var _max_contamination_wetness: float = 0.0
 var _final_vehicle_contamination: Dictionary[String, float] = {}
+var _fixture_has_collision_tiles: bool = false
+var _fixture_collision_tiles: Array[Vector2i] = []
+var _fixture_has_spawn_from_state: bool = false
+var _fixture_spawn_transform: Transform3D = Transform3D.IDENTITY
+var _fixture_spawn_linear_velocity: Vector3 = Vector3.ZERO
+var _fixture_spawn_angular_velocity: Vector3 = Vector3.ZERO
 
 
 func _ready() -> void:
@@ -168,19 +176,28 @@ func _ready() -> void:
 				if point is Vector3:
 					_waypoints.append(point)
 	_rng.seed = int(_args.get("seed", 0))
+	if not _load_optional_segment_fixture_data():
+		return
 	_connect_event_bus()
 	_configure_flat_bounds()
 	if not _setup_surface_map():
 		return
 	_setup_landmarks()
 	_setup_flat_scene()
+	if not _apply_fixture_collision_pin():
+		return
 	call_deferred("_begin_run")
 
 
 func _begin_run() -> void:
 	_vehicle = VehicleScene.instantiate()
 	add_child(_vehicle)
-	_vehicle.call("reset_to", _spawn_transform(_spawn_id))
+	var spawn_transform: Transform3D = _spawn_transform(_spawn_id)
+	if _fixture_has_spawn_from_state:
+		spawn_transform = _fixture_spawn_transform
+	_vehicle.call("reset_to", spawn_transform)
+	if _fixture_has_spawn_from_state and not _apply_fixture_spawn_from_state():
+		return
 	var initial_state: RefCounted = _vehicle.call("get_state")
 	_started_flipped = bool(initial_state.get("is_flipped"))
 	var initial_basis: Basis = initial_state.get("basis")
@@ -235,6 +252,183 @@ func _join_packed_strings(values: PackedStringArray, separator: String) -> Strin
 			out += separator
 		out += values[i]
 	return out
+
+
+func _join_strings(values: Array[String], separator: String) -> String:
+	var out: String = ""
+	for i in range(values.size()):
+		if i > 0:
+			out += separator
+		out += values[i]
+	return out
+
+
+func _load_optional_segment_fixture_data() -> bool:
+	_fixture_has_collision_tiles = false
+	_fixture_collision_tiles.clear()
+	_fixture_has_spawn_from_state = false
+	_fixture_spawn_transform = Transform3D.IDENTITY
+	_fixture_spawn_linear_velocity = Vector3.ZERO
+	_fixture_spawn_angular_velocity = Vector3.ZERO
+
+	var replay_path: String = String(_args.get("replay", ""))
+	if replay_path == "":
+		return true
+	var file: FileAccess = FileAccess.open(_resolve_project_path(replay_path), FileAccess.READ)
+	if file == null:
+		return true
+	var parsed: Variant = JSON.parse_string(file.get_as_text())
+	file.close()
+	if not (parsed is Dictionary):
+		return true
+	var data: Dictionary = parsed
+	if data.has("collision_tiles") and not _configure_fixture_collision_tiles(data["collision_tiles"]):
+		return false
+	if data.has("spawn_from_state") and not _configure_fixture_spawn_from_state(data["spawn_from_state"]):
+		return false
+	return true
+
+
+func _configure_fixture_collision_tiles(value: Variant) -> bool:
+	var errors: Array[String] = []
+	var tiles: Array[Vector2i] = _collision_tiles_from_fixture_value(value, "collision_tiles", errors)
+	if not errors.is_empty():
+		_finish_runner_error(_join_strings(errors, "; "))
+		return false
+	_fixture_has_collision_tiles = true
+	_fixture_collision_tiles = _sorted_tiles(tiles)
+	return true
+
+
+func _configure_fixture_spawn_from_state(value: Variant) -> bool:
+	var errors: Array[String] = []
+	if not (value is Dictionary):
+		_finish_runner_error("spawn_from_state must be a dictionary")
+		return false
+	var state: Dictionary = value
+	if not state.has("transform"):
+		errors.append("spawn_from_state.transform is required")
+	if not state.has("linear_velocity"):
+		errors.append("spawn_from_state.linear_velocity is required")
+	if not state.has("angular_velocity"):
+		errors.append("spawn_from_state.angular_velocity is required")
+	if errors.is_empty():
+		_fixture_spawn_transform = _transform_from_fixture_value(state["transform"], "spawn_from_state.transform", errors)
+		_fixture_spawn_linear_velocity = _vec3_from_fixture_value(state["linear_velocity"], "spawn_from_state.linear_velocity", errors)
+		_fixture_spawn_angular_velocity = _vec3_from_fixture_value(state["angular_velocity"], "spawn_from_state.angular_velocity", errors)
+	if not errors.is_empty():
+		_finish_runner_error(_join_strings(errors, "; "))
+		return false
+	_fixture_has_spawn_from_state = true
+	return true
+
+
+func _collision_tiles_from_fixture_value(value: Variant, label: String, errors: Array[String]) -> Array[Vector2i]:
+	var tiles: Array[Vector2i] = []
+	if not (value is Array):
+		errors.append(label + " must be an array of tile pairs")
+		return tiles
+	var values: Array = value
+	if values.is_empty():
+		errors.append(label + " must contain at least one tile")
+		return tiles
+	for i in range(values.size()):
+		var previous_error_count: int = errors.size()
+		var tile: Vector2i = _tile_from_fixture_value(values[i], label + "[" + str(i) + "]", errors)
+		if errors.size() == previous_error_count:
+			if tiles.has(tile):
+				errors.append(label + " contains duplicate tile " + _tile_string(tile))
+			else:
+				tiles.append(tile)
+	return tiles
+
+
+func _tile_from_fixture_value(value: Variant, label: String, errors: Array[String]) -> Vector2i:
+	if not (value is Array):
+		errors.append(label + " must be a [cx, cy] array")
+		return Vector2i.ZERO
+	var values: Array = value
+	if values.size() != 2:
+		errors.append(label + " must contain exactly two integers")
+		return Vector2i.ZERO
+	if not _is_number(values[0]) or not _is_number(values[1]):
+		errors.append(label + " must contain numeric cx/cy values")
+		return Vector2i.ZERO
+	return Vector2i(int(values[0]), int(values[1]))
+
+
+func _transform_from_fixture_value(value: Variant, label: String, errors: Array[String]) -> Transform3D:
+	if value is Dictionary:
+		var data: Dictionary = value
+		if not data.has("basis") or not data.has("origin"):
+			errors.append(label + " dictionary must contain basis and origin")
+			return Transform3D.IDENTITY
+		var basis_from_dictionary: Basis = _basis_from_fixture_value(data["basis"], label + ".basis", errors)
+		var origin_from_dictionary: Vector3 = _vec3_from_fixture_value(data["origin"], label + ".origin", errors)
+		return Transform3D(basis_from_dictionary, origin_from_dictionary)
+	if not (value is Array):
+		errors.append(label + " must be [basis, origin]")
+		return Transform3D.IDENTITY
+	var values: Array = value
+	if values.size() == 2:
+		var basis_from_pair: Basis = _basis_from_fixture_value(values[0], label + "[0]", errors)
+		var origin_from_pair: Vector3 = _vec3_from_fixture_value(values[1], label + "[1]", errors)
+		return Transform3D(basis_from_pair, origin_from_pair)
+	if values.size() == 4:
+		var basis_from_columns: Basis = Basis(
+			_vec3_from_fixture_value(values[0], label + "[0]", errors),
+			_vec3_from_fixture_value(values[1], label + "[1]", errors),
+			_vec3_from_fixture_value(values[2], label + "[2]", errors)
+		)
+		var origin_from_columns: Vector3 = _vec3_from_fixture_value(values[3], label + "[3]", errors)
+		return Transform3D(basis_from_columns, origin_from_columns)
+	errors.append(label + " must be [basis, origin] or [basis_x, basis_y, basis_z, origin]")
+	return Transform3D.IDENTITY
+
+
+func _basis_from_fixture_value(value: Variant, label: String, errors: Array[String]) -> Basis:
+	if not (value is Array):
+		errors.append(label + " must be three axis arrays or nine numbers")
+		return Basis.IDENTITY
+	var values: Array = value
+	if values.size() == 3 and values[0] is Array and values[1] is Array and values[2] is Array:
+		return Basis(
+			_vec3_from_fixture_value(values[0], label + "[0]", errors),
+			_vec3_from_fixture_value(values[1], label + "[1]", errors),
+			_vec3_from_fixture_value(values[2], label + "[2]", errors)
+		)
+	if values.size() == 9:
+		for i in range(values.size()):
+			if not _is_number(values[i]):
+				errors.append(label + " flat basis must contain only numbers")
+				return Basis.IDENTITY
+		return Basis(
+			Vector3(float(values[0]), float(values[1]), float(values[2])),
+			Vector3(float(values[3]), float(values[4]), float(values[5])),
+			Vector3(float(values[6]), float(values[7]), float(values[8]))
+		)
+	errors.append(label + " must be three axis arrays or nine numbers")
+	return Basis.IDENTITY
+
+
+func _vec3_from_fixture_value(value: Variant, label: String, errors: Array[String]) -> Vector3:
+	if not (value is Array):
+		errors.append(label + " must be a three-number array")
+		return Vector3.ZERO
+	var values: Array = value
+	if values.size() != 3:
+		errors.append(label + " must contain exactly three numbers")
+		return Vector3.ZERO
+	for i in range(values.size()):
+		if not _is_number(values[i]):
+			errors.append(label + " must contain only numbers")
+			return Vector3.ZERO
+	return Vector3(float(values[0]), float(values[1]), float(values[2]))
+
+
+func _is_number(value: Variant) -> bool:
+	var value_type: int = typeof(value)
+	return value_type == TYPE_INT or value_type == TYPE_FLOAT
 
 
 func _load_route(scene_id: String) -> Resource:
@@ -355,6 +549,163 @@ func _setup_flat_scene() -> void:
 		FlatWorldBuilderScript.build_terrain_surface_map_probe_collision(self)
 		return
 	FlatWorldBuilderScript.build_collision(self)
+
+
+func _apply_fixture_collision_pin() -> bool:
+	if not _fixture_has_collision_tiles:
+		return true
+	if _scene_id != TerrainBuilderScript.CEDAR_SCENE_ID:
+		_finish_runner_error("collision_tiles fixture is only supported for cedar_hollow")
+		return false
+	var body: StaticBody3D = _cedar_collision_body()
+	if body == null:
+		_finish_runner_error("collision_tiles fixture could not find Cedar collision body")
+		return false
+	var terrain_def: Resource = TerrainBuilderScript.cedar_terrain_def()
+	var center: Vector2 = terrain_def.call("center_xz")
+	_clear_cedar_collision_shapes(body)
+	for tile_index in _fixture_collision_tiles:
+		if not _add_cedar_collision_tile(body, terrain_def, center, tile_index):
+			return false
+	var live_tiles: Array[Vector2i] = _sorted_tiles(_live_cedar_collision_tiles(body))
+	if not _tile_arrays_equal(live_tiles, _fixture_collision_tiles):
+		_finish_runner_error(
+			"collision_tiles fixture mismatch: expected "
+			+ _tile_array_string(_fixture_collision_tiles)
+			+ " got "
+			+ _tile_array_string(live_tiles)
+		)
+		return false
+	return true
+
+
+func _cedar_collision_body() -> StaticBody3D:
+	return find_child(CEDAR_COLLISION_BODY_NAME, true, false) as StaticBody3D
+
+
+func _clear_cedar_collision_shapes(body: StaticBody3D) -> void:
+	for child in body.get_children():
+		var collision: CollisionShape3D = child as CollisionShape3D
+		if collision == null:
+			continue
+		body.remove_child(collision)
+		collision.free()
+
+
+func _add_cedar_collision_tile(body: StaticBody3D, terrain_def: Resource, center: Vector2, tile_index: Vector2i) -> bool:
+	var collision_path: String = terrain_def.call("collision_tile_path_for_tile", tile_index)
+	if collision_path.is_empty():
+		_finish_runner_error("collision_tiles fixture requested unknown tile: " + _tile_string(tile_index))
+		return false
+	var shape: HeightMapShape3D = TerrainBuilderScript.heightmap_collision_shape_for_tile(tile_index)
+	if shape == null:
+		shape = ResourceLoader.load(collision_path) as HeightMapShape3D
+	if shape == null:
+		_finish_runner_error("collision_tiles fixture failed to load tile shape: " + collision_path)
+		return false
+	var collision: CollisionShape3D = CollisionShape3D.new()
+	collision.name = _cedar_collision_node_name(tile_index)
+	var tile_bounds: Rect2 = terrain_def.call("tile_bounds", tile_index)
+	var tile_center: Vector2 = tile_bounds.get_center()
+	collision.position = Vector3(tile_center.x - center.x, 0.0, tile_center.y - center.y)
+	collision.shape = shape
+	collision.scale = _heightmap_collision_scale_for_fixture(shape, terrain_def, tile_index)
+	body.add_child(collision)
+	return true
+
+
+func _live_cedar_collision_tiles(body: StaticBody3D) -> Array[Vector2i]:
+	var tiles: Array[Vector2i] = []
+	for child in body.get_children():
+		var collision: CollisionShape3D = child as CollisionShape3D
+		if collision == null:
+			continue
+		var tile_index: Vector2i = _tile_from_cedar_collision_node_name(collision.name)
+		if tile_index != INVALID_COLLISION_TILE and not tiles.has(tile_index):
+			tiles.append(tile_index)
+	return tiles
+
+
+func _cedar_collision_node_name(tile_index: Vector2i) -> String:
+	if tile_index == Vector2i.ZERO:
+		return "Collision"
+	return "Collision_" + str(tile_index.x) + "_" + str(tile_index.y)
+
+
+func _tile_from_cedar_collision_node_name(node_name: String) -> Vector2i:
+	if node_name == "Collision":
+		return Vector2i.ZERO
+	if not node_name.begins_with("Collision_"):
+		return INVALID_COLLISION_TILE
+	var parts: PackedStringArray = node_name.split("_", false)
+	if parts.size() != 3:
+		return INVALID_COLLISION_TILE
+	return Vector2i(int(parts[1]), int(parts[2]))
+
+
+func _heightmap_collision_scale_for_fixture(shape: HeightMapShape3D, terrain_def: Resource, tile_index: Vector2i) -> Vector3:
+	var tile_bounds: Rect2 = terrain_def.call("tile_bounds", tile_index)
+	var width_steps: int = maxi(shape.map_width - 1, 1)
+	var depth_steps: int = maxi(shape.map_depth - 1, 1)
+	return Vector3(
+		tile_bounds.size.x / float(width_steps),
+		1.0,
+		tile_bounds.size.y / float(depth_steps)
+	)
+
+
+func _apply_fixture_spawn_from_state() -> bool:
+	var body: RigidBody3D = _vehicle_physics_body()
+	if body == null:
+		_finish_runner_error("spawn_from_state could not find vehicle physics body")
+		return false
+	body.sleeping = false
+	PhysicsServer3D.body_set_state(body.get_rid(), PhysicsServer3D.BODY_STATE_SLEEPING, false)
+	PhysicsServer3D.body_set_state(body.get_rid(), PhysicsServer3D.BODY_STATE_TRANSFORM, _fixture_spawn_transform)
+	PhysicsServer3D.body_set_state(body.get_rid(), PhysicsServer3D.BODY_STATE_LINEAR_VELOCITY, _fixture_spawn_linear_velocity)
+	PhysicsServer3D.body_set_state(body.get_rid(), PhysicsServer3D.BODY_STATE_ANGULAR_VELOCITY, _fixture_spawn_angular_velocity)
+	body.global_transform = _fixture_spawn_transform
+	body.linear_velocity = _fixture_spawn_linear_velocity
+	body.angular_velocity = _fixture_spawn_angular_velocity
+	return true
+
+
+func _vehicle_physics_body() -> RigidBody3D:
+	if _vehicle == null:
+		return null
+	return _vehicle.get_node_or_null("PhysicsBody") as RigidBody3D
+
+
+func _sorted_tiles(tiles: Array[Vector2i]) -> Array[Vector2i]:
+	var sorted: Array[Vector2i] = tiles.duplicate()
+	sorted.sort_custom(Callable(self, "_tile_less"))
+	return sorted
+
+
+func _tile_less(left: Vector2i, right: Vector2i) -> bool:
+	if left.x == right.x:
+		return left.y < right.y
+	return left.x < right.x
+
+
+func _tile_arrays_equal(left: Array[Vector2i], right: Array[Vector2i]) -> bool:
+	if left.size() != right.size():
+		return false
+	for i in range(left.size()):
+		if left[i] != right[i]:
+			return false
+	return true
+
+
+func _tile_array_string(tiles: Array[Vector2i]) -> String:
+	var parts: Array[String] = []
+	for tile_index in tiles:
+		parts.append(_tile_string(tile_index))
+	return "[" + _join_strings(parts, ", ") + "]"
+
+
+func _tile_string(tile_index: Vector2i) -> String:
+	return "[" + str(tile_index.x) + ", " + str(tile_index.y) + "]"
 
 
 func _setup_surface_map() -> bool:
