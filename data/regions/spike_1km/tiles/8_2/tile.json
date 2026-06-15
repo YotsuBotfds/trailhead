@@ -1,0 +1,45 @@
+{
+  "bake": {
+    "corridor_version": 2026061501,
+    "erosion_strategy": "unified-array erosion before tile slicing",
+    "seed": 2026061501,
+    "seed_derivation": "explicit integer corridor_version; no Python str hash",
+    "tool": "tools/bake_region.py",
+    "tool_version": "b1-bake.2026-06-15"
+  },
+  "heightmap": {
+    "column_axis": "x_increasing",
+    "format": "float32_le",
+    "max_y": 0.24275418,
+    "min_y": -0.34528384,
+    "path": "heightmap.bin",
+    "row_axis": "z_increasing",
+    "sha256": "494106d0c5ceab651dbcbfc6524f39f57199d6386f3a2016ab8645e88f318cc7",
+    "shape": [
+      101,
+      101
+    ]
+  },
+  "region_id": "spike_1km",
+  "schema_version": 1,
+  "surface_id": {
+    "counts": {
+      "2": 1565,
+      "4": 6439,
+      "5": 1996
+    },
+    "format": "png_l8",
+    "path": "surface_id.png",
+    "sha256": "04d9b7e7b3e5139e3437587a06ecc6cbca7c2b3906cf95a99d1a33f479ee4d67",
+    "shape": [
+      100,
+      100
+    ]
+  },
+  "tile": {
+    "cx": 8,
+    "cy": 2,
+    "key": "8_2"
+  },
+  "tile_size_m": 100.0
+}
