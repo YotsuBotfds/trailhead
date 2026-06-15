@@ -116,6 +116,7 @@ static func _configure_tilt_shift_layer(layer: CanvasLayer) -> void:
 		material = ShaderMaterial.new()
 		overlay.material = material
 	material.shader = TiltShiftShader
+	# Track D V1: these parameters are the headless contract for the screen-space miniature band.
 	material.set_shader_parameter("center", clampf(GameConfig.tilt_shift_band_center, 0.0, 1.0))
 	material.set_shader_parameter("band", clampf(GameConfig.tilt_shift_focus_band, 0.0, 0.5))
 	material.set_shader_parameter("blur", maxf(GameConfig.tilt_shift_blur_amount, 0.0))
