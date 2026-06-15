@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trailhead.local/schemas/collision_tiles_manifest.schema.json",
+  "title": "Trailhead collision tiles manifest",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version",
+    "region_id",
+    "tile_size_m",
+    "tiles",
+    "bake_seed_derivation",
+    "heightmap_sha256"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "region_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "tile_size_m": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "tiles": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/tile_pair"
+      }
+    },
+    "bake_seed_derivation": {
+      "type": "string",
+      "minLength": 1
+    },
+    "heightmap_sha256": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "pattern": "^-?[0-9]+_-?[0-9]+$"
+      },
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[a-f0-9]{64}$"
+      }
+    }
+  },
+  "$defs": {
+    "tile_pair": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "integer"
+        }
+      ],
+      "items": false,
+      "minItems": 2,
+      "maxItems": 2
+    }
+  }
+}
