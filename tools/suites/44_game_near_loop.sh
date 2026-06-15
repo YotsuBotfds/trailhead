@@ -10,3 +10,5 @@ printf 'run: photo stationary fixture\n'
 python3 tools/photo_stationary_fixture.py
 printf 'run: logbook entry fixture\n'
 python3 tools/logbook_entry_fixture.py
+printf 'run: frequency livery fixture\n'
+python3 tools/frequency_livery_fixture.py
