@@ -4,24 +4,8 @@ extends RefCounted
 const SurfaceMapScript: GDScript = preload("res://systems/world/surface_map.gd")
 
 const CEDAR_SCENE_ID: String = "cedar_hollow"
-const CEDAR_HEIGHTMAP_COLLISION: HeightMapShape3D = preload("res://data/collision/cedar_hollow_heightmap_collision.tres")
-const CEDAR_HEIGHTMAP_X_MIN: float = -5.5
-const CEDAR_HEIGHTMAP_X_MAX: float = 5.5
-const CEDAR_HEIGHTMAP_Z_MIN: float = -10.6
-const CEDAR_HEIGHTMAP_Z_MAX: float = 1.6
-const LOG_RAMP_SURFACE_ID: StringName = &"wood_plank"
-const LOG_RAMP_TOP_CENTER_XZ: Vector2 = Vector2(1.290557, 0.164403)
-const LOG_RAMP_AXIS_X_XZ: Vector2 = Vector2(0.422618, 0.906308)
-const LOG_RAMP_AXIS_Z_XZ: Vector2 = Vector2(-0.906308, 0.422618)
-const LOG_RAMP_HALF_EXTENTS_XZ: Vector2 = Vector2(0.275, 0.566264)
-const OUTCROP_SURFACE_ID: StringName = &"loose_rock"
-const OUTCROP_TOP_CENTER_XZ: Vector2 = Vector2(-1.2, -7.793908)
-const OUTCROP_AXIS_X_XZ: Vector2 = Vector2.RIGHT
-const OUTCROP_AXIS_Z_XZ: Vector2 = Vector2.UP
-const OUTCROP_HALF_EXTENTS_XZ: Vector2 = Vector2(2.3, 2.42)
-const BOARDWALK_SURFACE_ID: StringName = &"wood_plank"
-const BOARDWALK_CENTER_XZ: Vector2 = Vector2(3.25, -3.35)
-const BOARDWALK_HALF_EXTENTS_XZ: Vector2 = Vector2(0.9, 1.3)
+const CEDAR_TERRAIN_DEF_PATH: String = "res://data/terrain/cedar_hollow_terrain_def.tres"
+const CedarTerrainDef: Resource = preload(CEDAR_TERRAIN_DEF_PATH)
 
 
 static func build_cedar_hollow(parent: Node) -> Array[StaticBody3D]:
@@ -36,58 +20,55 @@ static func _build_heightmap_collision(parent: Node) -> StaticBody3D:
 	body.add_to_group(SurfaceMapScript.TERRAIN_SURFACE_MAP_GROUP)
 	body.set_meta(
 		SurfaceMapScript.TERRAIN_SURFACE_OVERRIDE_RECTS_META,
-		[_log_ramp_surface_override(), _outcrop_surface_override(), _boardwalk_surface_override()]
+		CedarTerrainDef.call("surface_override_rects")
 	)
+	var center: Vector2 = CedarTerrainDef.call("center_xz")
 	body.position = Vector3(
-		(CEDAR_HEIGHTMAP_X_MIN + CEDAR_HEIGHTMAP_X_MAX) * 0.5,
+		center.x,
 		0.0,
-		(CEDAR_HEIGHTMAP_Z_MIN + CEDAR_HEIGHTMAP_Z_MAX) * 0.5
+		center.y
 	)
 	parent.add_child(body)
 
-	var collision: CollisionShape3D = CollisionShape3D.new()
-	collision.name = "Collision"
-	collision.shape = CEDAR_HEIGHTMAP_COLLISION
-	collision.scale = _heightmap_collision_scale(CEDAR_HEIGHTMAP_COLLISION)
-	body.add_child(collision)
+	var active_tiles: Array[Vector2i] = CedarTerrainDef.call("active_tile_indices")
+	for tile_index in active_tiles:
+		var collision: CollisionShape3D = CollisionShape3D.new()
+		collision.name = _collision_node_name(tile_index)
+		var shape: HeightMapShape3D = heightmap_collision_shape_for_tile(tile_index)
+		if shape == null:
+			continue
+		var tile_bounds: Rect2 = CedarTerrainDef.call("tile_bounds", tile_index)
+		var tile_center: Vector2 = tile_bounds.get_center()
+		collision.position = Vector3(tile_center.x - center.x, 0.0, tile_center.y - center.y)
+		collision.shape = shape
+		collision.scale = _heightmap_collision_scale(shape, tile_index)
+		body.add_child(collision)
 	return body
 
 
-static func _log_ramp_surface_override() -> Dictionary:
-	return {
-		"surface_id": LOG_RAMP_SURFACE_ID,
-		"center": LOG_RAMP_TOP_CENTER_XZ,
-		"axis_x": LOG_RAMP_AXIS_X_XZ,
-		"axis_z": LOG_RAMP_AXIS_Z_XZ,
-		"half_extents": LOG_RAMP_HALF_EXTENTS_XZ
-	}
+static func cedar_terrain_def() -> Resource:
+	return CedarTerrainDef
 
 
-static func _outcrop_surface_override() -> Dictionary:
-	return {
-		"surface_id": OUTCROP_SURFACE_ID,
-		"center": OUTCROP_TOP_CENTER_XZ,
-		"axis_x": OUTCROP_AXIS_X_XZ,
-		"axis_z": OUTCROP_AXIS_Z_XZ,
-		"half_extents": OUTCROP_HALF_EXTENTS_XZ
-	}
+static func heightmap_collision_shape_for_tile(tile_index: Vector2i) -> HeightMapShape3D:
+	var collision_path: String = CedarTerrainDef.call("collision_tile_path_for_tile", tile_index)
+	if collision_path.is_empty():
+		return null
+	return load(collision_path) as HeightMapShape3D
 
 
-static func _boardwalk_surface_override() -> Dictionary:
-	return {
-		"surface_id": BOARDWALK_SURFACE_ID,
-		"center": BOARDWALK_CENTER_XZ,
-		"axis_x": Vector2.RIGHT,
-		"axis_z": Vector2.UP,
-		"half_extents": BOARDWALK_HALF_EXTENTS_XZ
-	}
-
-
-static func _heightmap_collision_scale(shape: HeightMapShape3D) -> Vector3:
+static func _heightmap_collision_scale(shape: HeightMapShape3D, tile_index: Vector2i) -> Vector3:
+	var tile_bounds: Rect2 = CedarTerrainDef.call("tile_bounds", tile_index)
 	var width_steps: int = maxi(shape.map_width - 1, 1)
 	var depth_steps: int = maxi(shape.map_depth - 1, 1)
 	return Vector3(
-		(CEDAR_HEIGHTMAP_X_MAX - CEDAR_HEIGHTMAP_X_MIN) / float(width_steps),
+		tile_bounds.size.x / float(width_steps),
 		1.0,
-		(CEDAR_HEIGHTMAP_Z_MAX - CEDAR_HEIGHTMAP_Z_MIN) / float(depth_steps)
+		tile_bounds.size.y / float(depth_steps)
 	)
+
+
+static func _collision_node_name(tile_index: Vector2i) -> String:
+	if tile_index == Vector2i.ZERO:
+		return "Collision"
+	return "Collision_" + str(tile_index.x) + "_" + str(tile_index.y)

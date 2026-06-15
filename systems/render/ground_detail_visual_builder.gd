@@ -217,6 +217,7 @@ static func _add_mesh_instance(parent: Node3D, node_name: String, mesh: Mesh, po
 	instance.position = position
 	instance.rotation_degrees = Vector3(0.0, yaw_degrees, 0.0)
 	instance.material_override = _material(node_name, color, roughness)
+	instance.visibility_range_end = GameConfig.vis_range_ground_detail
 	parent.add_child(instance)
 	return instance
 

@@ -15,6 +15,7 @@ var _surface_friction: float = 0.0
 var _surface_rolling_drag: float = 0.0
 var _surface_slip: float = 0.0
 var _surface_normal_load: float = 0.0
+var _surface_contact_normal: Vector3 = Vector3.UP
 var _surface_bog_enabled: bool = false
 var _surface_bog_threshold: float = 0.0
 var _last_stable_forward: Vector3 = Vector3.FORWARD
@@ -148,15 +149,20 @@ func _apply_wheel_forces() -> void:
 	var rolling_drag_sum: float = 0.0
 	var slip_sum: float = 0.0
 	var normal_load_sum: float = 0.0
+	var normal_sum: Vector3 = Vector3.ZERO
 	var bog_threshold_sum: float = 0.0
 	var mud_residue_sum: float = 0.0
 	var dust_residue_sum: float = 0.0
 	var wetness_residue_sum: float = 0.0
 	var bog_enabled: bool = false
+	var wheel_compressions: Array[float] = [0.0, 0.0, 0.0, 0.0]
+	var wheel_force_positions: Array[Vector3] = [Vector3.ZERO, Vector3.ZERO, Vector3.ZERO, Vector3.ZERO]
+	var wheel_contacts: Array[bool] = [false, false, false, false]
 	for i in range(_wheel_rays.size()):
 		var ray: RayCast3D = _wheel_rays[i]
 		ray.force_raycast_update()
 		var has_contact: bool = ray.is_colliding()
+		wheel_contacts[i] = has_contact
 		var wheel_contact: Array[bool] = _state.get("wheel_contact")
 		wheel_contact[i] = has_contact
 		_state.set("wheel_contact", wheel_contact)
@@ -170,6 +176,10 @@ func _apply_wheel_forces() -> void:
 			continue
 		contact_count += 1
 		var hit_point: Vector3 = ray.get_collision_point()
+		var hit_normal: Vector3 = ray.get_collision_normal()
+		if hit_normal.length() <= GameConfig.self_right_forward_epsilon:
+			hit_normal = Vector3.UP
+		normal_sum += hit_normal.normalized()
 		var wheel_hit_points: Array[Vector3] = _state.get("wheel_hit_point")
 		wheel_hit_points[i] = hit_point
 		_state.set("wheel_hit_point", wheel_hit_points)
@@ -177,6 +187,8 @@ func _apply_wheel_forces() -> void:
 		var compression: float = clampf((ray_length - dist) / maxf(GameConfig.susp_travel, 0.001), 0.0, 1.0)
 		var spring_force: float = compression * GameConfig.susp_stiffness
 		var force_pos: Vector3 = hit_point - _body.global_position
+		wheel_compressions[i] = compression
+		wheel_force_positions[i] = force_pos
 		var center_of_mass_offset_world: Vector3 = _body.global_transform.basis * GameConfig.center_of_mass_offset
 		var contact_arm: Vector3 = force_pos - center_of_mass_offset_world
 		var contact_velocity: Vector3 = _body.linear_velocity + _body.angular_velocity.cross(contact_arm * GameConfig.susp_contact_angular_velocity_weight)
@@ -200,12 +212,14 @@ func _apply_wheel_forces() -> void:
 		wetness_residue_sum += _surface_float(surface_def, "wetness_residue", 0.0)
 		if _surface_bool(surface_def, "bog_enabled", false):
 			bog_enabled = true
+	_apply_anti_roll(wheel_compressions, wheel_force_positions, wheel_contacts, up)
 	_state.set("on_ground", contact_count > 0)
 	if contact_count > 0:
 		_surface_friction = friction_sum / float(contact_count)
 		_surface_rolling_drag = rolling_drag_sum / float(contact_count)
 		_surface_slip = slip_sum / float(contact_count)
 		_surface_normal_load = normal_load_sum
+		_surface_contact_normal = normal_sum.normalized() if normal_sum.length() > GameConfig.self_right_forward_epsilon else Vector3.UP
 		_surface_bog_enabled = bog_enabled
 		_surface_bog_threshold = bog_threshold_sum / float(contact_count)
 	else:
@@ -213,10 +227,28 @@ func _apply_wheel_forces() -> void:
 		_surface_rolling_drag = GameConfig.default_rolling_drag
 		_surface_slip = GameConfig.default_slip
 		_surface_normal_load = 0.0
+		_surface_contact_normal = Vector3.UP
 		_surface_bog_enabled = false
 		_surface_bog_threshold = GameConfig.default_bog_threshold
+	_state.set("contact_normal", _surface_contact_normal)
 	_update_contamination(contact_count, mud_residue_sum, dust_residue_sum, wetness_residue_sum)
 	_update_surface_event()
+
+
+func _apply_anti_roll(wheel_compressions: Array[float], wheel_force_positions: Array[Vector3], wheel_contacts: Array[bool], up: Vector3) -> void:
+	if GameConfig.anti_roll_stiffness <= 0.0:
+		return
+	_apply_anti_roll_pair(0, 1, wheel_compressions, wheel_force_positions, wheel_contacts, up)
+	_apply_anti_roll_pair(2, 3, wheel_compressions, wheel_force_positions, wheel_contacts, up)
+
+
+func _apply_anti_roll_pair(left_index: int, right_index: int, wheel_compressions: Array[float], wheel_force_positions: Array[Vector3], wheel_contacts: Array[bool], up: Vector3) -> void:
+	if not wheel_contacts[left_index] or not wheel_contacts[right_index]:
+		return
+	var compression_delta: float = wheel_compressions[left_index] - wheel_compressions[right_index]
+	var anti_roll_force: Vector3 = up * compression_delta * GameConfig.anti_roll_stiffness
+	_body.apply_force(anti_roll_force, wheel_force_positions[left_index])
+	_body.apply_force(-anti_roll_force, wheel_force_positions[right_index])
 
 
 func _apply_drive_forces() -> void:
@@ -231,12 +263,12 @@ func _apply_drive_forces() -> void:
 		_body.linear_velocity *= brake_factor
 	if bool(_state.get("on_ground")):
 		_apply_surface_drag()
-	var lateral_speed: float = _body.linear_velocity.dot(right)
+		_apply_hill_hold(throttle, brake)
 	var surface_grip: float = _surface_friction * maxf(1.0 - _surface_slip, GameConfig.surface_min_lateral_grip)
-	var lateral_grip: float = GameConfig.default_friction * surface_grip
+	var lateral_grip: float = surface_grip
 	if bool(_pending_input.get("ebrake")):
 		lateral_grip *= GameConfig.ebrake_factor
-	_body.apply_central_force(-right * lateral_speed * lateral_grip * GameConfig.lateral_grip_force)
+	_apply_lateral_grip(right, lateral_grip)
 	if bool(_state.get("on_ground")):
 		_apply_steering_torque(steer, surface_grip)
 	if bool(_state.get("on_ground")) and throttle >= GameConfig.launch_wheelie_min_throttle and absf(steer) <= GameConfig.launch_wheelie_max_steer and _body.linear_velocity.length() <= GameConfig.launch_wheelie_speed_max:
@@ -254,28 +286,87 @@ func _apply_traction_force(forward: Vector3, throttle: float) -> void:
 	_body.apply_central_force(forward * signf(throttle) * delivered_force)
 
 
+func _apply_hill_hold(throttle: float, brake: float) -> void:
+	if absf(throttle) > GameConfig.self_right_forward_epsilon or brake > GameConfig.self_right_forward_epsilon or bool(_pending_input.get("ebrake")):
+		return
+	var normal: Vector3 = _surface_contact_normal
+	if normal.length() <= GameConfig.self_right_forward_epsilon:
+		normal = Vector3.UP
+	normal = normal.normalized()
+	var velocity_plane: Vector3 = _body.linear_velocity - normal * _body.linear_velocity.dot(normal)
+	var static_limit: float = maxf(0.0, _surface_friction * GameConfig.hold_static_mu_scale * _surface_normal_load)
+	var kinetic_limit: float = maxf(0.0, _surface_friction * GameConfig.hold_kinetic_mu_scale * _surface_normal_load)
+	if velocity_plane.length() > GameConfig.v_stick:
+		if kinetic_limit > 0.0:
+			_body.apply_central_force(-velocity_plane.normalized() * kinetic_limit)
+		return
+	var gravity: Vector3 = Vector3.DOWN * float(ProjectSettings.get_setting("physics/3d/default_gravity", 9.8))
+	var gravity_plane: Vector3 = gravity - normal * gravity.dot(normal)
+	var requested_force: Vector3 = -_body.mass * ((velocity_plane / GameConfig.FIXED_DT) + gravity_plane)
+	var hold_limit: float = static_limit
+	if requested_force.length() > static_limit:
+		hold_limit = kinetic_limit
+	if hold_limit <= 0.0:
+		return
+	_body.apply_central_force(requested_force.limit_length(hold_limit))
+
+
+func _apply_lateral_grip(right: Vector3, surface_grip: float) -> void:
+	var lateral_speed: float = _body.linear_velocity.dot(right)
+	var requested_force: Vector3 = -right * lateral_speed * (_body.mass / GameConfig.FIXED_DT)
+	var max_lateral_force: float = maxf(0.0, surface_grip * _surface_normal_load * GameConfig.lateral_grip_force)
+	if max_lateral_force <= 0.0:
+		return
+	_body.apply_central_force(requested_force.limit_length(max_lateral_force))
+
+
 func _apply_steering_torque(steer: float, surface_grip: float) -> void:
 	if absf(steer) <= GameConfig.self_right_forward_epsilon and absf(_body.angular_velocity.dot(Vector3.UP)) <= GameConfig.self_right_forward_epsilon:
 		return
 	var speed: float = Vector3(_body.linear_velocity.x, 0.0, _body.linear_velocity.z).length()
+	_clamp_inplace_yaw_rate(speed)
 	var speed_scale: float = _steer_yaw_speed_scale(speed)
 	var current_yaw_rate: float = _body.angular_velocity.dot(Vector3.UP)
 	var target_yaw_rate: float = steer * GameConfig.steer_max_yaw_rate * speed_scale
+	if speed <= GameConfig.v_stick:
+		var inplace_limit: float = maxf(GameConfig.steer_inplace_yaw_rate_max, 0.0)
+		target_yaw_rate = clampf(target_yaw_rate, -inplace_limit, inplace_limit)
 	var grip_scale: float = maxf(surface_grip, GameConfig.surface_min_lateral_grip)
-	var corrective_torque: float = (target_yaw_rate - current_yaw_rate) * GameConfig.steer_yaw_torque
+	var response_scale: float = _steer_yaw_response_scale(speed)
+	var corrective_torque: float = (target_yaw_rate - current_yaw_rate) * GameConfig.steer_yaw_torque * response_scale
 	var damping_torque: float = -current_yaw_rate * GameConfig.steer_yaw_damping
-	var max_yaw_torque: float = GameConfig.steer_yaw_torque * grip_scale
+	var max_yaw_torque: float = GameConfig.steer_yaw_torque * grip_scale * response_scale
 	var yaw_torque: float = clampf((corrective_torque + damping_torque) * grip_scale, -max_yaw_torque, max_yaw_torque)
 	_body.apply_torque(Vector3.UP * yaw_torque)
 
 
 func _steer_yaw_speed_scale(speed: float) -> float:
-	var max_speed: float = maxf(GameConfig.max_speed, GameConfig.self_right_forward_epsilon)
-	var falloff: float = maxf(GameConfig.steer_yaw_rate_speed_falloff, GameConfig.self_right_forward_epsilon)
-	var low_speed_blend: float = clampf((speed / max_speed) / falloff, 0.0, 1.0)
-	var pivot_scale: float = lerpf(GameConfig.steer_low_speed_pivot_scale, 1.0, low_speed_blend)
-	var high_speed_scale: float = 1.0 / (1.0 + speed * falloff)
-	return clampf(pivot_scale * high_speed_scale, 0.0, 1.0)
+	var half_speed: float = maxf(GameConfig.steer_speed_half, GameConfig.self_right_forward_epsilon)
+	var speed_scale: float = speed / (speed + half_speed)
+	if speed <= GameConfig.v_stick:
+		speed_scale = maxf(speed_scale, GameConfig.steer_low_speed_pivot_scale)
+	return clampf(speed_scale, 0.0, 1.0)
+
+
+func _steer_yaw_response_scale(speed: float) -> float:
+	var falloff: float = maxf(GameConfig.steer_high_speed_falloff, 0.0)
+	if falloff <= GameConfig.self_right_forward_epsilon:
+		return 1.0
+	return clampf(1.0 / (1.0 + speed * falloff), 0.0, 1.0)
+
+
+func _clamp_inplace_yaw_rate(speed: float) -> void:
+	if speed > GameConfig.v_stick:
+		return
+	var yaw_rate_limit: float = maxf(GameConfig.steer_inplace_yaw_rate_max, 0.0)
+	var current_yaw_rate: float = _body.angular_velocity.dot(Vector3.UP)
+	if yaw_rate_limit <= GameConfig.self_right_forward_epsilon:
+		_body.angular_velocity -= Vector3.UP * current_yaw_rate
+		return
+	if absf(current_yaw_rate) <= yaw_rate_limit:
+		return
+	var capped_yaw_rate: float = signf(current_yaw_rate) * yaw_rate_limit
+	_body.angular_velocity -= Vector3.UP * (current_yaw_rate - capped_yaw_rate)
 
 
 func _apply_surface_drag() -> void:
@@ -479,5 +570,7 @@ func _reset_surface_cache() -> void:
 	_surface_rolling_drag = GameConfig.default_rolling_drag
 	_surface_slip = GameConfig.default_slip
 	_surface_normal_load = 0.0
+	_surface_contact_normal = Vector3.UP
 	_surface_bog_enabled = false
 	_surface_bog_threshold = GameConfig.default_bog_threshold
+	_state.set("contact_normal", _surface_contact_normal)

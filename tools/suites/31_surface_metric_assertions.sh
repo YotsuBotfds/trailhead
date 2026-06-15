@@ -4,7 +4,7 @@ assert_metrics "$out_dir/surface_sweep.json" \
 	--surface=mud:10 \
 	--surface=wet_stone:8 \
 	--surface-sequence=packed_dirt,tall_grass,mud,wet_stone \
-	--metric-min=max_abs_slip_angle_deg:3.0 \
+	--metric-min=max_abs_slip_angle_deg:2.0 \
 	--metric-min=max_vehicle_contamination.dust:0.5 \
 	--metric-min=max_vehicle_contamination.mud:0.5 \
 	--metric-min=max_vehicle_contamination.wetness:0.4

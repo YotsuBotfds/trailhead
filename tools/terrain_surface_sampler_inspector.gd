@@ -1,7 +1,7 @@
 extends Node
 
 const SurfaceMapScript: GDScript = preload("res://systems/world/surface_map.gd")
-const CEDAR_TERRAIN_PALETTE_PATH: String = "res://data/surface_palettes/cedar_hollow_terrain.tres"
+const CEDAR_TERRAIN_DEF_PATH: String = "res://data/terrain/cedar_hollow_terrain_def.tres"
 
 const SAMPLE_POINTS: Dictionary = {
 	&"packed_gravel": Vector3(0.0, 0.0, 0.75),
@@ -29,8 +29,8 @@ func _inspect() -> void:
 		_errors.append("missing SurfaceMap")
 		_finish()
 		return
-	if not bool(_surface_map.call("configure_terrain_palette", CEDAR_TERRAIN_PALETTE_PATH, GameConfig.cedar_surface_map_bounds_min, GameConfig.cedar_surface_map_bounds_max)):
-		_errors.append("failed to configure terrain palette")
+	if not bool(_surface_map.call("configure_terrain_def", CEDAR_TERRAIN_DEF_PATH)):
+		_errors.append("failed to configure terrain def")
 		_finish()
 		return
 	if not bool(_surface_map.call("is_terrain_sampler_ready")):

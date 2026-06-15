@@ -3,7 +3,8 @@ extends Node3D
 
 const CedarHollowSceneResource: PackedScene = preload("res://scenes/cedar_hollow.tscn")
 const CedarRoute: Resource = preload("res://data/routes/cedar_hollow.tres")
-const CEDAR_TERRAIN_PALETTE_PATH: String = "res://data/surface_palettes/cedar_hollow_terrain.tres"
+const CEDAR_TERRAIN_DEF_PATH: String = "res://data/terrain/cedar_hollow_terrain_def.tres"
+const CedarTerrainDef: Resource = preload("res://data/terrain/cedar_hollow_terrain_def.tres")
 const VehicleScene: PackedScene = preload("res://scenes/vehicle.tscn")
 const VehicleInputScript: GDScript = preload("res://systems/vehicle/vehicle_input.gd")
 const TerrainVisualBuilderScript: GDScript = preload("res://systems/render/terrain_visual_builder.gd")
@@ -105,7 +106,7 @@ func _setup_surface_map() -> void:
 	var surface_map: Node = SurfaceMapScript.new()
 	surface_map.name = "SurfaceMap"
 	add_child(surface_map)
-	if not bool(surface_map.call("configure_terrain_palette", CEDAR_TERRAIN_PALETTE_PATH, GameConfig.cedar_surface_map_bounds_min, GameConfig.cedar_surface_map_bounds_max)):
+	if not bool(surface_map.call("configure_terrain_def", CEDAR_TERRAIN_DEF_PATH)):
 		push_error("CedarHollowHost failed to configure terrain surface map")
 
 
@@ -133,7 +134,7 @@ func _setup_terrain_tracks(terrain_root: Node3D) -> void:
 		return
 	_terrain_track_painter.name = "TerrainTrackVisualPainter"
 	_world.add_child(_terrain_track_painter)
-	_terrain_track_painter.call("configure", GameConfig.terrain_track_bounds_min, GameConfig.terrain_track_bounds_max)
+	_terrain_track_painter.call("configure", CedarTerrainDef.get("bounds_min_xz"), CedarTerrainDef.get("bounds_max_xz"))
 	var track_texture: Texture2D = _terrain_track_painter.call("track_texture") as Texture2D
 	var track_bounds_min: Vector2 = _terrain_track_painter.call("render_bounds_min")
 	var track_bounds_max: Vector2 = _terrain_track_painter.call("render_bounds_max")
@@ -177,16 +178,19 @@ func _setup_camera() -> void:
 	_camera.name = "ChaseCamera"
 	_camera.current = true
 	_camera.fov = GameConfig.cam_fov_base
+	_camera.far = GameConfig.cam_far
 	add_child(_camera)
 	_orbit_camera = Camera3D.new()
 	_orbit_camera.name = "OrbitCamera"
 	_orbit_camera.current = false
 	_orbit_camera.fov = GameConfig.orbit_cam_fov
+	_orbit_camera.far = GameConfig.orbit_cam_far
 	add_child(_orbit_camera)
 	_fpv_camera = Camera3D.new()
 	_fpv_camera.name = "FpvCamera"
 	_fpv_camera.current = false
 	_fpv_camera.fov = GameConfig.fpv_cam_fov
+	_fpv_camera.far = GameConfig.fpv_cam_far
 	add_child(_fpv_camera)
 	DustTiltShiftVisualBuilderScript.build(self, _camera, _orbit_camera, _fpv_camera)
 	_orbit_yaw_degrees = GameConfig.orbit_cam_start_yaw_deg

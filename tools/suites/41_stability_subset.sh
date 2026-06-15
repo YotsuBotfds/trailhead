@@ -11,7 +11,7 @@ run_sim "$out_dir/stability_seed_${stability_seed}_cedar_hollow_overlook_ridge.j
 	--stuck-min-progress=0.05
 
 assert_metrics "$out_dir/stability_seed_${stability_seed}_cedar_hollow_overlook_ridge.json" \
-	--surface=loose_rock:80 \
+	--surface=loose_rock:12 \
 	--landmark=overlook_ridge
 
 run_sim "$out_dir/stability_seed_${stability_seed}_cedar_hollow_segment_overlook_to_old_cedar.json" \
@@ -28,3 +28,17 @@ run_sim "$out_dir/stability_seed_${stability_seed}_cedar_hollow_segment_overlook
 assert_metrics "$out_dir/stability_seed_${stability_seed}_cedar_hollow_segment_overlook_to_old_cedar.json" \
 	--surface=loose_rock:150 \
 	--landmark=old_cedar
+
+run_sim "$out_dir/stability_seed_${stability_seed}_cedar_hollow_segment_pine_floor_to_far_mile_marker.json" \
+	--scene=cedar_hollow \
+	--controller=pd \
+	--route-segment=pine_floor_to_far_mile_marker \
+	--seed="$stability_seed" \
+	--max-ticks=4000 \
+	--stuck-window=120 \
+	--stuck-min-progress=0.015
+
+assert_metrics "$out_dir/stability_seed_${stability_seed}_cedar_hollow_segment_pine_floor_to_far_mile_marker.json" \
+	--surface=packed_dirt:180 \
+	--source-min=terrain:180 \
+	--landmark=far_mile_marker

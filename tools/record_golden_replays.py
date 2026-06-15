@@ -37,6 +37,21 @@ GOLDENS = [
         "cedar_hollow_segment_overlook_to_old_cedar.json",
         "cedar_hollow_segment_overlook_to_old_cedar_replay.json",
     ),
+    (
+        "cedar_hollow_segment_overlook_to_ridge_gate",
+        "cedar_hollow_segment_overlook_to_ridge_gate.json",
+        "cedar_hollow_segment_overlook_to_ridge_gate_replay.json",
+    ),
+    (
+        "cedar_hollow_segment_ridge_gate_to_pine_floor",
+        "cedar_hollow_segment_ridge_gate_to_pine_floor.json",
+        "cedar_hollow_segment_ridge_gate_to_pine_floor_replay.json",
+    ),
+    (
+        "cedar_hollow_segment_pine_floor_to_far_mile_marker",
+        "cedar_hollow_segment_pine_floor_to_far_mile_marker.json",
+        "cedar_hollow_segment_pine_floor_to_far_mile_marker_replay.json",
+    ),
 ]
 
 

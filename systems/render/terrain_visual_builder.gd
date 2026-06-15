@@ -1,13 +1,16 @@
 class_name TerrainVisualBuilder
 extends RefCounted
 
-const HeightmeshScene: PackedScene = preload("res://assets/models/terrain/cedar_hollow_heightmesh.glb")
+const CedarTerrainDef: Resource = preload("res://data/terrain/cedar_hollow_terrain_def.tres")
 const SurfaceVisualCatalogResource: Resource = preload("res://data/surface_visuals/cedar_hollow_surface_visuals.tres")
 const TerrainTrackOverlayShader: Shader = preload("res://systems/render/terrain_track_overlay.gdshader")
 const DETAIL_MASK_TEXTURE_PATH: String = "res://assets/textures/surface_visuals/generated/terrain_detail_mask.png"
 const GENERATED_SURFACE_TEXTURE_DIR: String = "res://assets/textures/surface_visuals/generated/"
 const TEXTURE_SOURCE_PATH_META: StringName = &"trailhead_source_path"
+const TILE_INDEX_META: StringName = &"trailhead_tile_index"
+const TILE_PATH_META: StringName = &"trailhead_visual_tile_path"
 const HEIGHTMESH_NAME: String = "cedar_hollow_heightmesh"
+const TERRAIN_TILE_NAME_PREFIX: String = "terrain_visual_tile_"
 const TERRAIN_MATERIAL_PREFIX: String = "terrain_mat_"
 const WET_DIFFUSE_MULTIPLIER: float = 0.2
 const WET_ROUGHNESS: float = 0.12
@@ -26,13 +29,49 @@ static func build_cedar_hollow(parent: Node3D) -> Node3D:
 	root.name = "TerrainVisuals"
 	parent.add_child(root)
 
-	var heightmesh: Node3D = HeightmeshScene.instantiate() as Node3D
-	if heightmesh == null:
-		return root
-	heightmesh.name = HEIGHTMESH_NAME
-	root.add_child(heightmesh)
-	_apply_surface_visuals(heightmesh)
+	var active_tiles: Array[Vector2i] = CedarTerrainDef.call("active_tile_indices")
+	for tile_array_index in range(active_tiles.size()):
+		var tile_index: Vector2i = active_tiles[tile_array_index]
+		var tile_path: String = CedarTerrainDef.call("visual_tile_path_for_tile", tile_index)
+		_add_visual_tile(root, tile_index, tile_path, tile_array_index)
 	return root
+
+
+static func visual_tile_node_name(tile_index: Vector2i, tile_path: String, tile_array_index: int) -> String:
+	var base_name: String = tile_path.get_file().get_basename()
+	if base_name.is_empty():
+		base_name = HEIGHTMESH_NAME + "_" + str(tile_array_index)
+	return TERRAIN_TILE_NAME_PREFIX + str(tile_index.x) + "_" + str(tile_index.y) + "_" + _safe_node_name(base_name)
+
+
+static func _add_visual_tile(parent: Node3D, tile_index: Vector2i, tile_path: String, tile_array_index: int) -> void:
+	if tile_path.is_empty():
+		push_error("Terrain visual tile path is empty for tile " + str(tile_index))
+		return
+	var tile_scene: PackedScene = load(tile_path) as PackedScene
+	if tile_scene == null:
+		push_error("Terrain visual tile failed to load: " + tile_path)
+		return
+	var tile: Node3D = tile_scene.instantiate() as Node3D
+	if tile == null:
+		push_error("Terrain visual tile did not instantiate as Node3D: " + tile_path)
+		return
+	tile.name = visual_tile_node_name(tile_index, tile_path, tile_array_index)
+	tile.set_meta(TILE_INDEX_META, tile_index)
+	tile.set_meta(TILE_PATH_META, tile_path)
+	parent.add_child(tile)
+	_apply_surface_visuals(tile)
+
+
+static func _safe_node_name(value: String) -> String:
+	var safe_name: String = value.replace("/", "_")
+	safe_name = safe_name.replace("\\", "_")
+	safe_name = safe_name.replace(":", "_")
+	safe_name = safe_name.replace(" ", "_")
+	safe_name = safe_name.replace(".", "_")
+	if safe_name.is_empty():
+		return "tile"
+	return safe_name
 
 
 static func _apply_surface_visuals(parent: Node) -> void:

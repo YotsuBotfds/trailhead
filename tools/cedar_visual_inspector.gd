@@ -2,9 +2,11 @@ extends Node
 
 const CedarHollowPlayableScene: PackedScene = preload("res://scenes/cedar_hollow_playable.tscn")
 const CedarRoute: Resource = preload("res://data/routes/cedar_hollow.tres")
+const CedarTerrainDef: Resource = preload("res://data/terrain/cedar_hollow_terrain_def.tres")
 const CedarSurfaceVisualCatalog: Resource = preload("res://data/surface_visuals/cedar_hollow_surface_visuals.tres")
 const VehicleStateScript: GDScript = preload("res://systems/vehicle/vehicle_state.gd")
 const SurfaceMapScript: GDScript = preload("res://systems/world/surface_map.gd")
+const TerrainVisualBuilderScript: GDScript = preload("res://systems/render/terrain_visual_builder.gd")
 const FeatureVisualBuilderScript: GDScript = preload("res://systems/render/feature_visual_builder.gd")
 const ScatterVisualBuilderScript: GDScript = preload("res://systems/render/scatter_visual_builder.gd")
 const BoundaryVisualBuilderScript: GDScript = preload("res://systems/render/boundary_visual_builder.gd")
@@ -90,8 +92,11 @@ const HEIGHTMESH_ROUTE_MARGIN: float = 0.35
 const EXPECTED_BOUNDARY_LEFT_VISUALS: int = 15
 const EXPECTED_BOUNDARY_RIGHT_VISUALS: int = 16
 const EXPECTED_BOUNDARY_BACK_VISUALS: int = 7
+const EXPECTED_TERRAIN_ACTIVE_TILE_COUNT: int = 12
+const EXPECTED_TERRAIN_TILE_GRID: Vector2i = Vector2i(1, 12)
+const EXPECTED_TERRAIN_TILE_GRID_ORIGIN: Vector2i = Vector2i(0, -5)
+const TERRAIN_TILE_BOUNDS_TOLERANCE: float = 0.01
 const TERRAIN_HEIGHTMAP_COLLISION_NODE: String = "cedar_hollow_heightmap_collision"
-const TERRAIN_HEIGHTMAP_COLLISION_PATH: String = "res://data/collision/cedar_hollow_heightmap_collision.tres"
 const RESIDUE_SHADER_PATH: String = "res://systems/render/vehicle_contamination_visual.gdshader"
 const RESIDUE_BODY_OVERLAY: String = "body/residue_body_contamination_overlay"
 const RESIDUE_NOSE_OVERLAY: String = "nose/residue_body_contamination_overlay"
@@ -142,9 +147,8 @@ func _inspect() -> void:
 	var terrain_root: Node = _require_node(_scene_root, "CedarHollow/TerrainVisuals")
 	if terrain_root != null:
 		_require_named_count(terrain_root, "terrain_patch_", 0)
-		var heightmesh: Node = _require_node(terrain_root, "cedar_hollow_heightmesh")
-		if heightmesh != null:
-			_inspect_heightmesh_layout(heightmesh)
+		_inspect_terrain_visual_tiles(terrain_root)
+		_inspect_terrain_visual_layout(terrain_root)
 		var terrain_collision_count: int = _count_collision_objects(terrain_root)
 		if terrain_collision_count > 0:
 			_errors.append("TerrainVisuals contains collision objects: " + str(terrain_collision_count))
@@ -167,6 +171,7 @@ func _inspect() -> void:
 		_require_node_position(feature_root, "stepping_stone_1", Vector3(3.45, 0.01, -7.05), FEATURE_TRANSFORM_TOLERANCE)
 		_require_node_position(feature_root, "stepping_stone_5", Vector3(5.0, 0.01, -7.2), FEATURE_TRANSFORM_TOLERANCE)
 		_inspect_feature_sequences(feature_root)
+		_require_geometry_visibility_range(feature_root, "FeatureVisuals", GameConfig.vis_range_props)
 		var collision_count: int = _count_collision_objects(feature_root)
 		if collision_count > 0:
 			_errors.append("FeatureVisuals contains collision objects: " + str(collision_count))
@@ -241,6 +246,7 @@ func _inspect() -> void:
 		_require_accent_mesh(prop_root, "wayfinder_overlook/axis_accent")
 		_require_accent_mesh(prop_root, "wayfinder_creek/axis_accent")
 		_require_prop_meshes(prop_root)
+		_require_geometry_visibility_range(prop_root, "PropVisuals", GameConfig.vis_range_props)
 		var prop_collision_count: int = _count_collision_objects(prop_root)
 		if prop_collision_count > 0:
 			_errors.append("PropVisuals contains collision objects: " + str(prop_collision_count))
@@ -258,6 +264,7 @@ func _inspect() -> void:
 		_require_named_count(scatter_root, "fern_clump_", EXPECTED_FERN_CLUMPS)
 		_require_named_count(scatter_root, "cattail_", EXPECTED_CATTAILS)
 		_inspect_scatter_layout(scatter_root)
+		_inspect_scatter_visibility_ranges(scatter_root)
 		_inspect_chase_capture_clearance(scatter_root)
 		var scatter_collision_count: int = _count_collision_objects(scatter_root)
 		if scatter_collision_count > 0:
@@ -275,6 +282,7 @@ func _inspect() -> void:
 		_require_named_count(ground_detail_root, "puddle_sheen_", EXPECTED_PUDDLE_SHEENS)
 		_require_named_count(ground_detail_root, "wet_glint_", EXPECTED_WET_GLINTS)
 		_inspect_ground_detail_layout(ground_detail_root)
+		_require_geometry_visibility_range(ground_detail_root, "GroundDetailVisuals", GameConfig.vis_range_ground_detail)
 		var ground_detail_collision_count: int = _count_collision_objects(ground_detail_root)
 		if ground_detail_collision_count > 0:
 			_errors.append("GroundDetailVisuals contains collision objects: " + str(ground_detail_collision_count))
@@ -290,6 +298,7 @@ func _inspect() -> void:
 		_require_named_count(boundary_root, "boundary_branch_", EXPECTED_BOUNDARY_BRANCHES)
 		_require_named_count(boundary_root, "trail_blaze_", EXPECTED_TRAIL_BLAZES)
 		_inspect_boundary_layout(boundary_root)
+		_require_geometry_visibility_range(boundary_root, "BoundaryVisuals", GameConfig.vis_range_scatter)
 		var boundary_collision_count: int = _count_collision_objects(boundary_root)
 		if boundary_collision_count > 0:
 			_errors.append("BoundaryVisuals contains collision objects: " + str(boundary_collision_count))
@@ -512,23 +521,115 @@ func _has_mesh_instance(parent: Node) -> bool:
 	return false
 
 
-func _inspect_heightmesh_layout(heightmesh: Node) -> void:
+func _inspect_terrain_visual_tiles(terrain_root: Node) -> void:
+	var active_tiles: Array[Vector2i] = CedarTerrainDef.call("active_tile_indices")
+	var visual_tile_paths: Array[String] = CedarTerrainDef.get("visual_tile_paths")
+	_inspect_terrain_def_visual_tile_contract(active_tiles)
+	_inspect_landmark_tile_coverage(active_tiles)
+	if active_tiles.is_empty():
+		_errors.append("TerrainDef should expose at least one active visual tile")
+	if visual_tile_paths.size() != active_tiles.size():
+		_errors.append("TerrainDef visual_tile_paths should match active tile count")
+	var observed_tile_count: int = 0
+	for tile_array_index in range(active_tiles.size()):
+		var tile_index: Vector2i = active_tiles[tile_array_index]
+		var tile_path: String = CedarTerrainDef.call("visual_tile_path_for_tile", tile_index)
+		if tile_path.is_empty():
+			_errors.append("TerrainDef visual tile path is empty for tile " + str(tile_index))
+			continue
+		if not FileAccess.file_exists(tile_path):
+			_errors.append("TerrainDef visual tile path does not exist: " + tile_path)
+			continue
+		var expected_name: String = TerrainVisualBuilderScript.visual_tile_node_name(tile_index, tile_path, tile_array_index)
+		var tile_node: Node = terrain_root.get_node_or_null(expected_name)
+		if tile_node == null:
+			_errors.append("TerrainVisuals missing active visual tile " + expected_name + " from " + tile_path)
+			continue
+		observed_tile_count += 1
+		if not tile_node.has_meta(TerrainVisualBuilderScript.TILE_INDEX_META):
+			_errors.append(expected_name + " should expose its TerrainDef tile index metadata")
+		elif tile_node.get_meta(TerrainVisualBuilderScript.TILE_INDEX_META) != tile_index:
+			_errors.append(expected_name + " tile index metadata should match " + str(tile_index))
+		if not tile_node.has_meta(TerrainVisualBuilderScript.TILE_PATH_META):
+			_errors.append(expected_name + " should expose its TerrainDef visual tile path metadata")
+		elif String(tile_node.get_meta(TerrainVisualBuilderScript.TILE_PATH_META)) != tile_path:
+			_errors.append(expected_name + " visual tile path metadata should match " + tile_path)
+		var tile_mesh_count: int = _count_mesh_instances(tile_node)
+		if tile_mesh_count <= 0:
+			_errors.append(expected_name + " should contain mesh instances")
+		_require_geometry_visibility_range(tile_node, expected_name, GameConfig.vis_range_terrain)
+		_require_visual_tile_bounds(tile_node, tile_index, expected_name)
+	if observed_tile_count != active_tiles.size():
+		_errors.append("TerrainVisuals should instantiate every active visual tile before tick 0")
+
+
+func _inspect_terrain_def_visual_tile_contract(active_tiles: Array[Vector2i]) -> void:
+	var tile_grid: Vector2i = CedarTerrainDef.get("tile_grid")
+	var tile_grid_origin: Vector2i = CedarTerrainDef.get("tile_grid_origin")
+	if tile_grid != EXPECTED_TERRAIN_TILE_GRID:
+		_errors.append("TerrainDef tile_grid expected " + str(EXPECTED_TERRAIN_TILE_GRID) + ", got " + str(tile_grid))
+	if tile_grid_origin != EXPECTED_TERRAIN_TILE_GRID_ORIGIN:
+		_errors.append("TerrainDef tile_grid_origin expected " + str(EXPECTED_TERRAIN_TILE_GRID_ORIGIN) + ", got " + str(tile_grid_origin))
+	if active_tiles.size() != EXPECTED_TERRAIN_ACTIVE_TILE_COUNT:
+		_errors.append("TerrainDef active visual tile count expected " + str(EXPECTED_TERRAIN_ACTIVE_TILE_COUNT) + ", got " + str(active_tiles.size()))
+	for i in range(EXPECTED_TERRAIN_ACTIVE_TILE_COUNT):
+		var expected_tile: Vector2i = Vector2i(0, EXPECTED_TERRAIN_TILE_GRID_ORIGIN.y + i)
+		if i >= active_tiles.size():
+			continue
+		if active_tiles[i] != expected_tile:
+			_errors.append("TerrainDef active visual tile " + str(i) + " expected " + str(expected_tile) + ", got " + str(active_tiles[i]))
+
+
+func _inspect_landmark_tile_coverage(active_tiles: Array[Vector2i]) -> void:
+	var landmark_ids: Array[StringName] = CedarRoute.get("landmark_ids")
+	for i in range(landmark_ids.size()):
+		var landmark_id: StringName = landmark_ids[i]
+		var position: Vector3 = CedarRoute.call("landmark_position", landmark_id)
+		var world_xz: Vector2 = Vector2(position.x, position.z)
+		if not bool(CedarTerrainDef.call("contains_world_xz", world_xz)):
+			_errors.append("Cedar landmark " + String(landmark_id) + " should be inside TerrainDef bounds")
+			continue
+		var tile_index: Vector2i = CedarTerrainDef.call("tile_index_for_world_xz", world_xz)
+		if not active_tiles.has(tile_index):
+			_errors.append("Cedar landmark " + String(landmark_id) + " should resolve to an active visual tile, got " + str(tile_index))
+
+
+func _require_visual_tile_bounds(tile_node: Node, tile_index: Vector2i, label: String) -> void:
 	var accumulator: BoundsAccumulator = BoundsAccumulator.new()
-	_collect_mesh_bounds(heightmesh, accumulator)
+	_collect_mesh_bounds(tile_node, accumulator)
 	if not accumulator.has_bounds:
-		_errors.append("cedar_hollow_heightmesh should expose mesh bounds")
+		_errors.append(label + " should expose mesh bounds for TerrainDef tile_bounds")
+		return
+	var expected_bounds: Rect2 = CedarTerrainDef.call("tile_bounds", tile_index)
+	var expected_min: Vector2 = expected_bounds.position
+	var expected_max: Vector2 = expected_bounds.position + expected_bounds.size
+	if absf(accumulator.bounds_min.x - expected_min.x) > TERRAIN_TILE_BOUNDS_TOLERANCE:
+		_errors.append(label + " bounds min X expected " + str(expected_min.x) + ", got " + str(accumulator.bounds_min.x))
+	if absf(accumulator.bounds_max.x - expected_max.x) > TERRAIN_TILE_BOUNDS_TOLERANCE:
+		_errors.append(label + " bounds max X expected " + str(expected_max.x) + ", got " + str(accumulator.bounds_max.x))
+	if absf(accumulator.bounds_min.z - expected_min.y) > TERRAIN_TILE_BOUNDS_TOLERANCE:
+		_errors.append(label + " bounds min Z expected " + str(expected_min.y) + ", got " + str(accumulator.bounds_min.z))
+	if absf(accumulator.bounds_max.z - expected_max.y) > TERRAIN_TILE_BOUNDS_TOLERANCE:
+		_errors.append(label + " bounds max Z expected " + str(expected_max.y) + ", got " + str(accumulator.bounds_max.z))
+
+
+func _inspect_terrain_visual_layout(terrain_root: Node) -> void:
+	var accumulator: BoundsAccumulator = BoundsAccumulator.new()
+	_collect_mesh_bounds(terrain_root, accumulator)
+	if not accumulator.has_bounds:
+		_errors.append("TerrainVisuals should expose visual tile mesh bounds")
 		return
 	var route_bounds_min: Vector3 = CedarRoute.get("bounds_min")
 	var route_bounds_max: Vector3 = CedarRoute.get("bounds_max")
 	if accumulator.bounds_min.x > route_bounds_min.x + HEIGHTMESH_ROUTE_MARGIN:
-		_errors.append("heightmesh should cover route min X within margin, got " + str(accumulator.bounds_min.x))
+		_errors.append("TerrainVisuals should cover route min X within margin, got " + str(accumulator.bounds_min.x))
 	if accumulator.bounds_max.x < route_bounds_max.x - HEIGHTMESH_ROUTE_MARGIN:
-		_errors.append("heightmesh should cover route max X within margin, got " + str(accumulator.bounds_max.x))
+		_errors.append("TerrainVisuals should cover route max X within margin, got " + str(accumulator.bounds_max.x))
 	if accumulator.bounds_min.z > route_bounds_min.z + HEIGHTMESH_ROUTE_MARGIN:
-		_errors.append("heightmesh should cover route min Z within margin, got " + str(accumulator.bounds_min.z))
+		_errors.append("TerrainVisuals should cover route min Z within margin, got " + str(accumulator.bounds_min.z))
 	if accumulator.bounds_max.z < route_bounds_max.z - HEIGHTMESH_ROUTE_MARGIN:
-		_errors.append("heightmesh should cover route max Z within margin, got " + str(accumulator.bounds_max.z))
-	_require_heightmesh_surface_visuals(heightmesh)
+		_errors.append("TerrainVisuals should cover route max Z within margin, got " + str(accumulator.bounds_max.z))
+	_require_heightmesh_surface_visuals(terrain_root)
 
 
 func _require_heightmesh_surface_visuals(parent: Node) -> void:
@@ -537,7 +638,7 @@ func _require_heightmesh_surface_visuals(parent: Node) -> void:
 	var expected_surface_ids: Array[StringName] = CedarSurfaceVisualCatalog.call("supported_surface_ids")
 	for surface_id in expected_surface_ids:
 		if not observed_surface_ids.has(surface_id):
-			_errors.append("cedar_hollow_heightmesh missing visual material override for " + String(surface_id))
+			_errors.append("TerrainVisuals missing visual material override for " + String(surface_id))
 
 
 func _collect_heightmesh_surface_visuals(parent: Node, observed_surface_ids: Array[StringName]) -> void:
@@ -713,21 +814,32 @@ func _inspect_terrain_heightmap_collision(cedar_world: Node) -> void:
 		_errors.append(TERRAIN_HEIGHTMAP_COLLISION_NODE + " should be in the terrain surface-id map group")
 	if not body.has_meta(SurfaceMapScript.TERRAIN_SURFACE_OVERRIDE_RECTS_META):
 		_errors.append(TERRAIN_HEIGHTMAP_COLLISION_NODE + " should expose terrain surface override rects")
-	var collision: CollisionShape3D = _require_node(body, "Collision") as CollisionShape3D
-	if collision == null:
-		return
-	if collision.disabled:
-		_errors.append(TERRAIN_HEIGHTMAP_COLLISION_NODE + " Collision should be enabled")
-	var heightmap: HeightMapShape3D = collision.shape as HeightMapShape3D
-	if heightmap == null:
-		_errors.append(TERRAIN_HEIGHTMAP_COLLISION_NODE + " Collision should use HeightMapShape3D")
-		return
-	if heightmap.resource_path != TERRAIN_HEIGHTMAP_COLLISION_PATH:
-		_errors.append(TERRAIN_HEIGHTMAP_COLLISION_NODE + " should use committed heightmap collision resource")
-	if heightmap.map_width <= 1 or heightmap.map_depth <= 1:
-		_errors.append(TERRAIN_HEIGHTMAP_COLLISION_NODE + " heightmap dimensions should be populated")
-	if heightmap.map_data.size() != heightmap.map_width * heightmap.map_depth:
-		_errors.append(TERRAIN_HEIGHTMAP_COLLISION_NODE + " map_data size should match heightmap dimensions")
+	var active_tiles: Array[Vector2i] = CedarTerrainDef.call("active_tile_indices")
+	var collision_tile_paths: Array[String] = CedarTerrainDef.get("collision_tile_paths")
+	if collision_tile_paths.size() != active_tiles.size():
+		_errors.append(TERRAIN_HEIGHTMAP_COLLISION_NODE + " collision tile paths should match active tile count")
+	var observed_collision_shapes: int = 0
+	for i in range(active_tiles.size()):
+		var tile_index: Vector2i = active_tiles[i]
+		var collision_name: String = "Collision" if tile_index == Vector2i.ZERO else "Collision_" + str(tile_index.x) + "_" + str(tile_index.y)
+		var collision: CollisionShape3D = _require_node(body, collision_name) as CollisionShape3D
+		if collision == null:
+			continue
+		observed_collision_shapes += 1
+		if collision.disabled:
+			_errors.append(TERRAIN_HEIGHTMAP_COLLISION_NODE + " " + collision_name + " should be enabled")
+		var heightmap: HeightMapShape3D = collision.shape as HeightMapShape3D
+		if heightmap == null:
+			_errors.append(TERRAIN_HEIGHTMAP_COLLISION_NODE + " " + collision_name + " should use HeightMapShape3D")
+			continue
+		if i < collision_tile_paths.size() and heightmap.resource_path != collision_tile_paths[i]:
+			_errors.append(TERRAIN_HEIGHTMAP_COLLISION_NODE + " " + collision_name + " should use committed heightmap collision resource")
+		if heightmap.map_width <= 1 or heightmap.map_depth <= 1:
+			_errors.append(TERRAIN_HEIGHTMAP_COLLISION_NODE + " " + collision_name + " heightmap dimensions should be populated")
+		if heightmap.map_data.size() != heightmap.map_width * heightmap.map_depth:
+			_errors.append(TERRAIN_HEIGHTMAP_COLLISION_NODE + " " + collision_name + " map_data size should match heightmap dimensions")
+	if observed_collision_shapes != active_tiles.size():
+		_errors.append(TERRAIN_HEIGHTMAP_COLLISION_NODE + " should preload every active collision tile before tick 0")
 
 
 func _inspect_feature_sequences(feature_root: Node) -> void:
@@ -872,6 +984,27 @@ func _name_begins_with_any(child_name: String, prefixes: Array[String]) -> bool:
 		if child_name.begins_with(prefix):
 			return true
 	return false
+
+
+func _inspect_scatter_visibility_ranges(scatter_root: Node) -> void:
+	for child: Node in scatter_root.get_children():
+		var child_label: String = "ScatterVisuals/" + String(child.name)
+		if _is_scatter_grass_child(String(child.name)):
+			_require_geometry_visibility_range(child, child_label, GameConfig.vis_range_grass)
+		else:
+			_require_geometry_visibility_range(child, child_label, GameConfig.vis_range_scatter)
+
+
+func _is_scatter_grass_child(child_name: String) -> bool:
+	return child_name.begins_with("grass_tuft_") or child_name.begins_with("grass_occluder_")
+
+
+func _require_geometry_visibility_range(parent: Node, label: String, expected_range_end: float) -> void:
+	var geometry_instance: GeometryInstance3D = parent as GeometryInstance3D
+	if geometry_instance != null and absf(geometry_instance.visibility_range_end - expected_range_end) > FLOAT_EPSILON:
+		_errors.append(label + " visibility_range_end expected " + str(expected_range_end) + ", got " + str(geometry_instance.visibility_range_end))
+	for child: Node in parent.get_children():
+		_require_geometry_visibility_range(child, label + "/" + String(child.name), expected_range_end)
 
 
 func _inspect_boundary_layout(boundary_root: Node) -> void:

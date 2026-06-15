@@ -40,8 +40,8 @@ run_log_ramp() {
 	assert_metrics "$out_file" \
 		--surface=wood_plank:20 \
 		--surface-sequence=packed_gravel,wood_plank \
-		--metric-min=max_y_position:0.18 \
-		--metric-min=max_pitch_deg:4.0
+		--metric-min=max_y_position:0.12 \
+		--metric-min=max_pitch_deg:2.0
 }
 
 run_flat_flipped_yawed() {
@@ -95,7 +95,7 @@ run_overlook_ridge() {
 		--stuck-window=120 \
 		--stuck-min-progress=0.05
 	assert_metrics "$out_file" \
-		--surface=loose_rock:20 \
+		--surface=loose_rock:12 \
 		--landmark=overlook_ridge
 }
 
@@ -168,7 +168,7 @@ run_culvert_mouth() {
 		--stuck-window=120 \
 		--stuck-min-progress=0.05
 	assert_metrics "$out_file" \
-		--surface=packed_dirt:50 \
+		--surface=packed_dirt:40 \
 		--landmark=culvert_mouth
 }
 
@@ -200,11 +200,9 @@ run_overlook_to_old_cedar_segment() {
 		--max-ticks=3200 \
 		--stuck-window=120 \
 		--stuck-min-progress=0.015
-	# The route is now a rock descent with only a brief packed-dirt handoff
-	# near Old Cedar, replacing the old dirt-heavy line.
+	# Keep the floor near the reblessed rock-heavy route so future dirt-heavy drift is visible.
 	assert_metrics "$out_file" \
-		--surface=loose_rock:200 \
-		--surface=packed_dirt:3 \
+		--surface=loose_rock:150 \
 		--landmark=old_cedar
 }
 

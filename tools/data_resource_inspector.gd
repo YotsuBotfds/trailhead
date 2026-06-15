@@ -1,6 +1,7 @@
 extends Node
 
 const CedarRoute: Resource = preload("res://data/routes/cedar_hollow.tres")
+const CedarTerrainDef: Resource = preload("res://data/terrain/cedar_hollow_terrain_def.tres")
 const CedarSurfaceVisualCatalog: Resource = preload("res://data/surface_visuals/cedar_hollow_surface_visuals.tres")
 const SURFACE_DIR_PATH: String = "res://data/surfaces"
 const EXPECTED_SURFACE_IDS: Array[StringName] = [
@@ -16,6 +17,16 @@ const WET_DEFAULT_SURFACE_IDS: Array[StringName] = [
 	&"mud",
 	&"wet_stone"
 ]
+const EXPECTED_G2_LANDMARK_IDS: Array[StringName] = [
+	&"ridge_gate",
+	&"pine_floor",
+	&"far_mile_marker"
+]
+const EXPECTED_G2_SEGMENT_IDS: Array[StringName] = [
+	&"overlook_to_ridge_gate",
+	&"ridge_gate_to_pine_floor",
+	&"pine_floor_to_far_mile_marker"
+]
 
 var _errors: PackedStringArray = PackedStringArray()
 var _surface_ids: Array[StringName] = []
@@ -28,6 +39,7 @@ func _ready() -> void:
 func _inspect() -> void:
 	_inspect_surfaces()
 	_inspect_surface_visuals()
+	_inspect_cedar_terrain_def()
 	_inspect_cedar_route()
 	_finish()
 
@@ -127,6 +139,46 @@ func _inspect_surface(surface: Resource, resource_path: String, expected_id: Str
 	_require_float_range(float(surface.get("wetness_residue")), 0.0, 1.0, resource_path + " wetness_residue")
 
 
+func _inspect_cedar_terrain_def() -> void:
+	var terrain_errors: PackedStringArray = CedarTerrainDef.call("validate")
+	for error in terrain_errors:
+		_errors.append("cedar_hollow TerrainDef: " + error)
+	var scene_id: StringName = CedarTerrainDef.get("scene_id")
+	if scene_id != &"cedar_hollow":
+		_errors.append("cedar_hollow TerrainDef scene_id mismatch: " + String(scene_id))
+	var bounds_min: Vector2 = CedarTerrainDef.get("bounds_min_xz")
+	var bounds_max: Vector2 = CedarTerrainDef.get("bounds_max_xz")
+	if bounds_min.x >= bounds_max.x or bounds_min.y >= bounds_max.y:
+		_errors.append("cedar_hollow TerrainDef bounds are inverted")
+	var tile_grid: Vector2i = CedarTerrainDef.get("tile_grid")
+	var tile_grid_origin: Vector2i = CedarTerrainDef.get("tile_grid_origin")
+	var tile_size: Vector2 = CedarTerrainDef.get("tile_size")
+	var visual_grid: Vector2i = CedarTerrainDef.get("visual_grid")
+	var collision_grid: Vector2i = CedarTerrainDef.get("collision_grid")
+	var surface_map_size: Vector2i = CedarTerrainDef.get("surface_map_size")
+	if tile_grid != Vector2i(1, 12):
+		_errors.append("cedar_hollow TerrainDef tile_grid should describe the committed G1 strip")
+	if tile_grid_origin != Vector2i(0, -5):
+		_errors.append("cedar_hollow TerrainDef tile_grid_origin should keep the legacy tile at index 0,0")
+	if absf(tile_size.x - 11.0) > 0.001 or absf(tile_size.y - 12.2) > 0.001:
+		_errors.append("cedar_hollow TerrainDef tile_size should match committed per-tile meters")
+	if visual_grid != Vector2i(129, 145):
+		_errors.append("cedar_hollow TerrainDef visual_grid should match committed per-tile heightmesh grid")
+	if collision_grid != Vector2i(129, 145):
+		_errors.append("cedar_hollow TerrainDef collision_grid should match committed per-tile heightmap")
+	var expected_surface_map_size: Vector2i = Vector2i(256, 255 * tile_grid.y + 1)
+	if surface_map_size != expected_surface_map_size:
+		_errors.append("cedar_hollow TerrainDef surface_map_size should preserve per-tile surface-ID sampling")
+	var active_tiles: Array[Vector2i] = CedarTerrainDef.call("active_tile_indices")
+	if active_tiles.size() != tile_grid.x * tile_grid.y:
+		_errors.append("cedar_hollow TerrainDef active tile count should match tile_grid")
+	if not active_tiles.has(Vector2i(0, 0)):
+		_errors.append("cedar_hollow TerrainDef active tiles should preserve legacy tile index 0,0")
+	var override_rects: Array[Variant] = CedarTerrainDef.call("surface_override_rects")
+	if override_rects.size() != 3:
+		_errors.append("cedar_hollow TerrainDef should expose three feature override rects")
+
+
 func _inspect_cedar_route() -> void:
 	var route_errors: PackedStringArray = CedarRoute.call("validate")
 	for error in route_errors:
@@ -134,10 +186,16 @@ func _inspect_cedar_route() -> void:
 	var scene_id: StringName = CedarRoute.get("scene_id")
 	if scene_id != &"cedar_hollow":
 		_errors.append("cedar_hollow RouteDef scene_id mismatch: " + String(scene_id))
+	var terrain_def_path: String = CedarRoute.get("terrain_def_path")
+	if terrain_def_path != "res://data/terrain/cedar_hollow_terrain_def.tres":
+		_errors.append("cedar_hollow RouteDef terrain_def_path mismatch: " + terrain_def_path)
+	if scene_id != CedarTerrainDef.get("scene_id"):
+		_errors.append("cedar_hollow RouteDef scene_id should match TerrainDef scene_id")
 	var bounds_min: Vector3 = CedarRoute.get("bounds_min")
 	var bounds_max: Vector3 = CedarRoute.get("bounds_max")
 	if bounds_min.x >= bounds_max.x or bounds_min.y >= bounds_max.y or bounds_min.z >= bounds_max.z:
 		_errors.append("cedar_hollow RouteDef bounds are inverted")
+	_require_route_encloses_terrain(bounds_min, bounds_max)
 	var spawn_ids: Array[StringName] = CedarRoute.get("spawn_ids")
 	var spawn_positions: Array[Vector3] = CedarRoute.get("spawn_positions")
 	var spawn_yaw_degrees: Array[float] = CedarRoute.get("spawn_yaw_degrees")
@@ -169,6 +227,12 @@ func _inspect_cedar_route() -> void:
 	_require_unique_ids(spawn_ids, "RouteDef spawn")
 	_require_unique_ids(landmark_ids, "RouteDef landmark")
 	_require_unique_ids(segment_ids, "RouteDef segment")
+	for expected_landmark_id in EXPECTED_G2_LANDMARK_IDS:
+		if not landmark_ids.has(expected_landmark_id):
+			_errors.append("RouteDef missing G2 landmark: " + String(expected_landmark_id))
+	for expected_segment_id in EXPECTED_G2_SEGMENT_IDS:
+		if not segment_ids.has(expected_segment_id):
+			_errors.append("RouteDef missing G2 route segment: " + String(expected_segment_id))
 	for i in range(spawn_ids.size()):
 		if i < spawn_positions.size():
 			_require_position_inside_bounds(spawn_positions[i], bounds_min, bounds_max, "spawn " + String(spawn_ids[i]))
@@ -229,9 +293,16 @@ func _require_position_inside_bounds(position: Vector3, bounds_min: Vector3, bou
 		_errors.append(label + " should be inside route bounds, got " + str(position))
 
 
+func _require_route_encloses_terrain(route_bounds_min: Vector3, route_bounds_max: Vector3) -> void:
+	var terrain_bounds_min: Vector2 = CedarTerrainDef.get("bounds_min_xz")
+	var terrain_bounds_max: Vector2 = CedarTerrainDef.get("bounds_max_xz")
+	if route_bounds_min.x > terrain_bounds_min.x or route_bounds_min.z > terrain_bounds_min.y or route_bounds_max.x < terrain_bounds_max.x or route_bounds_max.z < terrain_bounds_max.y:
+		_errors.append("cedar_hollow RouteDef bounds should enclose TerrainDef X/Z extent")
+
+
 func _finish() -> void:
 	if _errors.is_empty():
-		print("ok: surface, surface visual, and Cedar route resources are valid")
+		print("ok: surface, surface visual, Cedar terrain, and Cedar route resources are valid")
 		get_tree().quit(0)
 		return
 	for error in _errors:

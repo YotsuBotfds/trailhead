@@ -60,4 +60,15 @@ static func _instance_feature(parent: Node3D, scene: PackedScene, node_name: Str
 	instance.rotation_degrees = rotation
 	instance.scale = scale
 	parent.add_child(instance)
+	_apply_feature_visibility_range(instance)
 	return instance
+
+
+static func _apply_feature_visibility_range(parent: Node) -> void:
+	if parent == null:
+		return
+	var geometry_instance: GeometryInstance3D = parent as GeometryInstance3D
+	if geometry_instance != null:
+		geometry_instance.visibility_range_end = GameConfig.vis_range_props
+	for child: Node in parent.get_children():
+		_apply_feature_visibility_range(child)

@@ -50,7 +50,7 @@ func next_input(state: RefCounted) -> RefCounted:
 		_prev_err = 0.0
 		to_target = target_pos - state_position
 		to_target.y = 0.0
-	if to_target.length() <= arrive_radius:
+	if to_target.length() <= _current_arrive_radius():
 		_done = true
 		input.set("brake", 1.0)
 		return input

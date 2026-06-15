@@ -2,6 +2,7 @@ class_name FlatWorldBuilder
 extends RefCounted
 
 const SurfaceMapScript: GDScript = preload("res://systems/world/surface_map.gd")
+const CedarTerrainDef: Resource = preload("res://data/terrain/cedar_hollow_terrain_def.tres")
 const TERRAIN_SURFACE_MAP_PROBE_SCENE_ID: String = "terrain_surface_map_probe"
 const SURFACE_STRIP_IDS: Array[StringName] = [
 	&"packed_dirt",
@@ -37,8 +38,8 @@ static func build_terrain_surface_map_probe_collision(parent: Node) -> StaticBod
 	var collision: CollisionShape3D = CollisionShape3D.new()
 	collision.name = "Collision"
 	var shape: BoxShape3D = BoxShape3D.new()
-	var bounds_min: Vector2 = GameConfig.cedar_surface_map_bounds_min
-	var bounds_max: Vector2 = GameConfig.cedar_surface_map_bounds_max
+	var bounds_min: Vector2 = CedarTerrainDef.get("bounds_min_xz")
+	var bounds_max: Vector2 = CedarTerrainDef.get("bounds_max_xz")
 	shape.size = Vector3(bounds_max.x - bounds_min.x, GameConfig.flat_ground_size.y, bounds_max.y - bounds_min.y)
 	collision.shape = shape
 	collision.position = Vector3(

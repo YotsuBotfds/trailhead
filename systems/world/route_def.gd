@@ -2,6 +2,7 @@ class_name RouteDef
 extends Resource
 
 @export var scene_id: StringName = &""
+@export_file("*.tres") var terrain_def_path: String = ""
 @export var bounds_min: Vector3 = Vector3.ZERO
 @export var bounds_max: Vector3 = Vector3.ZERO
 @export var spawn_ids: Array[StringName] = []
@@ -24,6 +25,10 @@ extends Resource
 
 func validate() -> PackedStringArray:
 	var errors: PackedStringArray = PackedStringArray()
+	if terrain_def_path.is_empty():
+		errors.append("terrain_def_path is empty")
+	elif not ResourceLoader.exists(terrain_def_path):
+		errors.append("terrain_def_path does not exist: " + terrain_def_path)
 	_require_same_size(errors, spawn_positions.size(), spawn_ids.size(), "spawn_positions", "spawn_ids")
 	_require_same_size(errors, spawn_yaw_degrees.size(), spawn_ids.size(), "spawn_yaw_degrees", "spawn_ids")
 	_require_same_size(errors, landmark_display_names.size(), landmark_ids.size(), "landmark_display_names", "landmark_ids")

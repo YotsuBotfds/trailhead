@@ -2,6 +2,7 @@ class_name TerrainTrackVisualPainter
 extends Node3D
 
 const TerrainTrackStampShader: Shader = preload("res://systems/render/terrain_track_stamp.gdshader")
+const CedarTerrainDef: Resource = preload("res://data/terrain/cedar_hollow_terrain_def.tres")
 const VIEWPORT_NAME: String = "TrackPaintViewport"
 const CAMERA_NAME: String = "TrackPaintCamera"
 const STAMP_ROOT_NAME: String = "TrackStampRoot"
@@ -42,7 +43,7 @@ var _max_stamp_count: int = WHEEL_COUNT * MIN_STAMPS_PER_WHEEL
 
 func _ready() -> void:
 	if _viewport == null:
-		configure(GameConfig.terrain_track_bounds_min, GameConfig.terrain_track_bounds_max)
+		configure(_default_bounds_min(), _default_bounds_max())
 
 
 func configure(bounds_min: Vector2, bounds_max: Vector2) -> void:
@@ -54,7 +55,7 @@ func configure(bounds_min: Vector2, bounds_max: Vector2) -> void:
 
 func track_texture() -> Texture2D:
 	if _viewport == null:
-		configure(GameConfig.terrain_track_bounds_min, GameConfig.terrain_track_bounds_max)
+		configure(_default_bounds_min(), _default_bounds_max())
 	return _viewport.get_texture()
 
 
@@ -72,7 +73,7 @@ func apply_vehicle_state(state: RefCounted, fixed_delta: float) -> void:
 	if state == null:
 		return
 	if _viewport == null:
-		configure(GameConfig.terrain_track_bounds_min, GameConfig.terrain_track_bounds_max)
+		configure(_default_bounds_min(), _default_bounds_max())
 	_age_stamps(fixed_delta)
 	var wheel_hit_points: Array[Vector3] = state.get("wheel_hit_point")
 	var wheel_surfaces: Array[StringName] = state.get("wheel_surface")
@@ -98,6 +99,14 @@ func debug_viewport() -> SubViewport:
 
 func debug_stamp_count() -> int:
 	return _stamp_nodes.size()
+
+
+func _default_bounds_min() -> Vector2:
+	return CedarTerrainDef.get("bounds_min_xz")
+
+
+func _default_bounds_max() -> Vector2:
+	return CedarTerrainDef.get("bounds_max_xz")
 
 
 func _configure_bounds(bounds_min: Vector2, bounds_max: Vector2) -> void:

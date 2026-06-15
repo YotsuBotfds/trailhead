@@ -4,17 +4,37 @@ import subprocess
 import sys
 from pathlib import Path
 
+from terrain_def_parser import load_terrain_def
+
 ROOT = Path(__file__).resolve().parents[1]
+TERRAIN_DEF = load_terrain_def()
 MODEL_ASSET_EXTENSIONS = {".glb", ".png"}
+TERRAIN_MODEL_DIR = Path("assets/models/terrain")
 FEATURE_MAX_PRIMITIVES = 16
 PROP_MAX_PRIMITIVES = 32
 SCATTER_MAX_PRIMITIVES = 16
 VEHICLE_MAX_PRIMITIVES = 32
-TERRAIN_SURFACE_ID_MAP = "assets/models/terrain/cedar_hollow_surface_id.png"
-TERRAIN_SURFACE_ID_WIDTH = 256
-TERRAIN_SURFACE_ID_HEIGHT = 256
+TERRAIN_SURFACE_ID_MAP = TERRAIN_DEF.surface_id_map_project_path
+TERRAIN_VISUAL_TILE_PATHS = TERRAIN_DEF.visual_tile_project_paths
+TERRAIN_SURFACE_ID_WIDTH, TERRAIN_SURFACE_ID_HEIGHT = TERRAIN_DEF.surface_map_size
 TERRAIN_SURFACE_ID_VALUES = [1, 2, 3, 4, 5, 6, 7]
 TERRAIN_SURFACE_ID_MIN_PIXELS = 16
+
+
+def unique_values(values):
+    unique = []
+    for value in values:
+        if value not in unique:
+            unique.append(value)
+    return unique
+
+
+def terrain_asset_filenames():
+    return [
+        Path(project_path).name
+        for project_path in unique_values([*TERRAIN_VISUAL_TILE_PATHS, TERRAIN_SURFACE_ID_MAP])
+    ]
+
 
 GENERATED_ASSETS = {
     "features": [
@@ -45,10 +65,7 @@ GENERATED_ASSETS = {
         "pinecone.glb",
         "trail_blaze.glb",
     ],
-    "terrain": [
-        "cedar_hollow_heightmesh.glb",
-        "cedar_hollow_surface_id.png",
-    ],
+    "terrain": terrain_asset_filenames(),
     "vehicle": [
         "rc_buggy.glb",
     ],
@@ -127,6 +144,7 @@ def fail(message):
 
 def check_manifest_internal_consistency():
     ok = True
+    ok = check_terrain_manifest_consistency() and ok
     for filename in GENERATED_ASSETS["features"]:
         if filename not in FEATURE_SURFACES:
             ok = fail("feature asset missing surface tag in manifest: " + filename) and ok
@@ -145,6 +163,57 @@ def check_manifest_internal_consistency():
     for filename in SCATTER_BUDGETS:
         if filename not in GENERATED_ASSETS["scatter"]:
             ok = fail("scale budget defined for non-scatter asset: " + filename) and ok
+    return ok
+
+
+def check_terrain_manifest_consistency():
+    ok = True
+    active_tile_count = len(TERRAIN_DEF.active_tile_indices())
+    if len(TERRAIN_VISUAL_TILE_PATHS) != active_tile_count:
+        ok = fail(
+            "TerrainDef visual_tile_paths count "
+            + str(len(TERRAIN_VISUAL_TILE_PATHS))
+            + " must match active tile count "
+            + str(active_tile_count)
+        ) and ok
+    if not TERRAIN_VISUAL_TILE_PATHS:
+        ok = fail("TerrainDef visual_tile_paths is empty") and ok
+    observed_filenames = []
+    for project_path in TERRAIN_VISUAL_TILE_PATHS:
+        ok = check_terrain_project_path(project_path, ".glb", "visual tile") and ok
+        observed_filenames.append(Path(project_path).name)
+    ok = check_terrain_project_path(TERRAIN_SURFACE_ID_MAP, ".png", "surface-ID map") and ok
+    observed_filenames.append(Path(TERRAIN_SURFACE_ID_MAP).name)
+    if len(observed_filenames) != len(set(observed_filenames)):
+        ok = fail("TerrainDef terrain asset paths must have unique filenames") and ok
+    return ok
+
+
+def check_terrain_project_path(project_path, expected_suffix, label):
+    ok = True
+    if not project_path:
+        return fail("TerrainDef " + label + " path is empty")
+    relative_path = Path(project_path)
+    if relative_path.is_absolute():
+        ok = fail("TerrainDef " + label + " path must be project-relative: " + project_path) and ok
+    if relative_path.suffix != expected_suffix:
+        ok = fail(
+            "TerrainDef "
+            + label
+            + " path must end with "
+            + expected_suffix
+            + ": "
+            + project_path
+        ) and ok
+    if relative_path.parent != TERRAIN_MODEL_DIR:
+        ok = fail(
+            "TerrainDef "
+            + label
+            + " path must live in "
+            + TERRAIN_MODEL_DIR.as_posix()
+            + ": "
+            + project_path
+        ) and ok
     return ok
 
 
@@ -171,7 +240,7 @@ def check_manifest_coverage():
             for path in asset_dir.iterdir()
             if path.is_file() and path.suffix in MODEL_ASSET_EXTENSIONS
         )
-        expected_sorted = sorted(expected_filenames)
+        expected_sorted = sorted(unique_values(expected_filenames))
         for filename in expected_sorted:
             if filename not in observed_filenames:
                 ok = fail("manifested asset is missing: assets/models/" + subdir + "/" + filename) and ok
@@ -181,26 +250,23 @@ def check_manifest_coverage():
     return ok
 
 
-def check_heightmesh_if_present():
-    path = ROOT / "assets/models/terrain/cedar_hollow_heightmesh.glb"
-    if path.is_file():
+def check_visual_tiles():
+    for project_path in TERRAIN_VISUAL_TILE_PATHS:
         check_glb(
-            "assets/models/terrain/cedar_hollow_heightmesh.glb",
+            project_path,
             "--profile",
             "heightmesh",
             "--surface-id-map",
             TERRAIN_SURFACE_ID_MAP,
             "--max-triangles=200000",
         )
-    else:
-        print("skip: cedar_hollow_heightmesh.glb pending")
 
 
 def check_assets():
     if not check_manifest_coverage():
         return 1
     check_surface_id_png(TERRAIN_SURFACE_ID_MAP)
-    check_heightmesh_if_present()
+    check_visual_tiles()
     run([sys.executable, "tools/check_godot_imports.py"])
     check_glb(
         "assets/models/vehicle/rc_buggy.glb",

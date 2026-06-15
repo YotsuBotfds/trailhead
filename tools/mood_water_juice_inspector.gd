@@ -131,6 +131,7 @@ func _inspect_dust_and_tilt_shift() -> void:
 	var chase_camera: Camera3D = _require_node(_scene_root, "ChaseCamera") as Camera3D
 	var orbit_camera: Camera3D = _require_node(_scene_root, "OrbitCamera") as Camera3D
 	var fpv_camera: Camera3D = _require_node(_scene_root, "FpvCamera") as Camera3D
+	_inspect_camera_far_planes(chase_camera, orbit_camera, fpv_camera)
 	if chase_camera != null:
 		var dust: GPUParticles3D = _require_node(chase_camera, "DustMoteField") as GPUParticles3D
 		_inspect_dust_field(dust)
@@ -150,12 +151,27 @@ func _inspect_dust_field(dust: GPUParticles3D) -> void:
 		_errors.append("DustMoteField should use a fixed seed")
 	if dust.randomness > FLOAT_EPSILON:
 		_errors.append("DustMoteField should avoid particle randomness")
+	if absf(dust.visibility_range_end - GameConfig.vis_range_dust) > FLOAT_EPSILON:
+		_errors.append("DustMoteField visibility range should follow GameConfig")
 	var process_material: ParticleProcessMaterial = dust.process_material as ParticleProcessMaterial
 	if process_material == null:
 		_errors.append("DustMoteField should use ParticleProcessMaterial")
 		return
 	if process_material.emission_shape != ParticleProcessMaterial.EMISSION_SHAPE_BOX:
 		_errors.append("DustMoteField should use a box field around the camera")
+
+
+func _inspect_camera_far_planes(chase_camera: Camera3D, orbit_camera: Camera3D, fpv_camera: Camera3D) -> void:
+	_require_camera_far(chase_camera, "ChaseCamera", GameConfig.cam_far)
+	_require_camera_far(orbit_camera, "OrbitCamera", GameConfig.orbit_cam_far)
+	_require_camera_far(fpv_camera, "FpvCamera", GameConfig.fpv_cam_far)
+
+
+func _require_camera_far(camera: Camera3D, label: String, expected_far: float) -> void:
+	if camera == null:
+		return
+	if absf(camera.far - expected_far) > FLOAT_EPSILON:
+		_errors.append(label + " far plane expected " + str(expected_far) + ", got " + str(camera.far))
 
 
 func _inspect_tilt_shift_camera(camera: Camera3D, label: String) -> void:

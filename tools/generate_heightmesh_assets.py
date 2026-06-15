@@ -1,28 +1,89 @@
 #!/usr/bin/env python3
 import argparse
+import inspect
+import importlib.util
 import json
 import math
 import struct
+import sys
 import zlib
 from pathlib import Path
 
+from terrain_def_parser import load_terrain_def
+
 OUT_DIR = Path("assets/models/terrain")
+COLLISION_OUT_DIR = Path("data/collision")
 GLB_FILENAME = "cedar_hollow_heightmesh.glb"
 SURFACE_ID_FILENAME = "cedar_hollow_surface_id.png"
+DEFAULT_TERRAIN_SEED = 20260615
+DEFAULT_TERRAIN_VERSION = "cedar_hollow_t2_height_authority_v1"
+DEFAULT_HEIGHT_AUTHORITY = "eroded"
+HEIGHT_AUTHORITY_CHOICES = ("legacy", "eroded", "auto")
+EROSION_WORK_GRID_MIN = 512
+EROSION_WORK_GRID_MAX = 1024
+TERRAIN_BASE_ELEVATION = -0.035
+EXTENDED_TRAIL_START_Z = -10.6
+EXTENDED_TRAIL_END_Z = -68.0
+EXTENDED_TRAIL_HALF_WIDTH = 0.72
+EXTENDED_TRAIL_EDGE_BLEND = 0.42
+EROSION_MODULE_PATH = Path(__file__).with_name("erosion.py")
+TERRAIN_DEF = load_terrain_def()
+X_MIN, Z_MIN = TERRAIN_DEF.bounds_min_xz
+X_MAX, Z_MAX = TERRAIN_DEF.bounds_max_xz
+GRID_X, GRID_Z = TERRAIN_DEF.visual_grid
+COLLISION_GRID_X, COLLISION_GRID_Z = TERRAIN_DEF.collision_grid
+SURFACE_MAP_WIDTH, SURFACE_MAP_HEIGHT = TERRAIN_DEF.surface_map_size
+_HEIGHT_AUTHORITY = None
+_erosion_module = None
+
+if EROSION_MODULE_PATH.exists():
+    _erosion_spec = importlib.util.spec_from_file_location("trailhead_erosion", EROSION_MODULE_PATH)
+    if _erosion_spec is None or _erosion_spec.loader is None:
+        raise RuntimeError(f"could not load erosion module: {EROSION_MODULE_PATH}")
+    _erosion_module = importlib.util.module_from_spec(_erosion_spec)
+    sys.modules[_erosion_spec.name] = _erosion_module
+    _erosion_spec.loader.exec_module(_erosion_module)
+
+if _erosion_module is None:
+    _build_eroded_heightfield = None
+    _sample_heightfield = None
+else:
+    try:
+        _build_eroded_heightfield = _erosion_module.build_eroded_heightfield
+        _sample_heightfield = _erosion_module.sample_heightfield
+    except AttributeError as exc:
+        raise RuntimeError(
+            "tools/erosion.py must expose build_eroded_heightfield(...) and sample_heightfield(...)."
+        ) from exc
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Generate Trailhead Cedar Hollow terrain assets.")
     parser.add_argument("--out-dir", type=Path, default=OUT_DIR, help="Directory to write generated terrain assets.")
+    parser.add_argument(
+        "--collision-out-dir",
+        type=Path,
+        default=None,
+        help="Directory to write generated HeightMapShape3D collision tiles.",
+    )
+    parser.add_argument(
+        "--terrain-seed",
+        type=int,
+        default=DEFAULT_TERRAIN_SEED,
+        help="Deterministic seed passed to the erosion height authority.",
+    )
+    parser.add_argument(
+        "--terrain-version",
+        default=DEFAULT_TERRAIN_VERSION,
+        help="Version string passed to the erosion height authority for byte-reproducible bakes.",
+    )
+    parser.add_argument(
+        "--height-authority",
+        choices=HEIGHT_AUTHORITY_CHOICES,
+        default=DEFAULT_HEIGHT_AUTHORITY,
+        help="Height source for the generated visual mesh. Use eroded once regenerated assets are in scope.",
+    )
     return parser.parse_args()
-
-X_MIN = -5.5
-X_MAX = 5.5
-Z_MIN = -10.6
-Z_MAX = 1.6
-GRID_X = 65
-GRID_Z = 73
-SURFACE_MAP_SIZE = 256
 
 SURFACES = [
     ("packed_gravel", 1, [0.50, 0.46, 0.36, 1.0]),
@@ -96,7 +157,126 @@ def region_weight(x, z, region):
 
 
 def terrain_height(x, z):
-    height = -0.035
+    return height_authority().height_at(x, z)
+
+
+def configure_height_authority(
+    seed=DEFAULT_TERRAIN_SEED,
+    version=DEFAULT_TERRAIN_VERSION,
+    mode=DEFAULT_HEIGHT_AUTHORITY,
+):
+    global _HEIGHT_AUTHORITY
+    _HEIGHT_AUTHORITY = TerrainHeightAuthority(seed, version, mode)
+
+
+def height_authority():
+    if _HEIGHT_AUTHORITY is None:
+        configure_height_authority()
+    return _HEIGHT_AUTHORITY
+
+
+class TerrainHeightAuthority:
+    def __init__(self, seed, version, mode):
+        self.seed = int(seed)
+        self.version = str(version)
+        self.mode = str(mode)
+        self._eroded_heightfield = None
+
+    def height_at(self, x, z):
+        height = self.base_height_at(x, z) + analytic_landmark_lobes(x, z)
+        height = composite_region_height_targets(height, x, z)
+        if not self.uses_erosion():
+            height += legacy_detail_ripple(x, z)
+        return height
+
+    def base_height_at(self, x, z):
+        if not self.uses_erosion():
+            return TERRAIN_BASE_ELEVATION
+        return sample_eroded_heightfield(self.eroded_heightfield(), x, z)
+
+    def eroded_heightfield(self):
+        if self._eroded_heightfield is None:
+            width, depth = erosion_work_grid()
+            kwargs = erosion_build_kwargs(self.seed, self.version)
+            self._eroded_heightfield = _build_eroded_heightfield(width, depth, terrain_bounds(), **kwargs)
+        return self._eroded_heightfield
+
+    def uses_erosion(self):
+        if self.mode == "legacy":
+            return False
+        if self.mode == "auto":
+            return _build_eroded_heightfield is not None and _sample_heightfield is not None
+        if self.mode == "eroded":
+            if _build_eroded_heightfield is None or _sample_heightfield is None:
+                raise RuntimeError("--height-authority eroded requires tools/erosion.py")
+            return True
+        raise ValueError(f"unknown height authority: {self.mode}")
+
+
+def erosion_build_kwargs(seed, version):
+    kwargs = {}
+    if function_accepts_keyword(_build_eroded_heightfield, "seed"):
+        kwargs["seed"] = seed
+    if function_accepts_keyword(_build_eroded_heightfield, "version"):
+        kwargs["version"] = version
+    if function_accepts_keyword(_build_eroded_heightfield, "config"):
+        config = erosion_config()
+        if config is not None:
+            kwargs["config"] = config
+    return kwargs
+
+
+def erosion_config():
+    config_type = getattr(_erosion_module, "ErosionConfig", None)
+    if config_type is None:
+        return None
+    try:
+        return config_type(base_height=TERRAIN_BASE_ELEVATION)
+    except TypeError:
+        return config_type()
+
+
+def function_accepts_keyword(function, keyword):
+    signature = inspect.signature(function)
+    for parameter in signature.parameters.values():
+        if parameter.kind == inspect.Parameter.VAR_KEYWORD:
+            return True
+    return keyword in signature.parameters
+
+
+def sample_eroded_heightfield(heightfield, x, z):
+    if sample_heightfield_accepts_bounds():
+        return float(_sample_heightfield(heightfield, terrain_bounds(), x, z))
+    return float(_sample_heightfield(heightfield, x, z))
+
+
+def sample_heightfield_accepts_bounds():
+    signature = inspect.signature(_sample_heightfield)
+    positional_count = 0
+    for parameter in signature.parameters.values():
+        if parameter.kind in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD):
+            positional_count += 1
+    return "bounds" in signature.parameters or positional_count >= 4
+
+
+def terrain_bounds():
+    return TERRAIN_DEF.bounds_min_xz, TERRAIN_DEF.bounds_max_xz
+
+
+def erosion_work_grid():
+    span_x = X_MAX - X_MIN
+    span_z = Z_MAX - Z_MIN
+    if span_x >= span_z:
+        depth = EROSION_WORK_GRID_MIN
+        width = min(EROSION_WORK_GRID_MAX, max(EROSION_WORK_GRID_MIN, int(round(depth * span_x / span_z))))
+    else:
+        width = EROSION_WORK_GRID_MIN
+        depth = min(EROSION_WORK_GRID_MAX, max(EROSION_WORK_GRID_MIN, int(round(width * span_z / span_x))))
+    return width, depth
+
+
+def analytic_landmark_lobes(x, z):
+    height = 0.0
     height += 0.05 * gaussian(x, -4.7, 0.9) * gaussian(z, -2.5, 5.2)
     height += 0.05 * gaussian(x, 4.9, 0.9) * gaussian(z, -3.7, 5.2)
     height += 0.10 * gaussian(z, -10.0, 1.5)
@@ -104,12 +284,23 @@ def terrain_height(x, z):
     height += 0.20 * smoothstep(-7.2, -8.7, z) * gaussian(x, -1.3, 2.4)
     height += 0.10 * gaussian(x, 1.4, 1.5) * gaussian(z, -6.1, 2.0)
     height -= 0.07 * gaussian(x, 3.5, 1.8) * gaussian(z, -6.0, 2.0)
+    return height
+
+
+def composite_region_height_targets(height, x, z):
     for region in REGIONS:
         target_height = region[6]
         weight = region_weight(x, z, region)
         height = height * (1.0 - weight * 0.55) + target_height * (weight * 0.55)
-    ripple = math.sin(x * 3.1 + z * 1.7) * 0.006 + math.sin(x * 1.3 - z * 2.1) * 0.004
-    return height + ripple
+    trail_weight = extended_trail_weight(x, z)
+    if trail_weight > 0.0:
+        trail_target_height = -0.015 + 0.025 * gaussian(z, -34.0, 16.0)
+        height = height * (1.0 - trail_weight * 0.45) + trail_target_height * (trail_weight * 0.45)
+    return height
+
+
+def legacy_detail_ripple(x, z):
+    return math.sin(x * 3.1 + z * 1.7) * 0.006 + math.sin(x * 1.3 - z * 2.1) * 0.004
 
 
 def surface_at(x, z):
@@ -120,7 +311,28 @@ def surface_at(x, z):
         if weight > best_weight:
             best_weight = weight
             best_surface = region[1]
+    trail_weight = extended_trail_weight(x, z)
+    if trail_weight > 0.55:
+        return "packed_dirt"
+    if trail_weight > 0.18 and best_weight < 0.35:
+        return "packed_dirt"
     return best_surface
+
+
+def extended_trail_weight(x, z):
+    if z >= EXTENDED_TRAIL_START_Z or z <= EXTENDED_TRAIL_END_Z:
+        return 0.0
+    center_x = extended_trail_center_x(z)
+    edge_distance = abs(x - center_x) - EXTENDED_TRAIL_HALF_WIDTH
+    lateral_weight = 1.0 - smoothstep(-0.08, EXTENDED_TRAIL_EDGE_BLEND, edge_distance)
+    start_fade = smoothstep(EXTENDED_TRAIL_START_Z, EXTENDED_TRAIL_START_Z - 2.4, z)
+    end_fade = 1.0 - smoothstep(EXTENDED_TRAIL_END_Z + 4.0, EXTENDED_TRAIL_END_Z, z)
+    return max(0.0, min(1.0, lateral_weight * start_fade * end_fade))
+
+
+def extended_trail_center_x(z):
+    distance = EXTENDED_TRAIL_START_Z - z
+    return math.sin(distance * 0.16) * 1.55 + math.sin(distance * 0.047 + 0.8) * 0.55
 
 
 def normalize(vector):
@@ -146,15 +358,16 @@ def add(a, b):
     return (a[0] + b[0], a[1] + b[1], a[2] + b[2])
 
 
-def build_mesh():
+def build_mesh(tile_index):
+    (tile_min_x, tile_min_z), (tile_max_x, tile_max_z) = TERRAIN_DEF.tile_bounds(tile_index)
     vertices = []
     uvs = []
     for z_index in range(GRID_Z):
         z_t = float(z_index) / float(GRID_Z - 1)
-        z = Z_MIN + (Z_MAX - Z_MIN) * z_t
+        z = tile_min_z + (tile_max_z - tile_min_z) * z_t
         for x_index in range(GRID_X):
             x_t = float(x_index) / float(GRID_X - 1)
-            x = X_MIN + (X_MAX - X_MIN) * x_t
+            x = tile_min_x + (tile_max_x - tile_min_x) * x_t
             vertices.append((x, terrain_height(x, z), z))
             uvs.append((x_t, 1.0 - z_t))
 
@@ -205,9 +418,10 @@ def bounds(vertices):
     return mins, maxs
 
 
-def write_glb(path):
-    vertices, normals, uvs, indices_by_surface = build_mesh()
+def write_glb(path, tile_index):
+    vertices, normals, uvs, indices_by_surface = build_mesh(tile_index)
     binary = bytearray()
+    heightmesh_name = heightmesh_name_for_tile(tile_index)
 
     position_data = pack_vec3(vertices)
     normal_data = pack_vec3(normals)
@@ -281,8 +495,8 @@ def write_glb(path):
         "asset": {"version": "2.0", "generator": "Trailhead generate_heightmesh_assets.py"},
         "scene": 0,
         "scenes": [{"nodes": [0]}],
-        "nodes": [{"name": "cedar_hollow_heightmesh", "mesh": 0}],
-        "meshes": [{"name": "cedar_hollow_heightmesh", "primitives": primitives}],
+        "nodes": [{"name": heightmesh_name, "mesh": 0}],
+        "meshes": [{"name": heightmesh_name, "primitives": primitives}],
         "materials": [
             {
                 "name": "terrain_mat_" + surface_name,
@@ -308,25 +522,53 @@ def write_glb(path):
         file.write(bin_chunk)
 
 
+def heightmesh_name_for_tile(tile_index):
+    if tile_index == (0, 0):
+        return "cedar_hollow_heightmesh"
+    return "cedar_hollow_heightmesh_" + tile_coord_label(tile_index[0]) + "_" + tile_coord_label(tile_index[1])
+
+
+def tile_coord_label(value):
+    if value < 0:
+        return "neg" + str(abs(value))
+    return str(value)
+
+
+def visual_tile_output_paths(out_dir):
+    tile_indices = TERRAIN_DEF.active_tile_indices()
+    visual_paths = TERRAIN_DEF.visual_tile_project_paths
+    if len(tile_indices) != len(visual_paths):
+        raise ValueError("TerrainDef active tile count must match visual tile path count")
+    return [(tile_index, out_dir / Path(project_path).name) for tile_index, project_path in zip(tile_indices, visual_paths)]
+
+
+def write_visual_tile_glbs(out_dir):
+    written_paths = []
+    for tile_index, path in visual_tile_output_paths(out_dir):
+        write_glb(path, tile_index)
+        written_paths.append(path)
+    return written_paths
+
+
 def png_chunk(kind, data):
     return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
 
 
 def write_surface_id_png(path):
     rows = []
-    for y in range(SURFACE_MAP_SIZE):
-        z_t = float(y) / float(SURFACE_MAP_SIZE - 1)
+    for y in range(SURFACE_MAP_HEIGHT):
+        z_t = float(y) / float(SURFACE_MAP_HEIGHT - 1)
         z = Z_MAX + (Z_MIN - Z_MAX) * z_t
         row = bytearray([0])
-        for x in range(SURFACE_MAP_SIZE):
-            x_t = float(x) / float(SURFACE_MAP_SIZE - 1)
+        for x in range(SURFACE_MAP_WIDTH):
+            x_t = float(x) / float(SURFACE_MAP_WIDTH - 1)
             world_x = X_MIN + (X_MAX - X_MIN) * x_t
             surface = surface_at(world_x, z)
             row.append(SURFACE_INDEX[surface])
         rows.append(bytes(row))
     raw = b"".join(rows)
     header = b"\x89PNG\r\n\x1a\n"
-    ihdr = struct.pack(">IIBBBBB", SURFACE_MAP_SIZE, SURFACE_MAP_SIZE, 8, 0, 0, 0, 0)
+    ihdr = struct.pack(">IIBBBBB", SURFACE_MAP_WIDTH, SURFACE_MAP_HEIGHT, 8, 0, 0, 0, 0)
     with path.open("wb") as file:
         file.write(header)
         file.write(png_chunk(b"IHDR", ihdr))
@@ -334,16 +576,73 @@ def write_surface_id_png(path):
         file.write(png_chunk(b"IEND", b""))
 
 
+def write_heightmap_collision(path, tile_index=(0, 0), source_project_path=None):
+    values = collision_heightmap_values(tile_index, source_project_path)
+    width, depth = collision_grid_for_tile(tile_index)
+    path.write_text(
+        "[gd_resource type=\"HeightMapShape3D\" format=3]\n\n"
+        "[resource]\n"
+        f"map_width = {width}\n"
+        f"map_depth = {depth}\n"
+        "map_data = PackedFloat32Array(" + ", ".join(values) + ")\n",
+        encoding="utf-8",
+    )
+
+
+def write_heightmap_collision_tiles(collision_out_dir):
+    collision_out_dir.mkdir(parents=True, exist_ok=True)
+    tile_indices = TERRAIN_DEF.active_tile_indices()
+    collision_paths = TERRAIN_DEF.collision_tile_project_paths
+    if len(tile_indices) != len(collision_paths):
+        raise ValueError("TerrainDef active tile count must match collision tile path count")
+    written_paths = []
+    for tile_index, source_project_path in zip(tile_indices, collision_paths):
+        output_path = collision_out_dir / Path(source_project_path).name
+        write_heightmap_collision(output_path, tile_index, source_project_path)
+        written_paths.append(output_path)
+    return written_paths
+
+
+def collision_grid_for_tile(_tile_index):
+    return COLLISION_GRID_X, COLLISION_GRID_Z
+
+
+def collision_heightmap_values(tile_index, _source_project_path):
+    (tile_min_x, tile_min_z), (tile_max_x, tile_max_z) = TERRAIN_DEF.tile_bounds(tile_index)
+    width, depth = collision_grid_for_tile(tile_index)
+    values = []
+    for z_index in range(depth):
+        z_t = float(z_index) / float(depth - 1)
+        z = tile_min_z + (tile_max_z - tile_min_z) * z_t
+        for x_index in range(width):
+            x_t = float(x_index) / float(width - 1)
+            x = tile_min_x + (tile_max_x - tile_min_x) * x_t
+            values.append(format_float32(terrain_collision_height(x, z)))
+    return values
+
+
+def terrain_collision_height(x, z):
+    return terrain_height(x, z)
+
+
+def format_float32(value):
+    float32_value = struct.unpack("<f", struct.pack("<f", float(value)))[0]
+    return format(float32_value, ".9g")
+
+
 def main():
     args = parse_args()
+    configure_height_authority(args.terrain_seed, args.terrain_version, args.height_authority)
     out_dir = args.out_dir
     out_dir.mkdir(parents=True, exist_ok=True)
-    glb_path = out_dir / GLB_FILENAME
     surface_id_path = out_dir / SURFACE_ID_FILENAME
-    write_glb(glb_path)
+    for glb_path in write_visual_tile_glbs(out_dir):
+        print(f"wrote: {glb_path}")
     write_surface_id_png(surface_id_path)
-    print(f"wrote: {glb_path}")
     print(f"wrote: {surface_id_path}")
+    if args.collision_out_dir is not None:
+        for collision_path in write_heightmap_collision_tiles(args.collision_out_dir):
+            print(f"wrote: {collision_path}")
 
 
 if __name__ == "__main__":

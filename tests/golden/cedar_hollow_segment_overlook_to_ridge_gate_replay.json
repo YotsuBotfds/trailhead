@@ -1,0 +1,2844 @@
+{
+	"format": "trailhead_replay_v1",
+	"name": "cedar_hollow_segment_overlook_to_ridge_gate",
+	"source": "tests/out/cedar_hollow_segment_overlook_to_ridge_gate.json",
+	"scene": "cedar_hollow",
+	"controller": "pd",
+	"scenario": "",
+	"route_segment": "overlook_to_ridge_gate",
+	"spawn": "overlook_ridge",
+	"target": "ridge_gate",
+	"seed": 12345,
+	"ticks": 318,
+	"tolerances": {
+		"ticks": 2,
+		"position_m": 0.08,
+		"velocity_mps": 0.25,
+		"speed_mps": 0.2,
+		"slip_deg": 2.0,
+		"surface_ticks": 2,
+		"event_counts": 0,
+		"motor_rpm": 10.0
+	},
+	"predicates": {
+		"event_bus_contract": true,
+		"golden_replay_matched": true,
+		"never_stuck": true,
+		"reached_target": true,
+		"scenario_passed": true,
+		"self_right_heading_preserved": true,
+		"stayed_in_bounds": true,
+		"surface_event_observed": true,
+		"target_landmark_event_observed": true,
+		"upright_or_recovered": true
+	},
+	"metrics": {
+		"surface_contact_ticks": {
+			"loose_rock": 207,
+			"packed_dirt": 53,
+			"tall_grass": 19
+		},
+		"surface_event_count": 3,
+		"landmark_event_count": 2,
+		"flipped_event_count": 0,
+		"self_righted_event_count": 0,
+		"recovered_to_trail_event_count": 0,
+		"max_abs_slip_angle_deg": 10.6105793473043,
+		"max_abs_slip_angle_by_surface": {
+			"loose_rock": 0.738630370584372,
+			"packed_dirt": 1.47384938184344,
+			"tall_grass": 0.16398793277354
+		}
+	},
+	"samples": [
+		{
+			"tick": 0,
+			"position": [
+				-2.09999990463257,
+				0.449319422245026,
+				-8.89999961853027
+			],
+			"linear_velocity": [
+				0.0,
+				-0.0816666781902313,
+				0.0
+			],
+			"speed": 0.0816666781902313,
+			"slip_angle_deg": 0.0,
+			"motor_rpm": 0.0,
+			"is_flipped": false
+		},
+		{
+			"tick": 10,
+			"position": [
+				-2.09714484214783,
+				0.457884699106216,
+				-8.89773654937744
+			],
+			"linear_velocity": [
+				0.0821780860424042,
+				0.0275656208395958,
+				0.0387497395277023
+			],
+			"speed": 0.0949454754590988,
+			"slip_angle_deg": -1.03737969659041,
+			"motor_rpm": 200.0,
+			"is_flipped": false
+		},
+		{
+			"tick": 20,
+			"position": [
+				-2.08619284629822,
+				0.458078324794769,
+				-8.89271450042725
+			],
+			"linear_velocity": [
+				0.169576048851013,
+				-0.000435099645983428,
+				0.0742794051766396
+			],
+			"speed": 0.185131445527077,
+			"slip_angle_deg": -0.621333984503009,
+			"motor_rpm": 200.0,
+			"is_flipped": false
+		},
+		{
+			"tick": 30,
+			"position": [
+				-2.06805276870728,
+				0.458196252584457,
+				-8.88534736633301
+			],
+			"linear_velocity": [
+				0.257728457450867,
+				0.00212194141931832,
+				0.0981743484735489
+			],
+			"speed": 0.275801867246628,
+			"slip_angle_deg": -0.59969984055467,
+			"motor_rpm": 200.0,
+			"is_flipped": false
+		},
+		{
+			"tick": 40,
+			"position": [
+				-2.04246401786804,
+				0.458402395248413,
+				-8.87661838531494
+			],
+			"linear_velocity": [
+				0.346914023160934,
+				0.00292503647506237,
+				0.107662752270699
+			],
+			"speed": 0.36324805021286,
+			"slip_angle_deg": -0.597578960095675,
+			"motor_rpm": 200.0,
+			"is_flipped": false
+		},
+		{
+			"tick": 50,
+			"position": [
+				-2.00945138931274,
+				0.458683758974075,
+				-8.86783695220947
+			],
+			"linear_velocity": [
+				0.435804784297943,
+				0.00367613765411079,
+				0.100625723600388
+			],
+			"speed": 0.44728609919548,
+			"slip_angle_deg": -0.611897491195255,
+			"motor_rpm": 200.0,
+			"is_flipped": false
+		},
+		{
+			"tick": 60,
+			"position": [
+				-1.9690934419632,
+				0.459026604890823,
+				-8.86046600341797
+			],
+			"linear_velocity": [
+				0.522773504257202,
+				0.00455718673765659,
+				0.075678862631321
+			],
+			"speed": 0.528242528438568,
+			"slip_angle_deg": -0.627613809836307,
+			"motor_rpm": 200.0,
+			"is_flipped": false
+		},
+		{
+			"tick": 70,
+			"position": [
+				-1.92164504528046,
+				0.459436237812042,
+				-8.85601615905762
+			],
+			"linear_velocity": [
+				0.605522811412811,
+				0.00526841357350349,
+				0.0321310721337795
+			],
+			"speed": 0.606397569179535,
+			"slip_angle_deg": -0.645907084146011,
+			"motor_rpm": 200.0,
+			"is_flipped": false
+		},
+		{
+			"tick": 80,
+			"position": [
+				-1.86756205558777,
+				0.459860324859619,
+				-8.85606384277344
+			],
+			"linear_velocity": [
+				0.681433081626892,
+				0.00392150040715933,
+				-0.0301912426948547
+			],
+			"speed": 0.682112872600555,
+			"slip_angle_deg": -0.660986541007812,
+			"motor_rpm": 200.0,
+			"is_flipped": false
+		},
+		{
+			"tick": 90,
+			"position": [
+				-1.80747067928314,
+				0.460137814283371,
+				-8.86217212677002
+			],
+			"linear_velocity": [
+				0.748787462711334,
+				0.00316689372994006,
+				-0.110967352986336
+			],
+			"speed": 0.756971836090088,
+			"slip_angle_deg": -0.677781442568345,
+			"motor_rpm": 200.0,
+			"is_flipped": false
+		},
+		{
+			"tick": 100,
+			"position": [
+				-1.74220263957977,
+				0.46027934551239,
+				-8.87587356567383
+			],
+			"linear_velocity": [
+				0.804810881614685,
+				0.000488038873299956,
+				-0.209713280200958
+			],
+			"speed": 0.831685304641724,
+			"slip_angle_deg": -0.696662326590081,
+			"motor_rpm": 200.0,
+			"is_flipped": false
+		},
+		{
+			"tick": 110,
+			"position": [
+				-1.67290830612183,
+				0.46025276184082,
+				-8.89861965179443
+			],
+			"linear_velocity": [
+				0.846992015838623,
+				-0.000453772721812129,
+				-0.325741946697235
+			],
+			"speed": 0.907470941543579,
+			"slip_angle_deg": -0.716616510806862,
+			"motor_rpm": 200.0,
+			"is_flipped": false
+		},
+		{
+			"tick": 120,
+			"position": [
+				-1.60107278823853,
+				0.460173755884171,
+				-8.93175220489502
+			],
+			"linear_velocity": [
+				0.869962334632874,
+				-0.001055036787875,
+				-0.45687934756279
+			],
+			"speed": 0.982636392116547,
+			"slip_angle_deg": -0.730850038067787,
+			"motor_rpm": 200.0,
+			"is_flipped": false
+		},
+		{
+			"tick": 130,
+			"position": [
+				-1.52846276760101,
+				0.460177659988403,
+				-8.97632694244385
+			],
+			"linear_velocity": [
+				0.871857702732086,
+				0.00042515221866779,
+				-0.600659668445587
+			],
+			"speed": 1.05873894691467,
+			"slip_angle_deg": -0.713981551891118,
+			"motor_rpm": 237.605450153351,
+			"is_flipped": false
+		},
+		{
+			"tick": 140,
+			"position": [
+				-1.45521175861359,
+				0.460318475961685,
+				-9.03390026092529
+			],
+			"linear_velocity": [
+				0.890557825565338,
+				0.00232462142594159,
+				-0.768665730953217
+			],
+			"speed": 1.17641222476959,
+			"slip_angle_deg": -0.60026157025305,
+			"motor_rpm": 343.595457077026,
+			"is_flipped": false
+		},
+		{
+			"tick": 150,
+			"position": [
+				-1.37938451766968,
+				0.460477918386459,
+				-9.10674858093262
+			],
+			"linear_velocity": [
+				0.928389668464661,
+				0.00273059401661158,
+				-0.963665008544922
+			],
+			"speed": 1.3381199836731,
+			"slip_angle_deg": -0.50342389525255,
+			"motor_rpm": 430.222890377045,
+			"is_flipped": false
+		},
+		{
+			"tick": 160,
+			"position": [
+				-1.29987859725952,
+				0.460792452096939,
+				-9.19702434539795
+			],
+			"linear_velocity": [
+				0.975432574748993,
+				0.00425593135878444,
+				-1.18428242206573
+			],
+			"speed": 1.53427886962891,
+			"slip_angle_deg": -0.426899309565373,
+			"motor_rpm": 500.177125930786,
+			"is_flipped": false
+		},
+		{
+			"tick": 170,
+			"position": [
+				-1.21640229225159,
+				0.461290240287781,
+				-9.30663776397705
+			],
+			"linear_velocity": [
+				1.02447271347046,
+				0.00752719957381487,
+				-1.42561364173889
+			],
+			"speed": 1.75555551052094,
+			"slip_angle_deg": -0.35862140356862,
+			"motor_rpm": 555.720496177673,
+			"is_flipped": false
+		},
+		{
+			"tick": 180,
+			"position": [
+				-1.12880408763885,
+				0.461751669645309,
+				-9.43717098236084
+			],
+			"linear_velocity": [
+				1.07148396968842,
+				0.00246418127790093,
+				-1.68179142475128
+			],
+			"speed": 1.9941178560257,
+			"slip_angle_deg": -0.304591992552028,
+			"motor_rpm": 598.623173236847,
+			"is_flipped": false
+		},
+		{
+			"tick": 190,
+			"position": [
+				-1.03726828098297,
+				0.461511999368668,
+				-9.58969783782959
+			],
+			"linear_velocity": [
+				1.11576652526855,
+				-0.00737158069387078,
+				-1.95077478885651
+			],
+			"speed": 2.24733424186707,
+			"slip_angle_deg": -0.268538412131292,
+			"motor_rpm": 630.298577547073,
+			"is_flipped": false
+		},
+		{
+			"tick": 200,
+			"position": [
+				-0.942399621009827,
+				0.460327506065369,
+				-9.76515197753906
+			],
+			"linear_velocity": [
+				1.1536728143692,
+				-0.022760096937418,
+				-2.22837471961975
+			],
+			"speed": 2.50940895080566,
+			"slip_angle_deg": -0.238790937263903,
+			"motor_rpm": 651.780940294266,
+			"is_flipped": false
+		},
+		{
+			"tick": 210,
+			"position": [
+				-0.844703614711761,
+				0.457523971796036,
+				-9.96401500701904
+			],
+			"linear_velocity": [
+				1.18201589584351,
+				-0.0377933904528618,
+				-2.5123245716095
+			],
+			"speed": 2.77675437927246,
+			"slip_angle_deg": -0.227580782566914,
+			"motor_rpm": 662.045387625694,
+			"is_flipped": false
+		},
+		{
+			"tick": 220,
+			"position": [
+				-0.745457470417023,
+				0.458331942558289,
+				-10.1844902038574
+			],
+			"linear_velocity": [
+				1.1892021894455,
+				0.0835959911346436,
+				-2.78588819503784
+			],
+			"speed": 3.0302414894104,
+			"slip_angle_deg": -0.284213909719883,
+			"motor_rpm": 653.76783490181,
+			"is_flipped": false
+		},
+		{
+			"tick": 230,
+			"position": [
+				-0.646369695663452,
+				0.469685196876526,
+				-10.4258975982666
+			],
+			"linear_velocity": [
+				1.23525702953339,
+				0.0768617242574692,
+				-2.96641373634338
+			],
+			"speed": 3.21424603462219,
+			"slip_angle_deg": 0.2583083895802,
+			"motor_rpm": 600.201978683472,
+			"is_flipped": false
+		},
+		{
+			"tick": 240,
+			"position": [
+				-0.534198939800262,
+				0.45177036523819,
+				-10.6812601089478
+			],
+			"linear_velocity": [
+				1.42656254768372,
+				-0.436251014471054,
+				-3.02294754981995
+			],
+			"speed": 3.37099504470825,
+			"slip_angle_deg": 0.54830352082397,
+			"motor_rpm": 637.420139312744,
+			"is_flipped": false
+		},
+		{
+			"tick": 250,
+			"position": [
+				-0.399975061416626,
+				0.413321167230606,
+				-10.9412908554077
+			],
+			"linear_velocity": [
+				1.71547341346741,
+				-0.386835396289825,
+				-3.23866939544678
+			],
+			"speed": 3.68530464172363,
+			"slip_angle_deg": 0.141554096403354,
+			"motor_rpm": 664.79233443737,
+			"is_flipped": false
+		},
+		{
+			"tick": 260,
+			"position": [
+				-0.246079832315445,
+				0.377819508314133,
+				-11.2175893783569
+			],
+			"linear_velocity": [
+				1.91977095603943,
+				-0.53777688741684,
+				-3.35883903503418
+			],
+			"speed": 3.90595984458923,
+			"slip_angle_deg": 0.148333085835018,
+			"motor_rpm": 679.692379236221,
+			"is_flipped": false
+		},
+		{
+			"tick": 270,
+			"position": [
+				-0.0745734721422195,
+				0.329849064350128,
+				-11.5053615570068
+			],
+			"linear_velocity": [
+				2.18025350570679,
+				-0.619525849819183,
+				-3.53389954566956
+			],
+			"speed": 4.19830465316772,
+			"slip_angle_deg": 0.139826058543341,
+			"motor_rpm": 690.636287331581,
+			"is_flipped": false
+		},
+		{
+			"tick": 280,
+			"position": [
+				0.121261611580849,
+				0.267734587192535,
+				-11.8115539550781
+			],
+			"linear_velocity": [
+				2.52015733718872,
+				-0.754595339298248,
+				-3.78001594543457
+			],
+			"speed": 4.60533666610718,
+			"slip_angle_deg": 0.182269040808785,
+			"motor_rpm": 690.81749022007,
+			"is_flipped": false
+		},
+		{
+			"tick": 290,
+			"position": [
+				0.346525549888611,
+				0.225185215473175,
+				-12.1363363265991
+			],
+			"linear_velocity": [
+				2.87326073646545,
+				-0.372392535209656,
+				-4.02177381515503
+			],
+			"speed": 4.95670938491821,
+			"slip_angle_deg": -0.349463667356367,
+			"motor_rpm": 574.915667772293,
+			"is_flipped": false
+		},
+		{
+			"tick": 300,
+			"position": [
+				0.581701755523682,
+				0.197739973664284,
+				-12.4885177612305
+			],
+			"linear_velocity": [
+				2.75840640068054,
+				-0.298953860998154,
+				-4.42630434036255
+			],
+			"speed": 5.22401666641235,
+			"slip_angle_deg": -0.384134454635292,
+			"motor_rpm": 603.884304761887,
+			"is_flipped": false
+		},
+		{
+			"tick": 310,
+			"position": [
+				0.803908705711365,
+				0.196593031287193,
+				-12.8719911575317
+			],
+			"linear_velocity": [
+				2.61484575271606,
+				0.150799036026001,
+				-4.78327751159668
+			],
+			"speed": 5.45343017578125,
+			"slip_angle_deg": -0.370535227832679,
+			"motor_rpm": 612.903164625168,
+			"is_flipped": false
+		},
+		{
+			"tick": 318,
+			"position": [
+				0.976144671440125,
+				0.189048200845718,
+				-13.1979064941406
+			],
+			"linear_velocity": [
+				2.50986671447754,
+				-0.33088207244873,
+				-4.9079852104187
+			],
+			"speed": 5.52242994308472,
+			"slip_angle_deg": -1.45217516389458,
+			"motor_rpm": 594.210731983185,
+			"is_flipped": false
+		}
+	],
+	"inputs": [
+		{
+			"throttle": 0.05,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.25,
+			"steer": 1.0,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.252516734600067,
+			"steer": 0.996644353866577,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.267500412464142,
+			"steer": 0.976666116714478,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.28235325217247,
+			"steer": 0.956862330436707,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.297006812691688,
+			"steer": 0.937324249744415,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.311424821615219,
+			"steer": 0.918100237846375,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.325588047504425,
+			"steer": 0.899215936660767,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.339488551020622,
+			"steer": 0.880681931972504,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.353125697374344,
+			"steer": 0.862499070167541,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.366498440504074,
+			"steer": 0.844668745994568,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.379609015583992,
+			"steer": 0.827187979221344,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.392459666728973,
+			"steer": 0.810053777694702,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.405054739117622,
+			"steer": 0.79326034784317,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.417397943139076,
+			"steer": 0.776802742481232,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.429494321346283,
+			"steer": 0.760674238204956,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.441349238157272,
+			"steer": 0.74486768245697,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.452967432141304,
+			"steer": 0.729376757144928,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.464351853728294,
+			"steer": 0.714197528362274,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.475507053732872,
+			"steer": 0.699323928356171,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.48643473982811,
+			"steer": 0.684753680229187,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.497138613462448,
+			"steer": 0.670481848716736,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.50762158036232,
+			"steer": 0.656504559516907,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.517887923121452,
+			"steer": 0.64281610250473,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.527939295768738,
+			"steer": 0.62941427230835,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.537778612971306,
+			"steer": 0.616295182704926,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.547409236431122,
+			"steer": 0.603454351425171,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.556835234165192,
+			"steer": 0.590886354446411,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.566060110926628,
+			"steer": 0.578586518764496,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.575086316466332,
+			"steer": 0.566551578044891,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.58391600549221,
+			"steer": 0.55477865934372,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.592551735043526,
+			"steer": 0.543264353275299,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.600996491312981,
+			"steer": 0.532004678249359,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.609254467487335,
+			"steer": 0.52099404335022,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.617328515648842,
+			"steer": 0.510228645801544,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.625221407413483,
+			"steer": 0.499704790115356,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.632935932278633,
+			"steer": 0.489418756961823,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.640474642813206,
+			"steer": 0.479367142915726,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.647837476432323,
+			"steer": 0.469550031423569,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.655026797950268,
+			"steer": 0.459964269399643,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.662046331167221,
+			"steer": 0.450604891777039,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.668896862864494,
+			"steer": 0.441470849514008,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.675581070780754,
+			"steer": 0.432558572292328,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.682100506126881,
+			"steer": 0.423865991830826,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.688455741107464,
+			"steer": 0.415392345190048,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.694650620222092,
+			"steer": 0.407132506370544,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.700687937438488,
+			"steer": 0.399082750082016,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.706571461260319,
+			"steer": 0.391238051652908,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.71230054795742,
+			"steer": 0.383599269390106,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.717877624928951,
+			"steer": 0.376163166761398,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.723304323852062,
+			"steer": 0.36892756819725,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.728582960367203,
+			"steer": 0.361889386177063,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.733717785775661,
+			"steer": 0.355042952299118,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.738712792098522,
+			"steer": 0.348382943868637,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.743567076325417,
+			"steer": 0.341910564899445,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.748278966546059,
+			"steer": 0.335628044605255,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.752846330404282,
+			"steer": 0.329538226127625,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.757268336415291,
+			"steer": 0.323642218112946,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.761551359295845,
+			"steer": 0.317931520938873,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.76570129096508,
+			"steer": 0.312398278713226,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.769717729091644,
+			"steer": 0.307043027877808,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.773602077364922,
+			"steer": 0.301863896846771,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.777356763184071,
+			"steer": 0.296857649087906,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.780985416471958,
+			"steer": 0.292019444704056,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.784491139650345,
+			"steer": 0.287345147132874,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.787873221933842,
+			"steer": 0.282835704088211,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.79112733155489,
+			"steer": 0.278496891260147,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.794251430034637,
+			"steer": 0.274331426620483,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.797245307266712,
+			"steer": 0.27033959031105,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.800111891329289,
+			"steer": 0.266517478227615,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.802858383953571,
+			"steer": 0.262855488061905,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.805483882129192,
+			"steer": 0.259354823827744,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.807986445724964,
+			"steer": 0.256018072366714,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.810363383591175,
+			"steer": 0.252848821878433,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.812612326443195,
+			"steer": 0.249850231409073,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.814726175367832,
+			"steer": 0.247031766176224,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.816700976341963,
+			"steer": 0.244398698210716,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.818531858921051,
+			"steer": 0.241957521438599,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.820217580348253,
+			"steer": 0.239709892868996,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.821751855313778,
+			"steer": 0.237664192914963,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.823132198303938,
+			"steer": 0.235823735594749,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.82435676753521,
+			"steer": 0.23419097661972,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.825424467772245,
+			"steer": 0.232767376303673,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.82632594704628,
+			"steer": 0.231565403938293,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.8270393230021,
+			"steer": 0.2306142359972,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.827556734532118,
+			"steer": 0.229924353957176,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.8278688788414,
+			"steer": 0.2295081615448,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.82796542942524,
+			"steer": 0.229379427433014,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.827751820534468,
+			"steer": 0.229664239287376,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.827197414636612,
+			"steer": 0.230403447151184,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.826306286454201,
+			"steer": 0.231591618061066,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.825138358771801,
+			"steer": 0.233148854970932,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.823686255514622,
+			"steer": 0.235084992647171,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.821908681839705,
+			"steer": 0.237455090880394,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.81974638774991,
+			"steer": 0.240338149666786,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.817209793627262,
+			"steer": 0.243720275163651,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.814200627803803,
+			"steer": 0.247732496261597,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.81058489382267,
+			"steer": 0.252553474903107,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.806225946545601,
+			"steer": 0.258365404605865,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.801203362643719,
+			"steer": 0.265062183141708,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.694886440038681,
+			"steer": -0.406818079948425,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.740013203024864,
+			"steer": -0.346649062633514,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.740112766623497,
+			"steer": -0.346516311168671,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.742486329376698,
+			"steer": -0.34335156083107,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.746054507791996,
+			"steer": -0.338593989610672,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.75025247335434,
+			"steer": -0.332996702194214,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.754775169491768,
+			"steer": -0.326966440677643,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.759473711252213,
+			"steer": -0.320701718330383,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.764239151775837,
+			"steer": -0.314347797632217,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.768995548784733,
+			"steer": -0.30800593495369,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.773724582791328,
+			"steer": -0.301700556278229,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.778399637341499,
+			"steer": -0.295467150211334,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.783023466169834,
+			"steer": -0.289302045106888,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.787626284360886,
+			"steer": -0.283164954185486,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.792193581163883,
+			"steer": -0.277075225114822,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.79677517414093,
+			"steer": -0.27096643447876,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.801770721375942,
+			"steer": -0.264305704832077,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.807025450468063,
+			"steer": -0.257299399375916,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.811768883466721,
+			"steer": -0.250974822044373,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.815617196261883,
+			"steer": -0.24584373831749,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.818411935120821,
+			"steer": -0.242117419838905,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.82071235626936,
+			"steer": -0.239050191640854,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.822958552092314,
+			"steer": -0.236055263876915,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.825444810092449,
+			"steer": -0.232740253210068,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.828229175508022,
+			"steer": -0.229027765989304,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.830990418046713,
+			"steer": -0.22534610927105,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.833465681225061,
+			"steer": -0.222045758366585,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.835414263606072,
+			"steer": -0.219447648525238,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.836974281072617,
+			"steer": -0.217367625236511,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.838294504582882,
+			"steer": -0.215607327222824,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.839599329978228,
+			"steer": -0.21386756002903,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.841178212314844,
+			"steer": -0.211762383580208,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.843105978518724,
+			"steer": -0.209192028641701,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.845299274474382,
+			"steer": -0.206267634034157,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.847548331320286,
+			"steer": -0.203268891572952,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.849615474045277,
+			"steer": -0.200512701272964,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.851497933268547,
+			"steer": -0.198002755641937,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.853212521970272,
+			"steer": -0.195716637372971,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.854756229370832,
+			"steer": -0.19365836083889,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.85615121498704,
+			"steer": -0.191798380017281,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.857425814121962,
+			"steer": -0.190098914504051,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.858595402538776,
+			"steer": -0.188539463281631,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.85987514257431,
+			"steer": -0.186833143234253,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.861219988763332,
+			"steer": -0.185040014982223,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.862406405806541,
+			"steer": -0.183458125591278,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.863295359164476,
+			"steer": -0.182272854447365,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.863875809311867,
+			"steer": -0.181498920917511,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.864168219268322,
+			"steer": -0.181109040975571,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.864420619606972,
+			"steer": -0.180772507190704,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.864668766409159,
+			"steer": -0.180441644787788,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.864797112345695,
+			"steer": -0.180270516872406,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.864704652130604,
+			"steer": -0.180393797159195,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.8645905777812,
+			"steer": -0.180545896291733,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.864414926618338,
+			"steer": -0.180780097842216,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.864155286550522,
+			"steer": -0.181126284599304,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.863521862775087,
+			"steer": -0.181970849633217,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.86212882399559,
+			"steer": -0.183828234672546,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.860067693889141,
+			"steer": -0.186576408147812,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.857685472071171,
+			"steer": -0.189752703905106,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.854693957418203,
+			"steer": -0.193741390109062,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.850778853148222,
+			"steer": -0.198961529135704,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.84582192748785,
+			"steer": -0.205570763349533,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.839645560085774,
+			"steer": -0.213805919885635,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.832168439775705,
+			"steer": -0.223775413632393,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.665653017163277,
+			"steer": 0.445795977115631,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.718644584715366,
+			"steer": 0.375140553712845,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.723551601171494,
+			"steer": 0.368597865104675,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.72766479998827,
+			"steer": 0.36311360001564,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.731751503050327,
+			"steer": 0.357664662599564,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.735763229429722,
+			"steer": 0.352315694093704,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.739587245881557,
+			"steer": 0.347217005491257,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.743118686974049,
+			"steer": 0.342508417367935,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.746417880058289,
+			"steer": 0.338109493255615,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.7494768679142,
+			"steer": 0.334030842781067,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.752310398221016,
+			"steer": 0.330252802371979,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.754855380952358,
+			"steer": 0.326859492063522,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.757010938227177,
+			"steer": 0.323985415697098,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.758871823549271,
+			"steer": 0.321504235267639,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.760445417463779,
+			"steer": 0.319406110048294,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.761813639104366,
+			"steer": 0.317581814527512,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.762942536175251,
+			"steer": 0.316076618432999,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.763937483727932,
+			"steer": 0.314750021696091,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.764789487421513,
+			"steer": 0.313614016771317,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.765505176782608,
+			"steer": 0.312659764289856,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.765995596349239,
+			"steer": 0.312005871534348,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.76612895578146,
+			"steer": 0.311828058958054,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.765767112374306,
+			"steer": 0.312310516834259,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.764866292476654,
+			"steer": 0.313511610031128,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.763413442671299,
+			"steer": 0.315448743104935,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.761214384436607,
+			"steer": 0.31838082075119,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.758172942698002,
+			"steer": 0.322436076402664,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.754145136475563,
+			"steer": 0.327806484699249,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.749060034751892,
+			"steer": 0.334586620330811,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		},
+		{
+			"throttle": 0.742763414978981,
+			"steer": 0.342982113361359,
+			"brake": 0.0,
+			"ebrake": false,
+			"self_right": false
+		}
+	]
+}

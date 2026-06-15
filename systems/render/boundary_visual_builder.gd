@@ -103,6 +103,7 @@ static func _add_trail_blazes(parent: Node3D) -> void:
 	for i in range(mini(EXPECTED_TRAIL_BLAZES, positions.size())):
 		var blaze: Node3D = _instance(parent, TrailBlazeScene, "trail_blaze_" + str(i + 1), positions[i], rotations[i], Vector3.ONE)
 		_add_blaze_readability_markers(blaze)
+		_apply_visibility_range(blaze, GameConfig.vis_range_scatter)
 
 
 static func _instance(parent: Node3D, scene: PackedScene, node_name: String, position: Vector3, rotation: Vector3, scale: Vector3) -> Node3D:
@@ -115,6 +116,7 @@ static func _instance(parent: Node3D, scene: PackedScene, node_name: String, pos
 	instance.rotation_degrees = rotation
 	instance.scale = scale
 	parent.add_child(instance)
+	_apply_visibility_range(instance, GameConfig.vis_range_scatter)
 	return instance
 
 
@@ -135,6 +137,7 @@ static func _add_blaze_quad(parent: Node3D, node_name: String, size: Vector2, po
 	mesh_instance.position = position
 	mesh_instance.rotation_degrees = Vector3(0.0, 180.0, 0.0)
 	mesh_instance.material_override = _make_unshaded_material("trail_blaze_" + node_name, color)
+	mesh_instance.visibility_range_end = GameConfig.vis_range_scatter
 	parent.add_child(mesh_instance)
 
 
@@ -152,7 +155,18 @@ static func _add_blaze_chevron_arm(parent: Node3D, node_name: String, position: 
 	mesh_instance.position = position
 	mesh_instance.rotation_degrees = Vector3(0.0, 180.0, roll_degrees)
 	mesh_instance.material_override = _make_unshaded_material("trail_blaze_arrow", BLAZE_ARROW_COLOR)
+	mesh_instance.visibility_range_end = GameConfig.vis_range_scatter
 	parent.add_child(mesh_instance)
+
+
+static func _apply_visibility_range(parent: Node, visibility_range_end: float) -> void:
+	if parent == null:
+		return
+	var geometry_instance: GeometryInstance3D = parent as GeometryInstance3D
+	if geometry_instance != null:
+		geometry_instance.visibility_range_end = visibility_range_end
+	for child: Node in parent.get_children():
+		_apply_visibility_range(child, visibility_range_end)
 
 
 static func _make_unshaded_material(resource_name: String, albedo: Color) -> StandardMaterial3D:

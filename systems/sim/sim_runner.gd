@@ -3,7 +3,7 @@ extends Node
 
 const DEFAULT_TARGET: Vector3 = Vector3(3.0, 0.0, 0.0)
 const CEDAR_ROUTE_PATH: String = "res://data/routes/cedar_hollow.tres"
-const CEDAR_TERRAIN_PALETTE_PATH: String = "res://data/surface_palettes/cedar_hollow_terrain.tres"
+const CEDAR_TERRAIN_DEF_PATH: String = "res://data/terrain/cedar_hollow_terrain_def.tres"
 const CedarHollowSceneResource: PackedScene = preload("res://scenes/cedar_hollow.tscn")
 const VehicleScene: PackedScene = preload("res://scenes/vehicle.tscn")
 const VehicleInputScript: GDScript = preload("res://systems/vehicle/vehicle_input.gd")
@@ -61,13 +61,33 @@ var _max_y_position: float = -999999.0
 var _max_pitch_deg: float = -999999.0
 var _max_abs_roll_deg: float = 0.0
 var _max_abs_yaw_rate: float = 0.0
+var _contact_normal_sample_ticks: int = 0
+var _max_contact_normal_tilt_deg: float = 0.0
+var _contact_normal_min_y: float = 1.0
+var _max_abs_lateral_speed: float = 0.0
+var _final_abs_lateral_speed: float = 0.0
+var _chassis_clearance_sample_ticks: int = 0
+var _min_chassis_clearance_m: float = 999999.0
+var _max_chassis_penetration_m: float = 0.0
+var _steering_speed_low_sample_ticks: int = 0
+var _steering_speed_mid_sample_ticks: int = 0
+var _steering_speed_high_sample_ticks: int = 0
+var _steering_speed_low_max_abs_yaw_rate: float = 0.0
+var _steering_speed_mid_max_abs_yaw_rate: float = 0.0
+var _steering_speed_high_max_abs_yaw_rate: float = 0.0
+var _post_settle_min_y: float = 999999.0
+var _post_settle_max_y: float = -999999.0
+var _max_post_settle_vertical_speed: float = 0.0
 var _max_speed: float = 0.0
 var _previous_speed: float = 0.0
 var _ebrake_ticks: int = 0
 var _reverse_ticks: int = 0
 var _min_initial_forward_displacement: float = 999999.0
 var _max_initial_forward_displacement: float = 0.0
+var _max_descent_from_initial: float = 0.0
 var _max_reverse_distance: float = 0.0
+var _max_flat_displacement_from_initial: float = 0.0
+var _final_flat_displacement_from_initial: float = 0.0
 var _front_air_rear_contact_ticks: int = 0
 var _surface_event_count: int = 0
 var _landmark_event_count: int = 0
@@ -273,7 +293,29 @@ func _spawn_transform(spawn_id: String) -> Transform3D:
 		return Transform3D(yaw_basis * flipped_basis, Vector3(0.0, GameConfig.flat_spawn_height, 0.0))
 	if spawn_id == "offtrail_tall_grass" or spawn_id == "offtrail_loose_rock":
 		return Transform3D(Basis.IDENTITY, Vector3(0.0, GameConfig.flat_spawn_height, 0.0))
+	if spawn_id == "hill_hold_grade" or spawn_id == "hill_hold_steep":
+		var grade_deg: float = GameConfig.hill_hold_grade_deg
+		if spawn_id == "hill_hold_steep":
+			grade_deg = GameConfig.hill_hold_steep_grade_deg
+		return Transform3D(Basis(Vector3.RIGHT, deg_to_rad(grade_deg)), Vector3(0.0, _hill_hold_spawn_height(grade_deg), 0.0))
+	if spawn_id == "suspension_drop":
+		return Transform3D(Basis.IDENTITY, Vector3(0.0, GameConfig.suspension_drop_spawn_height, 0.0))
+	if spawn_id == "roll_stability_side_slope":
+		return Transform3D(Basis.IDENTITY, Vector3(0.0, _tilted_ground_spawn_height(GameConfig.roll_stability_side_slope_deg, GameConfig.roll_stability_ground_size.y), 1.0))
 	return Transform3D(Basis.IDENTITY, Vector3(0.0, GameConfig.flat_spawn_height, 0.0))
+
+
+func _hill_hold_spawn_height(grade_deg: float) -> float:
+	return _tilted_ground_spawn_height(grade_deg, GameConfig.hill_hold_ground_size.y)
+
+
+func _tilted_ground_spawn_height(tilt_deg: float, ground_height: float) -> float:
+	var ray_length: float = GameConfig.susp_rest_length + GameConfig.susp_travel + GameConfig.wheel_radius
+	var gravity: float = float(ProjectSettings.get_setting("physics/3d/default_gravity", 9.8))
+	var static_compression: float = clampf((GameConfig.chassis_mass * gravity * 0.25) / maxf(GameConfig.susp_stiffness, 0.001), 0.0, 1.0)
+	var ray_distance: float = ray_length - static_compression * GameConfig.susp_travel
+	var tilt_cos: float = maxf(cos(deg_to_rad(tilt_deg)), 0.2)
+	return (ground_height * 0.5 + ray_distance) / tilt_cos
 
 
 func _setup_flat_scene() -> void:
@@ -287,6 +329,12 @@ func _setup_flat_scene() -> void:
 		return
 	if _scene_id == "recovery_trap":
 		_setup_recovery_trap_scene()
+		return
+	if _scene_id == "hill_hold_probe":
+		_setup_hill_hold_probe_scene()
+		return
+	if _scene_id == "roll_stability_probe":
+		_setup_roll_stability_probe_scene()
 		return
 	if _scene_id == "surface_strips":
 		FlatWorldBuilderScript.build_surface_strip_collision(self)
@@ -302,7 +350,7 @@ func _setup_surface_map() -> bool:
 	_surface_map.name = "SurfaceMap"
 	add_child(_surface_map)
 	if _uses_cedar_terrain_surface_map():
-		if not bool(_surface_map.call("configure_terrain_palette", CEDAR_TERRAIN_PALETTE_PATH, GameConfig.cedar_surface_map_bounds_min, GameConfig.cedar_surface_map_bounds_max)):
+		if not bool(_surface_map.call("configure_terrain_def", CEDAR_TERRAIN_DEF_PATH)):
 			_finish_runner_error("Failed to configure Cedar terrain surface map")
 			return false
 	return true
@@ -324,6 +372,17 @@ func _setup_recovery_trap_scene() -> void:
 	_build_sim_surface_box("recovery_trap_wall", &"packed_dirt", GameConfig.recovery_trap_wall_center, GameConfig.recovery_trap_wall_size)
 
 
+func _setup_hill_hold_probe_scene() -> void:
+	var grade_deg: float = GameConfig.hill_hold_grade_deg
+	if _spawn_id == "hill_hold_steep":
+		grade_deg = GameConfig.hill_hold_steep_grade_deg
+	_build_sim_surface_slope("hill_hold_ground", &"packed_dirt", grade_deg)
+
+
+func _setup_roll_stability_probe_scene() -> void:
+	_build_sim_surface_side_slope("roll_stability_ground", &"packed_dirt", GameConfig.roll_stability_side_slope_deg)
+
+
 func _build_sim_surface_box(prefix: String, surface_id: StringName, center: Vector3, size: Vector3) -> StaticBody3D:
 	var body: StaticBody3D = StaticBody3D.new()
 	body.name = prefix + "__surf_" + String(surface_id)
@@ -336,6 +395,38 @@ func _build_sim_surface_box(prefix: String, surface_id: StringName, center: Vect
 	shape.size = size
 	collision.shape = shape
 	collision.position = center
+	body.add_child(collision)
+	return body
+
+
+func _build_sim_surface_slope(prefix: String, surface_id: StringName, grade_deg: float) -> StaticBody3D:
+	var body: StaticBody3D = StaticBody3D.new()
+	body.name = prefix + "__surf_" + String(surface_id)
+	body.add_to_group("surf_" + String(surface_id))
+	body.global_transform = Transform3D(Basis(Vector3.RIGHT, deg_to_rad(grade_deg)), Vector3.ZERO)
+	add_child(body)
+
+	var collision: CollisionShape3D = CollisionShape3D.new()
+	collision.name = "Collision"
+	var shape: BoxShape3D = BoxShape3D.new()
+	shape.size = GameConfig.hill_hold_ground_size
+	collision.shape = shape
+	body.add_child(collision)
+	return body
+
+
+func _build_sim_surface_side_slope(prefix: String, surface_id: StringName, side_slope_deg: float) -> StaticBody3D:
+	var body: StaticBody3D = StaticBody3D.new()
+	body.name = prefix + "__surf_" + String(surface_id)
+	body.add_to_group("surf_" + String(surface_id))
+	body.global_transform = Transform3D(Basis(Vector3.FORWARD, deg_to_rad(side_slope_deg)), Vector3(0.0, 0.0, -2.0))
+	add_child(body)
+
+	var collision: CollisionShape3D = CollisionShape3D.new()
+	collision.name = "Collision"
+	var shape: BoxShape3D = BoxShape3D.new()
+	shape.size = GameConfig.roll_stability_ground_size
+	collision.shape = shape
 	body.add_child(collision)
 	return body
 
@@ -363,27 +454,39 @@ func _record(state: RefCounted, input: RefCounted) -> void:
 	var speed_delta: float = speed - _previous_speed
 	var slip_angle_deg: float = _slip_angle_deg(state_basis, state_velocity)
 	var yaw_rate: float = state_angular_velocity.dot(Vector3.UP)
+	var right: Vector3 = state_basis.x.normalized()
+	var lateral_speed: float = state_velocity.dot(right)
+	var abs_lateral_speed: float = absf(lateral_speed)
 	var input_throttle: float = float(input.get("throttle"))
 	var wheel_contact: Variant = state.get("wheel_contact")
 	var wheel_surface: Variant = state.get("wheel_surface")
 	var wheel_hit_point: Variant = state.get("wheel_hit_point")
+	var contact_normal: Vector3 = state.get("contact_normal")
+	if contact_normal.length() <= GameConfig.self_right_forward_epsilon:
+		contact_normal = Vector3.UP
+	contact_normal = contact_normal.normalized()
+	var contact_normal_tilt_deg: float = rad_to_deg(contact_normal.angle_to(Vector3.UP))
 	var vehicle_contamination: Dictionary[String, float] = _vehicle_contamination_dictionary(state)
 	var surface_id: StringName = _dominant_surface_from_array(wheel_surface)
 	var front_contact_count: int = _contact_count(wheel_contact, 0, 2)
 	var rear_contact_count: int = _contact_count(wheel_contact, 2, 4)
 	var initial_forward_displacement: float = (state_position - _initial_position).dot(_initial_forward)
+	var descent_from_initial: float = _initial_position.y - state_position.y
+	var flat_displacement_from_initial: float = Vector2(state_position.x - _initial_position.x, state_position.z - _initial_position.z).length()
 	var row: Dictionary = {
 		"tick": _tick,
 		"position": _vec3_to_array(state_position),
 		"linear_velocity": _vec3_to_array(state_velocity),
 		"angular_velocity": _vec3_to_array(state_angular_velocity),
 		"yaw_rate": yaw_rate,
+		"lateral_speed": lateral_speed,
 		"pitch_deg": pitch_deg,
 		"roll_deg": roll_deg,
 		"speed": speed,
 		"speed_delta": speed_delta,
 		"motor_rpm": motor_rpm,
 		"initial_forward_displacement": initial_forward_displacement,
+		"flat_displacement_from_initial": flat_displacement_from_initial,
 		"slip_angle_deg": slip_angle_deg,
 		"wheel_contact_count": front_contact_count + rear_contact_count,
 		"front_contact_count": front_contact_count,
@@ -391,6 +494,8 @@ func _record(state: RefCounted, input: RefCounted) -> void:
 		"wheel_contact": _bool_array_to_array(wheel_contact),
 		"wheel_surface": _surface_array_to_array(wheel_surface),
 		"wheel_hit_point": _vec3_array_to_array(wheel_hit_point),
+		"contact_normal": _vec3_to_array(contact_normal),
+		"contact_normal_tilt_deg": contact_normal_tilt_deg,
 		"surface_id": String(surface_id),
 		"vehicle_contamination": vehicle_contamination,
 		"on_ground": bool(state.get("on_ground")),
@@ -416,7 +521,10 @@ func _record(state: RefCounted, input: RefCounted) -> void:
 		_reverse_ticks += 1
 	_min_initial_forward_displacement = minf(_min_initial_forward_displacement, initial_forward_displacement)
 	_max_initial_forward_displacement = maxf(_max_initial_forward_displacement, initial_forward_displacement)
+	_max_descent_from_initial = maxf(_max_descent_from_initial, descent_from_initial)
 	_max_reverse_distance = maxf(_max_reverse_distance, -initial_forward_displacement)
+	_max_flat_displacement_from_initial = maxf(_max_flat_displacement_from_initial, flat_displacement_from_initial)
+	_final_flat_displacement_from_initial = flat_displacement_from_initial
 	if front_contact_count == 0 and rear_contact_count > 0:
 		_front_air_rear_contact_ticks += 1
 	_max_abs_slip_angle_deg = maxf(_max_abs_slip_angle_deg, absf(slip_angle_deg))
@@ -424,6 +532,20 @@ func _record(state: RefCounted, input: RefCounted) -> void:
 	_max_pitch_deg = maxf(_max_pitch_deg, pitch_deg)
 	_max_abs_roll_deg = maxf(_max_abs_roll_deg, absf(roll_deg))
 	_max_abs_yaw_rate = maxf(_max_abs_yaw_rate, absf(yaw_rate))
+	_max_abs_lateral_speed = maxf(_max_abs_lateral_speed, abs_lateral_speed)
+	_final_abs_lateral_speed = abs_lateral_speed
+	if _scene_id == TerrainBuilderScript.CEDAR_SCENE_ID:
+		_record_chassis_heightfield_clearance(state_position, state_basis)
+	if _scenario_id == "steering_speed_ramp":
+		_record_steering_speed_ramp_bucket(speed, absf(yaw_rate))
+	if _scenario_id == "suspension_drop" and _tick >= GameConfig.suspension_drop_settle_start_tick:
+		_post_settle_min_y = minf(_post_settle_min_y, state_position.y)
+		_post_settle_max_y = maxf(_post_settle_max_y, state_position.y)
+		_max_post_settle_vertical_speed = maxf(_max_post_settle_vertical_speed, absf(state_velocity.y))
+	if front_contact_count + rear_contact_count > 0:
+		_contact_normal_sample_ticks += 1
+		_max_contact_normal_tilt_deg = maxf(_max_contact_normal_tilt_deg, contact_normal_tilt_deg)
+		_contact_normal_min_y = minf(_contact_normal_min_y, contact_normal.y)
 	_max_speed = maxf(_max_speed, speed)
 	if surface_id != &"" and _tick >= GameConfig.surface_probe_warmup_ticks:
 		_record_surface_metrics(surface_id, speed, speed_delta, absf(slip_angle_deg))
@@ -488,6 +610,14 @@ func _configure_flat_bounds() -> void:
 		_bounds_max = GameConfig.surface_probe_bounds_max
 		return
 	if _uses_scenario_predicate():
+		if _scene_id == "hill_hold_probe":
+			_bounds_min = GameConfig.hill_hold_probe_bounds_min
+			_bounds_max = GameConfig.hill_hold_probe_bounds_max
+			return
+		if _scene_id == "roll_stability_probe":
+			_bounds_min = GameConfig.roll_stability_probe_bounds_min
+			_bounds_max = GameConfig.roll_stability_probe_bounds_max
+			return
 		_bounds_min = GameConfig.flat_probe_bounds_min
 		_bounds_max = GameConfig.flat_probe_bounds_max
 		return
@@ -515,7 +645,7 @@ func _finish(passed: bool) -> void:
 	var target_landmark_event_observed: bool = _target_landmark_event_observed()
 	var event_bus_contract_passed: bool = _event_bus_contract_passed()
 	var self_right_heading_preserved: bool = _self_right_heading_preserved()
-	var never_stuck_predicate_passed: bool = _never_stuck or _recovered_to_trail_event_count > 0 or _scenario_id == "standstill_yaw_rate"
+	var never_stuck_predicate_passed: bool = _never_stuck or _recovered_to_trail_event_count > 0 or _scenario_id == "standstill_yaw_rate" or _scenario_id == "hill_hold" or _scenario_id == "lateral_slide" or _scenario_id == "suspension_drop"
 	var predicates: Dictionary = {
 		"reached_target": target_predicate_passed,
 		"scenario_passed": scenario_predicate_passed,
@@ -558,12 +688,31 @@ func _finish(passed: bool) -> void:
 			"max_pitch_deg": _max_pitch_deg,
 			"max_abs_roll_deg": _max_abs_roll_deg,
 			"max_abs_yaw_rate": _max_abs_yaw_rate,
+			"contact_normal_sample_ticks": _contact_normal_sample_ticks,
+			"max_contact_normal_tilt_deg": _max_contact_normal_tilt_deg,
+			"contact_normal_min_y": _contact_normal_min_y,
+			"max_abs_lateral_speed": _max_abs_lateral_speed,
+			"final_abs_lateral_speed": _final_abs_lateral_speed,
+			"chassis_clearance_sample_ticks": _chassis_clearance_sample_ticks,
+			"min_chassis_clearance_m": _min_chassis_clearance_m if _min_chassis_clearance_m < 999998.0 else null,
+			"max_chassis_penetration_m": _max_chassis_penetration_m,
+			"steering_speed_low_sample_ticks": _steering_speed_low_sample_ticks,
+			"steering_speed_mid_sample_ticks": _steering_speed_mid_sample_ticks,
+			"steering_speed_high_sample_ticks": _steering_speed_high_sample_ticks,
+			"steering_speed_low_max_abs_yaw_rate": _steering_speed_low_max_abs_yaw_rate,
+			"steering_speed_mid_max_abs_yaw_rate": _steering_speed_mid_max_abs_yaw_rate,
+			"steering_speed_high_max_abs_yaw_rate": _steering_speed_high_max_abs_yaw_rate,
+			"post_settle_y_amplitude": _post_settle_y_amplitude(),
+			"max_post_settle_vertical_speed": _max_post_settle_vertical_speed,
 			"max_speed": _max_speed,
 			"ebrake_ticks": _ebrake_ticks,
 			"reverse_ticks": _reverse_ticks,
 			"min_initial_forward_displacement": _min_initial_forward_displacement if _min_initial_forward_displacement < 999998.0 else null,
 			"max_initial_forward_displacement": _max_initial_forward_displacement,
+			"max_descent_from_initial": _max_descent_from_initial,
 			"max_reverse_distance": _max_reverse_distance,
+			"max_flat_displacement_from_initial": _max_flat_displacement_from_initial,
+			"final_flat_displacement_from_initial": _final_flat_displacement_from_initial,
 			"front_air_rear_contact_ticks": _front_air_rear_contact_ticks,
 			"surface_event_count": _surface_event_count,
 			"last_surface_event": String(_last_surface_event),
@@ -658,17 +807,49 @@ func _scenario_predicate_passed() -> bool:
 	if _scenario_id == "reverse_drive":
 		return _reverse_ticks >= GameConfig.reverse_min_ticks and _max_reverse_distance >= GameConfig.reverse_min_distance
 	if _scenario_id == "standstill_yaw_rate":
-		var yaw_rate_limit: float = GameConfig.steer_max_yaw_rate * GameConfig.standstill_yaw_probe_max_multiplier
+		var yaw_rate_limit: float = GameConfig.steer_inplace_yaw_rate_max * GameConfig.standstill_yaw_probe_max_multiplier
 		return _max_abs_yaw_rate <= yaw_rate_limit and _max_abs_yaw_rate >= GameConfig.standstill_yaw_probe_min_rate
 	if _scenario_id == "offtrail_escape":
 		return _max_initial_forward_displacement >= GameConfig.offtrail_escape_min_distance
 	if _scenario_id == "recover_to_trail":
 		return _recovered_to_trail_event_count > 0 and _max_recovery_displacement >= GameConfig.recover_event_min_displacement and _max_flipped_ticks_seen == 0
+	if _scenario_id == "hill_hold":
+		if _spawn_id == "hill_hold_steep":
+			return _final_flat_displacement_from_initial >= GameConfig.hill_hold_steep_min_creep and _final_flat_displacement_from_initial <= GameConfig.hill_hold_steep_max_creep and _max_flipped_ticks_seen == 0
+		return _max_flat_displacement_from_initial <= GameConfig.hill_hold_max_drift and _max_flipped_ticks_seen == 0
+	if _scenario_id == "lateral_slide":
+		return _max_abs_lateral_speed >= GameConfig.lateral_slide_min_peak_lateral_speed and _final_abs_lateral_speed <= GameConfig.lateral_slide_max_final_lateral_speed and _max_flipped_ticks_seen == 0
+	if _scenario_id == "suspension_drop":
+		return _max_speed >= GameConfig.suspension_drop_min_peak_speed and _contact_normal_sample_ticks >= GameConfig.suspension_drop_min_contact_ticks and _post_settle_y_amplitude() <= GameConfig.suspension_drop_max_settle_y_amplitude and _max_post_settle_vertical_speed <= GameConfig.suspension_drop_max_settle_vertical_speed and _max_flipped_ticks_seen == 0
+	if _scenario_id == "roll_stability":
+		return _max_initial_forward_displacement >= GameConfig.roll_stability_min_forward_distance and _contact_normal_sample_ticks >= GameConfig.roll_stability_min_contact_ticks and _max_contact_normal_tilt_deg >= GameConfig.roll_stability_min_contact_normal_tilt_deg and _max_abs_roll_deg <= GameConfig.roll_stability_max_abs_roll_deg and _max_flipped_ticks_seen == 0
+	if _scenario_id == "steering_speed_ramp":
+		return _steering_speed_ramp_predicate_passed()
+	if _scenario_id == "clip_descent":
+		return _clip_descent_predicate_passed()
 	if _scenario_id == "surface_sweep":
 		return _surface_sweep_predicate_passed()
 	if _scenario_id == "log_ramp":
 		return _log_ramp_predicate_passed()
 	return false
+
+
+func _clip_descent_predicate_passed() -> bool:
+	return _chassis_clearance_sample_ticks >= GameConfig.clip_descent_min_clearance_samples and _max_chassis_penetration_m <= GameConfig.clip_descent_max_chassis_penetration and _max_speed >= GameConfig.clip_descent_min_speed and _max_descent_from_initial >= GameConfig.clip_descent_min_descent and _max_flipped_ticks_seen == 0
+
+
+func _steering_speed_ramp_predicate_passed() -> bool:
+	var min_ticks: int = GameConfig.steering_speed_probe_min_bucket_ticks
+	if _steering_speed_low_sample_ticks < min_ticks or _steering_speed_mid_sample_ticks < min_ticks or _steering_speed_high_sample_ticks < min_ticks:
+		return false
+	var slack: float = GameConfig.steering_speed_probe_monotone_slack
+	if _steering_speed_low_max_abs_yaw_rate > _steering_speed_mid_max_abs_yaw_rate + slack:
+		return false
+	if _steering_speed_mid_max_abs_yaw_rate > _steering_speed_high_max_abs_yaw_rate + slack:
+		return false
+	if _steering_speed_high_max_abs_yaw_rate < _steering_speed_low_max_abs_yaw_rate + GameConfig.steering_speed_probe_min_high_yaw_gain:
+		return false
+	return _max_flipped_ticks_seen == 0
 
 
 func _surface_sweep_predicate_passed() -> bool:
@@ -700,6 +881,12 @@ func _surface_sweep_predicate_passed() -> bool:
 func _log_ramp_predicate_passed() -> bool:
 	var wood_ticks: int = int(_surface_contact_ticks.get("wood_plank", 0))
 	return wood_ticks >= GameConfig.log_ramp_min_wood_ticks and _max_y_position >= GameConfig.log_ramp_min_peak_y and _max_pitch_deg >= GameConfig.log_ramp_min_peak_pitch_deg
+
+
+func _post_settle_y_amplitude() -> float:
+	if _post_settle_min_y > 999998.0 or _post_settle_max_y < -999998.0:
+		return 999999.0
+	return _post_settle_max_y - _post_settle_min_y
 
 
 func _pitch_deg(basis: Basis) -> float:
@@ -811,6 +998,75 @@ func _record_contamination_metrics(contamination: Dictionary[String, float]) -> 
 	_final_vehicle_contamination["mud"] = mud
 	_final_vehicle_contamination["dust"] = dust
 	_final_vehicle_contamination["wetness"] = wetness
+
+
+func _record_chassis_heightfield_clearance(position: Vector3, basis: Basis) -> void:
+	var half_size: Vector3 = GameConfig.chassis_collision_size * 0.5
+	var local_points: Array[Vector3] = [
+		Vector3(-half_size.x, -half_size.y, -half_size.z),
+		Vector3(half_size.x, -half_size.y, -half_size.z),
+		Vector3(-half_size.x, -half_size.y, half_size.z),
+		Vector3(half_size.x, -half_size.y, half_size.z),
+		Vector3(0.0, -half_size.y, 0.0)
+	]
+	var sampled_this_tick: bool = false
+	for local_point in local_points:
+		var world_point: Vector3 = position + basis * local_point
+		if not _cedar_heightmap_contains(world_point.x, world_point.z):
+			continue
+		var terrain_height: float = _cedar_heightmap_height(world_point.x, world_point.z)
+		var clearance: float = world_point.y - terrain_height
+		_min_chassis_clearance_m = minf(_min_chassis_clearance_m, clearance)
+		_max_chassis_penetration_m = maxf(_max_chassis_penetration_m, maxf(0.0, -clearance))
+		sampled_this_tick = true
+	if sampled_this_tick:
+		_chassis_clearance_sample_ticks += 1
+
+
+func _cedar_heightmap_contains(x: float, z: float) -> bool:
+	var terrain_def: Resource = TerrainBuilderScript.cedar_terrain_def()
+	return bool(terrain_def.call("contains_world_xz", Vector2(x, z)))
+
+
+func _cedar_heightmap_height(x: float, z: float) -> float:
+	var terrain_def: Resource = TerrainBuilderScript.cedar_terrain_def()
+	var tile_index: Vector2i = terrain_def.call("tile_index_for_world_xz", Vector2(x, z))
+	var shape: HeightMapShape3D = TerrainBuilderScript.heightmap_collision_shape_for_tile(tile_index)
+	if shape == null:
+		return 0.0
+	var width: int = maxi(shape.map_width, 1)
+	var depth: int = maxi(shape.map_depth, 1)
+	var data: PackedFloat32Array = shape.map_data
+	if data.size() != width * depth:
+		return 0.0
+	var uv: Vector2 = terrain_def.call("world_to_tile_heightmap_uv", Vector2(x, z), tile_index)
+	var u: float = clampf(uv.x, 0.0, 1.0) * float(width - 1)
+	var v: float = clampf(uv.y, 0.0, 1.0) * float(depth - 1)
+	var x0: int = clampi(int(floor(u)), 0, width - 1)
+	var z0: int = clampi(int(floor(v)), 0, depth - 1)
+	var x1: int = mini(x0 + 1, width - 1)
+	var z1: int = mini(z0 + 1, depth - 1)
+	var tx: float = u - float(x0)
+	var tz: float = v - float(z0)
+	var h00: float = data[z0 * width + x0]
+	var h10: float = data[z0 * width + x1]
+	var h01: float = data[z1 * width + x0]
+	var h11: float = data[z1 * width + x1]
+	var h0: float = lerpf(h00, h10, tx)
+	var h1: float = lerpf(h01, h11, tx)
+	return lerpf(h0, h1, tz)
+
+
+func _record_steering_speed_ramp_bucket(speed: float, abs_yaw_rate: float) -> void:
+	if speed >= GameConfig.steering_speed_probe_low_min_speed and speed <= GameConfig.steering_speed_probe_low_max_speed:
+		_steering_speed_low_sample_ticks += 1
+		_steering_speed_low_max_abs_yaw_rate = maxf(_steering_speed_low_max_abs_yaw_rate, abs_yaw_rate)
+	elif speed >= GameConfig.steering_speed_probe_mid_min_speed and speed <= GameConfig.steering_speed_probe_mid_max_speed:
+		_steering_speed_mid_sample_ticks += 1
+		_steering_speed_mid_max_abs_yaw_rate = maxf(_steering_speed_mid_max_abs_yaw_rate, abs_yaw_rate)
+	elif speed >= GameConfig.steering_speed_probe_high_min_speed:
+		_steering_speed_high_sample_ticks += 1
+		_steering_speed_high_max_abs_yaw_rate = maxf(_steering_speed_high_max_abs_yaw_rate, abs_yaw_rate)
 
 
 func _max_vehicle_contamination_dictionary() -> Dictionary[String, float]:

@@ -39,6 +39,7 @@ static func _make_dust_field() -> GPUParticles3D:
 	particles.draw_pass_1 = _dust_mesh()
 	particles.process_material = _dust_process_material()
 	particles.position = Vector3(0.0, 0.0, -1.6)
+	particles.visibility_range_end = GameConfig.vis_range_dust
 	particles.set_meta("visual_contract", "deterministic_dust_motes")
 	return particles
 

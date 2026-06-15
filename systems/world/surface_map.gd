@@ -13,6 +13,7 @@ var _defs: Dictionary[StringName, Resource] = {}
 var _fallback: Resource = null
 var _source_counts: Dictionary[String, int] = {}
 var _terrain_palette: Resource = null
+var _terrain_def: Resource = null
 var _terrain_surface_samples: PackedByteArray = PackedByteArray()
 var _terrain_surface_width: int = 0
 var _terrain_surface_height: int = 0
@@ -97,14 +98,9 @@ func surface_id_at_world_position(world_position: Vector3, fallback: StringName 
 		return fallback
 	if _terrain_surface_width <= 0 or _terrain_surface_height <= 0:
 		return fallback
-	var width_m: float = _terrain_bounds_max.x - _terrain_bounds_min.x
-	var depth_m: float = _terrain_bounds_max.y - _terrain_bounds_min.y
-	if width_m <= 0.001 or depth_m <= 0.001:
-		return fallback
-	var x_t: float = clampf((world_position.x - _terrain_bounds_min.x) / width_m, 0.0, 1.0)
-	var z_t: float = clampf((_terrain_bounds_max.y - world_position.z) / depth_m, 0.0, 1.0)
-	var pixel_x: int = clampi(roundi(x_t * float(_terrain_surface_width - 1)), 0, _terrain_surface_width - 1)
-	var pixel_y: int = clampi(roundi(z_t * float(_terrain_surface_height - 1)), 0, _terrain_surface_height - 1)
+	var uv: Vector2 = _surface_uv_for_world_position(world_position)
+	var pixel_x: int = clampi(roundi(uv.x * float(_terrain_surface_width - 1)), 0, _terrain_surface_width - 1)
+	var pixel_y: int = clampi(roundi(uv.y * float(_terrain_surface_height - 1)), 0, _terrain_surface_height - 1)
 	var sample_index: int = pixel_y * _terrain_surface_width + pixel_x
 	if sample_index < 0 or sample_index >= _terrain_surface_samples.size():
 		return fallback
@@ -113,13 +109,43 @@ func surface_id_at_world_position(world_position: Vector3, fallback: StringName 
 
 
 func configure_terrain_palette(palette_path: String, bounds_min: Vector2, bounds_max: Vector2) -> bool:
+	_reset_terrain_sampler()
+	_terrain_bounds_min = bounds_min
+	_terrain_bounds_max = bounds_max
+	return _load_terrain_palette(palette_path)
+
+
+func configure_terrain_def(terrain_def_path: String) -> bool:
+	_reset_terrain_sampler()
+	var terrain_def: Resource = load(terrain_def_path)
+	if terrain_def == null:
+		push_error("SurfaceMap failed to load TerrainDef: " + terrain_def_path)
+		return false
+	var terrain_errors: PackedStringArray = terrain_def.call("validate")
+	if terrain_errors.size() > 0:
+		push_error("SurfaceMap TerrainDef invalid: " + _join_errors(terrain_errors))
+		return false
+	_terrain_bounds_min = terrain_def.get("bounds_min_xz")
+	_terrain_bounds_max = terrain_def.get("bounds_max_xz")
+	var palette_path: String = terrain_def.get("surface_palette_path")
+	if not _load_terrain_palette(palette_path):
+		return false
+	_terrain_def = terrain_def
+	return true
+
+
+func _reset_terrain_sampler() -> void:
 	_terrain_palette = null
+	_terrain_def = null
 	_terrain_surface_samples = PackedByteArray()
 	_terrain_surface_width = 0
 	_terrain_surface_height = 0
 	_terrain_sampler_ready = false
-	_terrain_bounds_min = bounds_min
-	_terrain_bounds_max = bounds_max
+	_terrain_bounds_min = Vector2.ZERO
+	_terrain_bounds_max = Vector2.ZERO
+
+
+func _load_terrain_palette(palette_path: String) -> bool:
 	var palette: Resource = load(palette_path)
 	if palette == null:
 		push_error("SurfaceMap failed to load terrain palette: " + palette_path)
@@ -139,6 +165,19 @@ func configure_terrain_palette(palette_path: String, bounds_min: Vector2, bounds
 	_terrain_palette = palette
 	_terrain_sampler_ready = true
 	return true
+
+
+func _surface_uv_for_world_position(world_position: Vector3) -> Vector2:
+	if _terrain_def != null:
+		return _terrain_def.call("world_to_surface_uv", Vector2(world_position.x, world_position.z))
+	var width_m: float = _terrain_bounds_max.x - _terrain_bounds_min.x
+	var depth_m: float = _terrain_bounds_max.y - _terrain_bounds_min.y
+	if width_m <= 0.001 or depth_m <= 0.001:
+		return Vector2.ZERO
+	return Vector2(
+		clampf((world_position.x - _terrain_bounds_min.x) / width_m, 0.0, 1.0),
+		clampf((_terrain_bounds_max.y - world_position.z) / depth_m, 0.0, 1.0)
+	)
 
 
 func is_terrain_sampler_ready() -> bool:
