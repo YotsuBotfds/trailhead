@@ -26,6 +26,9 @@ const RecoverableObjectRenderScript: GDScript = preload("res://systems/render/re
 const GoldenLineTrackerScript: GDScript = preload("res://systems/sim/golden_line_tracker.gd")
 const GoldenLineGhostScript: GDScript = preload("res://systems/render/golden_line_ghost.gd")
 const TerrainTrackVisualPainterScript: GDScript = preload("res://systems/render/terrain_track_visual_painter.gd")
+const FrequencyStickersScene: PackedScene = preload("res://scenes/world/easter_eggs/frequency_stickers.tscn")
+const FrequencyInputPanelScene: PackedScene = preload("res://ui/frequency_input_panel.tscn")
+const GrasshopperLiveryScript: GDScript = preload("res://systems/render/grasshopper_livery.gd")
 const SurfaceMapScript: GDScript = preload("res://systems/world/surface_map.gd")
 const CAMERA_MODE_CHASE: int = 0
 const CAMERA_MODE_ORBIT: int = 1
@@ -58,6 +61,9 @@ var _recoverable_object_render: Node = null
 var _golden_line_tracker: Node = null
 var _golden_line_ghost: Node = null
 var _sim_tick: int = 0
+var _frequency_input_panel: CanvasLayer = null
+var _grasshopper_livery: Node = null
+var _drive_started: bool = false
 
 
 func _ready() -> void:
@@ -75,6 +81,7 @@ func _ready() -> void:
 	AtmosphereVisualBuilderScript.configure_render_support(self, _vehicle, _camera, _orbit_camera, _fpv_camera)
 	_setup_photograph_system()
 	_setup_hud()
+	_setup_frequency_input_panel()
 
 
 func _physics_process(delta: float) -> void:
@@ -83,6 +90,7 @@ func _physics_process(delta: float) -> void:
 	_update_vehicle_input()
 	_update_camera_input()
 	_update_hud_input()
+	_update_frequency_input()
 	_update_mood_input()
 	_vehicle.call("apply_input", _vehicle_input)
 	_sample_golden_line()
@@ -103,6 +111,7 @@ func _ensure_default_input_map() -> void:
 	_ensure_action(&"map_toggle", [KEY_M])
 	_ensure_action(&"mood_toggle", [KEY_N])
 	_ensure_action(&"logbook_open", [KEY_TAB])
+	_ensure_action(&"frequency_input", [KEY_P])
 	_ensure_action(&"photograph", [KEY_F])
 
 
@@ -139,7 +148,19 @@ func _setup_world() -> void:
 	ScatterVisualBuilderScript.build_cedar_hollow(_world)
 	BoundaryVisualBuilderScript.build_cedar_hollow(_world)
 	WaterVisualBuilderScript.build_cedar_hollow(_world)
+	_add_frequency_stickers()
 	_setup_terrain_tracks(terrain_root)
+
+
+func _add_frequency_stickers() -> void:
+	if _world == null:
+		return
+	var stickers: Node3D = FrequencyStickersScene.instantiate() as Node3D
+	if stickers == null:
+		push_error("CedarHollowHost failed to instantiate frequency stickers")
+		return
+	stickers.name = "FrequencyStickers"
+	_world.add_child(stickers)
 
 
 func _setup_terrain_tracks(terrain_root: Node3D) -> void:
@@ -164,6 +185,16 @@ func _spawn_vehicle() -> void:
 	var visual_builder: RefCounted = ProceduralBuggyVisualScript.new()
 	visual_builder.call("attach", _vehicle)
 	_collect_visual_wheels()
+	_setup_grasshopper_livery()
+
+
+func _setup_grasshopper_livery() -> void:
+	_grasshopper_livery = GrasshopperLiveryScript.new() as Node
+	if _grasshopper_livery == null:
+		return
+	_grasshopper_livery.name = "GrasshopperLivery"
+	add_child(_grasshopper_livery)
+	_grasshopper_livery.call("configure", _vehicle_visual_root)
 
 
 func _setup_light() -> void:
@@ -267,6 +298,18 @@ func _sample_golden_line() -> void:
 	_sim_tick += 1
 
 
+func _setup_frequency_input_panel() -> void:
+	_frequency_input_panel = FrequencyInputPanelScene.instantiate() as CanvasLayer
+	if _frequency_input_panel == null:
+		push_error("CedarHollowHost failed to instantiate frequency input panel")
+		return
+	_frequency_input_panel.name = "FrequencyInputPanel"
+	add_child(_frequency_input_panel)
+	_frequency_input_panel.visible = false
+	if _frequency_input_panel.has_signal("ui_submitted_frequency_code"):
+		_frequency_input_panel.connect("ui_submitted_frequency_code", Callable(self, "_on_frequency_code_submitted"))
+
+
 func _update_vehicle_input() -> void:
 	var forward_throttle: float = Input.get_action_strength("throttle")
 	var reverse_throttle: float = Input.get_action_strength("reverse")
@@ -281,6 +324,8 @@ func _update_vehicle_input() -> void:
 	_vehicle_input.set("steer", clampf(steer, -1.0, 1.0))
 	_vehicle_input.set("ebrake", Input.is_action_pressed("ebrake"))
 	_vehicle_input.set("self_right", Input.is_action_just_pressed("self_right"))
+	if absf(throttle) > 0.0 or brake > 0.0 or absf(steer) > 0.0 or Input.is_action_pressed("ebrake"):
+		_drive_started = true
 
 
 func _update_camera_input() -> void:
@@ -312,6 +357,20 @@ func toggle_landmark_hint_hud() -> void:
 	if _landmark_hint_hud == null:
 		return
 	_landmark_hint_hud.visible = not _landmark_hint_hud.visible
+
+
+func _update_frequency_input() -> void:
+	if _frequency_input_panel == null or not Input.is_action_just_pressed("frequency_input"):
+		return
+	if not _drive_started:
+		return
+	_frequency_input_panel.call("toggle_panel")
+
+
+func _on_frequency_code_submitted(code: String) -> void:
+	if _grasshopper_livery == null:
+		return
+	_grasshopper_livery.call("try_unlock_with_code", code)
 
 
 func _update_mood_input() -> void:

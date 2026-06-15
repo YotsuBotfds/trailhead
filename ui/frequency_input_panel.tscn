@@ -1,0 +1,23 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://ui/frequency_input_panel.gd" id="1_panel"]
+
+[node name="FrequencyInputPanel" type="CanvasLayer"]
+script = ExtResource("1_panel")
+
+[node name="Root" type="Control" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+
+[node name="FrequencyEntry" type="LineEdit" parent="Root"]
+offset_left = 22.0
+offset_top = 22.0
+offset_right = 110.0
+offset_bottom = 54.0
+max_length = 4
+placeholder_text = "0000"
+alignment = 1
+virtual_keyboard_enabled = false
+context_menu_enabled = false
