@@ -3,8 +3,6 @@ extends RefCounted
 
 const ROOT_NAME: String = "DustTiltShiftVisuals"
 const DUST_FIELD_NAME: String = "DustMoteField"
-const DEFAULT_DUST_MOTE_COUNT: int = 72
-const DEFAULT_TILT_SHIFT_BLUR: float = 0.18
 const DUST_FIXED_SEED: int = 424242
 const DUST_LIFETIME: float = 9.0
 const DUST_PREPROCESS: float = 9.0
@@ -30,7 +28,7 @@ static func build(parent: Node3D, chase_camera: Camera3D, orbit_camera: Camera3D
 static func _make_dust_field() -> GPUParticles3D:
 	var particles: GPUParticles3D = GPUParticles3D.new()
 	particles.name = DUST_FIELD_NAME
-	particles.amount = _positive_int_or(GameConfig.dust_mote_count, DEFAULT_DUST_MOTE_COUNT)
+	particles.amount = maxi(GameConfig.dust_mote_count, 0)
 	particles.lifetime = DUST_LIFETIME
 	particles.preprocess = DUST_PREPROCESS
 	particles.emitting = true
@@ -81,7 +79,7 @@ static func _apply_tilt_shift(camera: Camera3D) -> void:
 	if attributes == null:
 		attributes = CameraAttributesPractical.new()
 		camera.attributes = attributes
-	var blur_amount: float = _positive_float_or(GameConfig.tilt_shift_blur_amount, DEFAULT_TILT_SHIFT_BLUR)
+	var blur_amount: float = maxf(GameConfig.tilt_shift_blur_amount, 0.0)
 	var focus_band: float = clampf(GameConfig.tilt_shift_focus_band, 0.1, 0.9)
 	var softness: float = maxf(GameConfig.tilt_shift_gradient_softness, 0.1)
 	attributes.dof_blur_near_enabled = true
@@ -93,15 +91,3 @@ static func _apply_tilt_shift(camera: Camera3D) -> void:
 	attributes.dof_blur_far_transition = softness * CAMERA_DOF_TRANSITION_SCALE
 	camera.set_meta("tilt_shift_gradient_axis", Vector2(0.0, 1.0))
 	camera.set_meta("tilt_shift_focus_band", focus_band)
-
-
-static func _positive_int_or(value: int, fallback: int) -> int:
-	if value > 0:
-		return value
-	return fallback
-
-
-static func _positive_float_or(value: float, fallback: float) -> float:
-	if value > 0.0:
-		return value
-	return fallback

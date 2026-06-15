@@ -4,9 +4,6 @@ extends Node3D
 const DUST_BURST_NAME: String = "DustSurfaceBurst"
 const MUD_BURST_NAME: String = "MudSurfaceBurst"
 const WATER_BURST_NAME: String = "WaterSurfaceBurst"
-const DEFAULT_SHAKE_MAX_OFFSET: float = 0.018
-const DEFAULT_SURFACE_BURST_PARTICLES: int = 18
-const DEFAULT_LANDING_SQUASH_AMOUNT: float = 0.10
 const BURST_SEED_DUST: int = 7101
 const BURST_SEED_MUD: int = 7102
 const BURST_SEED_WATER: int = 7103
@@ -95,7 +92,7 @@ func _update_camera_shake(delta: float) -> void:
 		_camera.v_offset = 0.0
 		_shake_strength = 0.0
 		return
-	var max_offset: float = _positive_float_or(GameConfig.cam_shake_max_offset, DEFAULT_SHAKE_MAX_OFFSET)
+	var max_offset: float = maxf(GameConfig.cam_shake_max_offset, 0.0)
 	var phase: float = _shake_strength * 11.0
 	_camera.h_offset = sin(phase * 1.7) * max_offset * _shake_strength
 	_camera.v_offset = cos(phase * 2.1) * max_offset * 0.6 * _shake_strength
@@ -109,7 +106,7 @@ func _update_squash(delta: float) -> void:
 		_visual_root.scale = _base_visual_scale
 		_squash_strength = 0.0
 		return
-	var amount: float = _positive_float_or(GameConfig.landing_squash_amount, DEFAULT_LANDING_SQUASH_AMOUNT) * _squash_strength
+	var amount: float = maxf(GameConfig.landing_squash_amount, 0.0) * _squash_strength
 	_visual_root.scale = Vector3(
 		_base_visual_scale.x * (1.0 + amount * 0.35),
 		_base_visual_scale.y * (1.0 - amount),
@@ -161,7 +158,7 @@ func _ensure_bursts() -> void:
 func _make_burst(node_name: String, seed: int, color: Color, particle_scale: float) -> GPUParticles3D:
 	var particles: GPUParticles3D = GPUParticles3D.new()
 	particles.name = node_name
-	particles.amount = _positive_int_or(GameConfig.surface_burst_max_particles, DEFAULT_SURFACE_BURST_PARTICLES)
+	particles.amount = maxi(GameConfig.surface_burst_max_particles, 0)
 	particles.lifetime = GameConfig.surface_burst_lifetime
 	particles.one_shot = true
 	particles.emitting = false
@@ -203,15 +200,3 @@ func _burst_mesh(node_name: String, color: Color, particle_scale: float) -> Quad
 	material.albedo_color = color
 	mesh.material = material
 	return mesh
-
-
-func _positive_int_or(value: int, fallback: int) -> int:
-	if value > 0:
-		return value
-	return fallback
-
-
-func _positive_float_or(value: float, fallback: float) -> float:
-	if value > 0.0:
-		return value
-	return fallback
