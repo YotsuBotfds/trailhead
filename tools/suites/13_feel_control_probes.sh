@@ -10,7 +10,8 @@ run_sim "$out_dir/standstill_yaw_rate.json" \
 assert_metrics "$out_dir/standstill_yaw_rate.json" \
 	--predicate=scenario_passed \
 	--surface=packed_dirt:40 \
-	--metric-min=max_abs_yaw_rate:0.35
+	--metric-min=max_abs_yaw_rate:0.35 \
+	--metric-max=max_abs_yaw_rate:3.3
 
 run_sim "$out_dir/offtrail_escape_tall_grass.json" \
 	--scene=offtrail_escape \

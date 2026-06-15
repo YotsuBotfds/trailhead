@@ -77,6 +77,7 @@ def main():
     parser.add_argument("--landmark", action="append", default=[])
     parser.add_argument("--predicate", action="append", default=[])
     parser.add_argument("--metric-min", action="append", default=[], type=parse_minimum, metavar="METRIC:MIN_VALUE")
+    parser.add_argument("--metric-max", action="append", default=[], type=parse_minimum, metavar="METRIC:MAX_VALUE")
     parser.add_argument("--metric-near", action="append", default=[], type=parse_near, metavar="METRIC:EXPECTED:TOLERANCE")
     parser.add_argument("--source-min", action="append", default=[], type=parse_minimum, metavar="SOURCE:MIN_VALUE")
     args = parser.parse_args()
@@ -146,6 +147,17 @@ def main():
             continue
         if actual < minimum:
             errors.append(f"metric {metric_name} {actual:g} < {minimum:g}")
+
+    for metric_name, maximum in args.metric_max:
+        actual_value = nested_value(metrics, metric_name)
+        if actual_value is None:
+            errors.append(f"missing metric {metric_name}")
+            continue
+        actual = as_number(actual_value, f"metric {metric_name}", errors)
+        if actual is None:
+            continue
+        if actual > maximum:
+            errors.append(f"metric {metric_name} {actual:g} > {maximum:g}")
 
     for metric_name, expected, tolerance in args.metric_near:
         actual_value = nested_value(metrics, metric_name)
