@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="SurfaceDef" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://systems/world/surface_def.gd" id="1_script"]
+
+[resource]
+script = ExtResource("1_script")
+id = &"paved_road"
+display_name = "Paved Road"
+friction = 1.35
+rolling_drag = 0.03
+slip = 0.01
+bog_enabled = false
+bog_threshold = 0.2
+dust_residue = 0.0
