@@ -1,0 +1,38 @@
+[gd_scene load_steps=6 format=3]
+
+[sub_resource type="StandardMaterial3D" id="1_mud"]
+albedo_color = Color(0.17, 0.1, 0.05, 1)
+roughness = 0.9
+
+[sub_resource type="StandardMaterial3D" id="2_metal"]
+albedo_color = Color(0.72, 0.68, 0.58, 1)
+metallic = 0.65
+roughness = 0.38
+
+[sub_resource type="BoxMesh" id="3_tread_mesh"]
+size = Vector3(0.16, 0.012, 0.28)
+
+[sub_resource type="BoxMesh" id="4_track_mesh"]
+size = Vector3(0.06, 0.006, 1.5)
+
+[sub_resource type="TorusMesh" id="5_carabiner_mesh"]
+inner_radius = 0.025
+outer_radius = 0.055
+
+[node name="MudKeyCluster" type="Node3D"]
+visible = false
+
+[node name="MatchedMuddyTread" type="MeshInstance3D" parent="."]
+transform = Transform3D(0.707107, 0, -0.707107, 0, 1, 0, 0.707107, 0, 0.707107, 0.2, 0.008, 0)
+mesh = SubResource("3_tread_mesh")
+material_override = SubResource("1_mud")
+
+[node name="FaintMudTrack" type="MeshInstance3D" parent="."]
+transform = Transform3D(0.707107, 0, -0.707107, 0, 1, 0, 0.707107, 0, 0.707107, 0.75, 0.004, 0.75)
+mesh = SubResource("4_track_mesh")
+material_override = SubResource("1_mud")
+
+[node name="SecondCarabiner" type="MeshInstance3D" parent="."]
+transform = Transform3D(0.707107, 0, 0.707107, 0, 1, 0, -0.707107, 0, 0.707107, 1.5, 0.04, 1.5)
+mesh = SubResource("5_carabiner_mesh")
+material_override = SubResource("2_metal")
