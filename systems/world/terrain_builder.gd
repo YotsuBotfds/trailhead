@@ -22,7 +22,7 @@ static func build_cedar_hollow(parent: Node) -> Array[StaticBody3D]:
 
 static func build_cedar_hollow_10m(parent: Node) -> Array[StaticBody3D]:
 	var bodies: Array[StaticBody3D] = []
-	bodies.append(_build_heightmap_collision(parent, CedarHollow10mTerrainDef, cedar_hollow_10m_horizontal_offset(), "cedar_hollow_10m_heightmap_collision", &"packed_dirt"))
+	bodies.append(_build_heightmap_collision(parent, CedarHollow10mTerrainDef, cedar_hollow_10m_horizontal_offset(), "cedar_hollow_10m_heightmap_collision", &""))
 	return bodies
 
 
@@ -31,6 +31,7 @@ static func _build_heightmap_collision(parent: Node, terrain_def: Resource, hori
 	body.name = collision_name
 	if fallback_surface_id == &"":
 		body.add_to_group(SurfaceMapScript.TERRAIN_SURFACE_MAP_GROUP)
+		body.set_meta(SurfaceMapScript.TERRAIN_SURFACE_WORLD_OFFSET_META, horizontal_offset)
 		body.set_meta(
 			SurfaceMapScript.TERRAIN_SURFACE_OVERRIDE_RECTS_META,
 			terrain_def.call("surface_override_rects")

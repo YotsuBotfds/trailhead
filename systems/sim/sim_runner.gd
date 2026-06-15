@@ -4,6 +4,7 @@ extends Node
 const DEFAULT_TARGET: Vector3 = Vector3(3.0, 0.0, 0.0)
 const CEDAR_ROUTE_PATH: String = "res://data/routes/cedar_hollow.tres"
 const CEDAR_TERRAIN_DEF_PATH: String = "res://data/terrain/cedar_hollow_terrain_def.tres"
+const ZION_TERRAIN_DEF_PATH: String = "res://data/terrain/cedar_hollow_zion_terrain_def.tres"
 const CEDAR_COLLISION_BODY_NAME: String = "cedar_hollow_heightmap_collision"
 const INVALID_COLLISION_TILE: Vector2i = Vector2i(2147483647, 2147483647)
 const CedarHollowSceneResource: PackedScene = preload("res://scenes/cedar_hollow.tscn")
@@ -655,6 +656,9 @@ func _setup_flat_scene() -> void:
 	if _scene_id == FlatWorldBuilderScript.TERRAIN_SURFACE_MAP_PROBE_SCENE_ID:
 		FlatWorldBuilderScript.build_terrain_surface_map_probe_collision(self)
 		return
+	if _scene_id == FlatWorldBuilderScript.ZION_TERRAIN_SURFACE_MAP_PROBE_SCENE_ID:
+		FlatWorldBuilderScript.build_zion_terrain_surface_map_probe_collision(self)
+		return
 	FlatWorldBuilderScript.build_collision(self)
 
 
@@ -852,15 +856,20 @@ func _setup_surface_map() -> bool:
 	_surface_map = SurfaceMapScript.new()
 	_surface_map.name = "SurfaceMap"
 	add_child(_surface_map)
-	if _uses_cedar_terrain_surface_map():
-		if not bool(_surface_map.call("configure_terrain_def", CEDAR_TERRAIN_DEF_PATH)):
-			_finish_runner_error("Failed to configure Cedar terrain surface map")
+	var terrain_def_path: String = _terrain_surface_def_path_for_scene()
+	if not terrain_def_path.is_empty():
+		if not bool(_surface_map.call("configure_terrain_def", terrain_def_path)):
+			_finish_runner_error("Failed to configure terrain surface map: " + terrain_def_path)
 			return false
 	return true
 
 
-func _uses_cedar_terrain_surface_map() -> bool:
-	return _scene_id == TerrainBuilderScript.CEDAR_SCENE_ID or _scene_id == FlatWorldBuilderScript.TERRAIN_SURFACE_MAP_PROBE_SCENE_ID
+func _terrain_surface_def_path_for_scene() -> String:
+	if _scene_id == TerrainBuilderScript.CEDAR_SCENE_ID or _scene_id == FlatWorldBuilderScript.TERRAIN_SURFACE_MAP_PROBE_SCENE_ID:
+		return CEDAR_TERRAIN_DEF_PATH
+	if _scene_id == TerrainBuilderScript.CEDAR_HOLLOW_10M_SCENE_ID or _scene_id == FlatWorldBuilderScript.ZION_TERRAIN_SURFACE_MAP_PROBE_SCENE_ID:
+		return ZION_TERRAIN_DEF_PATH
+	return ""
 
 
 func _setup_offtrail_escape_scene() -> void:
@@ -1300,6 +1309,7 @@ func _finish(passed: bool) -> void:
 			"landmark_event_sequence": _landmark_event_sequence,
 			"surface_contact_ticks": _surface_contact_ticks,
 			"surface_source_counts": _surface_source_counts(),
+			"terrain_surface_id_counts": _terrain_surface_id_counts(),
 			"vehicle_contamination": _final_vehicle_contamination,
 			"max_vehicle_contamination": _max_vehicle_contamination_dictionary(),
 			"avg_speed_by_surface": _surface_average_dictionary(_surface_speed_sum),
@@ -1737,6 +1747,12 @@ func _surface_source_counts() -> Dictionary:
 	if _surface_map == null:
 		return {}
 	return _surface_map.call("source_counts")
+
+
+func _terrain_surface_id_counts() -> Dictionary:
+	if _surface_map == null:
+		return {}
+	return _surface_map.call("terrain_id_counts")
 
 
 func _surface_sequence_contains(expected: Array[String]) -> bool:

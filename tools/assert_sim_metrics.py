@@ -80,6 +80,7 @@ def main():
     parser.add_argument("--metric-max", action="append", default=[], type=parse_minimum, metavar="METRIC:MAX_VALUE")
     parser.add_argument("--metric-near", action="append", default=[], type=parse_near, metavar="METRIC:EXPECTED:TOLERANCE")
     parser.add_argument("--source-min", action="append", default=[], type=parse_minimum, metavar="SOURCE:MIN_VALUE")
+    parser.add_argument("--terrain-id-min", action="append", default=[], type=parse_minimum, metavar="ID:MIN_VALUE")
     args = parser.parse_args()
 
     errors = []
@@ -181,6 +182,22 @@ def main():
             continue
         if actual < minimum:
             errors.append(f"surface source {source_id} count {actual:g} < {minimum:g}")
+
+    terrain_id_counts = metrics.get("terrain_surface_id_counts", {})
+    if not isinstance(terrain_id_counts, dict):
+        errors.append("metrics.terrain_surface_id_counts is not an object")
+        terrain_id_counts = {}
+    for terrain_id, minimum in args.terrain_id_min:
+        terrain_id_key = str(int(terrain_id))
+        actual = as_number(
+            terrain_id_counts.get(terrain_id_key, 0.0),
+            f"terrain surface ID {terrain_id_key} count",
+            errors,
+        )
+        if actual is None:
+            continue
+        if actual < minimum:
+            errors.append(f"terrain surface ID {terrain_id_key} count {actual:g} < {minimum:g}")
 
     if errors:
         print(f"fail: {args.path}")
