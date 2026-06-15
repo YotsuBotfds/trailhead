@@ -20,6 +20,15 @@ EXPECTED_TNM_10M_SOURCE_URL = (
     "https://prd-tnm.s3.amazonaws.com/StagedProducts/Elevation/13/TIFF/current/"
     "n38w113/USGS_13_n38w113.tif"
 )
+EXPECTED_TILE_COLS = 55
+EXPECTED_TILE_ROWS = 57
+EXPECTED_TILE_COUNT = EXPECTED_TILE_COLS * EXPECTED_TILE_ROWS
+EXPECTED_OUTPUT_ROLES = {
+    "heightmap_bin": EXPECTED_TILE_COUNT,
+    "tile_sidecar": EXPECTED_TILE_COUNT,
+    "collision_resource": EXPECTED_TILE_COUNT,
+    "terrain_def": 1,
+}
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -81,6 +90,8 @@ def _check_input_manifest(path: Path) -> None:
 
 
 def _check_output_manifest(path: Path) -> None:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    _check_output_shape(path, data)
     _check_manifest(path, base_dir=ROOT)
 
 
@@ -122,6 +133,30 @@ def _manifest_entries(data: dict[str, Any]) -> list[tuple[str, str]]:
             for filename, sha in values.items():
                 entries.append((str(filename), str(sha)))
     return entries
+
+
+def _check_output_shape(path: Path, data: dict[str, Any]) -> None:
+    if data.get("region_id") != "cedar_hollow_zion":
+        raise ValueError(str(path.relative_to(ROOT)) + " region_id must be cedar_hollow_zion")
+    if data.get("tile_grid") != [EXPECTED_TILE_COLS, EXPECTED_TILE_ROWS]:
+        raise ValueError(str(path.relative_to(ROOT)) + " tile_grid must be [55, 57]")
+    files = data.get("files", [])
+    if not isinstance(files, list):
+        raise ValueError(str(path.relative_to(ROOT)) + " files must be a list")
+    roles: dict[str, int] = {}
+    for entry in files:
+        if not isinstance(entry, dict):
+            raise ValueError(str(path.relative_to(ROOT)) + " file entry must be an object")
+        role = str(entry.get("role", ""))
+        roles[role] = roles.get(role, 0) + 1
+        _require_sha256(entry, "sha256", "output file")
+    for role, expected_count in EXPECTED_OUTPUT_ROLES.items():
+        actual_count = roles.get(role, 0)
+        if actual_count != expected_count:
+            raise ValueError(role + " count " + str(actual_count) + " != " + str(expected_count))
+    expected_total = sum(EXPECTED_OUTPUT_ROLES.values())
+    if len(files) != expected_total:
+        raise ValueError("output manifest file count " + str(len(files)) + " != " + str(expected_total))
 
 
 def _require_sha256(data: dict[str, Any], key: str, label: str) -> None:
