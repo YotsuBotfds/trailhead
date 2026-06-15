@@ -12,3 +12,5 @@ printf 'run: logbook entry fixture\n'
 python3 tools/logbook_entry_fixture.py
 printf 'run: frequency livery fixture\n'
 python3 tools/frequency_livery_fixture.py
+printf 'run: mud key fixture\n'
+python3 tools/mud_key_fixture.py
