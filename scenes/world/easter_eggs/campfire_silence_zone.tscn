@@ -1,0 +1,20 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://systems/render/campfire_silence_zone.gd" id="1_silence"]
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_zone"]
+radius = 5.0
+
+[node name="CampfireSilenceZone" type="Area3D"]
+position = Vector3(-1.4, 0.08, -34.2)
+script = ExtResource("1_silence")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+shape = SubResource("SphereShape3D_zone")
+
+[node name="PropRoot" type="Node3D" parent="."]
+
+[node name="ColdSmoke" type="GPUParticles3D" parent="."]
+position = Vector3(0, 0.08, 0)
+amount = 12
+lifetime = 3.0
