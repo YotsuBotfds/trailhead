@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://tools/spike_1km_render_inspector.gd" id="1_inspector"]
+
+[node name="Spike1KmRenderInspector" type="Node"]
+script = ExtResource("1_inspector")

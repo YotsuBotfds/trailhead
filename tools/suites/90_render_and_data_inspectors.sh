@@ -16,5 +16,8 @@ printf 'run: terrain surface palette\n'
 printf 'run: terrain surface sampler\n'
 "$godot_bin" --headless --path . res://tools/terrain_surface_sampler_inspector.tscn
 
+printf 'run: spike 1km render LOD\n'
+"$godot_bin" --headless --path . res://tools/spike_1km_render_inspector.tscn
+
 printf 'run: data resources\n'
 "$godot_bin" --headless --path . res://tools/data_resource_inspector.tscn
