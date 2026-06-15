@@ -62,6 +62,7 @@ const FLOAT_EPSILON: float = 0.001
 const LIGHTING_BAR_TOLERANCE: float = 0.01
 const LIGHTING_BAR_COLOR_TOLERANCE: float = 0.02
 const GROUND_DETAIL_MATERIAL_TOLERANCE: float = 0.05
+const FOLIAGE_SHADER_TOLERANCE: float = 0.01
 const MUD_PATCH_ALPHA_MIN: float = 0.45
 const MUD_PATCH_ALPHA_MAX: float = 0.65
 const MUD_PATCH_ROUGHNESS_MIN: float = 0.85
@@ -69,6 +70,12 @@ const MUD_PATCH_ROUGHNESS_MAX: float = 0.99
 const PUDDLE_SHEEN_ROUGHNESS_MIN: float = 0.10
 const PUDDLE_SHEEN_ROUGHNESS_MAX: float = 0.35
 const WET_GLINT_RED_MIN: float = 0.5
+const GRASS_BASE_RED_MAX: float = 0.15
+const GRASS_BASE_GREEN_MIN: float = 0.12
+const GRASS_BASE_BLUE_MAX: float = 0.10
+const GRASS_TIP_RED_MIN: float = 0.35
+const GRASS_TIP_GREEN_MIN: float = 0.50
+const VISUAL_BAR_LIGHTING_SPEC_VERSION: int = 1
 const DUSK_SUN_ENERGY_MIN: float = 2.0
 const DUSK_SUN_ENERGY_MAX: float = 2.6
 const GRADE_SATURATION_MIN: float = 1.20
@@ -296,6 +303,7 @@ func _inspect() -> void:
 		_require_named_count(scatter_root, "pinecone_", EXPECTED_PINECONES)
 		_require_named_count(scatter_root, "fern_clump_", EXPECTED_FERN_CLUMPS)
 		_require_named_count(scatter_root, "cattail_", EXPECTED_CATTAILS)
+		_inspect_foliage_bar(scatter_root, "Cedar")
 		_inspect_scatter_layout(scatter_root)
 		_inspect_scatter_visibility_ranges(scatter_root)
 		_inspect_chase_capture_clearance(scatter_root)
@@ -975,6 +983,95 @@ func _inspect_chase_capture_clearance(scatter_root: Node) -> void:
 		var lateral: float = absf(delta.x * forward_xz.y - delta.y * forward_xz.x)
 		if lateral < CHASE_CLEAR_CORRIDOR_HALF_WIDTH:
 			_errors.append("ScatterVisuals/" + String(child.name) + " blocks the crossing chase QA corridor")
+
+
+func _inspect_foliage_bar(scatter_root: Node, context: String) -> void:
+	if GameConfig.visual_bar_lighting_spec_version != VISUAL_BAR_LIGHTING_SPEC_VERSION:
+		_errors.append(context + " visual_bar_lighting_spec_version expected " + str(VISUAL_BAR_LIGHTING_SPEC_VERSION) + ", got " + str(GameConfig.visual_bar_lighting_spec_version))
+	var grass_tuft_count: int = 0
+	var grass_clump_count: int = 0
+	for child: Node in scatter_root.get_children():
+		var child_name: String = String(child.name)
+		if child_name.begins_with("grass_tuft_"):
+			grass_tuft_count += 1
+		if _is_scatter_grass_child(child_name):
+			grass_clump_count += 1
+			_require_grass_clump_visual_bar(child, context + " ScatterVisuals/" + child_name)
+	if grass_tuft_count < GameConfig.grass_clump_count:
+		_errors.append(context + " ScatterVisuals grass_tuft_* count expected at least " + str(GameConfig.grass_clump_count) + ", got " + str(grass_tuft_count))
+	if grass_clump_count <= 0:
+		_errors.append(context + " ScatterVisuals should contain grass clump MultiMeshInstance3D nodes")
+	_require_scatter_spot_visibility(scatter_root, "boulder_1", context)
+	_require_scatter_spot_visibility(scatter_root, "fern_clump_1", context)
+
+
+func _require_grass_clump_visual_bar(child: Node, label: String) -> void:
+	var clump: MultiMeshInstance3D = child as MultiMeshInstance3D
+	if clump == null:
+		_errors.append(label + " should be a MultiMeshInstance3D")
+		return
+	_require_float_close(label + " visibility range", clump.visibility_range_end, GameConfig.vis_range_grass, FLOAT_EPSILON)
+	var material: ShaderMaterial = clump.material_override as ShaderMaterial
+	if material == null:
+		_errors.append(label + " should use ShaderMaterial material_override")
+		return
+	if material.shader == null:
+		_errors.append(label + " should have a grass shader")
+		return
+	var base_color: Color = _require_shader_color_parameter(material, "blade_base_color", label)
+	if base_color.r >= GRASS_BASE_RED_MAX + FOLIAGE_SHADER_TOLERANCE:
+		_errors.append(label + " blade_base_color.r expected below " + str(GRASS_BASE_RED_MAX) + ", got " + str(base_color.r))
+	if base_color.g <= GRASS_BASE_GREEN_MIN - FOLIAGE_SHADER_TOLERANCE:
+		_errors.append(label + " blade_base_color.g expected above " + str(GRASS_BASE_GREEN_MIN) + ", got " + str(base_color.g))
+	if base_color.b >= GRASS_BASE_BLUE_MAX + FOLIAGE_SHADER_TOLERANCE:
+		_errors.append(label + " blade_base_color.b expected below " + str(GRASS_BASE_BLUE_MAX) + ", got " + str(base_color.b))
+	var tip_color: Color = _require_shader_color_parameter(material, "blade_tip_color", label)
+	if tip_color.r <= GRASS_TIP_RED_MIN - FOLIAGE_SHADER_TOLERANCE:
+		_errors.append(label + " blade_tip_color.r expected above " + str(GRASS_TIP_RED_MIN) + ", got " + str(tip_color.r))
+	if tip_color.g <= GRASS_TIP_GREEN_MIN - FOLIAGE_SHADER_TOLERANCE:
+		_errors.append(label + " blade_tip_color.g expected above " + str(GRASS_TIP_GREEN_MIN) + ", got " + str(tip_color.g))
+	var backlight_color: Color = _require_shader_color_parameter(material, "backlight_color", label)
+	_require_color_close(label + " backlight_color", backlight_color, GameConfig.grass_backlight_color, FOLIAGE_SHADER_TOLERANCE)
+	var backlight_energy: float = _require_shader_float_parameter(material, "backlight_energy", label)
+	if GameConfig.grass_backlight_enabled:
+		if backlight_energy <= 0.0:
+			_errors.append(label + " backlight_energy should be positive when grass backlight is enabled")
+		_require_float_close(label + " backlight_energy", backlight_energy, maxf(GameConfig.grass_backlight_energy, 0.0), FOLIAGE_SHADER_TOLERANCE)
+	else:
+		_require_float_close(label + " backlight_energy", backlight_energy, 0.0, FOLIAGE_SHADER_TOLERANCE)
+	var wind_strength: float = _require_shader_float_parameter(material, "wind_strength", label)
+	if GameConfig.grass_wind_enabled:
+		if wind_strength <= 0.0:
+			_errors.append(label + " wind_strength should be positive when grass wind is enabled")
+		_require_float_close(label + " wind_strength", wind_strength, maxf(GameConfig.grass_wind_strength, 0.0), FOLIAGE_SHADER_TOLERANCE)
+	else:
+		_require_float_close(label + " wind_strength", wind_strength, 0.0, FOLIAGE_SHADER_TOLERANCE)
+	var wind_speed: float = _require_shader_float_parameter(material, "wind_speed", label)
+	_require_float_close(label + " wind_speed", wind_speed, maxf(GameConfig.grass_wind_speed, 0.0), FOLIAGE_SHADER_TOLERANCE)
+
+
+func _require_shader_color_parameter(material: ShaderMaterial, parameter_name: String, label: String) -> Color:
+	var value: Variant = material.get_shader_parameter(parameter_name)
+	if not (value is Color):
+		_errors.append(label + " shader parameter " + parameter_name + " should be Color")
+		return Color.TRANSPARENT
+	var color_value: Color = value
+	return color_value
+
+
+func _require_shader_float_parameter(material: ShaderMaterial, parameter_name: String, label: String) -> float:
+	var value: Variant = material.get_shader_parameter(parameter_name)
+	if not (value is float) and not (value is int):
+		_errors.append(label + " shader parameter " + parameter_name + " should be float")
+		return 0.0
+	return float(value)
+
+
+func _require_scatter_spot_visibility(scatter_root: Node, node_name: String, context: String) -> void:
+	var node: Node = _require_node(scatter_root, node_name)
+	if node == null:
+		return
+	_require_geometry_visibility_range(node, context + " ScatterVisuals/" + node_name, GameConfig.vis_range_scatter)
 
 
 func _inspect_ground_detail_layout(ground_detail_root: Node) -> void:
