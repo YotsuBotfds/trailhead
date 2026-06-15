@@ -23,6 +23,13 @@ TERRAIN_DEF_PATH = ROOT / "data/terrain/cedar_hollow_zion_terrain_def.tres"
 NLCD_REMAP_PATH = ROOT / "data/bake_inputs/zion_nlcd_remapped.tif"
 SURFACE_ID_PNG_PATH = ROOT / "data/terrain/cedar_hollow_zion_surface_id.png"
 NAIP_SERVICE_URL = "https://imagery.nationalmap.gov/arcgis/rest/services/USGSNAIPImagery/ImageServer"
+CATALOG_URL_NOTE = (
+    "Catalog download_url values point to earthexplorer.usgs.gov and are "
+    "informational provenance only; they are NOT used for download (those "
+    "pages require login). Actual imagery download uses the "
+    "imagery.nationalmap.gov USGSNAIPImagery ImageServer exportImage API "
+    "with no authentication."
+)
 EXPECTED_CRS = "EPSG:32612"
 CELL_SPACING_M = 1.0
 CHUNK_MAX_PIXELS = 1500
@@ -373,6 +380,7 @@ def _write_manifest(
             "grass": "ndvi >= 0.15",
         },
         "catalog": catalog_by_year,
+        "catalog_url_note": CATALOG_URL_NOTE,
         "export_requests": export_requests,
         "stats": stats,
     }
