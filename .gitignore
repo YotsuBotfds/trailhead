@@ -1,6 +1,7 @@
 .DS_Store
 .godot/
 *.gd.uid
+*.gdshader.uid
 *.tmp
 __pycache__/
 .venv/

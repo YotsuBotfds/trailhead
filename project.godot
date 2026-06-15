@@ -17,6 +17,15 @@ GameManager="*res://autoload/game_manager.gd"
 [physics]
 
 common/physics_ticks_per_second=120
+common/physics_interpolation=true
+
+[rendering]
+
+renderer/rendering_method="forward_plus"
+mesh_lod/lod_change/threshold_pixels=2.0
+shader_compiler/shader_cache/enabled=true
+shader_compiler/shader_cache/compress=true
+shader_compiler/shader_cache/use_zstd_compression=true
 
 [input]
 
