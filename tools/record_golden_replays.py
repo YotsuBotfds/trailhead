@@ -7,6 +7,7 @@ OUT_DIR = ROOT / "tests" / "out"
 GOLDEN_DIR = ROOT / "tests" / "golden"
 SAMPLE_STRIDE = 10
 FRESHNESS_INPUT_ROOTS = ("autoload", "data", "scenes", "systems", "tools")
+PRESERVED_FIXTURE_KEYS = ("collision_tiles", "spawn_from_state")
 TOLERANCES = {
     "ticks": 2,
     "position_m": 0.08,
@@ -61,6 +62,16 @@ GOLDENS = [
         "cedar_hollow_zion_watchman_grade",
         "cedar_hollow_zion_watchman_grade.json",
         "cedar_hollow_zion_watchman_grade_replay.json",
+    ),
+    (
+        "spike_1km_streamed_west_gate_to_east_gate",
+        "spike_1km_streamed_west_gate_to_east_gate.json",
+        "spike_1km_streamed_west_gate_to_east_gate_replay.json",
+    ),
+    (
+        "cedar_hollow_zion_streamed_corridor",
+        "cedar_hollow_zion_streamed_corridor.json",
+        "cedar_hollow_zion_streamed_corridor_replay.json",
     ),
 ]
 
@@ -158,6 +169,34 @@ def metric_block(metrics):
     }
 
 
+def expected_activation_ticks(metrics):
+    activation_ticks = metrics.get("activation_ticks", {})
+    if not isinstance(activation_ticks, dict):
+        return {}
+    normalized = {}
+    for key, value in activation_ticks.items():
+        key_text = str(key)
+        if not key_text or "_" not in key_text:
+            continue
+        try:
+            normalized[key_text] = int(value)
+        except (TypeError, ValueError):
+            continue
+    return {key: normalized[key] for key in sorted(normalized)}
+
+
+def preserved_fixture_metadata(output_path):
+    if not output_path.exists():
+        return {}
+    try:
+        data = json.loads(output_path.read_text())
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {key: data[key] for key in PRESERVED_FIXTURE_KEYS if key in data}
+
+
 def build_replay(name, source_path):
     data = json.loads(source_path.read_text())
     if data.get("result") != "pass":
@@ -165,13 +204,15 @@ def build_replay(name, source_path):
     telemetry = data.get("telemetry", [])
     if len(telemetry) < 2:
         raise SystemExit(f"not enough telemetry rows for {name}: {source_path}")
-    return {
+    metrics = data.get("metrics", {})
+    replay = {
         "format": "trailhead_replay_v1",
         "name": name,
         "source": str(source_path.relative_to(ROOT)),
         "scene": data.get("scene", ""),
         "controller": data.get("controller", ""),
         "scenario": data.get("scenario", ""),
+        "stream_route": data.get("stream_route", ""),
         "route_segment": data.get("route_segment", ""),
         "spawn": data.get("spawn", ""),
         "target": data.get("target", ""),
@@ -179,10 +220,14 @@ def build_replay(name, source_path):
         "ticks": int(data.get("ticks", 0)),
         "tolerances": TOLERANCES,
         "predicates": data.get("predicates", {}),
-        "metrics": metric_block(data.get("metrics", {})),
+        "metrics": metric_block(metrics),
         "samples": sampled_telemetry(telemetry),
         "inputs": [input_from_row(row) for row in telemetry[1:]],
     }
+    activation_ticks = expected_activation_ticks(metrics)
+    if activation_ticks:
+        replay["expected_activation_ticks"] = activation_ticks
+    return replay
 
 
 def main():
@@ -196,8 +241,9 @@ def main():
     assert_fresh_source_runs(source_paths)
     for name, source_name, output_name in GOLDENS:
         source_path = OUT_DIR / source_name
-        replay = build_replay(name, source_path)
         output_path = GOLDEN_DIR / output_name
+        replay = build_replay(name, source_path)
+        replay.update(preserved_fixture_metadata(output_path))
         output_path.write_text(json.dumps(replay, indent="\t") + "\n")
         print(f"wrote: {output_path.relative_to(ROOT)} ({len(replay['inputs'])} inputs)")
 

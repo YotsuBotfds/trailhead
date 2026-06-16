@@ -5,6 +5,7 @@
 	"scene": "heightmap_ramp_probe",
 	"controller": "scripted",
 	"scenario": "clip_descent",
+	"stream_route": "",
 	"route_segment": "",
 	"spawn": "heightmap_ramp_start",
 	"target": "0,0,-5.25",

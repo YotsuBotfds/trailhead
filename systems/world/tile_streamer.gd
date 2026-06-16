@@ -68,7 +68,7 @@ func set_fixed_world_position(world_position: Vector3) -> void:
 
 
 func set_worker_count_for_tests(worker_count: int) -> void:
-	_worker_count = maxi(worker_count, 1)
+	_worker_count = maxi(worker_count, 0)
 
 
 func reset() -> void:
@@ -153,6 +153,8 @@ func _physics_process(_delta: float) -> void:
 	_forget_ready_cells_outside_prefetch(desired_prefetch_cells)
 	_cancel_prefetch_builds_outside(desired_prefetch_cells)
 	_enqueue_builds_for_cells(desired_prefetch_cells)
+	if _workers.is_empty():
+		_process_build_queue_synchronously()
 	_drain_worker_results()
 	_process_loads(_last_to_load)
 
@@ -358,6 +360,12 @@ func _stall_until_ready(cell: Vector2i) -> void:
 		_drain_worker_results()
 		if _ready_flags.has(cell) or _load_failures_by_cell.has(cell):
 			return
+		if _workers.is_empty():
+			_process_build_queue_synchronously()
+			_drain_worker_results()
+			if not _ready_flags.has(cell) and not _load_failures_by_cell.has(cell):
+				_record_load_failure(cell, "TileStreamer: no workers and tile not built: " + _tile_key(cell))
+			return
 		_result_semaphore.wait()
 
 
@@ -401,6 +409,8 @@ func _build_result_less(left: Dictionary, right: Dictionary) -> bool:
 func _start_workers() -> void:
 	_stop_workers()
 	_worker_should_stop = false
+	if _worker_count == 0:
+		return
 	for _index in range(_worker_count):
 		var thread: Thread = Thread.new()
 		var start_error: Error = thread.start(Callable(self, "_worker_loop"))
@@ -422,6 +432,38 @@ func _stop_workers() -> void:
 		thread.wait_to_finish()
 	_workers.clear()
 	_worker_should_stop = false
+
+
+func _process_build_queue_synchronously() -> void:
+	while true:
+		var job: Dictionary = {}
+		_work_mutex.lock()
+		if not _build_queue.is_empty():
+			job = _build_queue.pop_front() as Dictionary
+		_work_mutex.unlock()
+
+		if job.is_empty():
+			return
+
+		var cell: Vector2i = job["cell"] as Vector2i
+		var generation: int = int(job["generation"])
+		_work_mutex.lock()
+		var should_skip: bool = _worker_should_stop or generation != _stream_generation or _cancelled_builds.has(cell)
+		_work_mutex.unlock()
+		if should_skip:
+			continue
+
+		var result: Dictionary = _load_heightmap_data(
+			cell,
+			String(job["sidecar_path"]),
+			String(job["heightmap_path"])
+		)
+		result["generation"] = generation
+
+		_work_mutex.lock()
+		if not _worker_should_stop and generation == _stream_generation and not _cancelled_builds.has(cell):
+			_result_queue.append(result)
+		_work_mutex.unlock()
 
 
 func _clear_worker_queues() -> void:

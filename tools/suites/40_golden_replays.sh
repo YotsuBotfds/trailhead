@@ -17,6 +17,7 @@ assert_golden_replay() {
 	expected_samples="$(golden_sample_count "$2")"
 	assert_metrics "$1" \
 		--predicate=golden_replay_matched \
+		--predicate=expected_activation_ticks_matched \
 		--metric-near="golden_replay.compared_samples:$expected_samples:0" \
 		--metric-min=golden_replay.compared_surface_ticks:1 \
 		--metric-min=golden_replay.compared_event_counts:4
@@ -79,6 +80,36 @@ run_watchman_grade_sim "$out_dir/golden_cedar_hollow_zion_watchman_grade.json" \
 	--stuck-window=120 \
 	--stuck-min-progress=0.02
 assert_golden_replay "$out_dir/golden_cedar_hollow_zion_watchman_grade.json" "tests/golden/cedar_hollow_zion_watchman_grade_replay.json"
+
+run_sim "$out_dir/golden_spike_1km_streamed_west_gate_to_east_gate.json" \
+	--stream-route=spike_1km_route \
+	--segment=west_gate_to_east_gate \
+	--controller=replay \
+	--replay=tests/golden/spike_1km_streamed_west_gate_to_east_gate_replay.json \
+	--stream-workers=0 \
+	--seed=12345 \
+	--max-ticks=3000 \
+	--stuck-window=240 \
+	--stuck-min-progress=0.02
+assert_golden_replay "$out_dir/golden_spike_1km_streamed_west_gate_to_east_gate.json" "tests/golden/spike_1km_streamed_west_gate_to_east_gate_replay.json"
+assert_metrics "$out_dir/golden_spike_1km_streamed_west_gate_to_east_gate.json" \
+	--predicate=expected_activation_ticks_matched \
+	--metric-min=expected_activation_ticks.compared_tiles:25
+
+run_sim "$out_dir/golden_cedar_hollow_zion_streamed_corridor.json" \
+	--stream-route=cedar_hollow_zion_stream_route \
+	--segment=stream_west_to_east \
+	--controller=replay \
+	--replay=tests/golden/cedar_hollow_zion_streamed_corridor_replay.json \
+	--stream-workers=0 \
+	--seed=12345 \
+	--max-ticks=3000 \
+	--stuck-window=240 \
+	--stuck-min-progress=0.02
+assert_golden_replay "$out_dir/golden_cedar_hollow_zion_streamed_corridor.json" "tests/golden/cedar_hollow_zion_streamed_corridor_replay.json"
+assert_metrics "$out_dir/golden_cedar_hollow_zion_streamed_corridor.json" \
+	--predicate=expected_activation_ticks_matched \
+	--metric-min=expected_activation_ticks.compared_tiles:25
 
 run_sim "$out_dir/golden_cedar_hollow_old_cedar.json" \
 	--scene=cedar_hollow \

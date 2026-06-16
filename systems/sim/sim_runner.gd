@@ -4,6 +4,7 @@ extends Node
 const DEFAULT_TARGET: Vector3 = Vector3(3.0, 0.0, 0.0)
 const CEDAR_ROUTE_PATH: String = "res://data/routes/cedar_hollow.tres"
 const SPIKE_ROUTE_PATH: String = "res://data/routes/spike_1km_route.tres"
+const ZION_STREAM_ROUTE_PATH: String = "res://data/routes/cedar_hollow_zion_stream_route.tres"
 const CEDAR_TERRAIN_DEF_PATH: String = "res://data/terrain/cedar_hollow_terrain_def.tres"
 const ZION_TERRAIN_DEF_PATH: String = "res://data/terrain/cedar_hollow_zion_terrain_def.tres"
 const CEDAR_COLLISION_BODY_NAME: String = "cedar_hollow_heightmap_collision"
@@ -134,6 +135,9 @@ var _fixture_spawn_freeze_pending: bool = false
 var _fixture_has_expected_activation_ticks: bool = false
 var _fixture_expected_activation_ticks: Dictionary[String, int] = {}
 var _activation_ticks: Dictionary[String, int] = {}
+var _streaming_enabled: bool = false
+var _streaming_route_key: String = ""
+var _streaming_region_id: String = ""
 
 
 func _ready() -> void:
@@ -143,14 +147,19 @@ func _ready() -> void:
 	_controller_id = String(_args.get("controller", "pd"))
 	_scenario_id = String(_args.get("scenario", ""))
 	_scene_id = String(_args.get("scene", "flat_plane"))
-	var route_key: String = String(_args.get("route", ""))
-	if route_key != "":
-		if not _configure_route_smoke(route_key):
+	_streaming_route_key = String(_args.get("stream-route", ""))
+	if _streaming_route_key != "":
+		if not _configure_streaming_route(_streaming_route_key):
 			return
-		_finish_route_smoke(route_key)
-		return
-	_route = _load_route(_scene_id)
-	_route_segment_id = String(_args.get("route-segment", ""))
+	else:
+		var route_key: String = String(_args.get("route", ""))
+		if route_key != "":
+			if not _configure_route_smoke(route_key):
+				return
+			_finish_route_smoke(route_key)
+			return
+		_route = _load_route(_scene_id)
+		_route_segment_id = String(_args.get("route-segment", ""))
 	if _route != null:
 		var route_errors: PackedStringArray = _route.call("validate")
 		if route_errors.size() > 0:
@@ -202,6 +211,10 @@ func _ready() -> void:
 	call_deferred("_begin_run")
 
 
+func _exit_tree() -> void:
+	_reset_streamer()
+
+
 func _begin_run() -> void:
 	_vehicle = VehicleScene.instantiate()
 	add_child(_vehicle)
@@ -211,6 +224,9 @@ func _begin_run() -> void:
 	_vehicle.call("reset_to", spawn_transform)
 	if _fixture_has_spawn_from_state and not _apply_fixture_spawn_from_state():
 		return
+	if _streaming_enabled:
+		if not await _prepare_streaming_collision(spawn_transform.origin):
+			return
 	var initial_state: RefCounted = _vehicle.call("get_state")
 	_started_flipped = bool(initial_state.get("is_flipped"))
 	var initial_basis: Basis = initial_state.get("basis")
@@ -298,6 +314,30 @@ func _configure_route_smoke(route_key: String) -> bool:
 		for point in segment_points:
 			if point is Vector3:
 				_waypoints.append(point)
+	return true
+
+
+func _configure_streaming_route(route_key: String) -> bool:
+	_streaming_enabled = true
+	_route = _load_route_by_key(route_key)
+	if _route == null:
+		_finish_runner_error("Unsupported streaming route: " + route_key)
+		return false
+	_scene_id = String(_route.get("scene_id"))
+	_streaming_region_id = _scene_id
+	if _args.has("scene") and String(_args.get("scene")) != _scene_id:
+		_finish_runner_error("Streaming route " + route_key + " owns scene " + _scene_id)
+		return false
+	var route_errors: PackedStringArray = _route.call("validate")
+	if route_errors.size() > 0:
+		_finish_runner_error("Invalid route " + _scene_id + ": " + _join_packed_strings(route_errors, "; "))
+		return false
+	var segment_arg: String = String(_args.get("segment", _args.get("route-segment", "")))
+	if segment_arg == "":
+		_finish_runner_error("Streaming route requires --segment=<index-or-id>")
+		return false
+	if not _select_route_segment(segment_arg):
+		return false
 	return true
 
 
@@ -582,6 +622,8 @@ func _load_route_by_key(route_key: String) -> Resource:
 			route_path = CEDAR_ROUTE_PATH
 		elif route_key == "spike_1km_route":
 			route_path = SPIKE_ROUTE_PATH
+		elif route_key == "cedar_hollow_zion_stream_route":
+			route_path = ZION_STREAM_ROUTE_PATH
 		elif route_key.ends_with(".tres"):
 			route_path = "res://data/routes/" + route_key
 		else:
@@ -705,6 +747,8 @@ func _vehicle_spawn_ray_distance() -> float:
 
 
 func _setup_flat_scene() -> void:
+	if _streaming_enabled:
+		return
 	if _scene_id == TerrainBuilderScript.CEDAR_SCENE_ID:
 		var cedar_scene: Node = CedarHollowSceneResource.instantiate()
 		cedar_scene.name = "CedarHollow"
@@ -901,6 +945,106 @@ func _vehicle_physics_body() -> RigidBody3D:
 	return _vehicle.get_node_or_null("PhysicsBody") as RigidBody3D
 
 
+func _prepare_streaming_collision(spawn_position: Vector3) -> bool:
+	var body: RigidBody3D = _vehicle_physics_body()
+	if body == null:
+		_finish_runner_error("Streaming route could not find vehicle physics body")
+		return false
+	var streamer: Node = _streamer_node()
+	if streamer == null:
+		_finish_runner_error("Streaming route requires TileStreamer autoload")
+		return false
+	body.freeze = true
+	body.sleeping = false
+	PhysicsServer3D.body_set_state(body.get_rid(), PhysicsServer3D.BODY_STATE_SLEEPING, false)
+	var worker_count: int = int(_args.get("stream-workers", _args.get("tile-stream-workers", 1)))
+	streamer.call("set_worker_count_for_tests", worker_count)
+	streamer.call("configure_region", _streaming_region_id, body)
+	var primed: bool = await _wait_for_streaming_active_set(streamer, spawn_position)
+	body.freeze = false
+	body.sleeping = false
+	PhysicsServer3D.body_set_state(body.get_rid(), PhysicsServer3D.BODY_STATE_SLEEPING, false)
+	if not primed:
+		return false
+	return true
+
+
+func _wait_for_streaming_active_set(streamer: Node, spawn_position: Vector3) -> bool:
+	var expected_cells: Array[Vector2i] = _streamer_expected_active_cells(streamer, spawn_position)
+	var timeout_ticks: int = maxi(int(_args.get("stream-prime-timeout", 120)), 1)
+	for _i in range(timeout_ticks):
+		await get_tree().physics_frame
+		var failures: Dictionary = _streamer_load_failures(streamer)
+		if not failures.is_empty():
+			_finish_runner_error("TileStreamer load failures before run: " + _streamer_failures_string(failures))
+			return false
+		var active_cells: Array[Vector2i] = _streamer_active_cells(streamer)
+		if _tile_arrays_equal(active_cells, expected_cells):
+			return true
+	_finish_runner_error(
+		"TileStreamer prime timed out for "
+		+ _streaming_region_id
+		+ ": expected "
+		+ _tile_array_string(expected_cells)
+		+ " got "
+		+ _tile_array_string(_streamer_active_cells(streamer))
+	)
+	return false
+
+
+func _streamer_node() -> Node:
+	return get_node_or_null("/root/TileStreamer")
+
+
+func _streamer_expected_active_cells(streamer: Node, world_position: Vector3) -> Array[Vector2i]:
+	var cells: Array[Vector2i] = []
+	var value: Variant = streamer.call("expected_active_cells_for_position", world_position)
+	if value is Array:
+		var array_value: Array = value
+		for cell_value in array_value:
+			if cell_value is Vector2i:
+				cells.append(cell_value)
+	return _sorted_tiles(cells)
+
+
+func _streamer_active_cells(streamer: Node) -> Array[Vector2i]:
+	var cells: Array[Vector2i] = []
+	var value: Variant = streamer.call("active_cells")
+	if value is Array:
+		var array_value: Array = value
+		for cell_value in array_value:
+			if cell_value is Vector2i:
+				cells.append(cell_value)
+	return _sorted_tiles(cells)
+
+
+func _streamer_load_failures(streamer: Node) -> Dictionary:
+	var value: Variant = streamer.call("load_failures")
+	if value is Dictionary:
+		return value
+	return {}
+
+
+func _streamer_failures_string(failures: Dictionary) -> String:
+	var parts: Array[String] = []
+	for key_value in failures.keys():
+		if key_value is Vector2i:
+			var cell: Vector2i = key_value
+			parts.append(_tile_string(cell) + ": " + String(failures[key_value]))
+		else:
+			parts.append(String(key_value) + ": " + String(failures[key_value]))
+	parts.sort()
+	return _join_strings(parts, ", ")
+
+
+func _reset_streamer() -> void:
+	if not _streaming_enabled:
+		return
+	var streamer: Node = _streamer_node()
+	if streamer != null:
+		streamer.call("reset")
+
+
 func _sorted_tiles(tiles: Array[Vector2i]) -> Array[Vector2i]:
 	var sorted: Array[Vector2i] = tiles.duplicate()
 	sorted.sort_custom(Callable(self, "_tile_less"))
@@ -946,6 +1090,10 @@ func _setup_surface_map() -> bool:
 
 
 func _terrain_surface_def_path_for_scene() -> String:
+	if _streaming_enabled and _route != null:
+		var route_terrain_def_path: String = String(_route.get("terrain_def_path"))
+		if not route_terrain_def_path.is_empty():
+			return route_terrain_def_path
 	if _scene_id == TerrainBuilderScript.CEDAR_SCENE_ID or _scene_id == FlatWorldBuilderScript.TERRAIN_SURFACE_MAP_PROBE_SCENE_ID:
 		return CEDAR_TERRAIN_DEF_PATH
 	if _scene_id == TerrainBuilderScript.CEDAR_HOLLOW_10M_SCENE_ID or _scene_id == FlatWorldBuilderScript.ZION_TERRAIN_SURFACE_MAP_PROBE_SCENE_ID:
@@ -1324,6 +1472,7 @@ func _finish(passed: bool) -> void:
 		"scene": _scene_id,
 		"controller": _controller_id,
 		"scenario": _scenario_id,
+		"stream_route": _streaming_route_key,
 		"route_segment": _route_segment_id,
 		"spawn": _spawn_id,
 		"target": _target_id,
@@ -1405,13 +1554,17 @@ func _finish(passed: bool) -> void:
 			"stuck_window_ticks": _stuck_window_ticks,
 			"stuck_min_progress": _stuck_min_progress,
 			"activation_ticks": _sorted_string_int_dictionary(_activation_ticks),
+			"activation_tick_count": _activation_ticks.size(),
 			"expected_activation_ticks": expected_activation_ticks,
+			"streaming_enabled": _streaming_enabled,
+			"streaming_region_id": _streaming_region_id,
 			"golden_replay": golden_replay
 		},
 		"telemetry": _telemetry
 	}
 	if not _write_json(path, result):
 		return
+	_reset_streamer()
 	get_tree().quit(0 if result["result"] == "pass" else 1)
 
 
@@ -1460,6 +1613,7 @@ func _finish_runner_error(message: String) -> void:
 		"scene": _scene_id,
 		"controller": _controller_id,
 		"scenario": _scenario_id,
+		"stream_route": _streaming_route_key,
 		"route_segment": _route_segment_id,
 		"spawn": _spawn_id,
 		"target": _target_id,
@@ -1483,6 +1637,7 @@ func _finish_runner_error(message: String) -> void:
 	}
 	if not _write_json(path, result):
 		return
+	_reset_streamer()
 	get_tree().quit(2)
 
 
