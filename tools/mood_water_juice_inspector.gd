@@ -104,8 +104,8 @@ func _inspect_viewport_antialiasing() -> void:
 	if viewport == null:
 		_errors.append("Cedar scene should have a viewport for antialiasing settings")
 		return
-	if viewport.msaa_3d != Viewport.MSAA_2X:
-		_errors.append("Cedar viewport should use MSAA_2X")
+	if viewport.msaa_3d != Viewport.MSAA_DISABLED:
+		_errors.append("Cedar viewport should use MSAA_DISABLED")
 	if not viewport.use_taa:
 		_errors.append("Cedar viewport should enable TAA for SSAO/SSIL")
 

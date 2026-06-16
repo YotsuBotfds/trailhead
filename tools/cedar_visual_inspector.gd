@@ -1784,8 +1784,8 @@ func _inspect_viewport_antialiasing(host: Node, context: String) -> void:
 	if viewport == null:
 		_errors.append(context + " host should have a viewport")
 		return
-	if viewport.msaa_3d != Viewport.MSAA_2X:
-		_errors.append(context + " viewport msaa_3d expected MSAA_2X, got " + str(viewport.msaa_3d))
+	if viewport.msaa_3d != Viewport.MSAA_DISABLED:
+		_errors.append(context + " viewport msaa_3d expected MSAA_DISABLED, got " + str(viewport.msaa_3d))
 	if not viewport.use_taa:
 		_errors.append(context + " viewport should keep TAA enabled")
 
@@ -1796,8 +1796,8 @@ func _inspect_project_scaling_settings(context: String) -> void:
 	var sharpness_value: float = float(ProjectSettings.get_setting("rendering/scaling_3d/fsr_sharpness", -1.0))
 	if mode_value != 2:
 		_errors.append(context + " project scaling_3d/mode expected 2, got " + str(mode_value))
-	if absf(scale_value - 0.99) > FLOAT_EPSILON:
-		_errors.append(context + " project scaling_3d/scale expected 0.99, got " + str(scale_value))
+	if absf(scale_value - 0.71) > FLOAT_EPSILON:
+		_errors.append(context + " project scaling_3d/scale expected 0.71, got " + str(scale_value))
 	if absf(sharpness_value - 0.1) > FLOAT_EPSILON:
 		_errors.append(context + " project scaling_3d/fsr_sharpness expected 0.1, got " + str(sharpness_value))
 

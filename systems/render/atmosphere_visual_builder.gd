@@ -105,7 +105,7 @@ static func _apply_screen_space_grounding(environment: Environment) -> void:
 static func _apply_viewport_antialiasing(viewport: Viewport) -> void:
 	if viewport == null:
 		return
-	viewport.msaa_3d = Viewport.MSAA_2X
+	viewport.msaa_3d = Viewport.MSAA_DISABLED
 	viewport.use_taa = true
 
 
