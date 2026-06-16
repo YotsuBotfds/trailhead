@@ -726,11 +726,11 @@ def _write_terrain_def(config: ZionBakeConfig, collision_project_paths: list[str
         'surface_id_map_path = "res://data/terrain/cedar_hollow_zion_surface_id.png"\n'
         "collision_tile_paths = Array[String]([" + collision_paths + "])\n"
         "visual_tile_paths = Array[String]([])\n"
-        "feature_override_surface_ids = Array[StringName]([])\n"
-        "feature_override_centers = Array[Vector2]([])\n"
-        "feature_override_axes_x = Array[Vector2]([])\n"
-        "feature_override_axes_z = Array[Vector2]([])\n"
-        "feature_override_half_extents = Array[Vector2]([])\n"
+        'feature_override_surface_ids = Array[StringName]([&"slickrock_dry", &"sand_wash"])\n'
+        "feature_override_centers = Array[Vector2]([Vector2(327400.0, 4123000.0), Vector2(327650.0, 4123150.0)])\n"
+        "feature_override_axes_x = Array[Vector2]([Vector2(1.0, 0.0), Vector2(1.0, 0.0)])\n"
+        "feature_override_axes_z = Array[Vector2]([Vector2(0.0, 1.0), Vector2(0.0, 1.0)])\n"
+        "feature_override_half_extents = Array[Vector2]([Vector2(8.0, 8.0), Vector2(8.0, 8.0)])\n"
         'route_section_ids = Array[StringName]([&"cedar_hollow_zion_main"])\n'
     )
     TERRAIN_DEF_PATH.write_text(text, encoding="utf-8")
