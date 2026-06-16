@@ -1,22 +1,16 @@
 class_name CedarHollowHost
 extends Node3D
 
-const CedarHollowSceneResource: PackedScene = preload("res://scenes/cedar_hollow.tscn")
-const CedarRoute: Resource = preload("res://data/routes/cedar_hollow.tres")
-const CEDAR_TERRAIN_DEF_PATH: String = "res://data/terrain/cedar_hollow_terrain_def.tres"
-const CedarTerrainDef: Resource = preload("res://data/terrain/cedar_hollow_terrain_def.tres")
+const CedarRoute: Resource = preload("res://data/routes/cedar_hollow_zion_stream_route.tres")
+const CEDAR_TERRAIN_DEF_PATH: String = "res://data/terrain/cedar_hollow_zion_terrain_def.tres"
+const CedarTerrainDef: Resource = preload("res://data/terrain/cedar_hollow_zion_terrain_def.tres")
 const VehicleScene: PackedScene = preload("res://scenes/vehicle.tscn")
 const VehicleInputScript: GDScript = preload("res://systems/vehicle/vehicle_input.gd")
 const ChaseCameraRigScript: GDScript = preload("res://systems/render/chase_camera_rig.gd")
 const TerrainVisualBuilderScript: GDScript = preload("res://systems/render/terrain_visual_builder.gd")
-const GroundDetailVisualBuilderScript: GDScript = preload("res://systems/render/ground_detail_visual_builder.gd")
-const FeatureVisualBuilderScript: GDScript = preload("res://systems/render/feature_visual_builder.gd")
-const PropVisualBuilderScript: GDScript = preload("res://systems/render/prop_visual_builder.gd")
-const ScatterVisualBuilderScript: GDScript = preload("res://systems/render/scatter_visual_builder.gd")
-const BoundaryVisualBuilderScript: GDScript = preload("res://systems/render/boundary_visual_builder.gd")
+const TerrainVisualStreamerScript: GDScript = preload("res://systems/render/terrain_visual_streamer.gd")
 const AtmosphereVisualBuilderScript: GDScript = preload("res://systems/render/atmosphere_visual_builder.gd")
 const DustTiltShiftVisualBuilderScript: GDScript = preload("res://systems/render/dust_tilt_shift_visual_builder.gd")
-const WaterVisualBuilderScript: GDScript = preload("res://systems/render/water_visual_builder.gd")
 const ProceduralBuggyVisualScript: GDScript = preload("res://systems/render/procedural_buggy_visual.gd")
 const RenderRuntimeConfigScript: GDScript = preload("res://systems/render/render_runtime_config.gd")
 const VehicleResidueVisualScript: GDScript = preload("res://systems/render/vehicle_residue_visual.gd")
@@ -28,16 +22,17 @@ const RecoverableObjectRenderScript: GDScript = preload("res://systems/render/re
 const GoldenLineTrackerScript: GDScript = preload("res://systems/sim/golden_line_tracker.gd")
 const GoldenLineGhostScript: GDScript = preload("res://systems/render/golden_line_ghost.gd")
 const TerrainTrackVisualPainterScript: GDScript = preload("res://systems/render/terrain_track_visual_painter.gd")
-const FrequencyStickersScene: PackedScene = preload("res://scenes/world/easter_eggs/frequency_stickers.tscn")
 const FrequencyInputPanelScene: PackedScene = preload("res://ui/frequency_input_panel.tscn")
 const GrasshopperLiveryScript: GDScript = preload("res://systems/render/grasshopper_livery.gd")
-const CampfireSilenceZoneScene: PackedScene = preload("res://scenes/world/easter_eggs/campfire_silence_zone.tscn")
 const SurfaceMapScript: GDScript = preload("res://systems/world/surface_map.gd")
 const CAMERA_MODE_CHASE: int = 0
 const CAMERA_MODE_ORBIT: int = 1
 const CAMERA_MODE_FPV: int = 2
 const MOOD_DUSK: int = 0
 const MOOD_DAWN: int = 1
+const ZION_REGION_ID: String = "cedar_hollow_zion"
+const ZION_SPAWN_ID: StringName = &"stream_west"
+const WORLD_REGION_ID_META: StringName = &"trailhead_world_region_id"
 
 var _world: Node3D = null
 var _vehicle: Node = null
@@ -61,6 +56,7 @@ var _world_environment: WorldEnvironment = null
 var _sun: DirectionalLight3D = null
 var _mood: int = MOOD_DUSK
 var _terrain_track_painter: Node = null
+var _terrain_visual_streamer: Node3D = null
 var _photograph_system: Node = null
 var _recoverable_object_render: Node = null
 var _golden_line_tracker: Node = null
@@ -88,6 +84,12 @@ func _ready() -> void:
 	_setup_photograph_system()
 	_setup_hud()
 	_setup_frequency_input_panel()
+
+
+func _exit_tree() -> void:
+	var streamer: Node = get_node_or_null("/root/TileStreamer")
+	if streamer != null:
+		streamer.call("reset")
 
 
 func _physics_process(delta: float) -> void:
@@ -142,32 +144,17 @@ func _setup_surface_map() -> void:
 
 
 func _setup_world() -> void:
-	_world = CedarHollowSceneResource.instantiate() as Node3D
-	if _world == null:
-		return
+	_world = Node3D.new()
 	_world.name = "CedarHollow"
+	_world.set_meta(WORLD_REGION_ID_META, ZION_REGION_ID)
 	add_child(_world)
-	var terrain_root: Node3D = TerrainVisualBuilderScript.build_cedar_hollow(_world)
-	GroundDetailVisualBuilderScript.build_cedar_hollow(_world)
-	FeatureVisualBuilderScript.build_cedar_hollow(_world)
-	PropVisualBuilderScript.build_cedar_hollow(_world)
-	ScatterVisualBuilderScript.build_cedar_hollow(_world)
-	BoundaryVisualBuilderScript.build_cedar_hollow(_world)
-	WaterVisualBuilderScript.build_cedar_hollow(_world)
-	_add_frequency_stickers()
-	_setup_campfire_silence_zone()
-	_setup_terrain_tracks(terrain_root)
-
-
-func _add_frequency_stickers() -> void:
-	if _world == null:
+	_terrain_visual_streamer = TerrainVisualStreamerScript.new() as Node3D
+	if _terrain_visual_streamer == null:
+		push_error("CedarHollowHost failed to instantiate TerrainVisualStreamer")
 		return
-	var stickers: Node3D = FrequencyStickersScene.instantiate() as Node3D
-	if stickers == null:
-		push_error("CedarHollowHost failed to instantiate frequency stickers")
-		return
-	stickers.name = "FrequencyStickers"
-	_world.add_child(stickers)
+	_terrain_visual_streamer.name = "TerrainVisualStreamer"
+	_world.add_child(_terrain_visual_streamer)
+	_terrain_visual_streamer.call("configure_region", ZION_REGION_ID)
 
 
 func _setup_terrain_tracks(terrain_root: Node3D) -> void:
@@ -185,24 +172,27 @@ func _setup_terrain_tracks(terrain_root: Node3D) -> void:
 	TerrainVisualBuilderScript.apply_track_texture(terrain_root, track_texture, track_bounds_min, track_bounds_max)
 
 
-func _setup_campfire_silence_zone() -> void:
-	if _world == null:
-		return
-	var zone: Node3D = CampfireSilenceZoneScene.instantiate() as Node3D
-	if zone == null:
-		push_error("CedarHollowHost failed to instantiate CampfireSilenceZone")
-		return
-	_world.add_child(zone)
-
-
 func _spawn_vehicle() -> void:
 	_vehicle = VehicleScene.instantiate()
 	add_child(_vehicle)
-	_vehicle.call("reset_to", CedarRoute.call("spawn_transform", &"trailhead"))
+	_vehicle.call("reset_to", CedarRoute.call("spawn_transform", ZION_SPAWN_ID))
+	_configure_streaming_collision()
 	var visual_builder: RefCounted = ProceduralBuggyVisualScript.new()
 	visual_builder.call("attach", _vehicle)
 	_collect_visual_wheels()
 	_setup_grasshopper_livery()
+
+
+func _configure_streaming_collision() -> void:
+	var body: Node3D = _vehicle.get_node_or_null("PhysicsBody") as Node3D
+	if body == null:
+		push_error("CedarHollowHost could not configure TileStreamer without Vehicle/PhysicsBody")
+		return
+	var streamer: Node = get_node_or_null("/root/TileStreamer")
+	if streamer == null:
+		push_error("CedarHollowHost requires TileStreamer autoload for streamed Zion collision")
+		return
+	streamer.call("configure_region", ZION_REGION_ID, body)
 
 
 func _setup_grasshopper_livery() -> void:

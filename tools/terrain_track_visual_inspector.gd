@@ -9,6 +9,8 @@ const TRACK_RT_UNIFORM: StringName = &"track_rt"
 const TRACK_BOUNDS_MIN_UNIFORM: StringName = &"track_bounds_min"
 const TRACK_BOUNDS_MAX_UNIFORM: StringName = &"track_bounds_max"
 const STAMP_COLOR_UNIFORM: StringName = &"stamp_color"
+const ZION_REGION_ID: String = "cedar_hollow_zion"
+const WORLD_REGION_ID_META: StringName = &"trailhead_world_region_id"
 const FLOAT_EPSILON: float = 0.001
 const STAMP_COLOR_MATCH_EPSILON: float = 0.003
 const STAMP_COLOR_SEPARATION_EPSILON: float = 0.04
@@ -16,6 +18,7 @@ const MIN_STAMP_FOOTPRINT_PIXELS: float = 1.0
 
 var _scene_root: Node = null
 var _errors: PackedStringArray = PackedStringArray()
+var _skipped_streamed_zion_tracks: bool = false
 
 
 func _ready() -> void:
@@ -29,8 +32,18 @@ func _inspect() -> void:
 		_errors.append("failed to instantiate Cedar Hollow playable scene")
 		_finish()
 		return
-	var painter: Node = _require_node(_scene_root, "CedarHollow/TerrainTrackVisualPainter")
-	var terrain_root: Node = _require_node(_scene_root, "CedarHollow/TerrainVisuals")
+	var painter: Node = _scene_root.get_node_or_null("CedarHollow/TerrainTrackVisualPainter")
+	var terrain_root: Node = _scene_root.get_node_or_null("CedarHollow/TerrainVisuals")
+	if terrain_root == null:
+		terrain_root = _scene_root.get_node_or_null("CedarHollow/TerrainVisualStreamer/TerrainVisuals")
+	if painter == null:
+		if _is_streamed_zion_host():
+			_skipped_streamed_zion_tracks = true
+			_finish()
+			return
+		_errors.append("missing node: CedarHollow/TerrainTrackVisualPainter")
+	if terrain_root == null:
+		_errors.append("missing node: CedarHollow/TerrainVisuals")
 	if painter != null:
 		_inspect_painter_node(painter)
 		_inspect_painter_stamp_response(painter)
@@ -281,6 +294,15 @@ func _require_node(parent: Node, path: String) -> Node:
 	return node
 
 
+func _is_streamed_zion_host() -> bool:
+	if _scene_root == null:
+		return false
+	var world: Node = _scene_root.get_node_or_null("CedarHollow")
+	if world == null or not world.has_meta(WORLD_REGION_ID_META):
+		return false
+	return String(world.get_meta(WORLD_REGION_ID_META)) == ZION_REGION_ID
+
+
 func _count_collision_objects(parent: Node) -> int:
 	var count: int = 0
 	for child in parent.get_children():
@@ -301,7 +323,10 @@ func _actual_pixels_per_meter(painter: Node, viewport: SubViewport) -> float:
 
 func _finish() -> void:
 	if _errors.is_empty():
-		print("ok: terrain track painter, SubViewport RT, terrain POM fields, and track sampler are wired")
+		if _skipped_streamed_zion_tracks:
+			print("ok: streamed Zion host skips strip terrain track painter")
+		else:
+			print("ok: terrain track painter, SubViewport RT, terrain POM fields, and track sampler are wired")
 		if _scene_root != null:
 			_scene_root.queue_free()
 		await get_tree().process_frame

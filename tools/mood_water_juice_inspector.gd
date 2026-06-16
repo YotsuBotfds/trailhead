@@ -3,6 +3,8 @@ extends Node
 const CedarHollowPlayableScene: PackedScene = preload("res://scenes/cedar_hollow_playable.tscn")
 const FLOAT_EPSILON: float = 0.001
 const WATER_SHADER_PATH: String = "res://systems/render/water_visual.gdshader"
+const ZION_REGION_ID: String = "cedar_hollow_zion"
+const WORLD_REGION_ID_META: StringName = &"trailhead_world_region_id"
 const TILT_SHIFT_SHADER_PATH: String = "res://systems/render/tilt_shift.gdshader"
 const TILT_SHIFT_LAYER_NAME: String = "TiltShiftLayer"
 const TILT_SHIFT_RECT_NAME: String = "TiltShiftOverlay"
@@ -328,8 +330,11 @@ func _require_surface_burst(parent: Node, path: String) -> void:
 
 
 func _inspect_water_visuals() -> void:
-	var water_root: Node = _require_node(_scene_root, "CedarHollow/WaterVisuals")
+	var water_root: Node = _scene_root.get_node_or_null("CedarHollow/WaterVisuals")
 	if water_root == null:
+		if _is_streamed_zion_host():
+			return
+		_errors.append("missing node CedarHollow/WaterVisuals")
 		return
 	var water_count: int = 0
 	for child in water_root.get_children():
@@ -377,6 +382,15 @@ func _inspect_water_surface(water: MeshInstance3D) -> void:
 	_require_shader_float(material, "ssr_step_size", GameConfig.water_ssr_step_size, String(water.name))
 	_require_shader_float(material, "ssr_thickness", GameConfig.water_ssr_thickness, String(water.name))
 	_require_shader_float(material, "water_roughness", GameConfig.water_roughness, String(water.name))
+
+
+func _is_streamed_zion_host() -> bool:
+	if _scene_root == null:
+		return false
+	var world: Node = _scene_root.get_node_or_null("CedarHollow")
+	if world == null or not world.has_meta(WORLD_REGION_ID_META):
+		return false
+	return String(world.get_meta(WORLD_REGION_ID_META)) == ZION_REGION_ID
 
 
 func _require_shader_color(material: ShaderMaterial, parameter_name: String, expected: Color, label: String) -> void:
