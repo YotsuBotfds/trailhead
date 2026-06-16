@@ -101,6 +101,19 @@ class RegionMeshData:
 	var surfaces: Array[MeshSurfaceData] = []
 
 
+class RegionVisualTileData:
+	var ok: bool = false
+	var cell: Vector2i = Vector2i.ZERO
+	var node_name: String = ""
+	var position: Vector3 = Vector3.ZERO
+	var mesh_data: RegionMeshData = null
+	var visibility_range_end: float = 0.0
+	var visibility_radius: float = 0.0
+	var heightmap_path: String = ""
+	var surface_id_path: String = ""
+	var message: String = ""
+
+
 func _ready() -> void:
 	if name != SPIKE_1KM_SCENE_ROOT_NAME:
 		return
@@ -180,10 +193,51 @@ static func build_region_stream_root(parent: Node3D, region_id: String) -> Node3
 
 
 static func add_region_visual_tile(parent: Node3D, region_id: String, cell: Vector2i) -> MeshInstance3D:
+	var visual_tile_data: RegionVisualTileData = build_region_visual_tile_data(region_id, cell)
+	return region_visual_tile_from_data(parent, visual_tile_data, null)
+
+
+static func build_region_visual_tile_data(region_id: String, cell: Vector2i) -> RegionVisualTileData:
+	var visual_tile_data: RegionVisualTileData = RegionVisualTileData.new()
+	visual_tile_data.cell = cell
+
 	var tile_data: RegionTileData = _load_region_tile(region_id, cell)
 	if tile_data == null:
+		visual_tile_data.message = "visual tile failed to load: " + region_id + " " + str(cell)
+		return visual_tile_data
+
+	var tile_origin_xz: Vector2 = _tile_origin_xz(tile_data)
+	visual_tile_data.node_name = region_detail_tile_node_name(region_id, tile_data.cell)
+	visual_tile_data.position = Vector3(tile_origin_xz.x, 0.0, tile_origin_xz.y)
+	visual_tile_data.mesh_data = build_region_mesh_data([tile_data], REGION_DETAIL_SAMPLE_STEP, tile_data.key + "_terrain_detail_mesh", tile_origin_xz)
+	visual_tile_data.visibility_range_end = _detail_visibility_range_end(tile_data)
+	visual_tile_data.visibility_radius = _tile_visibility_radius(tile_data)
+	visual_tile_data.heightmap_path = tile_data.heightmap_path
+	visual_tile_data.surface_id_path = tile_data.surface_id_path
+	visual_tile_data.ok = visual_tile_data.mesh_data != null and visual_tile_data.mesh_data.surfaces.size() > 0
+	if not visual_tile_data.ok:
+		visual_tile_data.message = "visual tile mesh had no surfaces: " + region_id + " " + str(cell)
+	return visual_tile_data
+
+
+static func region_visual_tile_from_data(parent: Node3D, visual_tile_data: RegionVisualTileData, hlod_instance: MeshInstance3D) -> MeshInstance3D:
+	if visual_tile_data == null or not visual_tile_data.ok or visual_tile_data.mesh_data == null:
 		return null
-	return _add_region_detail_tile(parent, region_id, tile_data, null)
+	var instance: MeshInstance3D = MeshInstance3D.new()
+	instance.name = visual_tile_data.node_name
+	instance.position = visual_tile_data.position
+	instance.mesh = region_mesh_from_data(visual_tile_data.mesh_data)
+	instance.visibility_range_end = visual_tile_data.visibility_range_end
+	instance.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
+	instance.set_meta(REGION_LOD_META, "detail")
+	instance.set_meta(VISIBILITY_RADIUS_META, visual_tile_data.visibility_radius)
+	instance.set_meta(TILE_INDEX_META, visual_tile_data.cell)
+	instance.set_meta(TILE_PATH_META, visual_tile_data.heightmap_path)
+	instance.set_meta(TILE_SURFACE_ID_PATH_META, visual_tile_data.surface_id_path)
+	parent.add_child(instance)
+	if hlod_instance != null:
+		instance.visibility_parent = instance.get_path_to(hlod_instance)
+	return instance
 
 
 static func visual_tile_node_name(tile_index: Vector2i, tile_path: String, tile_array_index: int) -> String:

@@ -6,6 +6,7 @@ const REGION_ID: String = "spike_1km"
 const FIRST_CELL: Vector2i = Vector2i(2, 2)
 const SECOND_CELL: Vector2i = Vector2i(2, 3)
 const FLOAT_EPSILON: float = 0.001
+const WAIT_FRAMES: int = 180
 
 var _streamer: Node3D = null
 var _errors: PackedStringArray = PackedStringArray()
@@ -31,6 +32,8 @@ func _inspect() -> void:
 	_require_pipeline_warmup()
 
 	EventBus.world_tile_activated.emit(FIRST_CELL)
+	_require_cell_count("first activation before deferred commit", 0)
+	await _wait_for_cell_count("first activation", 1)
 	_require_cell_count("first activation", 1)
 	_require_cells("first activation cells", [FIRST_CELL])
 	var first_tile: MeshInstance3D = _require_visual_tile(FIRST_CELL)
@@ -51,6 +54,7 @@ func _inspect() -> void:
 	_require_cells("duplicate activation cells", [FIRST_CELL])
 
 	EventBus.world_tile_activated.emit(SECOND_CELL)
+	await _wait_for_cell_count("second activation", 2)
 	_require_cell_count("second activation", 2)
 	_require_cells("second activation cells", [FIRST_CELL, SECOND_CELL])
 	_require_visual_tile(SECOND_CELL)
@@ -65,6 +69,7 @@ func _inspect() -> void:
 	_require_cells("unknown eviction cells", [SECOND_CELL])
 
 	EventBus.world_tile_activated.emit(FIRST_CELL)
+	await _wait_for_cell_count("reactivation", 2)
 	_require_cell_count("reactivation", 2)
 	_require_cells("reactivation cells", [FIRST_CELL, SECOND_CELL])
 	var rebuilt_tile: MeshInstance3D = _require_visual_tile(FIRST_CELL)
@@ -273,6 +278,14 @@ func _require_cell_count(label: String, expected_count: int) -> void:
 	var observed_count: int = int(_streamer.call("visual_cell_count"))
 	if observed_count != expected_count:
 		_errors.append(label + " expected " + str(expected_count) + " visual cells, got " + str(observed_count))
+
+
+func _wait_for_cell_count(label: String, expected_count: int) -> void:
+	for _frame_index in range(WAIT_FRAMES):
+		if int(_streamer.call("visual_cell_count")) == expected_count:
+			return
+		await get_tree().process_frame
+	_require_cell_count(label, expected_count)
 
 
 func _require_cells(label: String, expected_cells: Array[Vector2i]) -> void:

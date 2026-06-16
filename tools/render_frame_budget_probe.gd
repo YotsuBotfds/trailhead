@@ -10,6 +10,7 @@ const CAMERA_TARGET: Vector3 = Vector3(540.0, 1.0, 245.0)
 const BASELINE_FRAMES: int = 12
 const BURST_FRAMES: int = 24
 const STEADY_FRAMES: int = 36
+const READY_WAIT_FRAMES: int = 1200
 const TARGET_FRAME_MS: float = 16.6667
 const SAMPLE_LABEL_VISIBLE: String = "visible"
 const SAMPLE_LABEL_SHADOW: String = "shadow"
@@ -100,17 +101,19 @@ func _run() -> void:
 		"phases": [],
 	}
 
-	await _sample_phase("baseline_empty_streamer", BASELINE_FRAMES, 0.0)
+	await _sample_phase("baseline_empty_streamer", BASELINE_FRAMES, 0.0, {})
 
 	var initial_cells: Array[Vector2i] = _rect_cells(Vector2i(2, 2), Vector2i(6, 6))
 	var initial_activation_ms: float = _emit_activations(initial_cells)
-	await _sample_phase("initial_25_tile_burst", BURST_FRAMES, initial_activation_ms)
+	var initial_ready_wait: Dictionary = await _wait_for_visual_cell_count("initial_25_tile_burst", 25)
+	await _sample_phase("initial_25_tile_burst", BURST_FRAMES, initial_activation_ms, initial_ready_wait)
 
 	var shifted_out_cells: Array[Vector2i] = _rect_cells(Vector2i(2, 2), Vector2i(2, 6))
 	var shifted_in_cells: Array[Vector2i] = _rect_cells(Vector2i(7, 2), Vector2i(7, 6))
 	var shift_activation_ms: float = _emit_shift(shifted_out_cells, shifted_in_cells)
-	await _sample_phase("east_shift_5_tile_burst", BURST_FRAMES, shift_activation_ms)
-	await _sample_phase("steady_streamed_window", STEADY_FRAMES, 0.0)
+	var shift_ready_wait: Dictionary = await _wait_for_visual_cell_count("east_shift_5_tile_burst", 25)
+	await _sample_phase("east_shift_5_tile_burst", BURST_FRAMES, shift_activation_ms, shift_ready_wait)
+	await _sample_phase("steady_streamed_window", STEADY_FRAMES, 0.0, {})
 
 	_result["final_visual_cells"] = int(_streamer.call("visual_cell_count"))
 	_result["active_visual_cells"] = _cells_to_arrays(_variant_to_cells(_streamer.call("active_visual_cells")))
@@ -134,7 +137,25 @@ func _emit_shift(evicted_cells: Array[Vector2i], activated_cells: Array[Vector2i
 	return _usec_to_ms(Time.get_ticks_usec() - start_usec)
 
 
-func _sample_phase(phase_name: String, frame_count: int, activation_cpu_ms: float) -> void:
+func _wait_for_visual_cell_count(label: String, expected_count: int) -> Dictionary:
+	var start_usec: int = Time.get_ticks_usec()
+	var frames: int = 0
+	while int(_streamer.call("visual_cell_count")) < expected_count and frames < READY_WAIT_FRAMES:
+		frames += 1
+		await get_tree().process_frame
+	var wait_ms: float = _usec_to_ms(Time.get_ticks_usec() - start_usec)
+	var observed_count: int = int(_streamer.call("visual_cell_count"))
+	if observed_count < expected_count:
+		_errors.append(label + " expected " + str(expected_count) + " visual cells before sampling, got " + str(observed_count))
+	return {
+		"frames": frames,
+		"wall_ms": wait_ms,
+		"expected_visual_cells": expected_count,
+		"observed_visual_cells": observed_count,
+	}
+
+
+func _sample_phase(phase_name: String, frame_count: int, activation_cpu_ms: float, ready_wait: Dictionary) -> void:
 	var viewport_rid: RID = get_viewport().get_viewport_rid()
 	var wall_ms: Array[float] = []
 	var viewport_cpu_ms: Array[float] = []
@@ -179,6 +200,7 @@ func _sample_phase(phase_name: String, frame_count: int, activation_cpu_ms: floa
 		"name": phase_name,
 		"frames": frame_count,
 		"activation_cpu_ms": activation_cpu_ms,
+		"activation_ready_wait": ready_wait,
 		"active_visual_cells": int(_streamer.call("visual_cell_count")),
 		"viewport_gpu_timing_available": _has_positive_value(viewport_gpu_ms),
 		"timing_ms": {

@@ -1,18 +1,29 @@
 extends Node3D
 
 const TerrainVisualBuilderScript: GDScript = preload("res://systems/render/terrain_visual_builder.gd")
+const DEFAULT_WORKER_COUNT: int = 8
 
 var _region_id: String = ""
 var _visual_root: Node3D = null
 var _detail_root: Node3D = null
 var _stream_generation: int = 0
+var _worker_count: int = DEFAULT_WORKER_COUNT
 var _configured: bool = false
 var _events_connected: bool = false
 var _visual_tiles_by_cell: Dictionary[Vector2i, Node3D] = {}
 var _load_failures_by_cell: Dictionary[Vector2i, String] = {}
+var _queued_builds: Dictionary[Vector2i, bool] = {}
+var _cancelled_builds: Dictionary[Vector2i, bool] = {}
+var _workers: Array[Thread] = []
+var _work_mutex: Mutex = Mutex.new()
+var _work_semaphore: Semaphore = Semaphore.new()
+var _worker_should_stop: bool = false
+var _build_queue: Array[Variant] = []
+var _result_queue: Array[Variant] = []
 
 
 func _ready() -> void:
+	set_process(false)
 	if _configured:
 		_ensure_event_connections()
 
@@ -34,15 +45,28 @@ func configure_region(new_region_id: String) -> void:
 		_configured = false
 		return
 	_ensure_event_connections()
+	_start_workers()
+	set_process(true)
+
+
+func set_worker_count_for_tests(worker_count: int) -> void:
+	_worker_count = maxi(worker_count, 0)
+	if _configured:
+		_start_workers()
 
 
 func reset_stream() -> void:
+	set_process(false)
+	_stop_workers()
 	_stream_generation += 1
 	_disconnect_event_connections()
 	for cell in _sorted_cells(_visual_tiles_by_cell.keys()):
 		_free_visual_cell(cell)
 	_visual_tiles_by_cell.clear()
 	_load_failures_by_cell.clear()
+	_queued_builds.clear()
+	_cancelled_builds.clear()
+	_clear_worker_queues()
 	_configured = false
 	_region_id = ""
 	_detail_root = null
@@ -50,6 +74,14 @@ func reset_stream() -> void:
 		remove_child(_visual_root)
 		_visual_root.queue_free()
 		_visual_root = null
+
+
+func _process(_delta: float) -> void:
+	if not _configured:
+		return
+	if _workers.is_empty():
+		_process_build_queue_synchronously()
+	_drain_worker_results()
 
 
 func active_visual_cells() -> Array[Vector2i]:
@@ -102,12 +134,87 @@ func _on_world_tile_activated(cell: Vector2i) -> void:
 		return
 	if _visual_tiles_by_cell.has(cell):
 		return
-	var generation: int = _stream_generation
-	var visual_tile: MeshInstance3D = TerrainVisualBuilderScript.add_region_visual_tile(_detail_root, _region_id, cell)
-	if generation != _stream_generation:
-		if visual_tile != null:
-			visual_tile.queue_free()
+	if _queued_builds.has(cell):
 		return
+	_enqueue_build(cell)
+	if _workers.is_empty():
+		_process_build_queue_synchronously()
+		_drain_worker_results()
+
+
+func _on_world_tile_evicted(cell: Vector2i) -> void:
+	if not _configured:
+		return
+	_cancel_build(cell)
+	_free_visual_cell(cell)
+	_load_failures_by_cell.erase(cell)
+
+
+func _enqueue_build(cell: Vector2i) -> void:
+	if _visual_tiles_by_cell.has(cell):
+		return
+	if _queued_builds.has(cell):
+		return
+	if _load_failures_by_cell.has(cell):
+		return
+	_queued_builds[cell] = true
+	var job: Dictionary = {
+		"cell": cell,
+		"generation": _stream_generation,
+		"region_id": _region_id,
+	}
+	_work_mutex.lock()
+	_cancelled_builds.erase(cell)
+	_build_queue.append(job)
+	_work_mutex.unlock()
+	_work_semaphore.post()
+
+
+func _cancel_build(cell: Vector2i) -> void:
+	if not _queued_builds.has(cell):
+		return
+	_queued_builds.erase(cell)
+	_work_mutex.lock()
+	_cancelled_builds[cell] = true
+	_work_mutex.unlock()
+
+
+func _drain_worker_results() -> void:
+	var results: Array[Dictionary] = []
+	_work_mutex.lock()
+	for result in _result_queue:
+		results.append(result)
+	_result_queue.clear()
+	_work_mutex.unlock()
+
+	results.sort_custom(Callable(self, "_build_result_less"))
+	for result in results:
+		var cell: Vector2i = result["cell"] as Vector2i
+		var generation: int = int(result["generation"])
+		if generation != _stream_generation:
+			continue
+		_work_mutex.lock()
+		var was_cancelled: bool = _cancelled_builds.has(cell)
+		if was_cancelled:
+			_cancelled_builds.erase(cell)
+		_work_mutex.unlock()
+		if was_cancelled:
+			continue
+		if not _queued_builds.has(cell):
+			continue
+		_queued_builds.erase(cell)
+		if not bool(result["ok"]):
+			_record_load_failure(cell, String(result["message"]))
+			continue
+		_commit_visual_tile(cell, result["visual_tile_data"])
+
+
+func _commit_visual_tile(cell: Vector2i, visual_tile_data: Variant) -> void:
+	if _detail_root == null:
+		return
+	if _visual_tiles_by_cell.has(cell):
+		return
+	var visual_tile: MeshInstance3D = TerrainVisualBuilderScript.region_visual_tile_from_data(_detail_root, visual_tile_data, null)
 	if visual_tile == null:
 		_load_failures_by_cell[cell] = "visual tile failed to load"
 		return
@@ -115,11 +222,128 @@ func _on_world_tile_activated(cell: Vector2i) -> void:
 	_load_failures_by_cell.erase(cell)
 
 
-func _on_world_tile_evicted(cell: Vector2i) -> void:
-	if not _configured:
+func _record_load_failure(cell: Vector2i, message: String) -> void:
+	if _load_failures_by_cell.has(cell):
 		return
-	_free_visual_cell(cell)
-	_load_failures_by_cell.erase(cell)
+	_load_failures_by_cell[cell] = message
+	push_error(message)
+
+
+func _build_result_less(left: Dictionary, right: Dictionary) -> bool:
+	var left_cell: Vector2i = left["cell"] as Vector2i
+	var right_cell: Vector2i = right["cell"] as Vector2i
+	return _cell_less(left_cell, right_cell)
+
+
+func _start_workers() -> void:
+	_stop_workers()
+	_worker_should_stop = false
+	if _worker_count == 0:
+		return
+	for _index in range(_worker_count):
+		var thread: Thread = Thread.new()
+		var start_error: Error = thread.start(Callable(self, "_worker_loop"))
+		if start_error != OK:
+			push_error("TerrainVisualStreamer worker start failed: " + error_string(start_error))
+			continue
+		_workers.append(thread)
+
+
+func _stop_workers() -> void:
+	if _workers.is_empty():
+		return
+	_work_mutex.lock()
+	_worker_should_stop = true
+	_work_mutex.unlock()
+	for _index in range(_workers.size()):
+		_work_semaphore.post()
+	for thread in _workers:
+		thread.wait_to_finish()
+	_workers.clear()
+	_worker_should_stop = false
+
+
+func _process_build_queue_synchronously() -> void:
+	while true:
+		var job: Dictionary = {}
+		_work_mutex.lock()
+		if not _build_queue.is_empty():
+			job = _build_queue.pop_front() as Dictionary
+		_work_mutex.unlock()
+
+		if job.is_empty():
+			return
+
+		var result: Dictionary = _build_visual_tile_result(job)
+		_work_mutex.lock()
+		if not _worker_should_stop:
+			_result_queue.append(result)
+		_work_mutex.unlock()
+
+
+func _clear_worker_queues() -> void:
+	_work_mutex.lock()
+	_build_queue.clear()
+	_result_queue.clear()
+	_work_mutex.unlock()
+
+
+func _worker_loop() -> void:
+	while true:
+		_work_semaphore.wait()
+
+		var job: Dictionary = {}
+		_work_mutex.lock()
+		if _worker_should_stop:
+			_work_mutex.unlock()
+			return
+		if not _build_queue.is_empty():
+			job = _build_queue.pop_front() as Dictionary
+		_work_mutex.unlock()
+
+		if job.is_empty():
+			continue
+
+		var result: Dictionary = _build_visual_tile_result(job)
+		var cell: Vector2i = result["cell"] as Vector2i
+		var generation: int = int(result["generation"])
+		_work_mutex.lock()
+		if not _worker_should_stop and generation == _stream_generation and not _cancelled_builds.has(cell):
+			_result_queue.append(result)
+		_work_mutex.unlock()
+
+
+func _build_visual_tile_result(job: Dictionary) -> Dictionary:
+	var cell: Vector2i = job["cell"] as Vector2i
+	var generation: int = int(job["generation"])
+	var region_id: String = String(job["region_id"])
+
+	_work_mutex.lock()
+	var should_skip: bool = _worker_should_stop or generation != _stream_generation or _cancelled_builds.has(cell)
+	_work_mutex.unlock()
+	if should_skip:
+		return {
+			"ok": false,
+			"cell": cell,
+			"generation": generation,
+			"message": "visual tile build cancelled: " + str(cell),
+			"visual_tile_data": null,
+		}
+
+	var visual_tile_data: Variant = TerrainVisualBuilderScript.build_region_visual_tile_data(region_id, cell)
+	var ok: bool = visual_tile_data != null and bool(visual_tile_data.ok)
+	var message: String = ""
+	if not ok and visual_tile_data != null:
+		message = String(visual_tile_data.message)
+	if message.is_empty():
+		message = "visual tile failed to build: " + region_id + " " + str(cell)
+	return {
+		"ok": ok,
+		"cell": cell,
+		"generation": generation,
+		"message": message,
+		"visual_tile_data": visual_tile_data,
+	}
 
 
 func _free_visual_cell(cell: Vector2i) -> void:
