@@ -10,6 +10,8 @@ const TRACK_BOUNDS_MIN_UNIFORM: StringName = &"track_bounds_min"
 const TRACK_BOUNDS_MAX_UNIFORM: StringName = &"track_bounds_max"
 const STAMP_COLOR_UNIFORM: StringName = &"stamp_color"
 const FLOAT_EPSILON: float = 0.001
+const STAMP_COLOR_MATCH_EPSILON: float = 0.003
+const STAMP_COLOR_SEPARATION_EPSILON: float = 0.04
 const MIN_STAMP_FOOTPRINT_PIXELS: float = 1.0
 
 var _scene_root: Node = null
@@ -81,6 +83,7 @@ func _inspect_painter_node(painter: Node) -> void:
 
 
 func _inspect_painter_stamp_response(painter: Node) -> void:
+	_inspect_surface_response_palette(painter)
 	var before_count: int = int(painter.call("debug_stamp_count"))
 	var state: RefCounted = VehicleStateScript.new()
 	var first_hit_points: Array[Vector3] = [
@@ -89,13 +92,13 @@ func _inspect_painter_stamp_response(painter: Node) -> void:
 		Vector3(0.36, 0.0, -4.0),
 		Vector3(0.54, 0.0, -4.0)
 	]
-	var wheel_surfaces: Array[StringName] = [&"mud", &"packed_dirt", &"wet_stone", &"wood_plank"]
+	var wheel_surfaces: Array[StringName] = [&"sand_wash", &"packed_dirt", &"wet_stone", &"wood_plank"]
 	state.set("wheel_hit_point", first_hit_points)
 	state.set("wheel_surface", wheel_surfaces)
 	painter.call("apply_vehicle_state", state, GameConfig.FIXED_DT)
 	var after_first_count: int = int(painter.call("debug_stamp_count"))
-	if after_first_count < before_count + 3:
-		_errors.append("track painter should stamp mud/dirt/wet-stone wheel hits")
+	if after_first_count != before_count + 3:
+		_errors.append("track painter should stamp sand/dirt/wet-stone and skip wood_plank wheel hits")
 	painter.call("apply_vehicle_state", state, GameConfig.FIXED_DT)
 	var after_repeat_count: int = int(painter.call("debug_stamp_count"))
 	if after_repeat_count != after_first_count:
@@ -106,11 +109,13 @@ func _inspect_painter_stamp_response(painter: Node) -> void:
 		Vector3(0.36, 0.0, -4.0 - GameConfig.terrain_track_stamp_radius),
 		Vector3(0.54, 0.0, -4.0 - GameConfig.terrain_track_stamp_radius)
 	]
+	var moved_wheel_surfaces: Array[StringName] = [&"mud", &"packed_dirt", &"wet_stone", &"sand_wash"]
 	state.set("wheel_hit_point", moved_hit_points)
+	state.set("wheel_surface", moved_wheel_surfaces)
 	painter.call("apply_vehicle_state", state, GameConfig.FIXED_DT)
 	var after_move_count: int = int(painter.call("debug_stamp_count"))
-	if after_move_count < after_first_count + 3:
-		_errors.append("track painter should stamp deterministic moved wheel hit points")
+	if after_move_count != after_first_count + 4:
+		_errors.append("track painter should stamp deterministic moved mud/dirt/wet-stone/sand wheel hit points")
 	var stamp_root: Node = _require_node(painter, "TrackPaintViewport/TrackStampRoot")
 	if stamp_root != null:
 		var viewport: SubViewport = painter.call("debug_viewport") as SubViewport
@@ -119,7 +124,61 @@ func _inspect_painter_stamp_response(painter: Node) -> void:
 			_errors.append("TerrainTrackVisualPainter should expose a SubViewport for stamp footprint inspection")
 		else:
 			pixels_per_meter = _actual_pixels_per_meter(painter, viewport)
+		_require_stamp_color(stamp_root, _stamp_color_for(painter, &"sand_wash"), "sand_wash")
 		_inspect_stamp_materials(stamp_root, pixels_per_meter)
+
+
+func _inspect_surface_response_palette(painter: Node) -> void:
+	var sand_response: float = _surface_response_for(painter, &"sand_wash")
+	var wood_response: float = _surface_response_for(painter, &"wood_plank")
+	if sand_response <= 0.0:
+		_errors.append("track painter should give sand_wash a positive render-only stamp response")
+	if wood_response > 0.0:
+		_errors.append("track painter should keep wood_plank out of render-only terrain stamps")
+	var sand_color: Color = _stamp_color_for(painter, &"sand_wash")
+	var dust_color: Color = _stamp_color_for(painter, &"packed_dirt")
+	var mud_color: Color = _stamp_color_for(painter, &"mud")
+	var wet_color: Color = _stamp_color_for(painter, &"wet_stone")
+	if _color_distance(sand_color, dust_color) <= STAMP_COLOR_SEPARATION_EPSILON:
+		_errors.append("sand_wash stamp color should be distinguishable from dust response")
+	if _color_distance(sand_color, mud_color) <= STAMP_COLOR_SEPARATION_EPSILON:
+		_errors.append("sand_wash stamp color should be distinguishable from mud response")
+	if _color_distance(sand_color, wet_color) <= STAMP_COLOR_SEPARATION_EPSILON:
+		_errors.append("sand_wash stamp color should be distinguishable from wet-stone response")
+
+
+func _surface_response_for(painter: Node, surface_id: StringName) -> float:
+	return float(painter.call("_surface_track_response", surface_id))
+
+
+func _stamp_color_for(painter: Node, surface_id: StringName) -> Color:
+	var response: float = _surface_response_for(painter, surface_id)
+	var color_value: Variant = painter.call("_stamp_color_for_surface", surface_id, response)
+	if color_value is Color:
+		return color_value
+	return Color(0.0, 0.0, 0.0, 0.0)
+
+
+func _require_stamp_color(stamp_root: Node, expected_color: Color, label: String) -> void:
+	for child in stamp_root.get_children():
+		var stamp: MeshInstance3D = child as MeshInstance3D
+		if stamp == null:
+			continue
+		var material: ShaderMaterial = stamp.material_override as ShaderMaterial
+		if material == null:
+			continue
+		var stamp_color: Color = material.get_shader_parameter(STAMP_COLOR_UNIFORM)
+		if _color_distance(stamp_color, expected_color) <= STAMP_COLOR_MATCH_EPSILON:
+			return
+	_errors.append("track stamp root should contain a " + label + " stamp color")
+
+
+func _color_distance(a: Color, b: Color) -> float:
+	var dr: float = a.r - b.r
+	var dg: float = a.g - b.g
+	var db: float = a.b - b.b
+	var da: float = a.a - b.a
+	return sqrt(dr * dr + dg * dg + db * db + da * da)
 
 
 func _inspect_stamp_materials(stamp_root: Node, pixels_per_meter: float) -> void:

@@ -247,6 +247,7 @@ var terrain_track_stamp_strength: float = 0.34
 var terrain_track_decay_per_second: float = 0.018
 var terrain_track_surface_mud_strength: float = 1.0
 var terrain_track_surface_dust_strength: float = 0.45
+var terrain_track_surface_sand_strength: float = 0.68
 var terrain_track_surface_wet_strength: float = 0.55
 var visual_bar_lighting_spec_version: int = 1
 

@@ -23,6 +23,7 @@ const STAMP_ALPHA_EPSILON: float = 0.01
 const MIN_STAMPS_PER_WHEEL: int = 8
 const RUT_MUD_SCALE: float = 1.0
 const RUT_WET_SCALE: float = 0.48
+const RUT_SAND_SCALE: float = 0.62
 const RUT_DUST_SCALE: float = 0.26
 const WET_MUD_CHANNEL: float = 0.85
 const WET_STONE_CHANNEL: float = 0.70
@@ -247,6 +248,8 @@ func _surface_track_response(surface_id: StringName) -> float:
 		return clampf(GameConfig.terrain_track_surface_mud_strength, 0.0, 1.0)
 	if surface_id == &"wet_stone":
 		return clampf(GameConfig.terrain_track_surface_wet_strength, 0.0, 1.0)
+	if surface_id == &"sand_wash":
+		return clampf(GameConfig.terrain_track_surface_sand_strength, 0.0, 1.0)
 	if surface_id == &"packed_dirt" \
 			or surface_id == &"packed_gravel" \
 			or surface_id == &"tall_grass" \
@@ -265,6 +268,8 @@ func _stamp_color_for_surface(surface_id: StringName, surface_response: float) -
 	elif surface_id == &"wet_stone":
 		rut_scale = RUT_WET_SCALE
 		wet_channel = WET_STONE_CHANNEL
+	elif surface_id == &"sand_wash":
+		rut_scale = RUT_SAND_SCALE
 	var rut_strength: float = clampf(base_strength * rut_scale, 0.0, 1.0)
 	return Color(base_strength, rut_strength, wet_channel * base_strength, base_strength)
 
