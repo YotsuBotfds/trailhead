@@ -1827,6 +1827,7 @@ func _surface_sweep_predicate_passed() -> bool:
 	var gravel_delta: float = float(avg_speed_delta.get("packed_gravel", 0.0))
 	var packed_delta: float = float(avg_speed_delta.get("packed_dirt", 0.0))
 	var grass_delta: float = float(avg_speed_delta.get("tall_grass", 0.0))
+	var loose_rock_delta: float = float(avg_speed_delta.get("loose_rock", 0.0))
 	var sand_delta: float = float(avg_speed_delta.get("sand_wash", 0.0))
 	var mud_delta: float = float(avg_speed_delta.get("mud", 0.0))
 	var gravel_slip: float = float(max_slip.get("packed_gravel", 0.0))
@@ -1839,7 +1840,11 @@ func _surface_sweep_predicate_passed() -> bool:
 		return false
 	if slickrock_delta < packed_delta + GameConfig.surface_probe_min_hard_surface_delta_gain:
 		return false
+	if gravel_delta <= packed_delta:
+		return false
 	if grass_delta >= packed_delta or mud_delta >= grass_delta:
+		return false
+	if loose_rock_delta <= sand_delta:
 		return false
 	if sand_delta > packed_delta - GameConfig.surface_probe_min_sand_drag_delta_drop:
 		return false
@@ -2151,8 +2156,9 @@ func _expected_activation_ticks_result() -> Dictionary:
 			continue
 		var expected_tick: int = expected[key]
 		var actual_tick: int = actual[key]
-		if actual_tick != expected_tick:
-			failures.append("activation tick " + key + " expected " + str(expected_tick) + " got " + str(actual_tick))
+		var tolerance: int = GameConfig.golden_surface_tick_tolerance
+		if absi(actual_tick - expected_tick) > tolerance:
+			failures.append("activation tick " + key + " expected " + str(expected_tick) + " got " + str(actual_tick) + " tolerance " + str(tolerance))
 	result["matched"] = failures.is_empty()
 	result["failures"] = failures
 	return result

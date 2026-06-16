@@ -9,6 +9,7 @@ assert_metrics "$out_dir/surface_sweep.json" \
 	--surface=mud:10 \
 	--surface=wet_stone:8 \
 	--surface-sequence=paved_road,slickrock_dry,packed_gravel,packed_dirt,tall_grass,loose_rock,sand_wash,mud,wet_stone \
+	--predicate=scenario_passed \
 	--metric-min=max_abs_slip_angle_deg:2.0 \
 	--metric-min=max_vehicle_contamination.dust:0.5 \
 	--metric-min=max_vehicle_contamination.mud:0.5 \
