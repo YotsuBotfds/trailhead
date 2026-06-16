@@ -7,8 +7,8 @@ const VehicleContaminationStateScript: GDScript = preload("res://systems/vehicle
 
 var _body: RigidBody3D = null
 var _wheel_rays: Array[RayCast3D] = []
-var _pending_input: RefCounted = RaycastVehicleInputScript.new()
-var _state: RefCounted = RaycastVehicleStateScript.new()
+var _pending_input: VehicleInput = RaycastVehicleInputScript.new()
+var _state: VehicleState = RaycastVehicleStateScript.new()
 var _was_flipped: bool = false
 var _current_surface_id: StringName = &""
 var _surface_friction: float = 0.0
@@ -31,15 +31,15 @@ func _ready() -> void:
 	GameManager.register_vehicle(self)
 
 
-func apply_input(input: RefCounted) -> void:
-	_pending_input.set("throttle", clampf(float(input.get("throttle")), -1.0, 1.0))
-	_pending_input.set("steer", clampf(float(input.get("steer")), -1.0, 1.0))
-	_pending_input.set("brake", clampf(float(input.get("brake")), 0.0, 1.0))
-	_pending_input.set("ebrake", bool(input.get("ebrake")))
-	_pending_input.set("self_right", bool(input.get("self_right")))
+func apply_input(input: VehicleInput) -> void:
+	_pending_input.throttle = clampf(input.throttle, -1.0, 1.0)
+	_pending_input.steer = clampf(input.steer, -1.0, 1.0)
+	_pending_input.brake = clampf(input.brake, 0.0, 1.0)
+	_pending_input.ebrake = input.ebrake
+	_pending_input.self_right = input.self_right
 
 
-func get_state() -> RefCounted:
+func get_state() -> VehicleState:
 	_update_state()
 	return _state
 
@@ -100,7 +100,7 @@ func _physics_process(_delta: float) -> void:
 		return
 	_update_flip_events()
 	_update_recovery_tracking()
-	if bool(_pending_input.get("self_right")):
+	if _pending_input.self_right:
 		if _is_flipped():
 			self_right()
 		elif _recovery_stuck:
@@ -163,16 +163,16 @@ func _apply_wheel_forces() -> void:
 		ray.force_raycast_update()
 		var has_contact: bool = ray.is_colliding()
 		wheel_contacts[i] = has_contact
-		var wheel_contact: Array[bool] = _state.get("wheel_contact")
+		var wheel_contact: Array[bool] = _state.wheel_contact
 		wheel_contact[i] = has_contact
-		_state.set("wheel_contact", wheel_contact)
+		_state.wheel_contact = wheel_contact
 		if not has_contact:
-			var empty_surface: Array[StringName] = _state.get("wheel_surface")
+			var empty_surface: Array[StringName] = _state.wheel_surface
 			empty_surface[i] = &""
-			_state.set("wheel_surface", empty_surface)
-			var empty_hit_points: Array[Vector3] = _state.get("wheel_hit_point")
+			_state.wheel_surface = empty_surface
+			var empty_hit_points: Array[Vector3] = _state.wheel_hit_point
 			empty_hit_points[i] = Vector3.ZERO
-			_state.set("wheel_hit_point", empty_hit_points)
+			_state.wheel_hit_point = empty_hit_points
 			continue
 		contact_count += 1
 		var hit_point: Vector3 = ray.get_collision_point()
@@ -180,9 +180,9 @@ func _apply_wheel_forces() -> void:
 		if hit_normal.length() <= GameConfig.self_right_forward_epsilon:
 			hit_normal = Vector3.UP
 		normal_sum += hit_normal.normalized()
-		var wheel_hit_points: Array[Vector3] = _state.get("wheel_hit_point")
+		var wheel_hit_points: Array[Vector3] = _state.wheel_hit_point
 		wheel_hit_points[i] = hit_point
-		_state.set("wheel_hit_point", wheel_hit_points)
+		_state.wheel_hit_point = wheel_hit_points
 		var dist: float = ray.global_position.distance_to(hit_point)
 		var compression: float = clampf((ray_length - dist) / maxf(GameConfig.susp_travel, 0.001), 0.0, 1.0)
 		var spring_force: float = compression * GameConfig.susp_stiffness
@@ -200,9 +200,9 @@ func _apply_wheel_forces() -> void:
 		normal_load_sum += suspension_force
 		var surface_def: Resource = _resolve_surface_def(ray.get_collider(), hit_point)
 		var surface_id: StringName = _surface_id(surface_def)
-		var wheel_surface: Array[StringName] = _state.get("wheel_surface")
+		var wheel_surface: Array[StringName] = _state.wheel_surface
 		wheel_surface[i] = surface_id
-		_state.set("wheel_surface", wheel_surface)
+		_state.wheel_surface = wheel_surface
 		friction_sum += _surface_float(surface_def, "friction", GameConfig.default_friction)
 		rolling_drag_sum += _surface_float(surface_def, "rolling_drag", GameConfig.default_rolling_drag)
 		slip_sum += _surface_float(surface_def, "slip", GameConfig.default_slip)
@@ -213,7 +213,7 @@ func _apply_wheel_forces() -> void:
 		if _surface_bool(surface_def, "bog_enabled", false):
 			bog_enabled = true
 	_apply_anti_roll(wheel_compressions, wheel_force_positions, wheel_contacts, up)
-	_state.set("on_ground", contact_count > 0)
+	_state.on_ground = contact_count > 0
 	if contact_count > 0:
 		_surface_friction = friction_sum / float(contact_count)
 		_surface_rolling_drag = rolling_drag_sum / float(contact_count)
@@ -230,7 +230,7 @@ func _apply_wheel_forces() -> void:
 		_surface_contact_normal = Vector3.UP
 		_surface_bog_enabled = false
 		_surface_bog_threshold = GameConfig.default_bog_threshold
-	_state.set("contact_normal", _surface_contact_normal)
+	_state.contact_normal = _surface_contact_normal
 	_update_contamination(contact_count, mud_residue_sum, dust_residue_sum, wetness_residue_sum)
 	_update_surface_event()
 
@@ -254,10 +254,10 @@ func _apply_anti_roll_pair(left_index: int, right_index: int, wheel_compressions
 func _apply_drive_forces() -> void:
 	var forward: Vector3 = -_body.global_transform.basis.z.normalized()
 	var right: Vector3 = _body.global_transform.basis.x.normalized()
-	var throttle: float = float(_pending_input.get("throttle"))
-	var steer: float = float(_pending_input.get("steer"))
-	var brake: float = float(_pending_input.get("brake"))
-	var on_ground: bool = bool(_state.get("on_ground"))
+	var throttle: float = _pending_input.throttle
+	var steer: float = _pending_input.steer
+	var brake: float = _pending_input.brake
+	var on_ground: bool = _state.on_ground
 	_apply_traction_force(forward, throttle)
 	if on_ground and brake > 0.0:
 		var brake_factor: float = clampf(1.0 - brake * GameConfig.brake_damping_per_second * GameConfig.FIXED_DT, 0.0, 1.0)
@@ -268,7 +268,7 @@ func _apply_drive_forces() -> void:
 	if on_ground:
 		var surface_grip: float = _surface_friction * maxf(1.0 - _surface_slip, GameConfig.surface_min_lateral_grip)
 		var lateral_grip: float = surface_grip
-		if bool(_pending_input.get("ebrake")):
+		if _pending_input.ebrake:
 			lateral_grip *= GameConfig.ebrake_factor
 		_apply_lateral_grip(right, lateral_grip)
 		_apply_steering_torque(steer, surface_grip)
@@ -277,7 +277,7 @@ func _apply_drive_forces() -> void:
 
 
 func _apply_traction_force(forward: Vector3, throttle: float) -> void:
-	if not bool(_state.get("on_ground")) or absf(throttle) <= GameConfig.self_right_forward_epsilon:
+	if not _state.on_ground or absf(throttle) <= GameConfig.self_right_forward_epsilon:
 		return
 	var requested_force: float = absf(throttle) * GameConfig.traction_base_force
 	var traction_ceiling: float = maxf(0.0, _surface_friction * _surface_normal_load * GameConfig.traction_grip_force_ceiling_scale)
@@ -288,7 +288,7 @@ func _apply_traction_force(forward: Vector3, throttle: float) -> void:
 
 
 func _apply_hill_hold(throttle: float, brake: float) -> void:
-	if absf(throttle) > GameConfig.self_right_forward_epsilon or brake > GameConfig.self_right_forward_epsilon or bool(_pending_input.get("ebrake")):
+	if absf(throttle) > GameConfig.self_right_forward_epsilon or brake > GameConfig.self_right_forward_epsilon or _pending_input.ebrake:
 		return
 	var normal: Vector3 = _surface_contact_normal
 	if normal.length() <= GameConfig.self_right_forward_epsilon:
@@ -440,13 +440,13 @@ func _update_recovery_tracking() -> void:
 		var anchor_transform: Transform3D = _recovery_transform_history[0]
 		var forward: Vector3 = _horizontal_forward(anchor_transform.basis)
 		_last_recovery_transform = _upright_transform(anchor_transform.origin, forward)
-	var throttle: float = absf(float(_pending_input.get("throttle")))
-	if bool(_state.get("on_ground")) and throttle >= GameConfig.recover_min_throttle and progress < GameConfig.recover_min_progress:
+	var throttle: float = absf(_pending_input.throttle)
+	if _state.on_ground and throttle >= GameConfig.recover_min_throttle and progress < GameConfig.recover_min_progress:
 		_recovery_stuck = true
 
 
 func _dominant_contact_surface() -> StringName:
-	var wheel_surface: Array[StringName] = _state.get("wheel_surface")
+	var wheel_surface: Array[StringName] = _state.wheel_surface
 	var counts: Dictionary = {}
 	var best_surface_id: StringName = &""
 	var best_count: int = 0
@@ -498,10 +498,10 @@ func _update_contamination(contact_count: int, mud_residue_sum: float, dust_resi
 		target_mud = mud_residue_sum / float(contact_count)
 		target_dust = dust_residue_sum / float(contact_count)
 		target_wetness = wetness_residue_sum / float(contact_count)
-	var contamination: RefCounted = _vehicle_contamination()
-	contamination.set("mud", _residue_step(float(contamination.get("mud")), target_mud))
-	contamination.set("dust", _residue_step(float(contamination.get("dust")), target_dust))
-	contamination.set("wetness", _residue_step(float(contamination.get("wetness")), target_wetness))
+	var contamination: VehicleContaminationState = _vehicle_contamination()
+	contamination.mud = _residue_step(contamination.mud, target_mud)
+	contamination.dust = _residue_step(contamination.dust, target_dust)
+	contamination.wetness = _residue_step(contamination.wetness, target_wetness)
 
 
 func _residue_step(current: float, target: float) -> float:
@@ -514,11 +514,11 @@ func _residue_step(current: float, target: float) -> float:
 	return clampf(current + signf(delta) * step, 0.0, 1.0)
 
 
-func _vehicle_contamination() -> RefCounted:
-	var contamination: RefCounted = _state.get("contamination") as RefCounted
+func _vehicle_contamination() -> VehicleContaminationState:
+	var contamination: VehicleContaminationState = _state.contamination
 	if contamination == null:
 		contamination = VehicleContaminationStateScript.new()
-		_state.set("contamination", contamination)
+		_state.contamination = contamination
 	return contamination
 
 
@@ -527,12 +527,12 @@ func _update_state() -> void:
 		return
 	if _stable_wheel_contact_count() >= GameConfig.self_right_stable_contact_count and _body.global_transform.basis.y.dot(Vector3.UP) >= GameConfig.self_right_stable_upright_dot:
 		_last_stable_forward = _horizontal_forward(_body.global_transform.basis)
-	_state.set("position", _body.global_position)
-	_state.set("basis", _body.global_transform.basis)
-	_state.set("linear_velocity", _body.linear_velocity)
-	_state.set("angular_velocity", _body.angular_velocity)
-	_state.set("is_flipped", _is_flipped())
-	_state.set("motor_rpm", absf(float(_pending_input.get("throttle"))) * GameConfig.max_speed * GameConfig.motor_rpm_speed_scale)
+	_state.position = _body.global_position
+	_state.basis = _body.global_transform.basis
+	_state.linear_velocity = _body.linear_velocity
+	_state.angular_velocity = _body.angular_velocity
+	_state.is_flipped = _is_flipped()
+	_state.motor_rpm = absf(_pending_input.throttle) * GameConfig.max_speed * GameConfig.motor_rpm_speed_scale
 
 
 func _is_flipped() -> bool:
@@ -560,7 +560,7 @@ func _upright_transform(origin: Vector3, forward: Vector3) -> Transform3D:
 
 
 func _stable_wheel_contact_count() -> int:
-	var wheel_contact: Array[bool] = _state.get("wheel_contact")
+	var wheel_contact: Array[bool] = _state.wheel_contact
 	var count: int = 0
 	for has_contact in wheel_contact:
 		if bool(has_contact):
@@ -576,4 +576,4 @@ func _reset_surface_cache() -> void:
 	_surface_contact_normal = Vector3.UP
 	_surface_bog_enabled = false
 	_surface_bog_threshold = GameConfig.default_bog_threshold
-	_state.set("contact_normal", _surface_contact_normal)
+	_state.contact_normal = _surface_contact_normal
