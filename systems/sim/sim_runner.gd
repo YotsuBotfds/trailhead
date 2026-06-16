@@ -768,7 +768,7 @@ func _vehicle_spawn_clearance(tilt_deg: float) -> float:
 
 func _vehicle_spawn_ray_distance() -> float:
 	var ray_length: float = GameConfig.susp_rest_length + GameConfig.susp_travel + GameConfig.wheel_radius
-	var gravity: float = float(ProjectSettings.get_setting("physics/3d/default_gravity", 9.8))
+	var gravity: float = GameConfig.GRAVITY_MAGNITUDE
 	var static_compression: float = clampf((GameConfig.chassis_mass * gravity * 0.25) / maxf(GameConfig.susp_stiffness, 0.001), 0.0, 1.0)
 	return ray_length - static_compression * GameConfig.susp_travel
 
