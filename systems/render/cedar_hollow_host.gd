@@ -533,8 +533,10 @@ func _update_chase_camera(delta: float, state: RefCounted) -> void:
 		var raw_look_target: Vector3 = _chase_camera_look_target(vehicle_position, vehicle_basis, forward, steer)
 		var look_alpha: float = _chase_camera_follow_alpha(delta, GameConfig.cam_look_spring)
 		_chase_look_target_current = _chase_look_target_current.lerp(raw_look_target, look_alpha)
+		_chase_look_target_current = _chase_camera_pitch_target(_chase_look_target_current)
 	_camera.look_at(_chase_look_target_current, Vector3.UP)
-	_camera.fov = GameConfig.cam_fov_base
+	var linear_velocity: Vector3 = state.get("linear_velocity")
+	_camera.fov = GameConfig.get_fov_for_speed(linear_velocity.length())
 	_camera.current = _camera_mode == CAMERA_MODE_CHASE
 
 
@@ -547,6 +549,10 @@ func _chase_camera_look_target(vehicle_position: Vector3, vehicle_basis: Basis, 
 	var target: Vector3 = vehicle_position \
 		+ forward * GameConfig.cam_look_ahead \
 		+ lateral * steer * GameConfig.cam_look_turn_bias
+	return _chase_camera_pitch_target(target)
+
+
+func _chase_camera_pitch_target(target: Vector3) -> Vector3:
 	if _camera == null:
 		return target
 	var flat_delta: Vector3 = Vector3(target.x - _camera.global_position.x, 0.0, target.z - _camera.global_position.z)

@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="SurfaceVisualCatalog" load_steps=13 format=3]
+[gd_resource type="Resource" script_class="SurfaceVisualCatalog" load_steps=14 format=3]
 
 [ext_resource type="Script" path="res://systems/render/surface_visual_catalog.gd" id="1_catalog"]
 [ext_resource type="Script" path="res://systems/render/surface_visual_def.gd" id="2_visual"]
@@ -22,6 +22,26 @@ texture_uv_scale = Vector2(72.0, 72.0)
 detail_uv_scale = Vector2(224.0, 224.0)
 triplanar = true
 normal_scale = 1.85
+
+[sub_resource type="Resource" id="SurfaceVisualDef_paved_road"]
+script = ExtResource("2_visual")
+id = &"paved_road_default"
+surface_id = &"paved_road"
+display_name = "Paved Road"
+default_for_surface = true
+albedo_color = Color(0.48, 0.49, 0.47, 1.0)
+roughness = 0.74
+wetness = 0.0
+tire_audio_gain = 0.7
+tire_audio_pitch = 1.35
+albedo_texture_path = "res://assets/textures/surface_visuals/ambientcg/packed_gravel_default_albedo.jpg"
+normal_texture_path = "res://assets/textures/surface_visuals/ambientcg/packed_gravel_default_normal.jpg"
+detail_albedo_texture_path = "res://assets/textures/surface_visuals/generated/terrain_detail_albedo.png"
+detail_normal_texture_path = "res://assets/textures/surface_visuals/generated/terrain_detail_normal.png"
+texture_uv_scale = Vector2(92.0, 92.0)
+detail_uv_scale = Vector2(224.0, 224.0)
+triplanar = true
+normal_scale = 1.15
 
 [sub_resource type="Resource" id="SurfaceVisualDef_packed_dirt"]
 script = ExtResource("2_visual")
@@ -206,5 +226,5 @@ normal_scale = 1.55
 
 [resource]
 script = ExtResource("1_catalog")
-visual_defs = Array[Resource]([SubResource("SurfaceVisualDef_packed_gravel"), SubResource("SurfaceVisualDef_packed_dirt"), SubResource("SurfaceVisualDef_pine_floor_dirt"), SubResource("SurfaceVisualDef_tall_grass"), SubResource("SurfaceVisualDef_mud"), SubResource("SurfaceVisualDef_dried_mud"), SubResource("SurfaceVisualDef_loose_rock"), SubResource("SurfaceVisualDef_wet_stone"), SubResource("SurfaceVisualDef_mossy_wet_stone"), SubResource("SurfaceVisualDef_wood_plank")])
+visual_defs = Array[Resource]([SubResource("SurfaceVisualDef_packed_gravel"), SubResource("SurfaceVisualDef_paved_road"), SubResource("SurfaceVisualDef_packed_dirt"), SubResource("SurfaceVisualDef_pine_floor_dirt"), SubResource("SurfaceVisualDef_tall_grass"), SubResource("SurfaceVisualDef_mud"), SubResource("SurfaceVisualDef_dried_mud"), SubResource("SurfaceVisualDef_loose_rock"), SubResource("SurfaceVisualDef_wet_stone"), SubResource("SurfaceVisualDef_mossy_wet_stone"), SubResource("SurfaceVisualDef_wood_plank")])
 fallback_surface_id = &"packed_dirt"
