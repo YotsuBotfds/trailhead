@@ -44,10 +44,10 @@ PROVENANCE_HASHES: dict[str, str] = {
         "4b42b61625c4a96f37b135006a3a337273684671ef4505f11247d964a4db004c"
     ),
     "data/surfaces/packed_dirt.tres": (
-        "45ec569e0be0fe55025ab89e7482f41f3d939ac43d1478e55cc82b47ee3c37bf"
+        "71c4b11d34ad80a3b196faf006392316b321c589d2a24844cb279375687ee543"
     ),
     "data/surfaces/loose_rock.tres": (
-        "f95c1434345f229e6f84763df87e1b9cdc8075d2cc05cc745a55372c7a0ba6d9"
+        "bf6bf48674ad4242631c65cc1bdc12ceec14df2c763f75eae82dcebeabee1731"
     ),
     "data/surfaces/tall_grass.tres": (
         "b43b60328b9e147346d50731bcdc3a3cc82a6013fd5fb3bfc467ce931ede87b2"
