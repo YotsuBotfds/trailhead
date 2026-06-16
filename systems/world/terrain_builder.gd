@@ -147,7 +147,7 @@ static func _collision_node_name(tile_index: Vector2i) -> String:
 
 static func _vehicle_spawn_clearance(grade_deg: float) -> float:
 	var ray_length: float = GameConfig.susp_rest_length + GameConfig.susp_travel + GameConfig.wheel_radius
-	var gravity: float = float(ProjectSettings.get_setting("physics/3d/default_gravity", 9.8))
+	var gravity: float = GameConfig.GRAVITY_MAGNITUDE
 	var static_compression: float = clampf((GameConfig.chassis_mass * gravity * 0.25) / maxf(GameConfig.susp_stiffness, 0.001), 0.0, 1.0)
 	var ray_distance: float = ray_length - static_compression * GameConfig.susp_travel
 	var tilt_cos: float = maxf(cos(deg_to_rad(grade_deg)), 0.2)
