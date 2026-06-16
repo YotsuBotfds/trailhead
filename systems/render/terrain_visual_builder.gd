@@ -26,6 +26,7 @@ const REGION_ROOT_NAME: String = "TerrainVisuals"
 const REGION_DETAIL_ROOT_NAME: String = "TerrainDetailTiles"
 const REGION_HLOD_NAME: String = "TerrainHLOD"
 const REGION_FOLIAGE_ROOT_NAME: String = "FoliageCells"
+const REGION_STREAMED_FOLIAGE_ROOT_NAME: String = "StreamedFoliageCells"
 const REGION_PIPELINE_WARMUP_ROOT_NAME: String = "PipelineWarmup"
 const REGION_PIPELINE_WARMUP_TERRAIN_NAME: String = "TerrainMaterialWarmup"
 const REGION_PIPELINE_WARMUP_FOLIAGE_LOD0_NAME: String = "FoliageLOD0Warmup"
@@ -114,6 +115,26 @@ class RegionVisualTileData:
 	var message: String = ""
 
 
+class FoliageCellData:
+	var lod_index: int = 0
+	var node_name: String = ""
+	var position: Vector3 = Vector3.ZERO
+	var custom_aabb: AABB = AABB()
+	var visibility_range_begin: float = 0.0
+	var visibility_range_end: float = 0.0
+	var visibility_radius: float = 0.0
+	var cast_shadow: int = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var transforms: Array[Transform3D] = []
+	var colors: Array[Color] = []
+
+
+class RegionFoliageTileData:
+	var ok: bool = false
+	var cell: Vector2i = Vector2i.ZERO
+	var cells: Array[FoliageCellData] = []
+	var message: String = ""
+
+
 func _ready() -> void:
 	if name != SPIKE_1KM_SCENE_ROOT_NAME:
 		return
@@ -189,6 +210,10 @@ static func build_region_stream_root(parent: Node3D, region_id: String) -> Node3
 	detail_root.name = REGION_DETAIL_ROOT_NAME
 	detail_root.set_meta(REGION_ID_META, region_id)
 	root.add_child(detail_root)
+	var foliage_root: Node3D = Node3D.new()
+	foliage_root.name = REGION_STREAMED_FOLIAGE_ROOT_NAME
+	foliage_root.set_meta(REGION_ID_META, region_id)
+	root.add_child(foliage_root)
 	return root
 
 
@@ -238,6 +263,54 @@ static func region_visual_tile_from_data(parent: Node3D, visual_tile_data: Regio
 	if hlod_instance != null:
 		instance.visibility_parent = instance.get_path_to(hlod_instance)
 	return instance
+
+
+static func build_region_foliage_tile_data(region_id: String, cell: Vector2i) -> RegionFoliageTileData:
+	var foliage_tile_data: RegionFoliageTileData = RegionFoliageTileData.new()
+	foliage_tile_data.cell = cell
+
+	var tile_data: RegionTileData = _load_region_tile(region_id, cell)
+	if tile_data == null:
+		foliage_tile_data.message = "foliage tile failed to load: " + region_id + " " + str(cell)
+		return foliage_tile_data
+
+	var tile_data_by_cell: Dictionary[Vector2i, RegionTileData] = {cell: tile_data}
+	var tile_min_x: float = float(cell.x) * tile_data.tile_size_m
+	var tile_min_z: float = float(cell.y) * tile_data.tile_size_m
+	var cell_count_x: int = int(ceil(tile_data.tile_size_m / REGION_FOLIAGE_CELL_SIZE_M))
+	var cell_count_z: int = int(ceil(tile_data.tile_size_m / REGION_FOLIAGE_CELL_SIZE_M))
+	for cell_z in range(cell_count_z):
+		for cell_x in range(cell_count_x):
+			var cell_min_x: float = tile_min_x + float(cell_x) * REGION_FOLIAGE_CELL_SIZE_M
+			var cell_min_z: float = tile_min_z + float(cell_z) * REGION_FOLIAGE_CELL_SIZE_M
+			var cell_max_x: float = minf(cell_min_x + REGION_FOLIAGE_CELL_SIZE_M, tile_min_x + tile_data.tile_size_m)
+			var cell_max_z: float = minf(cell_min_z + REGION_FOLIAGE_CELL_SIZE_M, tile_min_z + tile_data.tile_size_m)
+			var cell_rect: Rect2 = Rect2(
+				Vector2(cell_min_x, cell_min_z),
+				Vector2(maxf(cell_max_x - cell_min_x, 0.0), maxf(cell_max_z - cell_min_z, 0.0))
+			)
+			var foliage_cell: Vector2i = Vector2i(cell.x * 1000 + cell_x, cell.y * 1000 + cell_z)
+			var lod0_data: FoliageCellData = _build_region_foliage_cell_data(tile_data_by_cell, cell_rect, foliage_cell, 0, REGION_FOLIAGE_LOD0_BASE_COUNT)
+			if lod0_data != null:
+				foliage_tile_data.cells.append(lod0_data)
+			var lod1_data: FoliageCellData = _build_region_foliage_cell_data(tile_data_by_cell, cell_rect, foliage_cell, 1, REGION_FOLIAGE_LOD1_BASE_COUNT)
+			if lod1_data != null:
+				foliage_tile_data.cells.append(lod1_data)
+
+	foliage_tile_data.ok = true
+	return foliage_tile_data
+
+
+static func region_foliage_tile_from_data(parent: Node3D, foliage_tile_data: RegionFoliageTileData) -> Node3D:
+	if foliage_tile_data == null or not foliage_tile_data.ok:
+		return null
+	var tile_root: Node3D = Node3D.new()
+	tile_root.name = "foliage_tile_" + str(foliage_tile_data.cell.x) + "_" + str(foliage_tile_data.cell.y)
+	tile_root.set_meta(TILE_INDEX_META, foliage_tile_data.cell)
+	for cell_data in foliage_tile_data.cells:
+		_add_foliage_cell_from_data(tile_root, cell_data)
+	parent.add_child(tile_root)
+	return tile_root
 
 
 static func visual_tile_node_name(tile_index: Vector2i, tile_path: String, tile_array_index: int) -> String:
@@ -753,8 +826,15 @@ static func _add_region_foliage(parent: Node3D, manifest: Dictionary, tile_data_
 
 
 static func _add_region_foliage_cell(parent: Node3D, tile_data_by_cell: Dictionary[Vector2i, RegionTileData], cell_rect: Rect2, foliage_cell: Vector2i, lod_index: int, mesh: Mesh, material: Material, base_count: int) -> void:
-	if cell_rect.size.x <= 0.0 or cell_rect.size.y <= 0.0:
+	var cell_data: FoliageCellData = _build_region_foliage_cell_data(tile_data_by_cell, cell_rect, foliage_cell, lod_index, base_count)
+	if cell_data == null:
 		return
+	_add_foliage_cell_from_data(parent, cell_data, mesh, material)
+
+
+static func _build_region_foliage_cell_data(tile_data_by_cell: Dictionary[Vector2i, RegionTileData], cell_rect: Rect2, foliage_cell: Vector2i, lod_index: int, base_count: int) -> FoliageCellData:
+	if cell_rect.size.x <= 0.0 or cell_rect.size.y <= 0.0:
+		return null
 	var transforms: Array[Transform3D] = []
 	var colors: Array[Color] = []
 	var max_attempts: int = maxi(base_count * 3, base_count)
@@ -785,36 +865,64 @@ static func _add_region_foliage_cell(parent: Node3D, tile_data_by_cell: Dictiona
 		colors.append(Color(0.84 + color_warmth * 0.22, 0.92 + color_warmth * 0.14, 0.72 + color_warmth * 0.12, 1.0))
 
 	if transforms.is_empty():
-		return
+		return null
 
-	var instance: MultiMeshInstance3D = MultiMeshInstance3D.new()
-	instance.name = "foliage_cell_" + str(foliage_cell.x) + "_" + str(foliage_cell.y) + "_lod" + str(lod_index)
 	var foliage_origin_xz: Vector2 = cell_rect.position + cell_rect.size * 0.5
 	var foliage_cell_radius: float = cell_rect.size.length() * 0.5
-	instance.position = Vector3(foliage_origin_xz.x, 0.0, foliage_origin_xz.y)
+	var cell_data: FoliageCellData = FoliageCellData.new()
+	cell_data.lod_index = lod_index
+	cell_data.node_name = "foliage_cell_" + str(foliage_cell.x) + "_" + str(foliage_cell.y) + "_lod" + str(lod_index)
+	cell_data.position = Vector3(foliage_origin_xz.x, 0.0, foliage_origin_xz.y)
+	cell_data.custom_aabb = AABB(
+		Vector3(cell_rect.size.x * -0.5, 0.0, cell_rect.size.y * -0.5),
+		Vector3(cell_rect.size.x, REGION_FOLIAGE_LOD1_SCALE.y + REGION_FOLIAGE_Y_OFFSET + 0.1, cell_rect.size.y)
+	)
+	cell_data.visibility_radius = foliage_cell_radius
+	cell_data.transforms = transforms
+	cell_data.colors = colors
+	if lod_index == 0:
+		cell_data.visibility_range_end = _foliage_lod0_visibility_range_end(foliage_cell_radius)
+		cell_data.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+	else:
+		cell_data.visibility_range_begin = _foliage_lod1_visibility_range_begin(foliage_cell_radius)
+		cell_data.visibility_range_end = _foliage_lod1_visibility_range_end(foliage_cell_radius)
+		cell_data.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	for i in range(cell_data.transforms.size()):
+		var transform: Transform3D = cell_data.transforms[i]
+		transform.origin.x -= foliage_origin_xz.x
+		transform.origin.z -= foliage_origin_xz.y
+		cell_data.transforms[i] = transform
+	return cell_data
+
+
+static func _add_foliage_cell_from_data(parent: Node3D, cell_data: FoliageCellData, mesh: Mesh = null, material: Material = null) -> void:
+	var instance: MultiMeshInstance3D = MultiMeshInstance3D.new()
+	instance.name = cell_data.node_name
+	instance.position = cell_data.position
+	if mesh == null:
+		mesh = _region_foliage_mesh("region_foliage_lod" + str(cell_data.lod_index) + "_mesh")
+	if material == null:
+		var material_color: Color = REGION_FOLIAGE_LOD0_COLOR
+		if cell_data.lod_index > 0:
+			material_color = REGION_FOLIAGE_LOD1_COLOR
+		material = _region_foliage_material("region_foliage_lod" + str(cell_data.lod_index) + "_material", material_color)
 	instance.material_override = material
 	instance.extra_cull_margin = REGION_FOLIAGE_CULL_MARGIN
-	if lod_index == 0:
-		instance.visibility_range_end = _foliage_lod0_visibility_range_end(foliage_cell_radius)
-		instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
-	else:
-		instance.visibility_range_begin = _foliage_lod1_visibility_range_begin(foliage_cell_radius)
-		instance.visibility_range_end = _foliage_lod1_visibility_range_end(foliage_cell_radius)
-		instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	instance.visibility_range_begin = cell_data.visibility_range_begin
+	instance.visibility_range_end = cell_data.visibility_range_end
+	instance.cast_shadow = cell_data.cast_shadow
 	instance.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
-	instance.set_meta(REGION_LOD_META, "foliage_lod" + str(lod_index))
-	instance.set_meta(VISIBILITY_RADIUS_META, foliage_cell_radius)
+	instance.set_meta(REGION_LOD_META, "foliage_lod" + str(cell_data.lod_index))
+	instance.set_meta(VISIBILITY_RADIUS_META, cell_data.visibility_radius)
 	var multimesh: MultiMesh = MultiMesh.new()
 	multimesh.transform_format = MultiMesh.TRANSFORM_3D
 	multimesh.use_colors = true
 	multimesh.mesh = mesh
-	multimesh.instance_count = transforms.size()
-	for i in range(transforms.size()):
-		var transform: Transform3D = transforms[i]
-		transform.origin.x -= foliage_origin_xz.x
-		transform.origin.z -= foliage_origin_xz.y
-		multimesh.set_instance_transform(i, transform)
-		multimesh.set_instance_color(i, colors[i])
+	multimesh.custom_aabb = cell_data.custom_aabb
+	multimesh.instance_count = cell_data.transforms.size()
+	for i in range(cell_data.transforms.size()):
+		multimesh.set_instance_transform(i, cell_data.transforms[i])
+		multimesh.set_instance_color(i, cell_data.colors[i])
 	instance.multimesh = multimesh
 	parent.add_child(instance)
 

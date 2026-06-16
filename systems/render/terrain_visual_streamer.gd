@@ -6,13 +6,16 @@ const DEFAULT_WORKER_COUNT: int = 8
 var _region_id: String = ""
 var _visual_root: Node3D = null
 var _detail_root: Node3D = null
+var _foliage_root: Node3D = null
 var _stream_generation: int = 0
 var _worker_count: int = DEFAULT_WORKER_COUNT
 var _configured: bool = false
 var _events_connected: bool = false
 var _active_cells: Dictionary[Vector2i, bool] = {}
 var _visual_tiles_by_cell: Dictionary[Vector2i, Node3D] = {}
+var _foliage_tiles_by_cell: Dictionary[Vector2i, Node3D] = {}
 var _ready_tile_data_by_cell: Dictionary[Vector2i, Variant] = {}
+var _ready_foliage_data_by_cell: Dictionary[Vector2i, Variant] = {}
 var _load_failures_by_cell: Dictionary[Vector2i, String] = {}
 var _queued_builds: Dictionary[Vector2i, bool] = {}
 var _cancelled_builds: Dictionary[Vector2i, bool] = {}
@@ -42,8 +45,9 @@ func configure_region(new_region_id: String) -> void:
 		return
 	_visual_root = TerrainVisualBuilderScript.build_region_stream_root(self, _region_id)
 	_detail_root = _visual_root.get_node_or_null(TerrainVisualBuilderScript.REGION_DETAIL_ROOT_NAME) as Node3D
-	if _detail_root == null:
-		_load_failures_by_cell[Vector2i.ZERO] = "region detail root missing"
+	_foliage_root = _visual_root.get_node_or_null(TerrainVisualBuilderScript.REGION_STREAMED_FOLIAGE_ROOT_NAME) as Node3D
+	if _detail_root == null or _foliage_root == null:
+		_load_failures_by_cell[Vector2i.ZERO] = "region stream roots missing"
 		_configured = false
 		return
 	_ensure_event_connections()
@@ -64,9 +68,13 @@ func reset_stream() -> void:
 	_disconnect_event_connections()
 	for cell in _sorted_cells(_visual_tiles_by_cell.keys()):
 		_free_visual_cell(cell)
+	for cell in _sorted_cells(_foliage_tiles_by_cell.keys()):
+		_free_foliage_cell(cell)
 	_active_cells.clear()
 	_visual_tiles_by_cell.clear()
+	_foliage_tiles_by_cell.clear()
 	_ready_tile_data_by_cell.clear()
+	_ready_foliage_data_by_cell.clear()
 	_load_failures_by_cell.clear()
 	_queued_builds.clear()
 	_cancelled_builds.clear()
@@ -74,6 +82,7 @@ func reset_stream() -> void:
 	_configured = false
 	_region_id = ""
 	_detail_root = null
+	_foliage_root = null
 	if _visual_root != null:
 		remove_child(_visual_root)
 		_visual_root.queue_free()
@@ -100,18 +109,40 @@ func ready_visual_cell_count() -> int:
 	return _ready_tile_data_by_cell.size()
 
 
+func ready_foliage_cell_count() -> int:
+	return _ready_foliage_data_by_cell.size()
+
+
+func foliage_cell_count() -> int:
+	return _foliage_tiles_by_cell.size()
+
+
 func has_ready_visual_cell(cell: Vector2i) -> bool:
 	return _ready_tile_data_by_cell.has(cell)
+
+
+func has_ready_foliage_cell(cell: Vector2i) -> bool:
+	return _ready_foliage_data_by_cell.has(cell)
 
 
 func has_visual_cell(cell: Vector2i) -> bool:
 	return _visual_tiles_by_cell.has(cell)
 
 
+func has_foliage_cell(cell: Vector2i) -> bool:
+	return _foliage_tiles_by_cell.has(cell)
+
+
 func visual_cell_node(cell: Vector2i) -> Node3D:
 	if not _visual_tiles_by_cell.has(cell):
 		return null
 	return _visual_tiles_by_cell[cell]
+
+
+func foliage_cell_node(cell: Vector2i) -> Node3D:
+	if not _foliage_tiles_by_cell.has(cell):
+		return null
+	return _foliage_tiles_by_cell[cell]
 
 
 func load_failures() -> Dictionary[Vector2i, String]:
@@ -150,13 +181,13 @@ func _disconnect_event_connections() -> void:
 
 
 func _on_world_tile_activated(cell: Vector2i) -> void:
-	if not _configured or _detail_root == null:
+	if not _configured or _detail_root == null or _foliage_root == null:
 		return
 	_active_cells[cell] = true
-	if _visual_tiles_by_cell.has(cell):
+	if _visual_tiles_by_cell.has(cell) and _foliage_tiles_by_cell.has(cell):
 		return
 	if _ready_tile_data_by_cell.has(cell):
-		_commit_visual_tile(cell, _ready_tile_data_by_cell[cell])
+		_commit_ready_cell(cell)
 		return
 	if _queued_builds.has(cell):
 		return
@@ -171,6 +202,7 @@ func _on_world_tile_evicted(cell: Vector2i) -> void:
 		return
 	_active_cells.erase(cell)
 	_free_visual_cell(cell)
+	_free_foliage_cell(cell)
 	_load_failures_by_cell.erase(cell)
 
 
@@ -196,6 +228,7 @@ func _on_world_tile_unprefetched(cell: Vector2i) -> void:
 		return
 	_cancel_build(cell)
 	_ready_tile_data_by_cell.erase(cell)
+	_ready_foliage_data_by_cell.erase(cell)
 	_load_failures_by_cell.erase(cell)
 
 
@@ -258,8 +291,16 @@ func _drain_worker_results() -> void:
 			_record_load_failure(cell, String(result["message"]))
 			continue
 		_ready_tile_data_by_cell[cell] = result["visual_tile_data"]
+		_ready_foliage_data_by_cell[cell] = result["foliage_tile_data"]
 		if _active_cells.has(cell):
-			_commit_visual_tile(cell, result["visual_tile_data"])
+			_commit_ready_cell(cell)
+
+
+func _commit_ready_cell(cell: Vector2i) -> void:
+	if _ready_tile_data_by_cell.has(cell):
+		_commit_visual_tile(cell, _ready_tile_data_by_cell[cell])
+	if _ready_foliage_data_by_cell.has(cell):
+		_commit_foliage_tile(cell, _ready_foliage_data_by_cell[cell])
 
 
 func _commit_visual_tile(cell: Vector2i, visual_tile_data: Variant) -> void:
@@ -274,6 +315,19 @@ func _commit_visual_tile(cell: Vector2i, visual_tile_data: Variant) -> void:
 	_visual_tiles_by_cell[cell] = visual_tile
 	_ready_tile_data_by_cell.erase(cell)
 	_load_failures_by_cell.erase(cell)
+
+
+func _commit_foliage_tile(cell: Vector2i, foliage_tile_data: Variant) -> void:
+	if _foliage_root == null:
+		return
+	if _foliage_tiles_by_cell.has(cell):
+		return
+	var foliage_tile: Node3D = TerrainVisualBuilderScript.region_foliage_tile_from_data(_foliage_root, foliage_tile_data) as Node3D
+	if foliage_tile == null:
+		_ready_foliage_data_by_cell.erase(cell)
+		return
+	_foliage_tiles_by_cell[cell] = foliage_tile
+	_ready_foliage_data_by_cell.erase(cell)
 
 
 func _record_load_failure(cell: Vector2i, message: String) -> void:
@@ -385,10 +439,13 @@ func _build_visual_tile_result(job: Dictionary) -> Dictionary:
 		}
 
 	var visual_tile_data: Variant = TerrainVisualBuilderScript.build_region_visual_tile_data(region_id, cell)
+	var foliage_tile_data: Variant = TerrainVisualBuilderScript.build_region_foliage_tile_data(region_id, cell)
 	var ok: bool = visual_tile_data != null and bool(visual_tile_data.ok)
 	var message: String = ""
 	if not ok and visual_tile_data != null:
 		message = String(visual_tile_data.message)
+	if ok and foliage_tile_data != null and not bool(foliage_tile_data.ok):
+		message = String(foliage_tile_data.message)
 	if message.is_empty():
 		message = "visual tile failed to build: " + region_id + " " + str(cell)
 	return {
@@ -397,6 +454,7 @@ func _build_visual_tile_result(job: Dictionary) -> Dictionary:
 		"generation": generation,
 		"message": message,
 		"visual_tile_data": visual_tile_data,
+		"foliage_tile_data": foliage_tile_data,
 	}
 
 
@@ -410,6 +468,18 @@ func _free_visual_cell(cell: Vector2i) -> void:
 	if visual_tile.get_parent() != null:
 		visual_tile.get_parent().remove_child(visual_tile)
 	visual_tile.queue_free()
+
+
+func _free_foliage_cell(cell: Vector2i) -> void:
+	if not _foliage_tiles_by_cell.has(cell):
+		return
+	var foliage_tile: Node3D = _foliage_tiles_by_cell[cell]
+	_foliage_tiles_by_cell.erase(cell)
+	if foliage_tile == null:
+		return
+	if foliage_tile.get_parent() != null:
+		foliage_tile.get_parent().remove_child(foliage_tile)
+	foliage_tile.queue_free()
 
 
 func _sorted_cells(value: Array) -> Array[Vector2i]:

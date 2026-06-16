@@ -29,16 +29,22 @@ func _inspect() -> void:
 	_require_cell_count("configured empty", 0)
 	_require_cells("configured active cells", [])
 	_require_detail_root()
+	_require_streamed_foliage_root()
 	_require_pipeline_warmup()
 
 	EventBus.world_tile_prefetched.emit(FIRST_CELL)
 	_require_cell_count("first prefetch stays unattached", 0)
+	_require_foliage_cell_count("first prefetch foliage stays unattached", 0)
 	await _wait_for_ready_cell_count("first prefetch ready", 1)
+	await _wait_for_ready_foliage_cell_count("first foliage prefetch ready", 1)
 	_require_cell_count("first prefetch after ready stays unattached", 0)
+	_require_foliage_cell_count("first foliage prefetch after ready stays unattached", 0)
 
 	EventBus.world_tile_activated.emit(FIRST_CELL)
 	_require_cell_count("first activation", 1)
+	_require_foliage_cell_count("first foliage activation", 1)
 	_require_cells("first activation cells", [FIRST_CELL])
+	_require_foliage_tile(FIRST_CELL)
 	var first_tile: MeshInstance3D = _require_visual_tile(FIRST_CELL)
 	var first_surface_count: int = 0
 	var first_vertex_count: int = 0
@@ -59,15 +65,21 @@ func _inspect() -> void:
 	EventBus.world_tile_activated.emit(SECOND_CELL)
 	_require_cell_count("second activation before deferred commit", 1)
 	await _wait_for_cell_count("second activation", 2)
+	await _wait_for_foliage_cell_count("second foliage activation", 2)
 	_require_cell_count("second activation", 2)
+	_require_foliage_cell_count("second foliage activation", 2)
 	_require_cells("second activation cells", [FIRST_CELL, SECOND_CELL])
 	_require_visual_tile(SECOND_CELL)
+	_require_foliage_tile(SECOND_CELL)
 
 	EventBus.world_tile_evicted.emit(FIRST_CELL)
 	_require_cell_count("first eviction", 1)
+	_require_foliage_cell_count("first foliage eviction", 1)
 	_require_cells("first eviction cells", [SECOND_CELL])
 	_require_no_visual_cell(FIRST_CELL)
+	_require_no_foliage_cell(FIRST_CELL)
 	_require_ready_cell_count("first eviction keeps prefetched payload", 0)
+	_require_ready_foliage_cell_count("first eviction foliage ready cache", 0)
 
 	EventBus.world_tile_evicted.emit(Vector2i(9, 9))
 	_require_cell_count("unknown eviction", 1)
@@ -75,8 +87,10 @@ func _inspect() -> void:
 
 	EventBus.world_tile_prefetched.emit(FIRST_CELL)
 	await _wait_for_ready_cell_count("reactivation prefetch ready", 1)
+	await _wait_for_ready_foliage_cell_count("reactivation foliage prefetch ready", 1)
 	EventBus.world_tile_activated.emit(FIRST_CELL)
 	_require_cell_count("reactivation", 2)
+	_require_foliage_cell_count("reactivation foliage", 2)
 	_require_cells("reactivation cells", [FIRST_CELL, SECOND_CELL])
 	var rebuilt_tile: MeshInstance3D = _require_visual_tile(FIRST_CELL)
 	_require_rebuilt_tile(first_surface_count, first_vertex_count, first_index_count, first_bounds, rebuilt_tile)
@@ -85,14 +99,20 @@ func _inspect() -> void:
 	EventBus.world_tile_evicted.emit(FIRST_CELL)
 	EventBus.world_tile_unprefetched.emit(FIRST_CELL)
 	_require_ready_cell_count("unprefetch drops inactive ready payload", 0)
+	_require_ready_foliage_cell_count("unprefetch drops inactive foliage ready payload", 0)
 	EventBus.world_tile_activated.emit(FIRST_CELL)
 	await _wait_for_cell_count("post-unprefetch activation", 2)
+	await _wait_for_foliage_cell_count("post-unprefetch foliage activation", 2)
 	_require_cell_count("post-unprefetch activation", 2)
+	_require_foliage_cell_count("post-unprefetch foliage activation", 2)
 	_require_visual_tile(FIRST_CELL)
+	_require_foliage_tile(FIRST_CELL)
 
 	_streamer.call("reset_stream")
 	_require_cell_count("reset", 0)
+	_require_foliage_cell_count("reset foliage", 0)
 	_require_ready_cell_count("reset ready cache", 0)
+	_require_ready_foliage_cell_count("reset foliage ready cache", 0)
 	_require_cells("reset cells", [])
 	EventBus.world_tile_activated.emit(FIRST_CELL)
 	_require_cell_count("post-reset disconnected", 0)
@@ -107,6 +127,15 @@ func _require_detail_root() -> void:
 	var detail_root: Node = terrain_root.get_node_or_null(TerrainVisualBuilderScript.REGION_DETAIL_ROOT_NAME)
 	if detail_root == null:
 		_errors.append("streamer missing TerrainDetailTiles root")
+
+
+func _require_streamed_foliage_root() -> void:
+	var terrain_root: Node = _streamer.get_node_or_null(TerrainVisualBuilderScript.REGION_ROOT_NAME)
+	if terrain_root == null:
+		return
+	var foliage_root: Node = terrain_root.get_node_or_null(TerrainVisualBuilderScript.REGION_STREAMED_FOLIAGE_ROOT_NAME)
+	if foliage_root == null:
+		_errors.append("streamer missing StreamedFoliageCells root")
 
 
 func _require_pipeline_warmup() -> void:
@@ -221,10 +250,41 @@ func _require_visual_tile(cell: Vector2i) -> MeshInstance3D:
 	return mesh_instance
 
 
+func _require_foliage_tile(cell: Vector2i) -> Node3D:
+	var node: Node = _streamer.call("foliage_cell_node", cell) as Node
+	var foliage_tile: Node3D = node as Node3D
+	if foliage_tile == null:
+		_errors.append("foliage cell should be a Node3D: " + str(cell))
+		return null
+	var multimesh_count: int = 0
+	for child in foliage_tile.get_children():
+		var multimesh_instance: MultiMeshInstance3D = child as MultiMeshInstance3D
+		if multimesh_instance == null:
+			continue
+		multimesh_count += 1
+		if not multimesh_instance.has_meta(TerrainVisualBuilderScript.REGION_LOD_META):
+			_errors.append("foliage child missing LOD metadata: " + String(child.name))
+		if not multimesh_instance.has_meta(TerrainVisualBuilderScript.VISIBILITY_RADIUS_META):
+			_errors.append("foliage child missing visibility radius metadata: " + String(child.name))
+		if multimesh_instance.multimesh == null:
+			_errors.append("foliage child missing MultiMesh: " + String(child.name))
+		elif multimesh_instance.multimesh.custom_aabb.size == Vector3.ZERO:
+			_errors.append("foliage child missing custom_aabb: " + String(child.name))
+	if multimesh_count <= 0:
+		_errors.append("foliage cell should contain MultiMeshInstance3D children: " + str(cell))
+	return foliage_tile
+
+
 func _require_no_visual_cell(cell: Vector2i) -> void:
 	var has_cell: bool = bool(_streamer.call("has_visual_cell", cell))
 	if has_cell:
 		_errors.append("visual cell should have been evicted: " + str(cell))
+
+
+func _require_no_foliage_cell(cell: Vector2i) -> void:
+	var has_cell: bool = bool(_streamer.call("has_foliage_cell", cell))
+	if has_cell:
+		_errors.append("foliage cell should have been evicted: " + str(cell))
 
 
 func _require_rebuilt_tile(expected_surface_count: int, expected_vertex_count: int, expected_index_count: int, expected_bounds: AABB, tile: MeshInstance3D) -> void:
@@ -301,6 +361,18 @@ func _require_ready_cell_count(label: String, expected_count: int) -> void:
 		_errors.append(label + " expected " + str(expected_count) + " ready visual cells, got " + str(observed_count))
 
 
+func _require_foliage_cell_count(label: String, expected_count: int) -> void:
+	var observed_count: int = int(_streamer.call("foliage_cell_count"))
+	if observed_count != expected_count:
+		_errors.append(label + " expected " + str(expected_count) + " foliage cells, got " + str(observed_count))
+
+
+func _require_ready_foliage_cell_count(label: String, expected_count: int) -> void:
+	var observed_count: int = int(_streamer.call("ready_foliage_cell_count"))
+	if observed_count != expected_count:
+		_errors.append(label + " expected " + str(expected_count) + " ready foliage cells, got " + str(observed_count))
+
+
 func _wait_for_cell_count(label: String, expected_count: int) -> void:
 	for _frame_index in range(WAIT_FRAMES):
 		if int(_streamer.call("visual_cell_count")) == expected_count:
@@ -309,12 +381,28 @@ func _wait_for_cell_count(label: String, expected_count: int) -> void:
 	_require_cell_count(label, expected_count)
 
 
+func _wait_for_foliage_cell_count(label: String, expected_count: int) -> void:
+	for _frame_index in range(WAIT_FRAMES):
+		if int(_streamer.call("foliage_cell_count")) == expected_count:
+			return
+		await get_tree().process_frame
+	_require_foliage_cell_count(label, expected_count)
+
+
 func _wait_for_ready_cell_count(label: String, expected_count: int) -> void:
 	for _frame_index in range(WAIT_FRAMES):
 		if int(_streamer.call("ready_visual_cell_count")) == expected_count:
 			return
 		await get_tree().process_frame
 	_require_ready_cell_count(label, expected_count)
+
+
+func _wait_for_ready_foliage_cell_count(label: String, expected_count: int) -> void:
+	for _frame_index in range(WAIT_FRAMES):
+		if int(_streamer.call("ready_foliage_cell_count")) == expected_count:
+			return
+		await get_tree().process_frame
+	_require_ready_foliage_cell_count(label, expected_count)
 
 
 func _require_cells(label: String, expected_cells: Array[Vector2i]) -> void:
