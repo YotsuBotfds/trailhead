@@ -19,6 +19,7 @@ var _vehicle_residue_visual: RefCounted = VehicleResidueVisualScript.new()
 var _wheel_spin: float = 0.0
 var _camera_initialized: bool = false
 var _chase_look_target_current: Vector3 = Vector3.ZERO
+var _chase_back_current: Vector3 = Vector3.ZERO
 
 
 func _ready() -> void:
@@ -204,14 +205,17 @@ func _update_camera(delta: float) -> void:
 	var desired_position: Vector3 = vehicle_position + back * GameConfig.cam_distance + Vector3.UP * GameConfig.cam_height
 	if not _camera_initialized:
 		_camera.global_position = desired_position
+		_chase_back_current = back
 		_chase_look_target_current = _chase_camera_look_target(vehicle_position, vehicle_basis, forward, steer)
 		_camera_initialized = true
 	else:
+		_chase_back_current = _chase_back_current.slerp(back, _chase_camera_follow_alpha(delta, GameConfig.cam_yaw_spring)).normalized()
+		var smoothed_desired: Vector3 = vehicle_position + _chase_back_current * GameConfig.cam_distance + Vector3.UP * GameConfig.cam_height
 		var follow_alpha_y: float = _chase_camera_follow_alpha(delta, GameConfig.cam_spring_vy)
 		var current_position: Vector3 = _camera.global_position
-		current_position.x = desired_position.x
-		current_position.y = lerpf(current_position.y, desired_position.y, follow_alpha_y)
-		current_position.z = desired_position.z
+		current_position.x = smoothed_desired.x
+		current_position.y = lerpf(current_position.y, smoothed_desired.y, follow_alpha_y)
+		current_position.z = smoothed_desired.z
 		_camera.global_position = current_position
 		var raw_look_target: Vector3 = _chase_camera_look_target(vehicle_position, vehicle_basis, forward, steer)
 		var look_alpha: float = _chase_camera_follow_alpha(delta, GameConfig.cam_look_spring)

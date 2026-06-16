@@ -133,6 +133,7 @@ var golden_motor_rpm_tolerance: float = 10.0
 var cam_height: float = 0.18
 var cam_distance: float = 0.62
 var cam_spring_xz: float = 9.0
+var cam_yaw_spring: float = 12.0
 var cam_spring_vy: float = 3.5
 var cam_damping: float = 2.0
 var cam_look_spring: float = 5.0
