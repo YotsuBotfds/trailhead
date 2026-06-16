@@ -136,9 +136,29 @@ static func build_region(parent: Node3D, region_id: String) -> Node3D:
 	detail_root.name = REGION_DETAIL_ROOT_NAME
 	root.add_child(detail_root)
 	for tile_data in tile_data_list:
-		_add_region_detail_tile(detail_root, tile_data, hlod_instance)
+		_add_region_detail_tile(detail_root, region_id, tile_data, hlod_instance)
 	_add_region_foliage(root, manifest, tile_data_list)
 	return root
+
+
+static func build_region_stream_root(parent: Node3D, region_id: String) -> Node3D:
+	var root: Node3D = Node3D.new()
+	root.name = REGION_ROOT_NAME
+	root.set_meta(REGION_ID_META, region_id)
+	parent.add_child(root)
+
+	var detail_root: Node3D = Node3D.new()
+	detail_root.name = REGION_DETAIL_ROOT_NAME
+	detail_root.set_meta(REGION_ID_META, region_id)
+	root.add_child(detail_root)
+	return root
+
+
+static func add_region_visual_tile(parent: Node3D, region_id: String, cell: Vector2i) -> MeshInstance3D:
+	var tile_data: RegionTileData = _load_region_tile(region_id, cell)
+	if tile_data == null:
+		return null
+	return _add_region_detail_tile(parent, region_id, tile_data, null)
 
 
 static func visual_tile_node_name(tile_index: Vector2i, tile_path: String, tile_array_index: int) -> String:
@@ -163,9 +183,9 @@ static func _add_region_hlod(parent: Node3D, tile_data_list: Array[RegionTileDat
 	return instance
 
 
-static func _add_region_detail_tile(parent: Node3D, tile_data: RegionTileData, hlod_instance: MeshInstance3D) -> MeshInstance3D:
+static func _add_region_detail_tile(parent: Node3D, region_id: String, tile_data: RegionTileData, hlod_instance: MeshInstance3D) -> MeshInstance3D:
 	var instance: MeshInstance3D = MeshInstance3D.new()
-	instance.name = region_detail_tile_node_name(SPIKE_1KM_REGION_ID, tile_data.cell)
+	instance.name = region_detail_tile_node_name(region_id, tile_data.cell)
 	instance.mesh = _build_region_mesh([tile_data], REGION_DETAIL_SAMPLE_STEP, tile_data.key + "_terrain_detail_mesh")
 	instance.visibility_range_end = REGION_DETAIL_VISIBILITY_RANGE_END
 	instance.set_meta(REGION_LOD_META, "detail")
@@ -173,7 +193,8 @@ static func _add_region_detail_tile(parent: Node3D, tile_data: RegionTileData, h
 	instance.set_meta(TILE_PATH_META, tile_data.heightmap_path)
 	instance.set_meta(TILE_SURFACE_ID_PATH_META, tile_data.surface_id_path)
 	parent.add_child(instance)
-	instance.visibility_parent = instance.get_path_to(hlod_instance)
+	if hlod_instance != null:
+		instance.visibility_parent = instance.get_path_to(hlod_instance)
 	return instance
 
 

@@ -19,6 +19,9 @@ printf 'run: terrain surface sampler\n'
 printf 'run: spike 1km render LOD\n'
 "$godot_bin" --headless --path . res://tools/spike_1km_render_inspector.tscn
 
+printf 'run: render tile streamer lifecycle\n'
+"$godot_bin" --headless --path . res://tools/render_tile_streamer_fixture.tscn
+
 printf 'run: data resources\n'
 "$godot_bin" --headless --path . res://tools/data_resource_inspector.tscn
 
