@@ -29,7 +29,6 @@ var chassis_collision_margin: float = 0.002
 var center_of_mass_offset: Vector3 = Vector3(0.0, -0.04, 0.0)
 var wheel_half_track: float = 0.095
 var wheel_half_base: float = 0.10
-var motor_torque: float = 6.0
 var max_speed: float = 8.0
 var v_stick: float = 0.15
 var hold_static_mu_scale: float = 1.15
