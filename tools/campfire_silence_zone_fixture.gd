@@ -1,6 +1,7 @@
 extends Node
 
 const CampfireSilenceZoneScene: PackedScene = preload("res://scenes/world/easter_eggs/campfire_silence_zone.tscn")
+const CedarAudioRigScript: GDScript = preload("res://systems/render/cedar_audio_rig.gd")
 const FIXED_DT: float = 1.0 / 120.0
 const FADE_FRAME_COUNT: int = 60
 const FLOAT_TOLERANCE: float = 0.001
@@ -12,6 +13,7 @@ class TestVehicle:
 		return RefCounted.new()
 
 var _errors: PackedStringArray = PackedStringArray()
+var _duck_events: Array[float] = []
 
 
 func _ready() -> void:
@@ -21,6 +23,14 @@ func _ready() -> void:
 func _run() -> void:
 	var original_volume_db: float = GameConfig.audio_bus_ambient_volume_db
 	GameConfig.audio_bus_ambient_volume_db = -3.0
+	if not EventBus.world_duck_ambient_audio.is_connected(_on_world_duck_ambient_audio):
+		EventBus.world_duck_ambient_audio.connect(_on_world_duck_ambient_audio)
+	var audio_rig: Node = CedarAudioRigScript.new() as Node
+	if audio_rig == null:
+		_errors.append("failed to instantiate CedarAudioRig")
+		_finish(original_volume_db)
+		return
+	add_child(audio_rig)
 
 	var zone: Area3D = CampfireSilenceZoneScene.instantiate() as Area3D
 	if zone == null:
@@ -41,13 +51,19 @@ func _run() -> void:
 
 	zone.call("_on_body_entered", physics_body)
 	_step_zone(zone, FADE_FRAME_COUNT)
-	if GameConfig.audio_bus_ambient_volume_db > -59.0:
-		_errors.append("ambient bus should fade near silence on vehicle entry, got " + str(GameConfig.audio_bus_ambient_volume_db))
+	if _last_duck_volume_db() > -59.0:
+		_errors.append("ambient duck should fade near silence on vehicle entry, got " + str(_last_duck_volume_db()))
+	if absf(GameConfig.audio_bus_ambient_volume_db - -3.0) > FLOAT_TOLERANCE:
+		_errors.append("campfire zone should not mutate GameConfig ambient volume on entry")
+	_require_ambient_gain_matches_duck(audio_rig, "entry")
 
 	zone.call("_on_body_exited", physics_body)
 	_step_zone(zone, FADE_FRAME_COUNT)
+	if absf(_last_duck_volume_db() - -3.0) > FLOAT_TOLERANCE:
+		_errors.append("ambient duck should restore saved value on vehicle exit, got " + str(_last_duck_volume_db()))
 	if absf(GameConfig.audio_bus_ambient_volume_db - -3.0) > FLOAT_TOLERANCE:
-		_errors.append("ambient bus should restore saved value on vehicle exit, got " + str(GameConfig.audio_bus_ambient_volume_db))
+		_errors.append("campfire zone should not mutate GameConfig ambient volume on exit")
+	_require_ambient_gain_matches_duck(audio_rig, "exit")
 
 	_finish(original_volume_db)
 
@@ -55,6 +71,25 @@ func _run() -> void:
 func _step_zone(zone: Area3D, frame_count: int) -> void:
 	for _i in range(frame_count):
 		zone.call("_physics_process", FIXED_DT)
+
+
+func _last_duck_volume_db() -> float:
+	if _duck_events.is_empty():
+		return INF
+	return _duck_events[_duck_events.size() - 1]
+
+
+func _on_world_duck_ambient_audio(target_volume_db: float) -> void:
+	_duck_events.append(target_volume_db)
+
+
+func _require_ambient_gain_matches_duck(audio_rig: Node, label: String) -> void:
+	if audio_rig == null:
+		return
+	var expected_gain: float = db_to_linear(GameConfig.audio_bus_master_volume_db + _last_duck_volume_db())
+	var actual_gain: float = float(audio_rig.call("bus_gain_for_layer", &"ambient"))
+	if absf(actual_gain - expected_gain) > FLOAT_TOLERANCE:
+		_errors.append("ambient rig gain did not match " + label + " duck signal")
 
 
 func _require_zone_contract(zone: Area3D) -> void:
@@ -80,6 +115,8 @@ func _require_zone_contract(zone: Area3D) -> void:
 
 
 func _finish(original_volume_db: float) -> void:
+	if EventBus.world_duck_ambient_audio.is_connected(_on_world_duck_ambient_audio):
+		EventBus.world_duck_ambient_audio.disconnect(_on_world_duck_ambient_audio)
 	GameConfig.audio_bus_ambient_volume_db = original_volume_db
 	for error in _errors:
 		push_error(error)

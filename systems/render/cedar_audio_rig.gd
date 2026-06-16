@@ -49,6 +49,7 @@ var _preview_mix_override_active: bool = false
 var _preview_master_volume_db: float = 0.0
 var _preview_ambient_volume_db: float = 0.0
 var _preview_reverb_wet: float = 0.0
+var _ambient_duck_volume_db: float = 0.0
 
 
 func configure(vehicle: Node) -> void:
@@ -56,12 +57,16 @@ func configure(vehicle: Node) -> void:
 
 
 func _ready() -> void:
+	_ambient_duck_volume_db = GameConfig.audio_bus_ambient_volume_db
 	_motor_player = _make_generator_player("MotorWhine")
 	_tire_player = _make_generator_player("TireTexture")
 	_ambient_player = _make_generator_player("AmbientBed")
 	_water_player = _make_generator_player("CreekBed")
 	_plank_player = _make_generator_player("PlankKnock")
-	EventBus.vehicle_changed_surface.connect(_on_vehicle_changed_surface)
+	if not EventBus.vehicle_changed_surface.is_connected(_on_vehicle_changed_surface):
+		EventBus.vehicle_changed_surface.connect(_on_vehicle_changed_surface)
+	if not EventBus.world_duck_ambient_audio.is_connected(_on_world_duck_ambient_audio):
+		EventBus.world_duck_ambient_audio.connect(_on_world_duck_ambient_audio)
 	if DisplayServer.get_name() != "headless":
 		call_deferred("_start_players")
 
@@ -69,6 +74,8 @@ func _ready() -> void:
 func _exit_tree() -> void:
 	if EventBus.vehicle_changed_surface.is_connected(_on_vehicle_changed_surface):
 		EventBus.vehicle_changed_surface.disconnect(_on_vehicle_changed_surface)
+	if EventBus.world_duck_ambient_audio.is_connected(_on_world_duck_ambient_audio):
+		EventBus.world_duck_ambient_audio.disconnect(_on_world_duck_ambient_audio)
 	_stop_player(_motor_player)
 	_stop_player(_tire_player)
 	_stop_player(_ambient_player)
@@ -456,7 +463,7 @@ func _bus_volume_db_for_layer(layer_name: StringName) -> float:
 	if layer_name == LAYER_AMBIENT:
 		if _preview_mix_override_active:
 			return _preview_ambient_volume_db
-		return GameConfig.audio_bus_ambient_volume_db
+		return _ambient_duck_volume_db
 	if layer_name == LAYER_WATER:
 		return GameConfig.audio_bus_water_volume_db
 	if layer_name == LAYER_PLANK:
@@ -466,6 +473,10 @@ func _bus_volume_db_for_layer(layer_name: StringName) -> float:
 
 func surface_tire_gain_for(surface_id: StringName) -> float:
 	return float(SurfaceVisualCatalogResource.call("tire_audio_gain_for", surface_id))
+
+
+func _on_world_duck_ambient_audio(target_volume_db: float) -> void:
+	_ambient_duck_volume_db = target_volume_db
 
 
 func supported_audio_surface_ids() -> Array[StringName]:

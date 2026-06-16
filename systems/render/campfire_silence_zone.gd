@@ -8,6 +8,7 @@ const RING_RADIUS: float = 0.32
 
 var _inside_bodies: Array[Node] = []
 var _saved_ambient_volume_db: float = 0.0
+var _current_ambient_volume_db: float = 0.0
 var _fade_start_volume_db: float = 0.0
 var _fade_target_volume_db: float = 0.0
 var _fade_elapsed_seconds: float = 0.0
@@ -16,6 +17,7 @@ var _has_saved_volume: bool = false
 
 
 func _ready() -> void:
+	_current_ambient_volume_db = GameConfig.audio_bus_ambient_volume_db
 	body_entered.connect(_on_body_entered)
 	body_exited.connect(_on_body_exited)
 	_build_placeholder_prop()
@@ -24,7 +26,8 @@ func _ready() -> void:
 
 func _exit_tree() -> void:
 	if _has_saved_volume:
-		GameConfig.audio_bus_ambient_volume_db = _saved_ambient_volume_db
+		_current_ambient_volume_db = _saved_ambient_volume_db
+		EventBus.world_duck_ambient_audio.emit(_current_ambient_volume_db)
 
 
 func _physics_process(delta: float) -> void:
@@ -32,7 +35,8 @@ func _physics_process(delta: float) -> void:
 		return
 	_fade_elapsed_seconds += delta
 	var t: float = clampf(_fade_elapsed_seconds / FADE_SECONDS, 0.0, 1.0)
-	GameConfig.audio_bus_ambient_volume_db = lerpf(_fade_start_volume_db, _fade_target_volume_db, t)
+	_current_ambient_volume_db = lerpf(_fade_start_volume_db, _fade_target_volume_db, t)
+	EventBus.world_duck_ambient_audio.emit(_current_ambient_volume_db)
 	if t >= 1.0:
 		_fade_active = false
 		if _inside_bodies.is_empty():
@@ -44,7 +48,7 @@ func _on_body_entered(body: Node) -> void:
 		return
 	_inside_bodies.append(body)
 	if not _has_saved_volume:
-		_saved_ambient_volume_db = GameConfig.audio_bus_ambient_volume_db
+		_saved_ambient_volume_db = _current_ambient_volume_db
 		_has_saved_volume = true
 	_begin_fade(SILENCE_VOLUME_DB)
 
@@ -58,7 +62,7 @@ func _on_body_exited(body: Node) -> void:
 
 
 func _begin_fade(target_volume_db: float) -> void:
-	_fade_start_volume_db = GameConfig.audio_bus_ambient_volume_db
+	_fade_start_volume_db = _current_ambient_volume_db
 	_fade_target_volume_db = target_volume_db
 	_fade_elapsed_seconds = 0.0
 	_fade_active = true
