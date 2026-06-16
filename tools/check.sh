@@ -47,6 +47,7 @@ check "Python tool syntax" sh -c 'python3 -m py_compile tools/*.py'
 check "shell tool syntax" sh -c 'for path in tools/*.sh; do sh -n "$path" || exit 1; done'
 check "Zion bake determinism" python3 tools/check_zion_bake_determinism.py
 check "collision tile integrity" python3 tools/check_collision_tile_integrity.py data/regions/spike_1km
+check "Zion collision tile integrity" python3 tools/check_collision_tile_integrity.py data/regions/cedar_hollow_zion
 check "Godot binary SHA pin" tools/check_godot_binary_sha.sh
 check "Zion surface-ID PNG" python3 tools/check_surface_id_png.py data/terrain/cedar_hollow_zion_surface_id.png --require-grayscale --min-ids 4 --expected-ids 1,2,3,4,5,6 --forbid-zero
 
