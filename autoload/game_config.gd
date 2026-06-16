@@ -135,7 +135,6 @@ var cam_spring_xz: float = 9.0
 var cam_yaw_spring: float = 12.0
 var cam_spring_vy: float = 3.5
 var cam_damping: float = 2.0
-var cam_look_spring: float = 5.0
 var cam_look_ahead: float = 0.65
 var cam_look_turn_bias: float = 0.20
 var cam_fov_base: float = 68.0
