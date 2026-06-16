@@ -222,9 +222,9 @@ func _update_camera(delta: float) -> void:
 		current_position.y = lerpf(current_position.y, smoothed_desired.y, follow_alpha_y)
 		current_position.z = smoothed_desired.z
 		_camera.global_position = current_position
-		var raw_look_target: Vector3 = _chase_camera_look_target(vehicle_position, vehicle_basis, forward, steer)
-		var look_alpha: float = _chase_camera_follow_alpha(delta, GameConfig.cam_look_spring)
-		_chase_look_target_current = _chase_look_target_current.lerp(raw_look_target, look_alpha)
+		# Anchor look target to current vehicle position (no absolute-world smoothing) so the
+		# look cannot lag behind the rigid camera at speed and flip the view backward (FX-31).
+		_chase_look_target_current = _chase_camera_look_target(vehicle_position, vehicle_basis, forward, steer)
 	_camera.look_at(_chase_look_target_current, Vector3.UP)
 	_camera.fov = GameConfig.cam_fov_base
 
