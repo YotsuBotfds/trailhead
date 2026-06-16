@@ -544,9 +544,11 @@ static func _add_region_foliage_cell(parent: Node3D, tile_data_by_cell: Dictiona
 	instance.extra_cull_margin = REGION_FOLIAGE_CULL_MARGIN
 	if lod_index == 0:
 		instance.visibility_range_end = REGION_FOLIAGE_LOD0_VISIBILITY_END
+		instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 	else:
 		instance.visibility_range_begin = REGION_FOLIAGE_LOD1_VISIBILITY_BEGIN
 		instance.visibility_range_end = 0.0
+		instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	instance.set_meta(REGION_LOD_META, "foliage_lod" + str(lod_index))
 	var multimesh: MultiMesh = MultiMesh.new()
 	multimesh.transform_format = MultiMesh.TRANSFORM_3D

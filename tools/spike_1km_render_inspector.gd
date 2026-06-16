@@ -6,6 +6,11 @@ const EXPECTED_REGION_SIZE_M: float = 1000.0
 const FLOAT_EPSILON: float = 0.001
 const BOUNDS_EPSILON_M: float = 0.5
 const TILE_INDEX_META: StringName = &"trailhead_tile_index"
+const REGION_LOD_META: StringName = &"trailhead_region_lod"
+const EXPECTED_FOLIAGE_LOD0_META: String = "foliage_lod0"
+const EXPECTED_FOLIAGE_LOD1_META: String = "foliage_lod1"
+const EXPECTED_FOLIAGE_LOD0_SHADOW_CASTING: int = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+const EXPECTED_FOLIAGE_LOD1_SHADOW_CASTING: int = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 var _scene_root: Node = null
 var _errors: PackedStringArray = PackedStringArray()
@@ -46,9 +51,7 @@ func _inspect() -> void:
 
 	var foliage_root: Node = _require_node(terrain_root, "FoliageCells")
 	if foliage_root != null:
-		var foliage_cells: int = _count_multimesh_instances(foliage_root)
-		if foliage_cells <= 0:
-			_errors.append("FoliageCells should contain MultiMeshInstance3D cells")
+		_inspect_foliage_cells(foliage_root)
 		var foliage_instances: int = _count_multimesh_render_instances(foliage_root)
 		if foliage_instances <= 0:
 			_errors.append("FoliageCells should contain nonzero foliage instances")
@@ -77,6 +80,31 @@ func _inspect_detail_tiles(detail_root: Node) -> void:
 			_errors.append("TerrainDetailTiles/" + String(child.name) + " visibility_range_end expected 120.0, got " + str(mesh_instance.visibility_range_end))
 		if not mesh_instance.has_meta(TILE_INDEX_META):
 			_errors.append("TerrainDetailTiles/" + String(child.name) + " missing tile index metadata")
+
+
+func _inspect_foliage_cells(foliage_root: Node) -> void:
+	var lod0_count: int = 0
+	var lod1_count: int = 0
+	for child in foliage_root.get_children():
+		var multimesh_instance: MultiMeshInstance3D = child as MultiMeshInstance3D
+		if multimesh_instance == null:
+			continue
+		if not multimesh_instance.has_meta(REGION_LOD_META):
+			_errors.append("FoliageCells/" + String(child.name) + " missing region LOD metadata")
+			continue
+		var region_lod: String = String(multimesh_instance.get_meta(REGION_LOD_META))
+		if region_lod == EXPECTED_FOLIAGE_LOD0_META:
+			lod0_count += 1
+			if multimesh_instance.cast_shadow != EXPECTED_FOLIAGE_LOD0_SHADOW_CASTING:
+				_errors.append("FoliageCells/" + String(child.name) + " LOD0 cast_shadow expected ON, got " + str(multimesh_instance.cast_shadow))
+		elif region_lod == EXPECTED_FOLIAGE_LOD1_META:
+			lod1_count += 1
+			if multimesh_instance.cast_shadow != EXPECTED_FOLIAGE_LOD1_SHADOW_CASTING:
+				_errors.append("FoliageCells/" + String(child.name) + " LOD1 cast_shadow expected OFF, got " + str(multimesh_instance.cast_shadow))
+	if lod0_count <= 0:
+		_errors.append("FoliageCells should contain foliage_lod0 cells")
+	if lod1_count <= 0:
+		_errors.append("FoliageCells should contain foliage_lod1 cells")
 
 
 func _require_mesh_surfaces(mesh_instance: MeshInstance3D, label: String) -> void:
