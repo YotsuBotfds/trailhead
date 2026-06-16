@@ -1,0 +1,204 @@
+#!/usr/bin/env python3
+"""Run the windowed render frame-budget probe and validate its metric table."""
+
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any
+
+
+ROOT = Path(__file__).resolve().parents[1]
+GODOT_BIN = os.environ.get("GODOT_BIN", "/Applications/Godot.app/Contents/MacOS/Godot")
+OUT_DIR = ROOT / "tests" / "out" / "render_frame_budget"
+OUT_PATH = OUT_DIR / "spike_streamed.json"
+EXPECTED_PHASES = (
+    "baseline_empty_streamer",
+    "initial_25_tile_burst",
+    "east_shift_5_tile_burst",
+    "steady_streamed_window",
+)
+
+
+def main() -> int:
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    if OUT_PATH.exists():
+        OUT_PATH.unlink()
+
+    command = [
+        GODOT_BIN,
+        "--fixed-fps",
+        "120",
+        "--path",
+        str(ROOT),
+        "res://tools/render_frame_budget_probe.tscn",
+        "--",
+        "--region=spike_1km",
+        f"--out={_res_path(OUT_PATH)}",
+    ]
+    result = _run_probe(command)
+    if result != 0:
+        return result
+
+    payload = _load_json(OUT_PATH)
+    errors = _validate_payload(payload)
+    if errors:
+        for error in errors:
+            print("fail: " + error, file=sys.stderr)
+        return 1
+
+    _print_summary(payload)
+    return 0
+
+
+def _run_probe(command: list[str]) -> int:
+    print("run: windowed render frame budget probe")
+    completed = subprocess.run(
+        command,
+        cwd=ROOT,
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    sys.stdout.write(completed.stdout)
+    if completed.returncode != 0:
+        return int(completed.returncode)
+    if "SCRIPT ERROR:" in completed.stdout or "Parse Error:" in completed.stdout:
+        return 1
+    if "ok: render frame budget probe wrote" not in completed.stdout:
+        print("fail: probe did not report a completed output write", file=sys.stderr)
+        return 1
+    return 0
+
+
+def _load_json(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        raise SystemExit(f"missing expected output: {_display(path)}")
+    data = json.loads(path.read_text())
+    if not isinstance(data, dict):
+        raise SystemExit(f"output was not a JSON object: {_display(path)}")
+    return data
+
+
+def _validate_payload(payload: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    if payload.get("schema") != "trailhead.render_frame_budget.v1":
+        errors.append("unexpected schema")
+    if payload.get("region_id") != "spike_1km":
+        errors.append("unexpected region_id")
+    phases = payload.get("phases")
+    if not isinstance(phases, list):
+        errors.append("phases should be a list")
+        return errors
+    observed_names = tuple(phase.get("name") for phase in phases if isinstance(phase, dict))
+    if observed_names != EXPECTED_PHASES:
+        errors.append(f"phase names expected {EXPECTED_PHASES!r}, got {observed_names!r}")
+    for phase in phases:
+        if not isinstance(phase, dict):
+            errors.append("phase entry should be an object")
+            continue
+        errors.extend(_validate_phase(phase))
+    if int(payload.get("final_visual_cells", 0)) != 25:
+        errors.append("final_visual_cells should be 25 after the shifted active window")
+    return errors
+
+
+def _validate_phase(phase: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    name = str(phase.get("name", "<missing>"))
+    if int(phase.get("frames", 0)) <= 0:
+        errors.append(name + " should record at least one frame")
+    if "activation_cpu_ms" not in phase:
+        errors.append(name + " missing activation_cpu_ms")
+    if not isinstance(phase.get("viewport_gpu_timing_available"), bool):
+        errors.append(name + " missing viewport_gpu_timing_available")
+    timing = phase.get("timing_ms")
+    if not isinstance(timing, dict):
+        errors.append(name + " missing timing_ms")
+    else:
+        for key in ("frame_wall", "viewport_cpu", "viewport_gpu", "process_monitor", "physics_monitor"):
+            errors.extend(_validate_stats(timing.get(key), name + ".timing_ms." + key))
+    render_info = phase.get("render_info")
+    if not isinstance(render_info, dict):
+        errors.append(name + " missing render_info")
+    else:
+        for bucket in ("visible", "shadow", "canvas"):
+            bucket_value = render_info.get(bucket)
+            if not isinstance(bucket_value, dict):
+                errors.append(name + ".render_info." + bucket + " missing")
+                continue
+            for key in ("draw_calls", "primitives", "objects"):
+                errors.extend(_validate_stats(bucket_value.get(key), name + ".render_info." + bucket + "." + key))
+        total = render_info.get("performance_total")
+        if not isinstance(total, dict):
+            errors.append(name + ".render_info.performance_total missing")
+        else:
+            for key in ("draw_calls", "objects"):
+                errors.extend(_validate_stats(total.get(key), name + ".render_info.performance_total." + key))
+    memory = phase.get("memory_mb")
+    if not isinstance(memory, dict):
+        errors.append(name + " missing memory_mb")
+    else:
+        errors.extend(_validate_stats(memory.get("render_video"), name + ".memory_mb.render_video"))
+    return errors
+
+
+def _validate_stats(value: Any, label: str) -> list[str]:
+    errors: list[str] = []
+    if not isinstance(value, dict):
+        return [label + " should be a stats object"]
+    for key in ("min", "max", "avg", "p50", "p95"):
+        metric = value.get(key)
+        if not isinstance(metric, (int, float)):
+            errors.append(label + "." + key + " should be numeric")
+        elif float(metric) < 0.0:
+            errors.append(label + "." + key + " should be non-negative")
+    return errors
+
+
+def _print_summary(payload: dict[str, Any]) -> None:
+    print("ok: render frame budget metrics -> " + _display(OUT_PATH))
+    print("phase,active,gpu_timing,activation_cpu_ms,wall_p95_ms,viewport_cpu_p95_ms,viewport_gpu_p95_ms,render_video_mb_avg,visible_draw_avg,shadow_draw_avg,total_draw_avg")
+    for phase in payload["phases"]:
+        timing = phase["timing_ms"]
+        render_info = phase["render_info"]
+        print(
+            ",".join(
+                [
+                    str(phase["name"]),
+                    str(phase["active_visual_cells"]),
+                    "yes" if phase["viewport_gpu_timing_available"] else "no",
+                    _fmt(phase["activation_cpu_ms"]),
+                    _fmt(timing["frame_wall"]["p95"]),
+                    _fmt(timing["viewport_cpu"]["p95"]),
+                    _fmt(timing["viewport_gpu"]["p95"]),
+                    _fmt(phase["memory_mb"]["render_video"]["avg"]),
+                    _fmt(render_info["visible"]["draw_calls"]["avg"]),
+                    _fmt(render_info["shadow"]["draw_calls"]["avg"]),
+                    _fmt(render_info["performance_total"]["draw_calls"]["avg"]),
+                ]
+            )
+        )
+
+
+def _fmt(value: Any) -> str:
+    return f"{float(value):.3f}"
+
+
+def _res_path(path: Path) -> str:
+    return "res://" + path.relative_to(ROOT).as_posix()
+
+
+def _display(path: Path) -> str:
+    try:
+        return str(path.relative_to(ROOT))
+    except ValueError:
+        return str(path)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
