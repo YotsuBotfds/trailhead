@@ -1236,7 +1236,10 @@ static func _region_foliage_material_for_lod(lod_index: int) -> Material:
 	var material_color: Color = REGION_FOLIAGE_LOD0_COLOR
 	if safe_lod_index > 0:
 		material_color = REGION_FOLIAGE_LOD1_COLOR
-	var material: Material = _region_foliage_material("region_foliage_lod" + str(safe_lod_index) + "_material", material_color)
+	var blade_height_reference: float = REGION_FOLIAGE_LOD0_SCALE.y
+	if safe_lod_index > 0:
+		blade_height_reference = REGION_FOLIAGE_LOD1_SCALE.y
+	var material: Material = _region_foliage_material("region_foliage_lod" + str(safe_lod_index) + "_material", material_color, blade_height_reference)
 	_foliage_material_cache[safe_lod_index] = material
 	return material
 
@@ -1296,13 +1299,13 @@ static func _region_foliage_mesh(mesh_name: String) -> ArrayMesh:
 	return mesh
 
 
-static func _region_foliage_material(material_name: String, color: Color) -> ShaderMaterial:
+static func _region_foliage_material(material_name: String, color: Color, blade_height_reference: float) -> ShaderMaterial:
 	var material: ShaderMaterial = ShaderMaterial.new()
 	material.resource_name = material_name
 	material.shader = GrassShader
 	material.set_shader_parameter("blade_base_color", Color(color.r * 0.72, color.g * 0.72, color.b * 0.70, color.a))
 	material.set_shader_parameter("blade_tip_color", Color(minf(color.r * 1.28, 1.0), minf(color.g * 1.22, 1.0), minf(color.b * 1.16, 1.0), color.a))
-	material.set_shader_parameter("blade_height_reference", REGION_FOLIAGE_LOD1_SCALE.y)
+	material.set_shader_parameter("blade_height_reference", blade_height_reference)
 	material.set_shader_parameter("wind_strength", 0.035)
 	material.set_shader_parameter("wind_speed", 0.75)
 	material.set_shader_parameter("wind_time_factor", 0.018)
