@@ -13,6 +13,7 @@ static var _terrain_material_cache: Dictionary[StringName, StandardMaterial3D] =
 
 const REGION_ID_META: StringName = &"trailhead_region_id"
 const REGION_LOD_META: StringName = &"trailhead_region_lod"
+const VISIBILITY_RADIUS_META: StringName = &"trailhead_visibility_radius"
 const TILE_INDEX_META: StringName = &"trailhead_tile_index"
 const TILE_PATH_META: StringName = &"trailhead_visual_tile_path"
 const TILE_SURFACE_ID_PATH_META: StringName = &"trailhead_surface_id_path"
@@ -32,11 +33,7 @@ const REGION_TILE_SURFACE_ID_FILE: String = "surface_id.png"
 const HEIGHTMAP_FLOAT_BYTE_SIZE: int = 4
 const REGION_DETAIL_SAMPLE_STEP: int = 1
 const REGION_HLOD_SAMPLE_STEP: int = 5
-const REGION_DETAIL_VISIBILITY_RANGE_END: float = 120.0
-const REGION_HLOD_VISIBILITY_RANGE_BEGIN: float = 96.0
 const REGION_FOLIAGE_CELL_SIZE_M: float = 32.0
-const REGION_FOLIAGE_LOD0_VISIBILITY_END: float = 120.0
-const REGION_FOLIAGE_LOD1_VISIBILITY_BEGIN: float = 96.0
 const REGION_FOLIAGE_LOD0_BASE_COUNT: int = 8
 const REGION_FOLIAGE_LOD1_BASE_COUNT: int = 3
 const REGION_FOLIAGE_PATTERN_MODULUS: int = 1009
@@ -175,12 +172,33 @@ static func region_detail_tile_node_name(region_id: String, tile_index: Vector2i
 	return "region_" + _safe_node_name(region_id) + "_detail_tile_" + str(tile_index.x) + "_" + str(tile_index.y)
 
 
+static func _detail_visibility_range_end(tile_data: RegionTileData) -> float:
+	return maxf(maxf(GameConfig.cam_far, GameConfig.vis_range_terrain) + _tile_visibility_radius(tile_data), 0.0)
+
+
+static func _hlod_visibility_range_begin() -> float:
+	return maxf(GameConfig.vis_range_terrain, 0.0)
+
+
+static func _foliage_lod0_visibility_range_end(cell_radius: float) -> float:
+	return maxf(GameConfig.vis_range_grass + cell_radius, 0.0)
+
+
+static func _foliage_lod1_visibility_range_begin(cell_radius: float) -> float:
+	return _foliage_lod0_visibility_range_end(cell_radius)
+
+
+static func _foliage_lod1_visibility_range_end(cell_radius: float) -> float:
+	return maxf(GameConfig.cam_far + cell_radius, _foliage_lod1_visibility_range_begin(cell_radius))
+
+
 static func _add_region_hlod(parent: Node3D, tile_data_list: Array[RegionTileData]) -> MeshInstance3D:
 	var instance: MeshInstance3D = MeshInstance3D.new()
 	instance.name = REGION_HLOD_NAME
-	instance.mesh = _build_region_mesh(tile_data_list, REGION_HLOD_SAMPLE_STEP, "spike_1km_terrain_hlod_mesh")
-	instance.visibility_range_begin = REGION_HLOD_VISIBILITY_RANGE_BEGIN
+	instance.mesh = _build_region_mesh(tile_data_list, REGION_HLOD_SAMPLE_STEP, "spike_1km_terrain_hlod_mesh", Vector2.ZERO)
+	instance.visibility_range_begin = _hlod_visibility_range_begin()
 	instance.visibility_range_end = 0.0
+	instance.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
 	instance.set_meta(REGION_LOD_META, "hlod")
 	parent.add_child(instance)
 	return instance
@@ -189,9 +207,13 @@ static func _add_region_hlod(parent: Node3D, tile_data_list: Array[RegionTileDat
 static func _add_region_detail_tile(parent: Node3D, region_id: String, tile_data: RegionTileData, hlod_instance: MeshInstance3D) -> MeshInstance3D:
 	var instance: MeshInstance3D = MeshInstance3D.new()
 	instance.name = region_detail_tile_node_name(region_id, tile_data.cell)
-	instance.mesh = _build_region_mesh([tile_data], REGION_DETAIL_SAMPLE_STEP, tile_data.key + "_terrain_detail_mesh")
-	instance.visibility_range_end = REGION_DETAIL_VISIBILITY_RANGE_END
+	var tile_origin_xz: Vector2 = _tile_origin_xz(tile_data)
+	instance.position = Vector3(tile_origin_xz.x, 0.0, tile_origin_xz.y)
+	instance.mesh = _build_region_mesh([tile_data], REGION_DETAIL_SAMPLE_STEP, tile_data.key + "_terrain_detail_mesh", tile_origin_xz)
+	instance.visibility_range_end = _detail_visibility_range_end(tile_data)
+	instance.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
 	instance.set_meta(REGION_LOD_META, "detail")
+	instance.set_meta(VISIBILITY_RADIUS_META, _tile_visibility_radius(tile_data))
 	instance.set_meta(TILE_INDEX_META, tile_data.cell)
 	instance.set_meta(TILE_PATH_META, tile_data.heightmap_path)
 	instance.set_meta(TILE_SURFACE_ID_PATH_META, tile_data.surface_id_path)
@@ -201,10 +223,10 @@ static func _add_region_detail_tile(parent: Node3D, region_id: String, tile_data
 	return instance
 
 
-static func _build_region_mesh(tile_data_list: Array[RegionTileData], sample_step: int, mesh_name: String) -> ArrayMesh:
+static func _build_region_mesh(tile_data_list: Array[RegionTileData], sample_step: int, mesh_name: String, local_origin_xz: Vector2) -> ArrayMesh:
 	var buckets: Dictionary[int, MeshBucket] = {}
 	for tile_data in tile_data_list:
-		_append_tile_quads(tile_data, sample_step, buckets)
+		_append_tile_quads(tile_data, sample_step, buckets, local_origin_xz)
 
 	var mesh: ArrayMesh = ArrayMesh.new()
 	mesh.resource_name = mesh_name
@@ -224,7 +246,7 @@ static func _build_region_mesh(tile_data_list: Array[RegionTileData], sample_ste
 	return mesh
 
 
-static func _append_tile_quads(tile_data: RegionTileData, sample_step: int, buckets: Dictionary[int, MeshBucket]) -> void:
+static func _append_tile_quads(tile_data: RegionTileData, sample_step: int, buckets: Dictionary[int, MeshBucket], local_origin_xz: Vector2) -> void:
 	if tile_data.width <= 1 or tile_data.depth <= 1:
 		return
 	var safe_step: int = maxi(sample_step, 1)
@@ -238,10 +260,10 @@ static func _append_tile_quads(tile_data: RegionTileData, sample_step: int, buck
 			var surface_row: int = _surface_sample_coord(row, next_row, tile_data.surface_image.get_height())
 			var surface_id_value: int = _surface_id_value_at(tile_data, surface_col, surface_row)
 			var bucket: MeshBucket = _bucket_for_surface_value(buckets, surface_id_value)
-			var corner_a: int = _bucket_vertex(bucket, tile_data, col, row)
-			var corner_b: int = _bucket_vertex(bucket, tile_data, next_col, row)
-			var corner_c: int = _bucket_vertex(bucket, tile_data, col, next_row)
-			var corner_d: int = _bucket_vertex(bucket, tile_data, next_col, next_row)
+			var corner_a: int = _bucket_vertex(bucket, tile_data, col, row, local_origin_xz)
+			var corner_b: int = _bucket_vertex(bucket, tile_data, next_col, row, local_origin_xz)
+			var corner_c: int = _bucket_vertex(bucket, tile_data, col, next_row, local_origin_xz)
+			var corner_d: int = _bucket_vertex(bucket, tile_data, next_col, next_row, local_origin_xz)
 			bucket.indices.append(corner_a)
 			bucket.indices.append(corner_c)
 			bucket.indices.append(corner_b)
@@ -264,27 +286,46 @@ static func _bucket_for_surface_value(buckets: Dictionary[int, MeshBucket], surf
 	return bucket
 
 
-static func _bucket_vertex(bucket: MeshBucket, tile_data: RegionTileData, col: int, row: int) -> int:
+static func _bucket_vertex(bucket: MeshBucket, tile_data: RegionTileData, col: int, row: int, local_origin_xz: Vector2) -> int:
 	var key: String = _tile_key(tile_data.cell) + ":" + str(row) + ":" + str(col)
 	if bucket.vertex_indices.has(key):
 		return int(bucket.vertex_indices[key])
 	var vertex_index: int = bucket.vertices.size()
 	bucket.vertex_indices[key] = vertex_index
-	var vertex: Vector3 = _tile_vertex(tile_data, col, row)
+	var vertex: Vector3 = _tile_vertex(tile_data, col, row, local_origin_xz)
 	bucket.vertices.append(vertex)
 	bucket.normals.append(_tile_normal(tile_data, col, row))
-	bucket.uvs.append(Vector2(vertex.x, vertex.z))
+	bucket.uvs.append(_tile_world_xz(tile_data, col, row))
 	return vertex_index
 
 
-static func _tile_vertex(tile_data: RegionTileData, col: int, row: int) -> Vector3:
+static func _tile_vertex(tile_data: RegionTileData, col: int, row: int, local_origin_xz: Vector2) -> Vector3:
+	var world_xz: Vector2 = _tile_world_xz(tile_data, col, row)
+	return Vector3(
+		world_xz.x - local_origin_xz.x,
+		_height_value_at(tile_data, col, row),
+		world_xz.y - local_origin_xz.y
+	)
+
+
+static func _tile_world_xz(tile_data: RegionTileData, col: int, row: int) -> Vector2:
 	var x_spacing: float = tile_data.tile_size_m / float(maxi(tile_data.width - 1, 1))
 	var z_spacing: float = tile_data.tile_size_m / float(maxi(tile_data.depth - 1, 1))
-	return Vector3(
+	return Vector2(
 		float(tile_data.cell.x) * tile_data.tile_size_m + float(col) * x_spacing,
-		_height_value_at(tile_data, col, row),
 		float(tile_data.cell.y) * tile_data.tile_size_m + float(row) * z_spacing
 	)
+
+
+static func _tile_origin_xz(tile_data: RegionTileData) -> Vector2:
+	return Vector2(
+		(float(tile_data.cell.x) + 0.5) * tile_data.tile_size_m,
+		(float(tile_data.cell.y) + 0.5) * tile_data.tile_size_m
+	)
+
+
+static func _tile_visibility_radius(tile_data: RegionTileData) -> float:
+	return Vector2(tile_data.tile_size_m, tile_data.tile_size_m).length() * 0.5
 
 
 static func _tile_normal(tile_data: RegionTileData, col: int, row: int) -> Vector3:
@@ -540,23 +581,31 @@ static func _add_region_foliage_cell(parent: Node3D, tile_data_by_cell: Dictiona
 
 	var instance: MultiMeshInstance3D = MultiMeshInstance3D.new()
 	instance.name = "foliage_cell_" + str(foliage_cell.x) + "_" + str(foliage_cell.y) + "_lod" + str(lod_index)
+	var foliage_origin_xz: Vector2 = cell_rect.position + cell_rect.size * 0.5
+	var foliage_cell_radius: float = cell_rect.size.length() * 0.5
+	instance.position = Vector3(foliage_origin_xz.x, 0.0, foliage_origin_xz.y)
 	instance.material_override = material
 	instance.extra_cull_margin = REGION_FOLIAGE_CULL_MARGIN
 	if lod_index == 0:
-		instance.visibility_range_end = REGION_FOLIAGE_LOD0_VISIBILITY_END
+		instance.visibility_range_end = _foliage_lod0_visibility_range_end(foliage_cell_radius)
 		instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 	else:
-		instance.visibility_range_begin = REGION_FOLIAGE_LOD1_VISIBILITY_BEGIN
-		instance.visibility_range_end = 0.0
+		instance.visibility_range_begin = _foliage_lod1_visibility_range_begin(foliage_cell_radius)
+		instance.visibility_range_end = _foliage_lod1_visibility_range_end(foliage_cell_radius)
 		instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	instance.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
 	instance.set_meta(REGION_LOD_META, "foliage_lod" + str(lod_index))
+	instance.set_meta(VISIBILITY_RADIUS_META, foliage_cell_radius)
 	var multimesh: MultiMesh = MultiMesh.new()
 	multimesh.transform_format = MultiMesh.TRANSFORM_3D
 	multimesh.use_colors = true
 	multimesh.mesh = mesh
 	multimesh.instance_count = transforms.size()
 	for i in range(transforms.size()):
-		multimesh.set_instance_transform(i, transforms[i])
+		var transform: Transform3D = transforms[i]
+		transform.origin.x -= foliage_origin_xz.x
+		transform.origin.z -= foliage_origin_xz.y
+		multimesh.set_instance_transform(i, transform)
 		multimesh.set_instance_color(i, colors[i])
 	instance.multimesh = multimesh
 	parent.add_child(instance)

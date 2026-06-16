@@ -139,6 +139,12 @@ def _validate_phase(phase: dict[str, Any]) -> list[str]:
         else:
             for key in ("draw_calls", "objects"):
                 errors.extend(_validate_stats(total.get(key), name + ".render_info.performance_total." + key))
+        active_cells = int(phase.get("active_visual_cells", 0))
+        visible_bucket = render_info.get("visible")
+        if active_cells > 0 and isinstance(visible_bucket, dict):
+            draw_stats = visible_bucket.get("draw_calls")
+            if isinstance(draw_stats, dict) and float(draw_stats.get("avg", 0.0)) <= 0.0:
+                errors.append(name + " should render visible draw calls when streamed visual cells are active")
     memory = phase.get("memory_mb")
     if not isinstance(memory, dict):
         errors.append(name + " missing memory_mb")

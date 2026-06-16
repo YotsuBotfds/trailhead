@@ -7,6 +7,7 @@ const FLOAT_EPSILON: float = 0.001
 const BOUNDS_EPSILON_M: float = 0.5
 const TILE_INDEX_META: StringName = &"trailhead_tile_index"
 const REGION_LOD_META: StringName = &"trailhead_region_lod"
+const VISIBILITY_RADIUS_META: StringName = &"trailhead_visibility_radius"
 const EXPECTED_FOLIAGE_LOD0_META: String = "foliage_lod0"
 const EXPECTED_FOLIAGE_LOD1_META: String = "foliage_lod1"
 const EXPECTED_FOLIAGE_LOD0_SHADOW_CASTING: int = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
@@ -39,10 +40,12 @@ func _inspect() -> void:
 	else:
 		_require_mesh_surfaces(hlod, "TerrainHLOD")
 		_require_xz_bounds(hlod, "TerrainHLOD", EXPECTED_REGION_SIZE_M, EXPECTED_REGION_SIZE_M)
-		if absf(hlod.visibility_range_begin - 96.0) > FLOAT_EPSILON:
-			_errors.append("TerrainHLOD visibility_range_begin expected 96.0, got " + str(hlod.visibility_range_begin))
+		if absf(hlod.visibility_range_begin - GameConfig.vis_range_terrain) > FLOAT_EPSILON:
+			_errors.append("TerrainHLOD visibility_range_begin expected " + str(GameConfig.vis_range_terrain) + ", got " + str(hlod.visibility_range_begin))
 		if absf(hlod.visibility_range_end) > FLOAT_EPSILON:
 			_errors.append("TerrainHLOD visibility_range_end should be open-ended")
+		if hlod.visibility_range_fade_mode != GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED:
+			_errors.append("TerrainHLOD visibility_range_fade_mode expected DISABLED, got " + str(hlod.visibility_range_fade_mode))
 
 	var detail_root: Node = _require_node(terrain_root, "TerrainDetailTiles")
 	if detail_root != null:
@@ -76,10 +79,23 @@ func _inspect_detail_tiles(detail_root: Node) -> void:
 		_require_mesh_surfaces(mesh_instance, "TerrainDetailTiles/" + String(child.name))
 		if mesh_instance.visibility_parent.is_empty():
 			_errors.append("TerrainDetailTiles/" + String(child.name) + " should set visibility_parent")
-		if absf(mesh_instance.visibility_range_end - 120.0) > FLOAT_EPSILON:
-			_errors.append("TerrainDetailTiles/" + String(child.name) + " visibility_range_end expected 120.0, got " + str(mesh_instance.visibility_range_end))
+		var visibility_radius: float = _visibility_radius(mesh_instance, "TerrainDetailTiles/" + String(child.name))
+		var expected_range_end: float = _detail_visibility_range_end(visibility_radius)
+		if absf(mesh_instance.visibility_range_end - expected_range_end) > FLOAT_EPSILON:
+			_errors.append("TerrainDetailTiles/" + String(child.name) + " visibility_range_end expected " + str(expected_range_end) + ", got " + str(mesh_instance.visibility_range_end))
+		if mesh_instance.visibility_range_fade_mode != GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED:
+			_errors.append("TerrainDetailTiles/" + String(child.name) + " visibility_range_fade_mode expected DISABLED, got " + str(mesh_instance.visibility_range_fade_mode))
 		if not mesh_instance.has_meta(TILE_INDEX_META):
 			_errors.append("TerrainDetailTiles/" + String(child.name) + " missing tile index metadata")
+		else:
+			var tile_index: Vector2i = Vector2i(mesh_instance.get_meta(TILE_INDEX_META))
+			var expected_origin: Vector3 = Vector3(
+				(float(tile_index.x) + 0.5) * GameConfig.STREAM_TILE_SIZE_M,
+				0.0,
+				(float(tile_index.y) + 0.5) * GameConfig.STREAM_TILE_SIZE_M
+			)
+			if mesh_instance.position.distance_to(expected_origin) > FLOAT_EPSILON:
+				_errors.append("TerrainDetailTiles/" + String(child.name) + " origin expected " + str(expected_origin) + ", got " + str(mesh_instance.position))
 
 
 func _inspect_foliage_cells(foliage_root: Node) -> void:
@@ -93,18 +109,54 @@ func _inspect_foliage_cells(foliage_root: Node) -> void:
 			_errors.append("FoliageCells/" + String(child.name) + " missing region LOD metadata")
 			continue
 		var region_lod: String = String(multimesh_instance.get_meta(REGION_LOD_META))
+		if multimesh_instance.visibility_range_fade_mode != GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED:
+			_errors.append("FoliageCells/" + String(child.name) + " visibility_range_fade_mode expected DISABLED, got " + str(multimesh_instance.visibility_range_fade_mode))
 		if region_lod == EXPECTED_FOLIAGE_LOD0_META:
 			lod0_count += 1
 			if multimesh_instance.cast_shadow != EXPECTED_FOLIAGE_LOD0_SHADOW_CASTING:
 				_errors.append("FoliageCells/" + String(child.name) + " LOD0 cast_shadow expected ON, got " + str(multimesh_instance.cast_shadow))
+			var lod0_radius: float = _visibility_radius(multimesh_instance, "FoliageCells/" + String(child.name))
+			var expected_lod0_end: float = _foliage_lod0_visibility_range_end(lod0_radius)
+			if absf(multimesh_instance.visibility_range_end - expected_lod0_end) > FLOAT_EPSILON:
+				_errors.append("FoliageCells/" + String(child.name) + " LOD0 visibility_range_end expected " + str(expected_lod0_end) + ", got " + str(multimesh_instance.visibility_range_end))
 		elif region_lod == EXPECTED_FOLIAGE_LOD1_META:
 			lod1_count += 1
 			if multimesh_instance.cast_shadow != EXPECTED_FOLIAGE_LOD1_SHADOW_CASTING:
 				_errors.append("FoliageCells/" + String(child.name) + " LOD1 cast_shadow expected OFF, got " + str(multimesh_instance.cast_shadow))
+			var lod1_radius: float = _visibility_radius(multimesh_instance, "FoliageCells/" + String(child.name))
+			var expected_lod1_begin: float = _foliage_lod1_visibility_range_begin(lod1_radius)
+			var expected_lod1_end: float = _foliage_lod1_visibility_range_end(lod1_radius)
+			if absf(multimesh_instance.visibility_range_begin - expected_lod1_begin) > FLOAT_EPSILON:
+				_errors.append("FoliageCells/" + String(child.name) + " LOD1 visibility_range_begin expected " + str(expected_lod1_begin) + ", got " + str(multimesh_instance.visibility_range_begin))
+			if absf(multimesh_instance.visibility_range_end - expected_lod1_end) > FLOAT_EPSILON:
+				_errors.append("FoliageCells/" + String(child.name) + " LOD1 visibility_range_end expected " + str(expected_lod1_end) + ", got " + str(multimesh_instance.visibility_range_end))
 	if lod0_count <= 0:
 		_errors.append("FoliageCells should contain foliage_lod0 cells")
 	if lod1_count <= 0:
 		_errors.append("FoliageCells should contain foliage_lod1 cells")
+
+
+func _visibility_radius(node: Node, label: String) -> float:
+	if not node.has_meta(VISIBILITY_RADIUS_META):
+		_errors.append(label + " missing visibility radius metadata")
+		return 0.0
+	return float(node.get_meta(VISIBILITY_RADIUS_META))
+
+
+func _detail_visibility_range_end(visibility_radius: float) -> float:
+	return maxf(maxf(GameConfig.cam_far, GameConfig.vis_range_terrain) + visibility_radius, 0.0)
+
+
+func _foliage_lod0_visibility_range_end(visibility_radius: float) -> float:
+	return maxf(GameConfig.vis_range_grass + visibility_radius, 0.0)
+
+
+func _foliage_lod1_visibility_range_begin(visibility_radius: float) -> float:
+	return _foliage_lod0_visibility_range_end(visibility_radius)
+
+
+func _foliage_lod1_visibility_range_end(visibility_radius: float) -> float:
+	return maxf(GameConfig.cam_far + visibility_radius, _foliage_lod1_visibility_range_begin(visibility_radius))
 
 
 func _require_mesh_surfaces(mesh_instance: MeshInstance3D, label: String) -> void:

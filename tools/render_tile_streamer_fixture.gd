@@ -95,6 +95,22 @@ func _require_visual_tile(cell: Vector2i) -> MeshInstance3D:
 		_errors.append("visual cell name expected " + expected_name + ", got " + String(mesh_instance.name))
 	if not mesh_instance.visibility_parent.is_empty():
 		_errors.append("streamed visual cell should not reference a missing HLOD visibility parent: " + String(mesh_instance.name))
+	var expected_origin: Vector3 = Vector3(
+		(float(cell.x) + 0.5) * GameConfig.STREAM_TILE_SIZE_M,
+		0.0,
+		(float(cell.y) + 0.5) * GameConfig.STREAM_TILE_SIZE_M
+	)
+	if mesh_instance.position.distance_to(expected_origin) > FLOAT_EPSILON:
+		_errors.append("streamed visual cell origin expected " + str(expected_origin) + ", got " + str(mesh_instance.position) + ": " + String(mesh_instance.name))
+	if not mesh_instance.has_meta(TerrainVisualBuilderScript.VISIBILITY_RADIUS_META):
+		_errors.append("streamed visual cell missing visibility radius metadata: " + String(mesh_instance.name))
+	else:
+		var visibility_radius: float = float(mesh_instance.get_meta(TerrainVisualBuilderScript.VISIBILITY_RADIUS_META))
+		var expected_range_end: float = maxf(maxf(GameConfig.cam_far, GameConfig.vis_range_terrain) + visibility_radius, 0.0)
+		if absf(mesh_instance.visibility_range_end - expected_range_end) > FLOAT_EPSILON:
+			_errors.append("streamed visual cell visibility_range_end expected " + str(expected_range_end) + ", got " + str(mesh_instance.visibility_range_end) + ": " + String(mesh_instance.name))
+	if mesh_instance.visibility_range_fade_mode != GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED:
+		_errors.append("streamed visual cell visibility_range_fade_mode expected DISABLED, got " + str(mesh_instance.visibility_range_fade_mode) + ": " + String(mesh_instance.name))
 	if not mesh_instance.has_meta(TerrainVisualBuilderScript.TILE_INDEX_META):
 		_errors.append("visual cell missing tile index metadata: " + String(mesh_instance.name))
 	elif Vector2i(mesh_instance.get_meta(TerrainVisualBuilderScript.TILE_INDEX_META)) != cell:
