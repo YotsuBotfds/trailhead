@@ -36,6 +36,7 @@ def main() -> int:
         str(ROOT),
         "res://tools/render_frame_budget_probe.tscn",
         "--",
+        "--render-runtime-skip-frame-cap",
         "--region=spike_1km",
         f"--out={_res_path(OUT_PATH)}",
     ]
@@ -90,6 +91,18 @@ def _validate_payload(payload: dict[str, Any]) -> list[str]:
         errors.append("unexpected schema")
     if payload.get("region_id") != "spike_1km":
         errors.append("unexpected region_id")
+    runtime = payload.get("render_runtime")
+    if not isinstance(runtime, dict):
+        errors.append("missing render_runtime")
+    else:
+        if runtime.get("frame_cap_enabled") is not True:
+            errors.append("render frame cap should be enabled")
+        if int(runtime.get("target_max_fps", 0)) != 60:
+            errors.append("render target_max_fps should be 60")
+        if runtime.get("frame_cap_skip_requested") is not True:
+            errors.append("render frame-budget probe should skip runtime frame cap")
+        if runtime.get("frame_cap_applied") is not False:
+            errors.append("render frame cap should not apply to fixed-fps frame-budget probes")
     phases = payload.get("phases")
     if not isinstance(phases, list):
         errors.append("phases should be a list")

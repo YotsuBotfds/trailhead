@@ -18,6 +18,7 @@ const AtmosphereVisualBuilderScript: GDScript = preload("res://systems/render/at
 const DustTiltShiftVisualBuilderScript: GDScript = preload("res://systems/render/dust_tilt_shift_visual_builder.gd")
 const WaterVisualBuilderScript: GDScript = preload("res://systems/render/water_visual_builder.gd")
 const ProceduralBuggyVisualScript: GDScript = preload("res://systems/render/procedural_buggy_visual.gd")
+const RenderRuntimeConfigScript: GDScript = preload("res://systems/render/render_runtime_config.gd")
 const VehicleResidueVisualScript: GDScript = preload("res://systems/render/vehicle_residue_visual.gd")
 const VehicleJuiceRigScript: GDScript = preload("res://systems/render/vehicle_juice_rig.gd")
 const CedarAudioRigScript: GDScript = preload("res://systems/render/cedar_audio_rig.gd")
@@ -71,6 +72,7 @@ var _drive_started: bool = false
 
 
 func _ready() -> void:
+	RenderRuntimeConfigScript.apply_to(self)
 	_ensure_default_input_map()
 	_setup_surface_map()
 	_setup_world()

@@ -26,6 +26,8 @@ const DIRECTIONAL_SHADOW_ORTHOGONAL: int = 0
 const DIRECTIONAL_SHADOW_PARALLEL_2_SPLITS: int = 1
 const DIRECTIONAL_SHADOW_PARALLEL_4_SPLITS: int = 2
 
+var render_frame_cap_enabled: bool = true
+var render_max_fps: int = 60
 var chassis_mass: float = 1.5
 var chassis_collision_size: Vector3 = Vector3(0.18, 0.06, 0.30)
 var chassis_collision_margin: float = 0.002

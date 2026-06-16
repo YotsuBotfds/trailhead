@@ -1,6 +1,7 @@
 extends Node
 
 const SimRunnerScene: PackedScene = preload("res://scenes/sim_runner.tscn")
+const RenderRuntimeConfigScript: GDScript = preload("res://systems/render/render_runtime_config.gd")
 const TerrainVisualStreamerScript: GDScript = preload("res://systems/render/terrain_visual_streamer.gd")
 
 const DEFAULT_WINDOW_SIZE: Vector2i = Vector2i(640, 360)
@@ -13,6 +14,7 @@ var _reported_visual_activation: bool = false
 
 
 func _ready() -> void:
+	RenderRuntimeConfigScript.apply_to(self)
 	_parse_args()
 	if DisplayServer.get_name() != "headless":
 		DisplayServer.window_set_size(DEFAULT_WINDOW_SIZE)

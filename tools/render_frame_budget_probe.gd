@@ -1,6 +1,7 @@
 extends Node
 
 const TerrainVisualStreamerScript: GDScript = preload("res://systems/render/terrain_visual_streamer.gd")
+const RenderRuntimeConfigScript: GDScript = preload("res://systems/render/render_runtime_config.gd")
 
 const DEFAULT_OUT_PATH: String = "res://tests/out/render_frame_budget/spike_streamed.json"
 const DEFAULT_REGION_ID: String = "spike_1km"
@@ -24,6 +25,7 @@ var _errors: PackedStringArray = PackedStringArray()
 
 
 func _ready() -> void:
+	RenderRuntimeConfigScript.apply_to(self)
 	_parse_args()
 	if DisplayServer.get_name() != "headless":
 		DisplayServer.window_set_size(WINDOW_SIZE)
@@ -93,6 +95,13 @@ func _run() -> void:
 		"schema": "trailhead.render_frame_budget.v1",
 		"region_id": _region_id,
 		"target_frame_ms": TARGET_FRAME_MS,
+		"render_runtime": {
+			"engine_max_fps": Engine.max_fps,
+			"target_max_fps": GameConfig.render_max_fps,
+			"frame_cap_enabled": GameConfig.render_frame_cap_enabled,
+			"frame_cap_skip_requested": RenderRuntimeConfigScript.frame_cap_skip_requested(),
+			"frame_cap_applied": int(get_meta(RenderRuntimeConfigScript.RENDER_MAX_FPS_META, 0)) > 0,
+		},
 		"window_size": [WINDOW_SIZE.x, WINDOW_SIZE.y],
 		"camera": {
 			"position": _vector3_to_array(CAMERA_POSITION),

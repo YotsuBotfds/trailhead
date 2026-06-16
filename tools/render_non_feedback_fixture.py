@@ -55,6 +55,7 @@ def main() -> int:
         "res://tools/render_non_feedback_runner.tscn",
         "--",
         *SIM_ARGS,
+        "--render-runtime-skip-frame-cap",
         "--render-region=spike_1km",
         f"--out={_res_path(RENDER_OUTPUT)}",
     ]

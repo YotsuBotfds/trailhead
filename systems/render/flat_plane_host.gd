@@ -5,6 +5,7 @@ const VehicleScene: PackedScene = preload("res://scenes/vehicle.tscn")
 const VehicleInputScript: GDScript = preload("res://systems/vehicle/vehicle_input.gd")
 const ChaseCameraRigScript: GDScript = preload("res://systems/render/chase_camera_rig.gd")
 const ProceduralBuggyVisualScript: GDScript = preload("res://systems/render/procedural_buggy_visual.gd")
+const RenderRuntimeConfigScript: GDScript = preload("res://systems/render/render_runtime_config.gd")
 const VehicleResidueVisualScript: GDScript = preload("res://systems/render/vehicle_residue_visual.gd")
 const AtmosphereVisualBuilderScript: GDScript = preload("res://systems/render/atmosphere_visual_builder.gd")
 const DustTiltShiftVisualBuilderScript: GDScript = preload("res://systems/render/dust_tilt_shift_visual_builder.gd")
@@ -22,6 +23,7 @@ var _chase_camera_rig: RefCounted = ChaseCameraRigScript.new()
 
 
 func _ready() -> void:
+	RenderRuntimeConfigScript.apply_to(self)
 	_ensure_default_input_map()
 	_setup_surface_map()
 	_build_ground()
