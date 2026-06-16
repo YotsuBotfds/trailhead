@@ -7,6 +7,7 @@ from pathlib import Path
 
 WORKER_COUNTS = (0, 1, 2, 8)
 RESULT_PREFIX = "tile_streamer_fixture_result="
+GODOT_TIMEOUT_SECONDS = 120
 
 
 def main() -> int:
@@ -26,7 +27,23 @@ def main() -> int:
             "--",
             f"--tile-streamer-workers={worker_count}",
         ]
-        completed = subprocess.run(command, cwd=root, text=True, capture_output=True)
+        try:
+            completed = subprocess.run(
+                command,
+                cwd=root,
+                text=True,
+                capture_output=True,
+                timeout=GODOT_TIMEOUT_SECONDS,
+            )
+        except subprocess.TimeoutExpired as error:
+            _write_timeout_stream(sys.stdout, error.stdout)
+            _write_timeout_stream(sys.stderr, error.stderr)
+            print(
+                "error: TileStreamer fixture timed out after "
+                f"{GODOT_TIMEOUT_SECONDS}s for worker_count={worker_count}",
+                file=sys.stderr,
+            )
+            return 1
         sys.stdout.write(completed.stdout)
         sys.stderr.write(completed.stderr)
         if completed.returncode != 0:
@@ -56,6 +73,15 @@ def main() -> int:
 
     print("ok: TileStreamer worker-count determinism for 0/1/2/8 workers")
     return 0
+
+
+def _write_timeout_stream(stream, value) -> None:
+    if value is None:
+        return
+    if isinstance(value, bytes):
+        stream.write(value.decode("utf-8", errors="replace"))
+        return
+    stream.write(value)
 
 
 def parse_result(stdout: str, worker_count: int) -> dict | None:
