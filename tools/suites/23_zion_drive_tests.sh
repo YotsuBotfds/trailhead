@@ -11,7 +11,7 @@ run_sim "$out_dir/cedar_hollow_zion_pa_rus_flat_segment.json" \
 	--stuck-min-progress=0.02
 assert_metrics "$out_dir/cedar_hollow_zion_pa_rus_flat_segment.json" \
 	--predicate=scenario_passed \
-	--surface=packed_gravel:120 \
+	--surface=paved_road:120 \
 	--source-min=terrain:120 \
 	--terrain-id-min=6:120 \
 	--metric-min=max_initial_forward_displacement:50 \
@@ -30,11 +30,12 @@ run_sim "$out_dir/zion_surface_map_probe.json" \
 	--stuck-min-progress=0.05
 assert_metrics "$out_dir/zion_surface_map_probe.json" \
 	--surface=wet_stone:5 \
-	--surface=packed_gravel:20 \
+	--surface=packed_gravel:5 \
 	--surface=packed_dirt:5 \
 	--surface=loose_rock:5 \
 	--surface=tall_grass:5 \
-	--surface-sequence=wet_stone,packed_gravel,packed_dirt,loose_rock,tall_grass,packed_gravel \
+	--surface=paved_road:5 \
+	--surface-sequence=wet_stone,packed_gravel,packed_dirt,loose_rock,tall_grass,paved_road \
 	--source-min=terrain:120 \
 	--terrain-id-min=1:5 \
 	--terrain-id-min=2:5 \

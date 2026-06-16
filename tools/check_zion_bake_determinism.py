@@ -32,13 +32,16 @@ EXPECTED_OUTPUT_ROLES = {
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 PROVENANCE_HASHES: dict[str, str] = {
     "data/surface_palettes/cedar_hollow_zion_surface_palette.tres": (
-        "c193b677555c851d5f2d1896638f9bd89e6d6cc414a7af0d2aa00bd21b6843b6"
+        "f36fd494d57ace6a5d3a6a7713de37f39b685dbf5f11bfa762d21d8f669c8cfc"
     ),
     "data/surfaces/wet_stone.tres": (
         "2592d94b733a55e807d20a8b41a8001e56a589f38f47a41c8cc8c4ac746949bc"
     ),
     "data/surfaces/packed_gravel.tres": (
         "53a9a7b59f42a4ce6a04c0e0310bdf9a8b8469c27c1e1538c591cdfc8c27909b"
+    ),
+    "data/surfaces/paved_road.tres": (
+        "4b42b61625c4a96f37b135006a3a337273684671ef4505f11247d964a4db004c"
     ),
     "data/surfaces/packed_dirt.tres": (
         "45ec569e0be0fe55025ab89e7482f41f3d939ac43d1478e55cc82b47ee3c37bf"

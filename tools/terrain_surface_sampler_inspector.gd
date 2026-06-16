@@ -19,7 +19,7 @@ const ZION_SAMPLE_SURFACE_IDS: Array[StringName] = [
 	&"packed_dirt",
 	&"loose_rock",
 	&"tall_grass",
-	&"packed_gravel"
+	&"paved_road"
 ]
 const ZION_SAMPLE_POINTS: Array[Vector3] = [
 	Vector3(324141.825, 0.0, 4122932.509),
