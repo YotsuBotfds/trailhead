@@ -7,7 +7,7 @@ const CEDAR_TERRAIN_DEF_PATH: String = "res://data/terrain/cedar_hollow_terrain_
 const CedarTerrainDef: Resource = preload("res://data/terrain/cedar_hollow_terrain_def.tres")
 const VehicleScene: PackedScene = preload("res://scenes/vehicle.tscn")
 const VehicleInputScript: GDScript = preload("res://systems/vehicle/vehicle_input.gd")
-const ChaseCameraMath: GDScript = preload("res://systems/render/chase_camera_math.gd")
+const ChaseCameraRigScript: GDScript = preload("res://systems/render/chase_camera_rig.gd")
 const TerrainVisualBuilderScript: GDScript = preload("res://systems/render/terrain_visual_builder.gd")
 const GroundDetailVisualBuilderScript: GDScript = preload("res://systems/render/ground_detail_visual_builder.gd")
 const FeatureVisualBuilderScript: GDScript = preload("res://systems/render/feature_visual_builder.gd")
@@ -49,6 +49,7 @@ var _vehicle_visual_root: Node = null
 var _vehicle_residue_visual: RefCounted = VehicleResidueVisualScript.new()
 var _wheel_spin: float = 0.0
 var _camera_mode: int = CAMERA_MODE_CHASE
+var _chase_camera_rig: RefCounted = ChaseCameraRigScript.new()
 var _chase_camera_initialized: bool = false
 var _chase_look_target_current: Vector3 = Vector3.ZERO
 var _chase_back_current: Vector3 = Vector3.ZERO
@@ -511,59 +512,22 @@ func _update_camera(delta: float) -> void:
 func _update_chase_camera(delta: float, state: RefCounted) -> void:
 	if _camera == null:
 		return
-	var vehicle_position: Vector3 = state.get("position")
-	var vehicle_basis: Basis = state.get("basis")
-	var back: Vector3 = ChaseCameraMath.rod_back(vehicle_basis, _chase_back_current)
-	var forward: Vector3 = -back
 	var steer: float = clampf(float(_vehicle_input.get("steer")), -1.0, 1.0)
-	var desired_position: Vector3 = vehicle_position + back * GameConfig.cam_distance + Vector3.UP * GameConfig.cam_height
-	if not _chase_camera_initialized:
-		_camera.global_position = desired_position
-		_chase_back_current = back
-		_chase_look_target_current = _chase_camera_look_target(vehicle_position, vehicle_basis, forward, steer)
-		_chase_camera_initialized = true
-	else:
-		var yaw_alpha: float = _chase_camera_follow_alpha(delta, GameConfig.cam_yaw_spring)
-		if _chase_back_current.dot(back) < -0.999:
-			_chase_back_current = back
-		else:
-			_chase_back_current = _chase_back_current.slerp(back, yaw_alpha).normalized()
-		var smoothed_desired: Vector3 = vehicle_position + _chase_back_current * GameConfig.cam_distance + Vector3.UP * GameConfig.cam_height
-		var follow_alpha_y: float = _chase_camera_follow_alpha(delta, GameConfig.cam_spring_vy)
-		var current_position: Vector3 = _camera.global_position
-		current_position.x = smoothed_desired.x
-		current_position.y = lerpf(current_position.y, smoothed_desired.y, follow_alpha_y)
-		current_position.z = smoothed_desired.z
-		_camera.global_position = current_position
-		# Anchor the look target to the CURRENT vehicle position each tick (no absolute-world
-		# smoothing). A lerped world-space target lags ~speed/spring behind the car and, near
-		# max_speed, falls behind the rigid camera -> the view flips backward (FX-31).
-		_chase_look_target_current = _chase_camera_look_target(vehicle_position, vehicle_basis, forward, steer)
-	_camera.look_at(_chase_look_target_current, Vector3.UP)
-	var linear_velocity: Vector3 = state.get("linear_velocity")
-	_camera.fov = GameConfig.get_fov_for_speed(linear_velocity.length())
-	_camera.current = _camera_mode == CAMERA_MODE_CHASE
+	_sync_chase_camera_rig_from_legacy()
+	_chase_camera_rig.call("update", _camera, state, steer, delta, true, _camera_mode == CAMERA_MODE_CHASE)
+	_sync_chase_camera_legacy_from_rig()
 
 
-func _chase_camera_follow_alpha(delta: float, spring: float) -> float:
-	return clampf(1.0 - exp(-maxf(spring, 0.0) * delta), 0.0, 1.0)
+func _sync_chase_camera_rig_from_legacy() -> void:
+	_chase_camera_rig.set("initialized", _chase_camera_initialized)
+	_chase_camera_rig.set("look_target_current", _chase_look_target_current)
+	_chase_camera_rig.set("back_current", _chase_back_current)
 
 
-func _chase_camera_look_target(vehicle_position: Vector3, vehicle_basis: Basis, forward: Vector3, steer: float) -> Vector3:
-	var lateral: Vector3 = vehicle_basis.x.normalized()
-	var target: Vector3 = vehicle_position \
-		+ forward * GameConfig.cam_look_ahead \
-		+ lateral * steer * GameConfig.cam_look_turn_bias
-	return _chase_camera_pitch_target(target)
-
-
-func _chase_camera_pitch_target(target: Vector3) -> Vector3:
-	if _camera == null:
-		return target
-	var flat_delta: Vector3 = Vector3(target.x - _camera.global_position.x, 0.0, target.z - _camera.global_position.z)
-	var horizontal_distance: float = maxf(flat_delta.length(), 0.001)
-	target.y = _camera.global_position.y + tan(deg_to_rad(GameConfig.cam_pitch_deg)) * horizontal_distance
-	return target
+func _sync_chase_camera_legacy_from_rig() -> void:
+	_chase_camera_initialized = bool(_chase_camera_rig.get("initialized"))
+	_chase_look_target_current = _chase_camera_rig.get("look_target_current")
+	_chase_back_current = _chase_camera_rig.get("back_current")
 
 
 func _update_orbit_camera(delta: float, state: RefCounted) -> void:
