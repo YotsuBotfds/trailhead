@@ -17,6 +17,9 @@ const SurfaceMapScript: GDScript = preload("res://systems/world/surface_map.gd")
 const FlatWorldBuilderScript: GDScript = preload("res://systems/world/flat_world_builder.gd")
 const TerrainBuilderScript: GDScript = preload("res://systems/world/terrain_builder.gd")
 const LandmarksScript: GDScript = preload("res://systems/world/landmarks.gd")
+const PaceClockSystemScript: GDScript = preload("res://systems/sim/pace_clock_system.gd")
+const LogbookSystemScript: GDScript = preload("res://systems/sim/logbook_system.gd")
+const GoldenLineTrackerScript: GDScript = preload("res://systems/sim/golden_line_tracker.gd")
 const PDWaypointControllerScript: GDScript = preload("res://systems/sim/controllers/pd_waypoint_controller.gd")
 const ReplayControllerScript: GDScript = preload("res://systems/sim/controllers/replay_controller.gd")
 const ScriptedFeelControllerScript: GDScript = preload("res://systems/sim/controllers/scripted_feel_controller.gd")
@@ -27,6 +30,9 @@ var _controller: RefCounted = null
 var _surface_map: Node = null
 var _route: Resource = null
 var _landmarks: Node = null
+var _pace_clock: Node = null
+var _logbook: Node = null
+var _golden_line_tracker: Node = null
 # GDScript 4.6 cannot express key/value types inside Array[Dictionary].
 var _telemetry: Array[Dictionary] = []
 var _tick: int = 0
@@ -111,11 +117,30 @@ var _landmark_event_count: int = 0
 var _flipped_event_count: int = 0
 var _self_righted_event_count: int = 0
 var _recovered_to_trail_event_count: int = 0
+var _recoverable_object_tagged_event_count: int = 0
+var _photograph_taken_event_count: int = 0
+var _golden_line_matched_event_count: int = 0
+var _egg_triggered_event_count: int = 0
+var _tile_evicted_event_count: int = 0
+var _logbook_entry_written_event_count: int = 0
+var _pace_clock_incident_event_count: int = 0
 var _max_recovery_displacement: float = 0.0
 var _last_surface_event: StringName = &""
 var _last_landmark_event: StringName = &""
+var _last_recoverable_object_event: StringName = &""
+var _last_photograph_landmark_event: StringName = &""
+var _last_golden_line_event: StringName = &""
+var _last_egg_event: StringName = &""
+var _last_logbook_entry_type_event: StringName = &""
+var _last_logbook_entry_key_event: StringName = &""
+var _last_pace_clock_incident_event: StringName = &""
 var _surface_event_sequence: Array[String] = []
 var _landmark_event_sequence: Array[String] = []
+var _recoverable_object_event_sequence: Array[String] = []
+var _golden_line_event_sequence: Array[String] = []
+var _egg_event_sequence: Array[String] = []
+var _logbook_entry_event_sequence: Array[String] = []
+var _pace_clock_incident_event_sequence: Array[String] = []
 var _surface_contact_ticks: Dictionary[String, int] = {}
 var _surface_speed_sum: Dictionary[String, float] = {}
 var _surface_speed_delta_sum: Dictionary[String, float] = {}
@@ -209,6 +234,7 @@ func _ready() -> void:
 	if not _setup_surface_map():
 		return
 	_setup_landmarks()
+	_setup_sim_observers()
 	_setup_flat_scene()
 	if not _apply_fixture_collision_pin():
 		return
@@ -223,9 +249,13 @@ func _begin_run() -> void:
 	_vehicle = VehicleScene.instantiate()
 	add_child(_vehicle)
 	var spawn_transform: Transform3D = _spawn_transform(_spawn_id)
+	if _scenario_id == "event_bus_coverage":
+		spawn_transform = Transform3D(Basis.IDENTITY, GameConfig.event_bus_coverage_spawn_position)
 	if _fixture_has_spawn_from_state:
 		spawn_transform = _fixture_spawn_transform
 	_vehicle.call("reset_to", spawn_transform)
+	if _scenario_id == "event_bus_coverage":
+		_apply_event_bus_coverage_contamination()
 	if _fixture_has_spawn_from_state and not _apply_fixture_spawn_from_state():
 		return
 	if _streaming_enabled:
@@ -966,6 +996,23 @@ func _release_fixture_spawn_freeze() -> void:
 	_fixture_spawn_freeze_pending = false
 
 
+func _apply_event_bus_coverage_contamination() -> void:
+	if _vehicle == null:
+		return
+	var state: RefCounted = _vehicle.call("get_state")
+	if state == null:
+		return
+	var contamination: RefCounted = state.get("contamination") as RefCounted
+	if contamination == null:
+		return
+	contamination.call(
+		"set_values",
+		GameConfig.event_bus_coverage_spawn_mud,
+		0.0,
+		0.0
+	)
+
+
 func _vehicle_physics_body() -> RigidBody3D:
 	if _vehicle == null:
 		return null
@@ -1235,10 +1282,30 @@ func _setup_landmarks() -> void:
 	_landmarks.call("configure", _route)
 
 
+func _setup_sim_observers() -> void:
+	_pace_clock = PaceClockSystemScript.new() as Node
+	if _pace_clock != null:
+		_pace_clock.name = "PaceClockSystem"
+		add_child(_pace_clock)
+	_logbook = LogbookSystemScript.new() as Node
+	if _logbook != null:
+		_logbook.name = "LogbookSystem"
+		_logbook.call("configure", _pace_clock)
+		add_child(_logbook)
+	if _scene_id == TerrainBuilderScript.CEDAR_SCENE_ID:
+		_golden_line_tracker = GoldenLineTrackerScript.new() as Node
+		if _golden_line_tracker != null:
+			_golden_line_tracker.name = "GoldenLineTracker"
+			add_child(_golden_line_tracker)
+			_golden_line_tracker.call("configure")
+
+
 func _record(state: RefCounted, input: RefCounted) -> void:
 	var state_position: Vector3 = state.get("position")
 	if _landmarks != null:
 		_landmarks.call("sample_position", state_position)
+	if _golden_line_tracker != null:
+		_golden_line_tracker.call("sample_vehicle_state", state, _tick)
 	var state_velocity: Vector3 = state.get("linear_velocity")
 	var state_angular_velocity: Vector3 = state.get("angular_velocity")
 	var state_basis: Basis = state.get("basis")
@@ -1566,6 +1633,25 @@ func _finish(passed: bool) -> void:
 			"landmark_event_count": _landmark_event_count,
 			"last_landmark_event": String(_last_landmark_event),
 			"landmark_event_sequence": _landmark_event_sequence,
+			"recoverable_object_tagged_event_count": _recoverable_object_tagged_event_count,
+			"last_recoverable_object_event": String(_last_recoverable_object_event),
+			"recoverable_object_event_sequence": _recoverable_object_event_sequence,
+			"photograph_taken_event_count": _photograph_taken_event_count,
+			"last_photograph_landmark_event": String(_last_photograph_landmark_event),
+			"golden_line_matched_event_count": _golden_line_matched_event_count,
+			"last_golden_line_event": String(_last_golden_line_event),
+			"golden_line_event_sequence": _golden_line_event_sequence,
+			"egg_triggered_event_count": _egg_triggered_event_count,
+			"last_egg_event": String(_last_egg_event),
+			"egg_event_sequence": _egg_event_sequence,
+			"tile_evicted_event_count": _tile_evicted_event_count,
+			"logbook_entry_written_event_count": _logbook_entry_written_event_count,
+			"last_logbook_entry_type_event": String(_last_logbook_entry_type_event),
+			"last_logbook_entry_key_event": String(_last_logbook_entry_key_event),
+			"logbook_entry_event_sequence": _logbook_entry_event_sequence,
+			"pace_clock_incident_event_count": _pace_clock_incident_event_count,
+			"last_pace_clock_incident_event": String(_last_pace_clock_incident_event),
+			"pace_clock_incident_event_sequence": _pace_clock_incident_event_sequence,
 			"surface_contact_ticks": _surface_contact_ticks,
 			"surface_source_counts": _surface_source_counts(),
 			"terrain_surface_id_counts": _terrain_surface_id_counts(),
@@ -1753,6 +1839,8 @@ func _scenario_predicate_passed() -> bool:
 		if _spawn_id == "hill_hold_steep":
 			return _final_flat_displacement_from_initial >= GameConfig.hill_hold_steep_min_creep and _final_flat_displacement_from_initial <= GameConfig.hill_hold_steep_max_creep and _max_flipped_ticks_seen == 0
 		return _max_flat_displacement_from_initial <= GameConfig.hill_hold_max_drift and _max_flipped_ticks_seen == 0
+	if _scenario_id == "event_bus_coverage":
+		return _recoverable_object_tagged_event_count > 0 and _egg_triggered_event_count > 0 and _logbook_entry_written_event_count > 0
 	if _scenario_id == "lateral_slide":
 		return _max_abs_lateral_speed >= GameConfig.lateral_slide_min_peak_lateral_speed and _final_abs_lateral_speed <= GameConfig.lateral_slide_max_final_lateral_speed and _max_flipped_ticks_seen == 0
 	if _scenario_id == "suspension_drop":
@@ -2421,8 +2509,22 @@ func _connect_event_bus() -> void:
 		EventBus.vehicle_self_righted.connect(_on_vehicle_self_righted)
 	if not EventBus.vehicle_recovered_to_trail.is_connected(_on_vehicle_recovered_to_trail):
 		EventBus.vehicle_recovered_to_trail.connect(_on_vehicle_recovered_to_trail)
+	if not EventBus.world_recoverable_object_tagged.is_connected(_on_world_recoverable_object_tagged):
+		EventBus.world_recoverable_object_tagged.connect(_on_world_recoverable_object_tagged)
+	if not EventBus.world_photograph_taken.is_connected(_on_world_photograph_taken):
+		EventBus.world_photograph_taken.connect(_on_world_photograph_taken)
+	if not EventBus.world_golden_line_matched.is_connected(_on_world_golden_line_matched):
+		EventBus.world_golden_line_matched.connect(_on_world_golden_line_matched)
+	if not EventBus.world_egg_triggered.is_connected(_on_world_egg_triggered):
+		EventBus.world_egg_triggered.connect(_on_world_egg_triggered)
 	if not EventBus.world_tile_activated.is_connected(_on_world_tile_activated):
 		EventBus.world_tile_activated.connect(_on_world_tile_activated)
+	if not EventBus.world_tile_evicted.is_connected(_on_world_tile_evicted):
+		EventBus.world_tile_evicted.connect(_on_world_tile_evicted)
+	if not EventBus.sim_logbook_entry_written.is_connected(_on_sim_logbook_entry_written):
+		EventBus.sim_logbook_entry_written.connect(_on_sim_logbook_entry_written)
+	if not EventBus.sim_pace_clock_incident.is_connected(_on_sim_pace_clock_incident):
+		EventBus.sim_pace_clock_incident.connect(_on_sim_pace_clock_incident)
 
 
 func _event_bus_contract_passed() -> bool:
@@ -2465,10 +2567,55 @@ func _on_world_reached_landmark(landmark_id: StringName) -> void:
 		_landmark_event_sequence.append(landmark_string)
 
 
+func _append_unique_event(sequence: Array[String], event_id: String) -> void:
+	if sequence.is_empty() or sequence[sequence.size() - 1] != event_id:
+		sequence.append(event_id)
+
+
 func _on_world_tile_activated(cell: Vector2i) -> void:
 	var key: String = _activation_tick_key(cell)
 	if not _activation_ticks.has(key):
 		_activation_ticks[key] = _tick
+
+
+func _on_world_tile_evicted(_cell: Vector2i) -> void:
+	_tile_evicted_event_count += 1
+
+
+func _on_world_recoverable_object_tagged(object_id: StringName) -> void:
+	_recoverable_object_tagged_event_count += 1
+	_last_recoverable_object_event = object_id
+	_append_unique_event(_recoverable_object_event_sequence, String(object_id))
+
+
+func _on_world_photograph_taken(nearest_landmark_id: StringName, _sim_tick: int) -> void:
+	_photograph_taken_event_count += 1
+	_last_photograph_landmark_event = nearest_landmark_id
+
+
+func _on_world_golden_line_matched(segment_id: StringName, _sim_tick: int) -> void:
+	_golden_line_matched_event_count += 1
+	_last_golden_line_event = segment_id
+	_append_unique_event(_golden_line_event_sequence, String(segment_id))
+
+
+func _on_world_egg_triggered(egg_id: StringName) -> void:
+	_egg_triggered_event_count += 1
+	_last_egg_event = egg_id
+	_append_unique_event(_egg_event_sequence, String(egg_id))
+
+
+func _on_sim_logbook_entry_written(entry_type: StringName, key: StringName, _sim_tick: int) -> void:
+	_logbook_entry_written_event_count += 1
+	_last_logbook_entry_type_event = entry_type
+	_last_logbook_entry_key_event = key
+	_append_unique_event(_logbook_entry_event_sequence, String(entry_type) + ":" + String(key))
+
+
+func _on_sim_pace_clock_incident(incident_type: StringName, _elapsed_ticks: int) -> void:
+	_pace_clock_incident_event_count += 1
+	_last_pace_clock_incident_event = incident_type
+	_append_unique_event(_pace_clock_incident_event_sequence, String(incident_type))
 
 
 func _on_vehicle_flipped_over() -> void:

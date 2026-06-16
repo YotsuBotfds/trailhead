@@ -1,7 +1,9 @@
 assert_metrics "$out_dir/flat_flipped.json" \
 	--surface=packed_dirt:10 \
 	--metric-min=flipped_event_count:1 \
-	--metric-min=self_righted_event_count:1
+	--metric-min=self_righted_event_count:1 \
+	--metric-min=pace_clock_incident_event_count:1 \
+	--metric-min=logbook_entry_written_event_count:1
 
 assert_metrics "$out_dir/flat_flipped_yawed.json" \
 	--surface=packed_dirt:10 \

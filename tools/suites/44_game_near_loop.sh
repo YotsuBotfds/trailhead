@@ -16,5 +16,18 @@ printf 'run: mud key fixture\n'
 python3 tools/mud_key_fixture.py
 printf 'run: golden line fixture\n'
 python3 tools/golden_line_fixture.py
+run_sim "$out_dir/event_bus_coverage.json" \
+	--scene=cedar_hollow \
+	--controller=scripted \
+	--scenario=event_bus_coverage \
+	--spawn=trailhead \
+	--target=old_cedar \
+	--seed=12345 \
+	--max-ticks=160
+assert_metrics "$out_dir/event_bus_coverage.json" \
+	--predicate=scenario_passed \
+	--metric-min=recoverable_object_tagged_event_count:1 \
+	--metric-min=egg_triggered_event_count:1 \
+	--metric-min=logbook_entry_written_event_count:1
 printf 'run: campfire silence zone fixture\n'
 python3 tools/campfire_silence_zone_fixture.py

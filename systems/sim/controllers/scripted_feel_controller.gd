@@ -38,6 +38,8 @@ func next_input(state: RefCounted) -> RefCounted:
 		_fill_recover_to_trail(input)
 	elif scenario_id == "hill_hold":
 		_fill_hill_hold(input)
+	elif scenario_id == "event_bus_coverage":
+		_fill_event_bus_coverage(input)
 	elif scenario_id == "lateral_slide":
 		_fill_lateral_slide(input)
 	elif scenario_id == "suspension_drop":
@@ -141,6 +143,12 @@ func _fill_recover_to_trail(input: RefCounted) -> void:
 func _fill_hill_hold(input: RefCounted) -> void:
 	if _tick >= GameConfig.hill_hold_probe_ticks:
 		input.set("brake", GameConfig.scripted_stop_brake)
+		_done = true
+
+
+func _fill_event_bus_coverage(input: RefCounted) -> void:
+	input.set("brake", GameConfig.scripted_stop_brake)
+	if _tick >= GameConfig.event_bus_coverage_probe_ticks:
 		_done = true
 
 

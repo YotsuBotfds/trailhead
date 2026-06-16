@@ -27,6 +27,8 @@ assert_metrics "$out_dir/cedar_hollow_overlook_ridge.json" \
 
 assert_metrics "$out_dir/cedar_hollow_bog_bottom.json" \
 	--surface=mud:2 \
+	--metric-min=golden_line_matched_event_count:1 \
+	--metric-min=logbook_entry_written_event_count:1 \
 	--landmark=bog_bottom
 
 assert_metrics "$out_dir/cedar_hollow_the_crossing.json" \
