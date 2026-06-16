@@ -1803,7 +1803,17 @@ func _real_terrain_flat_segment_predicate_passed() -> bool:
 
 
 func _surface_sweep_predicate_passed() -> bool:
-	var expected: Array[String] = ["packed_dirt", "tall_grass", "mud", "wet_stone"]
+	var expected: Array[String] = [
+		"paved_road",
+		"slickrock_dry",
+		"packed_gravel",
+		"packed_dirt",
+		"tall_grass",
+		"loose_rock",
+		"sand_wash",
+		"mud",
+		"wet_stone"
+	]
 	if not _surface_sequence_contains(expected):
 		return false
 	for surface_id in expected:
@@ -1812,16 +1822,30 @@ func _surface_sweep_predicate_passed() -> bool:
 	var avg_speed: Dictionary = _surface_average_dictionary(_surface_speed_sum)
 	var avg_speed_delta: Dictionary = _surface_average_dictionary(_surface_speed_delta_sum)
 	var max_slip: Dictionary = _surface_max_abs_slip
+	var paved_delta: float = float(avg_speed_delta.get("paved_road", 0.0))
+	var slickrock_delta: float = float(avg_speed_delta.get("slickrock_dry", 0.0))
+	var gravel_delta: float = float(avg_speed_delta.get("packed_gravel", 0.0))
 	var packed_delta: float = float(avg_speed_delta.get("packed_dirt", 0.0))
 	var grass_delta: float = float(avg_speed_delta.get("tall_grass", 0.0))
+	var sand_delta: float = float(avg_speed_delta.get("sand_wash", 0.0))
 	var mud_delta: float = float(avg_speed_delta.get("mud", 0.0))
+	var gravel_slip: float = float(max_slip.get("packed_gravel", 0.0))
 	var packed_slip: float = float(max_slip.get("packed_dirt", 0.0))
+	var loose_rock_slip: float = float(max_slip.get("loose_rock", 0.0))
 	var wet_stone_slip: float = float(max_slip.get("wet_stone", 0.0))
 	if avg_speed.is_empty() or packed_delta <= 0.0:
 		return false
+	if paved_delta < gravel_delta + GameConfig.surface_probe_min_hard_surface_delta_gain:
+		return false
+	if slickrock_delta < packed_delta + GameConfig.surface_probe_min_hard_surface_delta_gain:
+		return false
 	if grass_delta >= packed_delta or mud_delta >= grass_delta:
 		return false
+	if sand_delta > packed_delta - GameConfig.surface_probe_min_sand_drag_delta_drop:
+		return false
 	if mud_delta > packed_delta - GameConfig.surface_probe_min_mud_speed_delta_drop:
+		return false
+	if loose_rock_slip < gravel_slip + GameConfig.surface_probe_min_loose_rock_slip_gain:
 		return false
 	if wet_stone_slip < packed_slip + GameConfig.surface_probe_min_wet_stone_slip_gain:
 		return false

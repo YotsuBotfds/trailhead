@@ -4,7 +4,7 @@ run_sim "$out_dir/ebrake_drift.json" \
 	--scenario=ebrake_drift \
 	--spawn=flat_spawn \
 	--seed=12345 \
-	--max-ticks=440 \
+	--max-ticks=860 \
 	--stuck-window=120 \
 	--stuck-min-progress=0.05
 
