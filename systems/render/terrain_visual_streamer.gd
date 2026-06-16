@@ -10,7 +10,9 @@ var _stream_generation: int = 0
 var _worker_count: int = DEFAULT_WORKER_COUNT
 var _configured: bool = false
 var _events_connected: bool = false
+var _active_cells: Dictionary[Vector2i, bool] = {}
 var _visual_tiles_by_cell: Dictionary[Vector2i, Node3D] = {}
+var _ready_tile_data_by_cell: Dictionary[Vector2i, Variant] = {}
 var _load_failures_by_cell: Dictionary[Vector2i, String] = {}
 var _queued_builds: Dictionary[Vector2i, bool] = {}
 var _cancelled_builds: Dictionary[Vector2i, bool] = {}
@@ -62,7 +64,9 @@ func reset_stream() -> void:
 	_disconnect_event_connections()
 	for cell in _sorted_cells(_visual_tiles_by_cell.keys()):
 		_free_visual_cell(cell)
+	_active_cells.clear()
 	_visual_tiles_by_cell.clear()
+	_ready_tile_data_by_cell.clear()
 	_load_failures_by_cell.clear()
 	_queued_builds.clear()
 	_cancelled_builds.clear()
@@ -92,6 +96,14 @@ func visual_cell_count() -> int:
 	return _visual_tiles_by_cell.size()
 
 
+func ready_visual_cell_count() -> int:
+	return _ready_tile_data_by_cell.size()
+
+
+func has_ready_visual_cell(cell: Vector2i) -> bool:
+	return _ready_tile_data_by_cell.has(cell)
+
+
 func has_visual_cell(cell: Vector2i) -> bool:
 	return _visual_tiles_by_cell.has(cell)
 
@@ -116,6 +128,10 @@ func _ensure_event_connections() -> void:
 		EventBus.world_tile_activated.connect(_on_world_tile_activated)
 	if not EventBus.world_tile_evicted.is_connected(_on_world_tile_evicted):
 		EventBus.world_tile_evicted.connect(_on_world_tile_evicted)
+	if not EventBus.world_tile_prefetched.is_connected(_on_world_tile_prefetched):
+		EventBus.world_tile_prefetched.connect(_on_world_tile_prefetched)
+	if not EventBus.world_tile_unprefetched.is_connected(_on_world_tile_unprefetched):
+		EventBus.world_tile_unprefetched.connect(_on_world_tile_unprefetched)
 	_events_connected = true
 
 
@@ -126,13 +142,21 @@ func _disconnect_event_connections() -> void:
 		EventBus.world_tile_activated.disconnect(_on_world_tile_activated)
 	if EventBus.world_tile_evicted.is_connected(_on_world_tile_evicted):
 		EventBus.world_tile_evicted.disconnect(_on_world_tile_evicted)
+	if EventBus.world_tile_prefetched.is_connected(_on_world_tile_prefetched):
+		EventBus.world_tile_prefetched.disconnect(_on_world_tile_prefetched)
+	if EventBus.world_tile_unprefetched.is_connected(_on_world_tile_unprefetched):
+		EventBus.world_tile_unprefetched.disconnect(_on_world_tile_unprefetched)
 	_events_connected = false
 
 
 func _on_world_tile_activated(cell: Vector2i) -> void:
 	if not _configured or _detail_root == null:
 		return
+	_active_cells[cell] = true
 	if _visual_tiles_by_cell.has(cell):
+		return
+	if _ready_tile_data_by_cell.has(cell):
+		_commit_visual_tile(cell, _ready_tile_data_by_cell[cell])
 		return
 	if _queued_builds.has(cell):
 		return
@@ -145,13 +169,40 @@ func _on_world_tile_activated(cell: Vector2i) -> void:
 func _on_world_tile_evicted(cell: Vector2i) -> void:
 	if not _configured:
 		return
-	_cancel_build(cell)
+	_active_cells.erase(cell)
 	_free_visual_cell(cell)
+	_load_failures_by_cell.erase(cell)
+
+
+func _on_world_tile_prefetched(cell: Vector2i) -> void:
+	if not _configured:
+		return
+	if _ready_tile_data_by_cell.has(cell):
+		return
+	if _visual_tiles_by_cell.has(cell):
+		return
+	if _queued_builds.has(cell):
+		return
+	_enqueue_build(cell)
+	if _workers.is_empty():
+		_process_build_queue_synchronously()
+		_drain_worker_results()
+
+
+func _on_world_tile_unprefetched(cell: Vector2i) -> void:
+	if not _configured:
+		return
+	if _active_cells.has(cell):
+		return
+	_cancel_build(cell)
+	_ready_tile_data_by_cell.erase(cell)
 	_load_failures_by_cell.erase(cell)
 
 
 func _enqueue_build(cell: Vector2i) -> void:
 	if _visual_tiles_by_cell.has(cell):
+		return
+	if _ready_tile_data_by_cell.has(cell):
 		return
 	if _queued_builds.has(cell):
 		return
@@ -206,7 +257,9 @@ func _drain_worker_results() -> void:
 		if not bool(result["ok"]):
 			_record_load_failure(cell, String(result["message"]))
 			continue
-		_commit_visual_tile(cell, result["visual_tile_data"])
+		_ready_tile_data_by_cell[cell] = result["visual_tile_data"]
+		if _active_cells.has(cell):
+			_commit_visual_tile(cell, result["visual_tile_data"])
 
 
 func _commit_visual_tile(cell: Vector2i, visual_tile_data: Variant) -> void:
@@ -219,6 +272,7 @@ func _commit_visual_tile(cell: Vector2i, visual_tile_data: Variant) -> void:
 		_load_failures_by_cell[cell] = "visual tile failed to load"
 		return
 	_visual_tiles_by_cell[cell] = visual_tile
+	_ready_tile_data_by_cell.erase(cell)
 	_load_failures_by_cell.erase(cell)
 
 

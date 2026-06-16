@@ -302,6 +302,7 @@ func _forget_ready_cells_outside_prefetch(desired_prefetch_cells: Array[Vector2i
 			continue
 		_ready_flags.erase(cell)
 		_heightmap_data_by_cell.erase(cell)
+		EventBus.world_tile_unprefetched.emit(cell)
 
 
 func _cancel_prefetch_builds_outside(desired_prefetch_cells: Array[Vector2i]) -> void:
@@ -398,6 +399,7 @@ func _drain_worker_results() -> void:
 			continue
 		_heightmap_data_by_cell[cell] = result
 		_ready_flags[cell] = true
+		EventBus.world_tile_prefetched.emit(cell)
 
 
 func _build_result_less(left: Dictionary, right: Dictionary) -> bool:

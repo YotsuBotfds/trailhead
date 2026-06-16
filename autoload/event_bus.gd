@@ -14,6 +14,8 @@ signal world_duck_ambient_audio(target_volume_db: float)
 # Resolves Q33; world_ prefix follows the group-prefix rule for world-system events.
 signal world_tile_activated(cell: Vector2i)
 signal world_tile_evicted(cell: Vector2i)
+signal world_tile_prefetched(cell: Vector2i)
+signal world_tile_unprefetched(cell: Vector2i)
 
 signal sim_logbook_entry_written(entry_type: StringName, key: StringName, sim_tick: int)
 signal sim_pace_clock_incident(incident_type: StringName, elapsed_ticks: int)

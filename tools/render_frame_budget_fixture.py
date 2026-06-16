@@ -114,6 +114,10 @@ def _validate_phase(phase: dict[str, Any]) -> list[str]:
         errors.append(name + " should record at least one frame")
     if "activation_cpu_ms" not in phase:
         errors.append(name + " missing activation_cpu_ms")
+    if "prefetch_cpu_ms" not in phase:
+        errors.append(name + " missing prefetch_cpu_ms")
+    errors.extend(_validate_ready_wait(phase.get("prefetch_ready_wait"), name + ".prefetch_ready_wait", active_expected=name != "baseline_empty_streamer" and name != "steady_streamed_window"))
+    errors.extend(_validate_ready_wait(phase.get("activation_ready_wait"), name + ".activation_ready_wait", active_expected=name != "baseline_empty_streamer" and name != "steady_streamed_window"))
     if not isinstance(phase.get("viewport_gpu_timing_available"), bool):
         errors.append(name + " missing viewport_gpu_timing_available")
     timing = phase.get("timing_ms")
@@ -145,11 +149,29 @@ def _validate_phase(phase: dict[str, Any]) -> list[str]:
             draw_stats = visible_bucket.get("draw_calls")
             if isinstance(draw_stats, dict) and float(draw_stats.get("avg", 0.0)) <= 0.0:
                 errors.append(name + " should render visible draw calls when streamed visual cells are active")
+        activation_wait = phase.get("activation_ready_wait")
+        if active_cells > 0 and isinstance(activation_wait, dict) and "frames" in activation_wait and int(activation_wait.get("frames", -1)) != 0:
+            errors.append(name + " should activate from ready prefetched visual data without waiting frames")
     memory = phase.get("memory_mb")
     if not isinstance(memory, dict):
         errors.append(name + " missing memory_mb")
     else:
         errors.extend(_validate_stats(memory.get("render_video"), name + ".memory_mb.render_video"))
+    return errors
+
+
+def _validate_ready_wait(value: Any, label: str, active_expected: bool) -> list[str]:
+    if not isinstance(value, dict):
+        return [label + " should be an object"]
+    if not active_expected and not value:
+        return []
+    errors: list[str] = []
+    for key in ("frames", "wall_ms"):
+        metric = value.get(key)
+        if not isinstance(metric, (int, float)):
+            errors.append(label + "." + key + " should be numeric")
+        elif float(metric) < 0.0:
+            errors.append(label + "." + key + " should be non-negative")
     return errors
 
 
@@ -168,7 +190,7 @@ def _validate_stats(value: Any, label: str) -> list[str]:
 
 def _print_summary(payload: dict[str, Any]) -> None:
     print("ok: render frame budget metrics -> " + _display(OUT_PATH))
-    print("phase,active,gpu_timing,activation_cpu_ms,wall_p95_ms,viewport_cpu_p95_ms,viewport_gpu_p95_ms,render_video_mb_avg,visible_draw_avg,shadow_draw_avg,total_draw_avg")
+    print("phase,active,gpu_timing,prefetch_cpu_ms,activation_cpu_ms,prefetch_wait_frames,activation_wait_frames,wall_p95_ms,viewport_cpu_p95_ms,viewport_gpu_p95_ms,render_video_mb_avg,visible_draw_avg,shadow_draw_avg,total_draw_avg")
     for phase in payload["phases"]:
         timing = phase["timing_ms"]
         render_info = phase["render_info"]
@@ -178,7 +200,10 @@ def _print_summary(payload: dict[str, Any]) -> None:
                     str(phase["name"]),
                     str(phase["active_visual_cells"]),
                     "yes" if phase["viewport_gpu_timing_available"] else "no",
+                    _fmt(phase["prefetch_cpu_ms"]),
                     _fmt(phase["activation_cpu_ms"]),
+                    str(int(phase["prefetch_ready_wait"].get("frames", 0))),
+                    str(int(phase["activation_ready_wait"].get("frames", 0))),
                     _fmt(timing["frame_wall"]["p95"]),
                     _fmt(timing["viewport_cpu"]["p95"]),
                     _fmt(timing["viewport_gpu"]["p95"]),

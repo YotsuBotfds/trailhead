@@ -12,8 +12,12 @@ const WORKER_COUNT_ARG: String = "--tile-streamer-workers="
 var _errors: PackedStringArray = PackedStringArray()
 var _activated_cells: Array[Vector2i] = []
 var _evicted_cells: Array[Vector2i] = []
+var _prefetched_cells: Array[Vector2i] = []
+var _unprefetched_cells: Array[Vector2i] = []
 var _all_activated_keys: PackedStringArray = PackedStringArray()
+var _all_prefetched_keys: PackedStringArray = PackedStringArray()
 var _activation_ticks: Dictionary[String, int] = {}
+var _prefetch_ticks: Dictionary[String, int] = {}
 var _physics_tick: int = 0
 var _worker_count: int = 1
 
@@ -36,32 +40,45 @@ func _run() -> void:
 		EventBus.world_tile_activated.connect(_on_world_tile_activated)
 	if not EventBus.world_tile_evicted.is_connected(_on_world_tile_evicted):
 		EventBus.world_tile_evicted.connect(_on_world_tile_evicted)
+	if not EventBus.world_tile_prefetched.is_connected(_on_world_tile_prefetched):
+		EventBus.world_tile_prefetched.connect(_on_world_tile_prefetched)
+	if not EventBus.world_tile_unprefetched.is_connected(_on_world_tile_unprefetched):
+		EventBus.world_tile_unprefetched.connect(_on_world_tile_unprefetched)
 
 	streamer.call("configure_fixed_position", REGION_ID, _world_position_for_cell(START_CELL))
 	await _advance_physics_ticks(START_SETTLE_TICKS)
+	await _wait_for_prefetch_ready(streamer, START_CELL)
 
 	var expected_start_cells: Array[Vector2i] = _cells_in_radius(START_CELL, GameConfig.STREAM_ACTIVE_RADIUS)
+	var expected_start_prefetch_cells: Array[Vector2i] = _cells_in_radius(START_CELL, GameConfig.STREAM_PREFETCH_RADIUS)
 	_require_cells("start active set", streamer.call("active_cells"), expected_start_cells)
 	_require_cells_exact_order("start activation event order", _activated_cells, expected_start_cells)
+	_require_event_keys_include_cells("start prefetch event coverage", _all_prefetched_keys, expected_start_prefetch_cells)
 	_require_int("start eviction event count", _evicted_cells.size(), 0)
 	_require_no_load_failures(streamer)
 
 	_activated_cells.clear()
 	_evicted_cells.clear()
+	_prefetched_cells.clear()
+	_unprefetched_cells.clear()
 	streamer.call("set_fixed_world_position", _world_position_for_cell(END_CELL))
 	await _advance_physics_ticks(END_SETTLE_TICKS)
 
 	var expected_end_cells: Array[Vector2i] = _cells_in_radius(END_CELL, GameConfig.STREAM_ACTIVE_RADIUS)
 	var expected_loaded_cells: Array[Vector2i] = _cell_difference(expected_end_cells, expected_start_cells)
 	var expected_evicted_cells: Array[Vector2i] = _cell_difference(expected_start_cells, expected_end_cells)
+	var expected_end_prefetch_cells: Array[Vector2i] = _cells_in_radius(END_CELL, GameConfig.STREAM_PREFETCH_RADIUS)
+	var expected_unprefetched_cells: Array[Vector2i] = _cell_difference(expected_start_prefetch_cells, expected_end_prefetch_cells)
 	_require_cells("end active set", streamer.call("active_cells"), expected_end_cells)
 	_require_cells_exact_order("end activation event order", _activated_cells, expected_loaded_cells)
 	_require_cells_exact_order("end eviction event order", _evicted_cells, expected_evicted_cells)
+	_require_cells_exact_order("end unprefetch event order", _unprefetched_cells, expected_unprefetched_cells)
 	var empty_cells: Array[Vector2i] = []
 	_require_cells("last to_load", streamer.call("last_to_load"), empty_cells)
 	_require_cells("last to_unload", streamer.call("last_to_unload"), empty_cells)
 	await _wait_for_prefetch_ready(streamer, END_CELL)
 	_require_bool("end ready flags include prefetch ring", _ready_includes_prefetch(streamer, END_CELL))
+	_require_event_keys_include_cells("end prefetch event coverage", _all_prefetched_keys, expected_end_prefetch_cells)
 	_require_no_load_failures(streamer)
 
 	_finish(streamer)
@@ -90,6 +107,18 @@ func _on_world_tile_activated(cell: Vector2i) -> void:
 
 func _on_world_tile_evicted(cell: Vector2i) -> void:
 	_evicted_cells.append(cell)
+
+
+func _on_world_tile_prefetched(cell: Vector2i) -> void:
+	_prefetched_cells.append(cell)
+	var key: String = _cell_key(cell)
+	_all_prefetched_keys.append(key)
+	if not _prefetch_ticks.has(key):
+		_prefetch_ticks[key] = _physics_tick
+
+
+func _on_world_tile_unprefetched(cell: Vector2i) -> void:
+	_unprefetched_cells.append(cell)
 
 
 func _ready_includes_prefetch(streamer: Node, center_cell: Vector2i) -> bool:
@@ -174,11 +203,25 @@ func _require_bool(label: String, actual: bool) -> void:
 		_errors.append(label)
 
 
+func _require_event_keys_include_cells(label: String, observed_keys: PackedStringArray, expected_cells: Array[Vector2i]) -> void:
+	var missing: PackedStringArray = PackedStringArray()
+	for cell in expected_cells:
+		var key: String = _cell_key(cell)
+		if not observed_keys.has(key):
+			missing.append(key)
+	if not missing.is_empty():
+		_errors.append(label + " missing keys: " + ", ".join(missing))
+
+
 func _finish(streamer: Node) -> void:
 	if EventBus.world_tile_activated.is_connected(_on_world_tile_activated):
 		EventBus.world_tile_activated.disconnect(_on_world_tile_activated)
 	if EventBus.world_tile_evicted.is_connected(_on_world_tile_evicted):
 		EventBus.world_tile_evicted.disconnect(_on_world_tile_evicted)
+	if EventBus.world_tile_prefetched.is_connected(_on_world_tile_prefetched):
+		EventBus.world_tile_prefetched.disconnect(_on_world_tile_prefetched)
+	if EventBus.world_tile_unprefetched.is_connected(_on_world_tile_unprefetched):
+		EventBus.world_tile_unprefetched.disconnect(_on_world_tile_unprefetched)
 	if streamer != null:
 		streamer.call("reset")
 
@@ -187,6 +230,8 @@ func _finish(streamer: Node) -> void:
 			"worker_count": _worker_count,
 			"activation_order": _all_activated_keys,
 			"activation_ticks": _activation_ticks,
+			"prefetch_order": _all_prefetched_keys,
+			"prefetch_ticks": _prefetch_ticks,
 		}
 		print("tile_streamer_fixture_result=" + JSON.stringify(result))
 		print("ok: TileStreamer active set and sorted lifecycle events")
