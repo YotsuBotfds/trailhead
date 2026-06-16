@@ -35,7 +35,7 @@ check "sim/render determinism boundary" sh -c '
 	time_findings="$(rg -n "\\bTIME\\b" systems scenes data --glob "*.gdshader" --glob "*.shader" --glob "*.gd" || true)" &&
 	time_filtered="" &&
 	if [ -n "$time_findings" ]; then
-		time_filtered="$(printf "%s\n" "$time_findings" | rg -v "^systems/render/water_visual\\.gdshader:|^systems/render/scatter_visual_builder\\.gd:" || true)"
+		time_filtered="$(printf "%s\n" "$time_findings" | rg -v "^systems/render/water_visual\\.gdshader:|^systems/render/grass_billboard\\.gdshader:" || true)"
 	fi &&
 	if [ -n "$time_filtered" ]; then
 		printf "%s\n" "$time_filtered" >&2
