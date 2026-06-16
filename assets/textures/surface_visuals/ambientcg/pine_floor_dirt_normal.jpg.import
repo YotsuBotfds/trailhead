@@ -3,27 +3,28 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://cadvf0ewbneg4"
-path="res://.godot/imported/pine_floor_dirt_normal.jpg-cdd0b8a6b186d8d68626a71d2f3e2d48.ctex"
+path.bptc="res://.godot/imported/pine_floor_dirt_normal.jpg-cdd0b8a6b186d8d68626a71d2f3e2d48.bptc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 
 [deps]
 
 source_file="res://assets/textures/surface_visuals/ambientcg/pine_floor_dirt_normal.jpg"
-dest_files=["res://.godot/imported/pine_floor_dirt_normal.jpg-cdd0b8a6b186d8d68626a71d2f3e2d48.ctex"]
+dest_files=["res://.godot/imported/pine_floor_dirt_normal.jpg-cdd0b8a6b186d8d68626a71d2f3e2d48.bptc.ctex"]
 
 [params]
 
-compress/mode=0
-compress/high_quality=false
+compress/mode=2
+compress/high_quality=true
 compress/lossy_quality=0.7
 compress/uastc_level=0
 compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
-compress/normal_map=0
+compress/normal_map=1
 compress/channel_pack=0
-mipmaps/generate=false
+mipmaps/generate=true
 mipmaps/limit=-1
 roughness/mode=0
 roughness/src_normal=""

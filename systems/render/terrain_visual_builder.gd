@@ -894,8 +894,6 @@ static func _track_overlay_material(material_name: String, track_texture: Textur
 static func _load_texture(path: String) -> Texture2D:
 	if path.is_empty():
 		return null
-	if path.begins_with("res://assets/textures/surface_visuals/"):
-		return _load_source_image_texture(path)
 	var texture: Texture2D = load(path) as Texture2D
 	if texture != null:
 		return texture

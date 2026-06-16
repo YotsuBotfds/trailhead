@@ -9,6 +9,10 @@ CHECKED_SUFFIXES = {".glb", ".png", ".jpg", ".jpeg"}
 TEXTURE_SUFFIXES = {".png", ".jpg", ".jpeg"}
 SURFACE_ID_PNG_NAME = "cedar_hollow_surface_id.png"
 RESIDUE_TEXTURE_DIR = Path("assets/textures/vehicle/residue")
+SURFACE_VISUALS_DIRS = (
+    Path("assets/textures/surface_visuals/ambientcg"),
+    Path("assets/textures/surface_visuals/generated"),
+)
 
 
 def unquote(value):
@@ -20,11 +24,27 @@ def unquote(value):
 
 def parse_import_file(path):
     values = {}
+    in_metadata = False
     for raw_line in path.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
-        if not line or line.startswith("[") or "=" not in line:
+        if not line or line.startswith("["):
+            continue
+        if in_metadata:
+            if line == "}":
+                in_metadata = False
+                continue
+            if ":" in line:
+                meta_key, meta_value = line.split(":", 1)
+                values["metadata/" + unquote(meta_key.strip())] = unquote(meta_value.strip())
+            continue
+        if "=" not in line:
             continue
         key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if key == "metadata" and value == "{":
+            in_metadata = True
+            continue
         values[key] = unquote(value)
     return values
 
@@ -33,6 +53,14 @@ def expected_cache_path(res_path):
     source_hash = hashlib.md5(res_path.encode("utf-8")).hexdigest()
     name = Path(res_path).name
     return "res://.godot/imported/" + name + "-" + source_hash
+
+
+def imported_cache_paths(values):
+    paths = []
+    for key, value in values.items():
+        if key == "path" or key.startswith("path."):
+            paths.append(value)
+    return paths
 
 
 def validate_asset(path):
@@ -47,8 +75,9 @@ def validate_asset(path):
     source_file = values.get("source_file", "")
     if source_file != res_path:
         errors.append(str(import_path.relative_to(ROOT)) + " source_file expected " + res_path + ", got " + source_file)
-    imported_path = values.get("path", "")
-    if not imported_path.startswith(expected_cache_path(res_path)):
+    expected_path_prefix = expected_cache_path(res_path)
+    imported_paths = imported_cache_paths(values)
+    if not any(imported_path.startswith(expected_path_prefix) for imported_path in imported_paths):
         errors.append(str(import_path.relative_to(ROOT)) + " path should use Godot import hash for " + res_path)
     uid = values.get("uid", "")
     if not uid.startswith("uid://"):
@@ -80,10 +109,18 @@ def validate_texture_import(path, import_path, values, errors):
     if values.get("importer", "") != "texture":
         errors.append(label + " importer should be texture for image asset")
     rel_path = path.relative_to(ROOT)
-    if path.name != SURFACE_ID_PNG_NAME:
-        if rel_path.parent == RESIDUE_TEXTURE_DIR:
-            validate_residue_texture_import(label, values, errors)
+    if path.name == SURFACE_ID_PNG_NAME:
+        validate_surface_id_texture_import(label, values, errors)
         return
+    if rel_path.parent in SURFACE_VISUALS_DIRS:
+        validate_surface_visual_texture_import(path, label, values, errors)
+        return
+    if rel_path.parent == RESIDUE_TEXTURE_DIR:
+        validate_residue_texture_import(label, values, errors)
+        return
+
+
+def validate_surface_id_texture_import(label, values, errors):
     expected_values = {
         "compress/mode": "0",
         "mipmaps/generate": "false",
@@ -98,6 +135,26 @@ def validate_texture_import(path, import_path, values, errors):
         actual_value = values.get(key, "")
         if actual_value != expected_value:
             errors.append(label + " " + key + " expected " + expected_value + ", got " + actual_value)
+
+
+def validate_surface_visual_texture_import(path, label, values, errors):
+    expected_values = {
+        "metadata/vram_texture": "true",
+        "compress/mode": "2",
+        "compress/high_quality": "true",
+        "mipmaps/generate": "true",
+        "mipmaps/limit": "-1",
+        "detect_3d/compress_to": "1",
+        "compress/normal_map": "1" if "_normal" in path.stem else "0",
+    }
+    for key, expected_value in expected_values.items():
+        actual_value = values.get(key, "")
+        if actual_value != expected_value:
+            errors.append(label + " " + key + " expected " + expected_value + ", got " + actual_value)
+    if "path.bptc" not in values:
+        errors.append(label + " should use path.bptc for high-quality VRAM-compressed surface visuals")
+    if "s3tc_bptc" not in values.get("metadata/imported_formats", ""):
+        errors.append(label + " metadata/imported_formats should include s3tc_bptc")
 
 
 def validate_residue_texture_import(label, values, errors):
