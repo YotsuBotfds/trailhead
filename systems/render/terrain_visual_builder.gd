@@ -88,6 +88,19 @@ class MeshBucket:
 	var vertex_indices: Dictionary[int, int] = {}
 
 
+class MeshSurfaceData:
+	var surface_id_value: int = 0
+	var vertices: PackedVector3Array = PackedVector3Array()
+	var normals: PackedVector3Array = PackedVector3Array()
+	var uvs: PackedVector2Array = PackedVector2Array()
+	var indices: PackedInt32Array = PackedInt32Array()
+
+
+class RegionMeshData:
+	var resource_name: String = ""
+	var surfaces: Array[MeshSurfaceData] = []
+
+
 func _ready() -> void:
 	if name != SPIKE_1KM_SCENE_ROOT_NAME:
 		return
@@ -326,25 +339,44 @@ static func _add_region_detail_tile(parent: Node3D, region_id: String, tile_data
 
 
 static func _build_region_mesh(tile_data_list: Array[RegionTileData], sample_step: int, mesh_name: String, local_origin_xz: Vector2) -> ArrayMesh:
+	var mesh_data: RegionMeshData = build_region_mesh_data(tile_data_list, sample_step, mesh_name, local_origin_xz)
+	return region_mesh_from_data(mesh_data)
+
+
+static func build_region_mesh_data(tile_data_list: Array[RegionTileData], sample_step: int, mesh_name: String, local_origin_xz: Vector2) -> RegionMeshData:
 	var buckets: Dictionary[int, MeshBucket] = {}
 	for tile_data in tile_data_list:
 		_append_tile_quads(tile_data, sample_step, buckets, local_origin_xz)
 
-	var mesh: ArrayMesh = ArrayMesh.new()
-	mesh.resource_name = mesh_name
+	var mesh_data: RegionMeshData = RegionMeshData.new()
+	mesh_data.resource_name = mesh_name
 	var surface_values: Array[int] = _sorted_surface_values(buckets)
 	for surface_id_value in surface_values:
 		var bucket: MeshBucket = buckets[surface_id_value]
 		if bucket.indices.size() <= 0:
 			continue
+		var surface_data: MeshSurfaceData = MeshSurfaceData.new()
+		surface_data.surface_id_value = surface_id_value
+		surface_data.vertices = bucket.vertices
+		surface_data.normals = bucket.normals
+		surface_data.uvs = bucket.uvs
+		surface_data.indices = bucket.indices
+		mesh_data.surfaces.append(surface_data)
+	return mesh_data
+
+
+static func region_mesh_from_data(mesh_data: RegionMeshData) -> ArrayMesh:
+	var mesh: ArrayMesh = ArrayMesh.new()
+	mesh.resource_name = mesh_data.resource_name
+	for surface_data in mesh_data.surfaces:
 		var arrays: Array = []
 		arrays.resize(Mesh.ARRAY_MAX)
-		arrays[Mesh.ARRAY_VERTEX] = bucket.vertices
-		arrays[Mesh.ARRAY_NORMAL] = bucket.normals
-		arrays[Mesh.ARRAY_TEX_UV] = bucket.uvs
-		arrays[Mesh.ARRAY_INDEX] = bucket.indices
+		arrays[Mesh.ARRAY_VERTEX] = surface_data.vertices
+		arrays[Mesh.ARRAY_NORMAL] = surface_data.normals
+		arrays[Mesh.ARRAY_TEX_UV] = surface_data.uvs
+		arrays[Mesh.ARRAY_INDEX] = surface_data.indices
 		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-		mesh.surface_set_material(mesh.get_surface_count() - 1, _material_for_surface_value(surface_id_value))
+		mesh.surface_set_material(mesh.get_surface_count() - 1, _material_for_surface_value(surface_data.surface_id_value))
 	return mesh
 
 
