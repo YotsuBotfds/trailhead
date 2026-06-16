@@ -2,20 +2,31 @@ extends Node
 
 const SPIKE_ROUTE_PATH: String = "res://data/routes/spike_1km_route.tres"
 const SPIKE_LANDMARKS_PATH: String = "res://data/routes/spike_1km_landmarks.tres"
+const SPIKE_TERRAIN_DEF_PATH: String = "res://data/terrain/spike_1km_terrain_def.tres"
 const SPIKE_MANIFEST_PATH: String = "res://data/regions/spike_1km/collision_tiles_manifest.json"
 const SPIKE_TILE_SIDECAR_PATH: String = "res://data/regions/spike_1km/tiles/%s/tile.json"
+const SPIKE_SURFACE_ID_MAP_PATH: String = "res://data/terrain/spike_1km_surface_id.png"
+const SPIKE_SURFACE_PALETTE_PATH: String = "res://data/surface_palettes/cedar_hollow_zion_surface_palette.tres"
 const SPIKE_REGION_ID: String = "spike_1km"
 const EXPECTED_TILE_SIZE_M: float = 100.0
 const EXPECTED_GRID_SIZE: Vector2i = Vector2i(10, 10)
+const EXPECTED_BOUNDS_MIN_XZ: Vector2 = Vector2(0.0, 0.0)
+const EXPECTED_BOUNDS_MAX_XZ: Vector2 = Vector2(1000.0, 1000.0)
+const EXPECTED_COLLISION_GRID: Vector2i = Vector2i(101, 101)
+const EXPECTED_VISUAL_GRID: Vector2i = Vector2i(101, 101)
+const EXPECTED_SURFACE_MAP_SIZE: Vector2i = Vector2i(1000, 1000)
+const EXPECTED_TILE_SIZE_XZ: Vector2 = Vector2(100.0, 100.0)
 const EXPECTED_SEGMENT_IDS: Array[StringName] = [
 	&"west_gate_to_east_gate",
 	&"east_gate_to_north_gate"
 ]
 const SpikeRoute: Resource = preload(SPIKE_ROUTE_PATH)
 const SpikeLandmarks: Resource = preload(SPIKE_LANDMARKS_PATH)
+const SpikeTerrainDef: Resource = preload(SPIKE_TERRAIN_DEF_PATH)
 
 var _errors: PackedStringArray = PackedStringArray()
 var _manifest_tiles: Array[Vector2i] = []
+var _manifest_surface_ids: Array[int] = []
 var _manifest_tile_size_m: float = 0.0
 var _manifest_grid_size: Vector2i = Vector2i.ZERO
 
@@ -26,6 +37,7 @@ func _ready() -> void:
 
 func _inspect() -> void:
 	_inspect_manifest()
+	_inspect_terrain_def_resource()
 	_inspect_route_resource(SpikeRoute, "spike_1km route")
 	_inspect_route_resource(SpikeLandmarks, "spike_1km landmarks")
 	_inspect_landmark_resource_shape()
@@ -60,6 +72,98 @@ func _inspect_manifest() -> void:
 	_manifest_tiles = _tiles_from_manifest(manifest.get("tiles", []))
 	if _manifest_tiles.size() != EXPECTED_GRID_SIZE.x * EXPECTED_GRID_SIZE.y:
 		_errors.append("spike manifest expected 100 tiles, got " + str(_manifest_tiles.size()))
+	_manifest_surface_ids = _surface_ids_from_counts(manifest.get("surface_id_counts", {}))
+
+
+func _inspect_terrain_def_resource() -> void:
+	if SpikeTerrainDef == null:
+		_errors.append("spike_1km TerrainDef failed to load: " + SPIKE_TERRAIN_DEF_PATH)
+		return
+	if StringName(SpikeTerrainDef.get("id")) != &"spike_1km":
+		_errors.append("spike_1km TerrainDef id mismatch: " + String(SpikeTerrainDef.get("id")))
+	if StringName(SpikeTerrainDef.get("scene_id")) != &"spike_1km":
+		_errors.append("spike_1km TerrainDef scene_id mismatch: " + String(SpikeTerrainDef.get("scene_id")))
+	if Vector2(SpikeTerrainDef.get("bounds_min_xz")) != EXPECTED_BOUNDS_MIN_XZ:
+		_errors.append("spike_1km TerrainDef bounds_min_xz mismatch")
+	if Vector2(SpikeTerrainDef.get("bounds_max_xz")) != EXPECTED_BOUNDS_MAX_XZ:
+		_errors.append("spike_1km TerrainDef bounds_max_xz mismatch")
+	if Vector2i(SpikeTerrainDef.get("tile_grid")) != EXPECTED_GRID_SIZE:
+		_errors.append("spike_1km TerrainDef tile_grid mismatch")
+	if Vector2i(SpikeTerrainDef.get("tile_grid_origin")) != Vector2i.ZERO:
+		_errors.append("spike_1km TerrainDef tile_grid_origin mismatch")
+	if Vector2(SpikeTerrainDef.get("tile_size")) != EXPECTED_TILE_SIZE_XZ:
+		_errors.append("spike_1km TerrainDef tile_size mismatch")
+	if Vector2i(SpikeTerrainDef.get("collision_grid")) != EXPECTED_COLLISION_GRID:
+		_errors.append("spike_1km TerrainDef collision_grid mismatch")
+	if Vector2i(SpikeTerrainDef.get("visual_grid")) != EXPECTED_VISUAL_GRID:
+		_errors.append("spike_1km TerrainDef visual_grid mismatch")
+	if Vector2i(SpikeTerrainDef.get("surface_map_size")) != EXPECTED_SURFACE_MAP_SIZE:
+		_errors.append("spike_1km TerrainDef surface_map_size mismatch")
+	_require_terrain_tiles_match_manifest()
+	_require_terrain_surface_paths()
+	_require_terrain_collision_paths()
+	_require_terrain_validation_passes()
+
+
+func _require_terrain_tiles_match_manifest() -> void:
+	var active_tiles: Array[Vector2i] = SpikeTerrainDef.call("active_tile_indices")
+	if active_tiles.size() != EXPECTED_GRID_SIZE.x * EXPECTED_GRID_SIZE.y:
+		_errors.append("spike_1km TerrainDef expected 100 active tiles, got " + str(active_tiles.size()))
+	for tile in active_tiles:
+		if not _manifest_tiles.has(tile):
+			_errors.append("spike_1km TerrainDef active tile missing from manifest: " + str(tile))
+	for tile in _manifest_tiles:
+		if not active_tiles.has(tile):
+			_errors.append("spike manifest tile missing from TerrainDef active tiles: " + str(tile))
+
+
+func _require_terrain_surface_paths() -> void:
+	var palette_path: String = SpikeTerrainDef.get("surface_palette_path")
+	if palette_path != SPIKE_SURFACE_PALETTE_PATH:
+		_errors.append("spike_1km TerrainDef surface_palette_path mismatch: " + palette_path)
+	var palette: Resource = load(palette_path) as Resource
+	if palette == null:
+		_errors.append("spike_1km TerrainDef surface palette failed to load: " + palette_path)
+	else:
+		for id_value in _manifest_surface_ids:
+			if not bool(palette.call("has_surface_id_value", id_value)):
+				_errors.append("spike_1km surface palette does not resolve surface ID value: " + str(id_value))
+	var surface_id_map_path: String = SpikeTerrainDef.get("surface_id_map_path")
+	if surface_id_map_path != SPIKE_SURFACE_ID_MAP_PATH:
+		_errors.append("spike_1km TerrainDef surface_id_map_path should point at stitched spike surface map: " + surface_id_map_path)
+	elif not FileAccess.file_exists(surface_id_map_path):
+		_errors.append("spike_1km TerrainDef surface_id_map_path does not exist: " + surface_id_map_path)
+
+
+func _require_terrain_collision_paths() -> void:
+	var active_tiles: Array[Vector2i] = SpikeTerrainDef.call("active_tile_indices")
+	var collision_tile_paths: Array[String] = SpikeTerrainDef.get("collision_tile_paths")
+	if collision_tile_paths.size() != active_tiles.size():
+		_errors.append("spike_1km TerrainDef collision_tile_paths should match active tile count")
+	for i in range(collision_tile_paths.size()):
+		var path: String = collision_tile_paths[i]
+		if path.is_empty():
+			_errors.append("spike_1km TerrainDef collision tile path is empty")
+			continue
+		if i < active_tiles.size():
+			var expected_path: String = _collision_path_for_tile(active_tiles[i])
+			if path != expected_path:
+				_errors.append("spike_1km TerrainDef collision path order mismatch at " + str(i) + ": " + path + " != " + expected_path)
+		if not ResourceLoader.exists(path):
+			_errors.append("spike_1km TerrainDef collision tile path does not exist: " + path)
+			continue
+		var shape: HeightMapShape3D = load(path) as HeightMapShape3D
+		if shape == null:
+			_errors.append("spike_1km TerrainDef collision tile did not load as HeightMapShape3D: " + path)
+			continue
+		if shape.map_width != EXPECTED_COLLISION_GRID.x or shape.map_depth != EXPECTED_COLLISION_GRID.y:
+			_errors.append("spike_1km TerrainDef collision tile grid mismatch: " + path)
+
+
+func _require_terrain_validation_passes() -> void:
+	var terrain_errors: PackedStringArray = SpikeTerrainDef.call("validate")
+	for error in terrain_errors:
+		_errors.append("spike_1km TerrainDef validate: " + error)
 
 
 func _inspect_route_resource(route: Resource, label: String) -> void:
@@ -72,7 +176,9 @@ func _inspect_route_resource(route: Resource, label: String) -> void:
 	if StringName(route.get("scene_id")) != &"spike_1km":
 		_errors.append(label + " scene_id mismatch: " + String(route.get("scene_id")))
 	var terrain_def_path: String = route.get("terrain_def_path")
-	if terrain_def_path.is_empty() or not ResourceLoader.exists(terrain_def_path):
+	if terrain_def_path != SPIKE_TERRAIN_DEF_PATH:
+		_errors.append(label + " terrain_def_path should point at local spike TerrainDef: " + terrain_def_path)
+	elif not ResourceLoader.exists(terrain_def_path):
 		_errors.append(label + " terrain_def_path should point at a loadable .tres resource")
 	var bounds_min: Vector3 = route.get("bounds_min")
 	var bounds_max: Vector3 = route.get("bounds_max")
@@ -199,6 +305,26 @@ func _tiles_from_manifest(value: Variant) -> Array[Vector2i]:
 		if not tiles.has(tile):
 			tiles.append(tile)
 	return tiles
+
+
+func _surface_ids_from_counts(value: Variant) -> Array[int]:
+	var ids: Array[int] = []
+	if not (value is Dictionary):
+		_errors.append("spike manifest surface_id_counts should be a dictionary")
+		return ids
+	var counts_by_tile: Dictionary = value
+	for tile_key in counts_by_tile.keys():
+		var counts_value: Variant = counts_by_tile[tile_key]
+		if not (counts_value is Dictionary):
+			_errors.append("spike manifest surface_id_counts tile should be a dictionary: " + String(tile_key))
+			continue
+		var counts: Dictionary = counts_value
+		for id_key in counts.keys():
+			var id_value: int = int(String(id_key))
+			if not ids.has(id_value):
+				ids.append(id_value)
+	ids.sort()
+	return ids
 
 
 func _vector2i_from_pair(value: Variant, label: String) -> Vector2i:
@@ -329,6 +455,16 @@ func _float_array(value: Variant) -> Array[float]:
 
 func _tile_key(cell: Vector2i) -> String:
 	return str(cell.x) + "_" + str(cell.y)
+
+
+func _collision_path_for_tile(cell: Vector2i) -> String:
+	return "res://data/collision/spike_1km_tile_CX" + _two_digit(cell.x) + "_CZ" + _two_digit(cell.y) + ".res"
+
+
+func _two_digit(value: int) -> String:
+	if value < 10:
+		return "0" + str(value)
+	return str(value)
 
 
 func _is_number(value: Variant) -> bool:
