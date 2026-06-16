@@ -104,6 +104,7 @@ mesh_lod/lod_change/threshold_pixels=2.0
 scaling_3d/mode=2
 scaling_3d/scale=0.71
 scaling_3d/fsr_sharpness=0.1
+lights_and_shadows/directional_shadow/soft_shadow_filter_quality=2
 
 [trailhead_render]
 

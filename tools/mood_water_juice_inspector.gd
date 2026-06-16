@@ -10,6 +10,8 @@ const TILT_SHIFT_LAYER_INDEX: int = 2
 const WATER_SURFACE_COUNT: int = 3
 const DUST_MOTE_COUNT_FLOOR: int = 1
 const CONTACT_FILL_LIGHT_NAME: String = "VehicleContactFillLight"
+const SOFT_SHADOW_FILTER_QUALITY_SETTING_PATH: String = "rendering/lights_and_shadows/directional_shadow/soft_shadow_filter_quality"
+const EXPECTED_SOFT_SHADOW_FILTER_QUALITY: int = 2
 
 var _scene_root: Node = null
 var _errors: PackedStringArray = PackedStringArray()
@@ -116,6 +118,9 @@ func _inspect_viewport_antialiasing() -> void:
 		_errors.append("Cedar viewport should use MSAA_DISABLED")
 	if not viewport.use_taa:
 		_errors.append("Cedar viewport should enable TAA for SSAO/SSIL")
+	var soft_shadow_quality: int = int(ProjectSettings.get_setting(SOFT_SHADOW_FILTER_QUALITY_SETTING_PATH, -1))
+	if soft_shadow_quality != EXPECTED_SOFT_SHADOW_FILTER_QUALITY:
+		_errors.append("Cedar project " + SOFT_SHADOW_FILTER_QUALITY_SETTING_PATH + " expected " + str(EXPECTED_SOFT_SHADOW_FILTER_QUALITY) + ", got " + str(soft_shadow_quality))
 
 
 func _inspect_mood_toggle(world_environment: WorldEnvironment) -> void:

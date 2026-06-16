@@ -61,6 +61,8 @@ const EXPECTED_PROP_MESH_NODES: Array[String] = [
 const FLOAT_EPSILON: float = 0.001
 const LIGHTING_BAR_TOLERANCE: float = 0.01
 const LIGHTING_BAR_COLOR_TOLERANCE: float = 0.02
+const SOFT_SHADOW_FILTER_QUALITY_SETTING_PATH: String = "rendering/lights_and_shadows/directional_shadow/soft_shadow_filter_quality"
+const EXPECTED_SOFT_SHADOW_FILTER_QUALITY: int = 2
 const GROUND_DETAIL_MATERIAL_TOLERANCE: float = 0.05
 const FOLIAGE_SHADER_TOLERANCE: float = 0.01
 const MUD_PATCH_ALPHA_MIN: float = 0.45
@@ -1808,6 +1810,9 @@ func _inspect_project_scaling_settings(context: String) -> void:
 		_errors.append(context + " project scaling_3d/scale expected 0.71, got " + str(scale_value))
 	if absf(sharpness_value - 0.1) > FLOAT_EPSILON:
 		_errors.append(context + " project scaling_3d/fsr_sharpness expected 0.1, got " + str(sharpness_value))
+	var soft_shadow_quality: int = int(ProjectSettings.get_setting(SOFT_SHADOW_FILTER_QUALITY_SETTING_PATH, -1))
+	if soft_shadow_quality != EXPECTED_SOFT_SHADOW_FILTER_QUALITY:
+		_errors.append(context + " project " + SOFT_SHADOW_FILTER_QUALITY_SETTING_PATH + " expected " + str(EXPECTED_SOFT_SHADOW_FILTER_QUALITY) + ", got " + str(soft_shadow_quality))
 
 
 func _inspect_fov_range(context: String) -> void:
