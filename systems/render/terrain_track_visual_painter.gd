@@ -40,6 +40,8 @@ var _last_wheel_surfaces: Array[StringName] = [&"", &"", &"", &""]
 var _last_wheel_has_stamp: Array[bool] = [false, false, false, false]
 var _stamp_sequence: int = 0
 var _max_stamp_count: int = WHEEL_COUNT * MIN_STAMPS_PER_WHEEL
+var _track_update_tick: int = 0
+var _pending_decay_delta: float = 0.0
 
 
 func _ready() -> void:
@@ -75,7 +77,10 @@ func apply_vehicle_state(state: RefCounted, fixed_delta: float) -> void:
 		return
 	if _viewport == null:
 		configure(_default_bounds_min(), _default_bounds_max())
-	_age_stamps(fixed_delta)
+	if _advance_track_update_tick(fixed_delta):
+		if _age_stamps(_pending_decay_delta):
+			_request_viewport_update()
+		_pending_decay_delta = 0.0
 	var wheel_hit_points: Array[Vector3] = state.get("wheel_hit_point")
 	var wheel_surfaces: Array[StringName] = state.get("wheel_surface")
 	var wheel_count: int = mini(mini(wheel_hit_points.size(), wheel_surfaces.size()), WHEEL_COUNT)
@@ -92,6 +97,7 @@ func apply_vehicle_state(state: RefCounted, fixed_delta: float) -> void:
 		if not _should_stamp(wheel_index, hit_point, surface_id):
 			continue
 		_add_stamp(wheel_index, hit_point, surface_id, surface_response)
+		_request_viewport_update()
 
 
 func debug_viewport() -> SubViewport:
@@ -143,7 +149,7 @@ func _configure_viewport() -> void:
 	_viewport.transparent_bg = true
 	_viewport.msaa_3d = Viewport.MSAA_DISABLED
 	_viewport.render_target_clear_mode = SubViewport.CLEAR_MODE_ALWAYS
-	_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
 	var center: Vector2 = (_render_bounds_min + _render_bounds_max) * 0.5
 	var extent: float = maxf(_render_bounds_max.x - _render_bounds_min.x, MIN_BOUNDS_EXTENT)
 	_camera.position = Vector3(center.x, TRACK_CAMERA_HEIGHT, center.y)
@@ -171,22 +177,36 @@ func _ceil_positive_to_int(value: float) -> int:
 	return truncated
 
 
-func _age_stamps(fixed_delta: float) -> void:
+func _advance_track_update_tick(fixed_delta: float) -> bool:
+	_pending_decay_delta += maxf(fixed_delta, 0.0)
+	var update_interval_ticks: int = maxi(GameConfig.terrain_track_update_interval_ticks, 1)
+	_track_update_tick += 1
+	if _track_update_tick < update_interval_ticks:
+		return false
+	_track_update_tick = 0
+	return true
+
+
+func _age_stamps(fixed_delta: float) -> bool:
 	var decay: float = maxf(GameConfig.terrain_track_decay_per_second, 0.0) * maxf(fixed_delta, 0.0)
 	if decay <= 0.0:
-		return
+		return false
+	var changed: bool = false
 	var index: int = _stamp_nodes.size() - 1
 	while index >= 0:
 		var color: Color = _stamp_colors[index]
 		var next_alpha: float = maxf(color.a - decay, 0.0)
 		if next_alpha <= STAMP_ALPHA_EPSILON:
 			_remove_stamp_at(index)
+			changed = true
 		else:
 			var alpha_scale: float = next_alpha / maxf(color.a, STAMP_ALPHA_EPSILON)
 			color = Color(color.r * alpha_scale, color.g * alpha_scale, color.b * alpha_scale, next_alpha)
 			_stamp_colors[index] = color
 			_apply_stamp_color(_stamp_nodes[index], color)
+			changed = true
 		index -= 1
+	return changed
 
 
 func _point_inside_bounds(point: Vector3) -> bool:
@@ -298,4 +318,11 @@ func _remove_stamp_at(index: int) -> void:
 	if stamp == null:
 		return
 	if is_instance_valid(stamp):
+		stamp.visible = false
 		stamp.queue_free()
+
+
+func _request_viewport_update() -> void:
+	if _viewport == null:
+		return
+	_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE

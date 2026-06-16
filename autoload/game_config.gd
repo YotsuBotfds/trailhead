@@ -247,6 +247,7 @@ var terrain_pom_max_layers: int = 8
 var terrain_track_painter_enabled: bool = true
 var terrain_track_painter_resolution: int = 512
 var terrain_track_painter_pixels_per_meter: float = 14.0
+var terrain_track_update_interval_ticks: int = 2
 var terrain_track_stamp_radius: float = 0.055
 var terrain_track_stamp_strength: float = 0.34
 var terrain_track_decay_per_second: float = 0.018

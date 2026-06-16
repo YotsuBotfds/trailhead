@@ -65,8 +65,10 @@ func _inspect_painter_node(painter: Node) -> void:
 		_errors.append("track viewport should use a transparent background")
 	if viewport.msaa_3d != Viewport.MSAA_DISABLED:
 		_errors.append("track viewport should keep MSAA disabled")
-	if viewport.render_target_update_mode != SubViewport.UPDATE_ALWAYS:
-		_errors.append("track viewport should update its render target every frame")
+	if viewport.render_target_update_mode != SubViewport.UPDATE_ONCE:
+		_errors.append("track viewport should request render target updates explicitly with UPDATE_ONCE")
+	if GameConfig.terrain_track_update_interval_ticks < 1:
+		_errors.append("terrain_track_update_interval_ticks should be at least 1")
 	if viewport.get_texture() == null:
 		_errors.append("track viewport should expose a render target texture")
 	var camera: Camera3D = viewport.get_node_or_null("TrackPaintCamera") as Camera3D
