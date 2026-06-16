@@ -2,6 +2,7 @@ extends Node
 
 const CedarRoute: Resource = preload("res://data/routes/cedar_hollow.tres")
 const CedarTerrainDef: Resource = preload("res://data/terrain/cedar_hollow_terrain_def.tres")
+const ZionTerrainDef: Resource = preload("res://data/terrain/cedar_hollow_zion_terrain_def.tres")
 const CedarSurfaceVisualCatalog: Resource = preload("res://data/surface_visuals/cedar_hollow_surface_visuals.tres")
 const SURFACE_DIR_PATH: String = "res://data/surfaces"
 const EXPECTED_SURFACE_IDS: Array[StringName] = [
@@ -29,6 +30,14 @@ const EXPECTED_G2_SEGMENT_IDS: Array[StringName] = [
 	&"ridge_gate_to_pine_floor",
 	&"pine_floor_to_far_mile_marker"
 ]
+const EXPECTED_ZION_OVERRIDE_SURFACE_IDS: Array[StringName] = [
+	&"slickrock_dry",
+	&"sand_wash"
+]
+const EXPECTED_ZION_OVERRIDE_CENTERS: Array[Vector2] = [
+	Vector2(327400.0, 4123000.0),
+	Vector2(327650.0, 4123150.0)
+]
 
 var _errors: PackedStringArray = PackedStringArray()
 var _surface_ids: Array[StringName] = []
@@ -42,6 +51,7 @@ func _inspect() -> void:
 	_inspect_surfaces()
 	_inspect_surface_visuals()
 	_inspect_cedar_terrain_def()
+	_inspect_zion_terrain_def()
 	_inspect_cedar_route()
 	_finish()
 
@@ -179,6 +189,35 @@ func _inspect_cedar_terrain_def() -> void:
 	var override_rects: Array[Variant] = CedarTerrainDef.call("surface_override_rects")
 	if override_rects.size() != 3:
 		_errors.append("cedar_hollow TerrainDef should expose three feature override rects")
+
+
+func _inspect_zion_terrain_def() -> void:
+	var terrain_errors: PackedStringArray = ZionTerrainDef.call("validate")
+	for error in terrain_errors:
+		_errors.append("cedar_hollow_zion TerrainDef: " + error)
+	var override_rects: Array[Variant] = ZionTerrainDef.call("surface_override_rects")
+	if override_rects.size() != EXPECTED_ZION_OVERRIDE_SURFACE_IDS.size():
+		_errors.append("cedar_hollow_zion TerrainDef should expose two SP-8 surface override rects")
+		return
+	var bounds_min: Vector2 = ZionTerrainDef.get("bounds_min_xz")
+	var bounds_max: Vector2 = ZionTerrainDef.get("bounds_max_xz")
+	for i in range(EXPECTED_ZION_OVERRIDE_SURFACE_IDS.size()):
+		var value: Variant = override_rects[i]
+		if not (value is Dictionary):
+			_errors.append("cedar_hollow_zion override rect " + str(i) + " should be a dictionary")
+			continue
+		var override_data: Dictionary = value
+		var surface_id: StringName = StringName(override_data.get("surface_id", &""))
+		var center: Vector2 = override_data.get("center", Vector2.ZERO)
+		var half_extents: Vector2 = override_data.get("half_extents", Vector2.ZERO)
+		if surface_id != EXPECTED_ZION_OVERRIDE_SURFACE_IDS[i]:
+			_errors.append("cedar_hollow_zion override rect " + str(i) + " surface mismatch: " + String(surface_id))
+		if center.distance_to(EXPECTED_ZION_OVERRIDE_CENTERS[i]) > 0.001:
+			_errors.append("cedar_hollow_zion override rect " + str(i) + " center mismatch: " + str(center))
+		if center.x < bounds_min.x or center.x > bounds_max.x or center.y < bounds_min.y or center.y > bounds_max.y:
+			_errors.append("cedar_hollow_zion override rect " + str(i) + " center outside terrain bounds")
+		if half_extents.x <= 0.0 or half_extents.y <= 0.0:
+			_errors.append("cedar_hollow_zion override rect " + str(i) + " half extents should be positive")
 
 
 func _inspect_cedar_route() -> void:

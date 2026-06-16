@@ -22,10 +22,10 @@ run_sim "$out_dir/zion_surface_map_probe.json" \
 	--scene=zion_surface_map_probe \
 	--controller=pd \
 	--spawn=flat_spawn \
-	--target=0,0,-11.4 \
+	--target=0,0,-15.8 \
 	--target-radius=0.35 \
 	--seed=12345 \
-	--max-ticks=2400 \
+	--max-ticks=3200 \
 	--stuck-window=180 \
 	--stuck-min-progress=0.05
 assert_metrics "$out_dir/zion_surface_map_probe.json" \
@@ -35,7 +35,9 @@ assert_metrics "$out_dir/zion_surface_map_probe.json" \
 	--surface=loose_rock:5 \
 	--surface=tall_grass:5 \
 	--surface=paved_road:5 \
-	--surface-sequence=wet_stone,packed_gravel,packed_dirt,loose_rock,tall_grass,paved_road \
+	--surface=slickrock_dry:5 \
+	--surface=sand_wash:5 \
+	--surface-sequence=wet_stone,packed_gravel,packed_dirt,loose_rock,tall_grass,paved_road,slickrock_dry,sand_wash \
 	--source-min=terrain:120 \
 	--terrain-id-min=1:5 \
 	--terrain-id-min=2:5 \
