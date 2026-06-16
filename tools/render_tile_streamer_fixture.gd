@@ -35,9 +35,11 @@ func _inspect() -> void:
 	var first_tile: MeshInstance3D = _require_visual_tile(FIRST_CELL)
 	var first_surface_count: int = 0
 	var first_bounds: AABB = AABB()
+	var first_materials_by_name: Dictionary[String, StandardMaterial3D] = {}
 	if first_tile != null and first_tile.mesh != null:
 		first_surface_count = first_tile.mesh.get_surface_count()
 		first_bounds = first_tile.mesh.get_aabb()
+		first_materials_by_name = _surface_materials_by_name(first_tile)
 
 	EventBus.world_tile_activated.emit(FIRST_CELL)
 	_require_cell_count("duplicate activation", 1)
@@ -62,6 +64,7 @@ func _inspect() -> void:
 	_require_cells("reactivation cells", [FIRST_CELL, SECOND_CELL])
 	var rebuilt_tile: MeshInstance3D = _require_visual_tile(FIRST_CELL)
 	_require_rebuilt_tile(first_surface_count, first_bounds, rebuilt_tile)
+	_require_cached_materials_reused(first_materials_by_name, rebuilt_tile)
 
 	_streamer.call("reset_stream")
 	_require_cell_count("reset", 0)
@@ -122,6 +125,32 @@ func _require_rebuilt_tile(expected_surface_count: int, expected_bounds: AABB, t
 		_errors.append("rebuilt tile bounds position drifted")
 	if rebuilt_bounds.size.distance_to(expected_bounds.size) > FLOAT_EPSILON:
 		_errors.append("rebuilt tile bounds size drifted")
+
+
+func _require_cached_materials_reused(expected_materials_by_name: Dictionary[String, StandardMaterial3D], tile: MeshInstance3D) -> void:
+	if tile == null:
+		return
+	var observed_materials_by_name: Dictionary[String, StandardMaterial3D] = _surface_materials_by_name(tile)
+	for material_name in expected_materials_by_name.keys():
+		if not observed_materials_by_name.has(material_name):
+			_errors.append("rebuilt tile missing material " + material_name)
+			continue
+		var expected_material: StandardMaterial3D = expected_materials_by_name[material_name]
+		var observed_material: StandardMaterial3D = observed_materials_by_name[material_name]
+		if observed_material != expected_material:
+			_errors.append("rebuilt tile material " + material_name + " should reuse the cached StandardMaterial3D")
+
+
+func _surface_materials_by_name(tile: MeshInstance3D) -> Dictionary[String, StandardMaterial3D]:
+	var materials_by_name: Dictionary[String, StandardMaterial3D] = {}
+	if tile.mesh == null:
+		return materials_by_name
+	for surface_index in range(tile.mesh.get_surface_count()):
+		var material: StandardMaterial3D = tile.get_surface_override_material(surface_index) as StandardMaterial3D
+		if material == null:
+			continue
+		materials_by_name[material.resource_name] = material
+	return materials_by_name
 
 
 func _require_cell_count(label: String, expected_count: int) -> void:

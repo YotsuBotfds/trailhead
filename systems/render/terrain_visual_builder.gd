@@ -8,6 +8,9 @@ const TerrainTrackOverlayShader: Shader = preload("res://systems/render/terrain_
 const DETAIL_MASK_TEXTURE_PATH: String = "res://assets/textures/surface_visuals/generated/terrain_detail_mask.png"
 const GENERATED_SURFACE_TEXTURE_DIR: String = "res://assets/textures/surface_visuals/generated/"
 const TEXTURE_SOURCE_PATH_META: StringName = &"trailhead_source_path"
+
+static var _terrain_material_cache: Dictionary[StringName, StandardMaterial3D] = {}
+
 const REGION_ID_META: StringName = &"trailhead_region_id"
 const REGION_LOD_META: StringName = &"trailhead_region_lod"
 const TILE_INDEX_META: StringName = &"trailhead_tile_index"
@@ -778,8 +781,10 @@ static func _material_token_for_mesh_surface(mesh: Mesh, surface_index: int) -> 
 
 
 static func _material_for_visual_def(visual_def: Resource) -> StandardMaterial3D:
-	var material: StandardMaterial3D = StandardMaterial3D.new()
 	var visual_id: StringName = visual_def.get("id")
+	if _terrain_material_cache.has(visual_id):
+		return _terrain_material_cache[visual_id]
+	var material: StandardMaterial3D = StandardMaterial3D.new()
 	var wetness: float = clampf(float(visual_def.get("wetness")), 0.0, 1.0)
 	var base_albedo_color: Color = visual_def.get("albedo_color")
 	material.resource_name = "terrain_visual_" + String(visual_id)
@@ -792,6 +797,7 @@ static func _material_for_visual_def(visual_def: Resource) -> StandardMaterial3D
 	_apply_wetness(material, wetness)
 	_apply_texture_paths(material, visual_def)
 	_apply_height_mapping(material, visual_def)
+	_terrain_material_cache[visual_id] = material
 	return material
 
 
@@ -876,7 +882,11 @@ static func _apply_track_texture_to_mesh(mesh_instance: MeshInstance3D, track_te
 		var material: StandardMaterial3D = mesh_instance.get_surface_override_material(surface_index) as StandardMaterial3D
 		if material == null:
 			continue
+		material = material.duplicate() as StandardMaterial3D
+		if material == null:
+			continue
 		material.next_pass = _track_overlay_material(material.resource_name, track_texture, bounds_min, bounds_max)
+		mesh_instance.set_surface_override_material(surface_index, material)
 
 
 static func _track_overlay_material(material_name: String, track_texture: Texture2D, bounds_min: Vector2, bounds_max: Vector2) -> ShaderMaterial:
