@@ -276,7 +276,7 @@ static func build_region_visual_tile_data(region_id: String, cell: Vector2i) -> 
 	return visual_tile_data
 
 
-static func region_visual_tile_from_data(parent: Node3D, visual_tile_data: RegionVisualTileData, hlod_instance: MeshInstance3D) -> MeshInstance3D:
+static func region_visual_tile_from_data(parent: Node3D, visual_tile_data: RegionVisualTileData, _hlod_instance: MeshInstance3D) -> MeshInstance3D:
 	if visual_tile_data == null or not visual_tile_data.ok or visual_tile_data.mesh_data == null:
 		return null
 	var instance: MeshInstance3D = MeshInstance3D.new()
@@ -291,8 +291,6 @@ static func region_visual_tile_from_data(parent: Node3D, visual_tile_data: Regio
 	instance.set_meta(TILE_PATH_META, visual_tile_data.heightmap_path)
 	instance.set_meta(TILE_SURFACE_ID_PATH_META, visual_tile_data.surface_id_path)
 	parent.add_child(instance)
-	if hlod_instance != null:
-		instance.visibility_parent = instance.get_path_to(hlod_instance)
 	return instance
 
 
@@ -550,7 +548,7 @@ static func _dominant_surface_id_value(tile_data_list: Array[RegionTileData]) ->
 	return best_surface_id_value
 
 
-static func _add_region_detail_tile(parent: Node3D, region_id: String, tile_data: RegionTileData, hlod_instance: MeshInstance3D) -> MeshInstance3D:
+static func _add_region_detail_tile(parent: Node3D, region_id: String, tile_data: RegionTileData, _hlod_instance: MeshInstance3D) -> MeshInstance3D:
 	var instance: MeshInstance3D = MeshInstance3D.new()
 	instance.name = region_detail_tile_node_name(region_id, tile_data.cell)
 	var tile_origin_xz: Vector2 = _tile_origin_xz(tile_data)
@@ -565,8 +563,6 @@ static func _add_region_detail_tile(parent: Node3D, region_id: String, tile_data
 	instance.set_meta(TILE_PATH_META, tile_data.heightmap_path)
 	instance.set_meta(TILE_SURFACE_ID_PATH_META, tile_data.surface_id_path)
 	parent.add_child(instance)
-	if hlod_instance != null:
-		instance.visibility_parent = instance.get_path_to(hlod_instance)
 	return instance
 
 

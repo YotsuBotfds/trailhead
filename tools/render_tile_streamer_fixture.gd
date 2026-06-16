@@ -252,14 +252,8 @@ func _require_visual_tile(cell: Vector2i) -> MeshInstance3D:
 	var expected_name: String = TerrainVisualBuilderScript.region_detail_tile_node_name(REGION_ID, cell)
 	if String(mesh_instance.name) != expected_name:
 		_errors.append("visual cell name expected " + expected_name + ", got " + String(mesh_instance.name))
-	if mesh_instance.visibility_parent.is_empty():
-		_errors.append("streamed visual cell should reference TerrainHLOD visibility parent: " + String(mesh_instance.name))
-	else:
-		var parent_node: Node = mesh_instance.get_node_or_null(mesh_instance.visibility_parent)
-		if parent_node == null:
-			_errors.append("streamed visual cell references missing HLOD visibility parent: " + String(mesh_instance.name))
-		elif String(parent_node.name) != TerrainVisualBuilderScript.REGION_HLOD_NAME:
-			_errors.append("streamed visual cell visibility parent expected TerrainHLOD, got " + String(parent_node.name))
+	if not mesh_instance.visibility_parent.is_empty():
+		_errors.append("streamed visual cell should not use whole-region TerrainHLOD as visibility_parent: " + String(mesh_instance.name))
 	var expected_origin: Vector3 = Vector3(
 		(float(cell.x) + 0.5) * GameConfig.STREAM_TILE_SIZE_M,
 		0.0,

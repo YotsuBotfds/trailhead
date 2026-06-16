@@ -84,8 +84,8 @@ func _inspect_detail_tiles(detail_root: Node) -> void:
 		_require_mesh_surfaces(mesh_instance, "TerrainDetailTiles/" + String(child.name))
 		if mesh_instance.mesh != null and mesh_instance.mesh.get_surface_count() != 1:
 			_errors.append("TerrainDetailTiles/" + String(child.name) + " should collapse to one surface, got " + str(mesh_instance.mesh.get_surface_count()))
-		if mesh_instance.visibility_parent.is_empty():
-			_errors.append("TerrainDetailTiles/" + String(child.name) + " should set visibility_parent")
+		if not mesh_instance.visibility_parent.is_empty():
+			_errors.append("TerrainDetailTiles/" + String(child.name) + " should not use whole-region TerrainHLOD as visibility_parent")
 		var visibility_radius: float = _visibility_radius(mesh_instance, "TerrainDetailTiles/" + String(child.name))
 		var expected_range_end: float = _detail_visibility_range_end(visibility_radius)
 		if absf(mesh_instance.visibility_range_end - expected_range_end) > FLOAT_EPSILON:

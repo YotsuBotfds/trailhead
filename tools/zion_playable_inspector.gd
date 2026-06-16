@@ -203,6 +203,8 @@ func _require_visual_streamer_state(streamer: Node) -> void:
 		_errors.append("Zion center visual cell should be MeshInstance3D")
 	elif center_tile.mesh == null:
 		_errors.append("Zion center visual cell is missing mesh")
+	elif not center_tile.visibility_parent.is_empty():
+		_errors.append("Zion center visual cell should not use TerrainHLOD as visibility_parent")
 	var failures: Dictionary = streamer.call("load_failures")
 	if not failures.is_empty():
 		_errors.append("Zion visual streamer load failures: " + str(failures))
