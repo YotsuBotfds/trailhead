@@ -111,6 +111,10 @@ def _validate_payload(payload: dict[str, Any]) -> list[str]:
             errors.append("render frame-budget probe should skip runtime frame cap")
         if runtime.get("frame_cap_applied") is not False:
             errors.append("render frame cap should not apply to fixed-fps frame-budget probes")
+        if runtime.get("dynamic_resolution_enabled") is not True:
+            errors.append("render dynamic resolution should be enabled")
+        if runtime.get("dynamic_resolution_installed") is not False:
+            errors.append("render dynamic resolution should not install in fixed-fps frame-budget probes")
     phases = payload.get("phases")
     if not isinstance(phases, list):
         errors.append("phases should be a list")

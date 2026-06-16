@@ -102,6 +102,8 @@ func _run() -> void:
 			"frame_cap_enabled": GameConfig.render_frame_cap_enabled,
 			"frame_cap_skip_requested": RenderRuntimeConfigScript.frame_cap_skip_requested(),
 			"frame_cap_applied": int(get_meta(RenderRuntimeConfigScript.RENDER_MAX_FPS_META, 0)) > 0,
+			"dynamic_resolution_enabled": GameConfig.render_dynamic_resolution_enabled,
+			"dynamic_resolution_installed": bool(get_meta(RenderRuntimeConfigScript.DYNAMIC_RESOLUTION_INSTALLED_META, false)),
 		},
 		"window_size": [WINDOW_SIZE.x, WINDOW_SIZE.y],
 		"camera": {

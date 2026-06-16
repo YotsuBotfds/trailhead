@@ -22,6 +22,9 @@ printf 'run: spike 1km render LOD\n'
 printf 'run: render tile streamer lifecycle\n'
 "$godot_bin" --headless --path . res://tools/render_tile_streamer_fixture.tscn
 
+printf 'run: render dynamic resolution controller\n'
+"$godot_bin" --headless --path . res://tools/render_dynamic_resolution_fixture.tscn
+
 printf 'run: data resources\n'
 "$godot_bin" --headless --path . res://tools/data_resource_inspector.tscn
 
