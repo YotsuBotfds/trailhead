@@ -7,6 +7,7 @@ var _region_id: String = ""
 var _visual_root: Node3D = null
 var _detail_root: Node3D = null
 var _foliage_root: Node3D = null
+var _hlod_instance: MeshInstance3D = null
 var _stream_generation: int = 0
 var _worker_count: int = DEFAULT_WORKER_COUNT
 var _configured: bool = false
@@ -48,6 +49,7 @@ func configure_region(new_region_id: String) -> void:
 	_visual_root = TerrainVisualBuilderScript.build_region_stream_root(self, _region_id)
 	_detail_root = _visual_root.get_node_or_null(TerrainVisualBuilderScript.REGION_DETAIL_ROOT_NAME) as Node3D
 	_foliage_root = _visual_root.get_node_or_null(TerrainVisualBuilderScript.REGION_STREAMED_FOLIAGE_ROOT_NAME) as Node3D
+	_hlod_instance = _visual_root.get_node_or_null(TerrainVisualBuilderScript.REGION_HLOD_NAME) as MeshInstance3D
 	if _detail_root == null or _foliage_root == null:
 		_load_failures_by_cell[Vector2i.ZERO] = "region stream roots missing"
 		_configured = false
@@ -87,6 +89,7 @@ func reset_stream() -> void:
 	_region_id = ""
 	_detail_root = null
 	_foliage_root = null
+	_hlod_instance = null
 	if _visual_root != null:
 		remove_child(_visual_root)
 		_visual_root.queue_free()
@@ -193,6 +196,7 @@ func _on_world_tile_activated(cell: Vector2i) -> void:
 	if not _configured or _detail_root == null or _foliage_root == null:
 		return
 	_active_cells[cell] = true
+	_update_hlod_visibility()
 	if _visual_tiles_by_cell.has(cell) and _foliage_tiles_by_cell.has(cell):
 		return
 	if _ready_tile_data_by_cell.has(cell):
@@ -210,6 +214,7 @@ func _on_world_tile_evicted(cell: Vector2i) -> void:
 	if not _configured:
 		return
 	_active_cells.erase(cell)
+	_update_hlod_visibility()
 	_remove_queued_commit(cell)
 	_free_visual_cell(cell)
 	_free_foliage_cell(cell)
@@ -352,13 +357,19 @@ func _commit_visual_tile(cell: Vector2i, visual_tile_data: Variant) -> void:
 		return
 	if _visual_tiles_by_cell.has(cell):
 		return
-	var visual_tile: MeshInstance3D = TerrainVisualBuilderScript.region_visual_tile_from_data(_detail_root, visual_tile_data, null)
+	var visual_tile: MeshInstance3D = TerrainVisualBuilderScript.region_visual_tile_from_data(_detail_root, visual_tile_data, _hlod_instance)
 	if visual_tile == null:
 		_load_failures_by_cell[cell] = "visual tile failed to load"
 		return
 	_visual_tiles_by_cell[cell] = visual_tile
 	_ready_tile_data_by_cell.erase(cell)
 	_load_failures_by_cell.erase(cell)
+
+
+func _update_hlod_visibility() -> void:
+	if _hlod_instance == null:
+		return
+	_hlod_instance.visible = _active_cells.size() > 0
 
 
 func _commit_foliage_tile(cell: Vector2i, foliage_tile_data: Variant) -> void:

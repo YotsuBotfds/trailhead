@@ -31,6 +31,7 @@ func _inspect() -> void:
 	_require_detail_root()
 	_require_streamed_foliage_root()
 	_require_pipeline_warmup()
+	_require_stream_hlod(false)
 
 	EventBus.world_tile_prefetched.emit(FIRST_CELL)
 	_require_cell_count("first prefetch stays unattached", 0)
@@ -47,6 +48,7 @@ func _inspect() -> void:
 	_require_cell_count("first activation", 1)
 	_require_foliage_cell_count("first foliage activation", 1)
 	_require_cells("first activation cells", [FIRST_CELL])
+	_require_stream_hlod(true)
 	_require_foliage_tile(FIRST_CELL)
 	var first_tile: MeshInstance3D = _require_visual_tile(FIRST_CELL)
 	var first_surface_count: int = 0
@@ -78,6 +80,7 @@ func _inspect() -> void:
 	EventBus.world_tile_evicted.emit(FIRST_CELL)
 	_require_cell_count("first eviction", 1)
 	_require_foliage_cell_count("first foliage eviction", 1)
+	_require_stream_hlod(true)
 	_require_cells("first eviction cells", [SECOND_CELL])
 	_require_no_visual_cell(FIRST_CELL)
 	_require_no_foliage_cell(FIRST_CELL)
@@ -193,6 +196,28 @@ func _require_pipeline_warmup() -> void:
 		_errors.append("PipelineWarmup should not contain collision objects: " + str(collision_count))
 
 
+func _require_stream_hlod(expected_visible: bool) -> void:
+	var terrain_root: Node = _streamer.get_node_or_null(TerrainVisualBuilderScript.REGION_ROOT_NAME)
+	if terrain_root == null:
+		return
+	var hlod: MeshInstance3D = terrain_root.get_node_or_null(TerrainVisualBuilderScript.REGION_HLOD_NAME) as MeshInstance3D
+	if hlod == null:
+		_errors.append("streamer missing TerrainHLOD")
+		return
+	if hlod.mesh == null:
+		_errors.append("streamed TerrainHLOD missing mesh")
+	elif hlod.mesh.get_surface_count() <= 0:
+		_errors.append("streamed TerrainHLOD mesh has no surfaces")
+	if hlod.visible != expected_visible:
+		_errors.append("streamed TerrainHLOD visible expected " + str(expected_visible) + ", got " + str(hlod.visible))
+	if hlod.visibility_range_fade_mode != GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED:
+		_errors.append("streamed TerrainHLOD visibility_range_fade_mode expected DISABLED")
+	if absf(hlod.visibility_range_begin - GameConfig.vis_range_terrain) > FLOAT_EPSILON:
+		_errors.append("streamed TerrainHLOD visibility_range_begin expected " + str(GameConfig.vis_range_terrain) + ", got " + str(hlod.visibility_range_begin))
+	if absf(hlod.visibility_range_end) > FLOAT_EPSILON:
+		_errors.append("streamed TerrainHLOD visibility_range_end should be open-ended")
+
+
 func _require_int_meta(node: Node, meta_name: StringName, label: String) -> int:
 	if not node.has_meta(meta_name):
 		_errors.append(label + " missing metadata: " + String(meta_name))
@@ -224,8 +249,14 @@ func _require_visual_tile(cell: Vector2i) -> MeshInstance3D:
 	var expected_name: String = TerrainVisualBuilderScript.region_detail_tile_node_name(REGION_ID, cell)
 	if String(mesh_instance.name) != expected_name:
 		_errors.append("visual cell name expected " + expected_name + ", got " + String(mesh_instance.name))
-	if not mesh_instance.visibility_parent.is_empty():
-		_errors.append("streamed visual cell should not reference a missing HLOD visibility parent: " + String(mesh_instance.name))
+	if mesh_instance.visibility_parent.is_empty():
+		_errors.append("streamed visual cell should reference TerrainHLOD visibility parent: " + String(mesh_instance.name))
+	else:
+		var parent_node: Node = mesh_instance.get_node_or_null(mesh_instance.visibility_parent)
+		if parent_node == null:
+			_errors.append("streamed visual cell references missing HLOD visibility parent: " + String(mesh_instance.name))
+		elif String(parent_node.name) != TerrainVisualBuilderScript.REGION_HLOD_NAME:
+			_errors.append("streamed visual cell visibility parent expected TerrainHLOD, got " + String(parent_node.name))
 	var expected_origin: Vector3 = Vector3(
 		(float(cell.x) + 0.5) * GameConfig.STREAM_TILE_SIZE_M,
 		0.0,

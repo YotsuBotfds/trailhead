@@ -45,6 +45,7 @@ const PIPELINE_WARMUP_FOLIAGE_LOD_COUNT_META: StringName = &"trailhead_pipeline_
 const HEIGHTMAP_FLOAT_BYTE_SIZE: int = 4
 const REGION_DETAIL_SAMPLE_STEP: int = 1
 const REGION_HLOD_SAMPLE_STEP: int = 5
+const REGION_STREAM_HLOD_SAMPLE_STEP: int = 10
 const REGION_VERTEX_KEY_CELL_OFFSET: int = 32768
 const REGION_VERTEX_KEY_CELL_STRIDE: int = 65536
 const REGION_FOLIAGE_CELL_SIZE_M: float = 32.0
@@ -223,6 +224,7 @@ static func build_region_stream_root(parent: Node3D, region_id: String) -> Node3
 	parent.add_child(root)
 
 	_add_region_pipeline_warmup(root)
+	_add_region_stream_hlod(root, region_id)
 	var detail_root: Node3D = Node3D.new()
 	detail_root.name = REGION_DETAIL_ROOT_NAME
 	detail_root.set_meta(REGION_ID_META, region_id)
@@ -463,6 +465,75 @@ static func _add_region_hlod(parent: Node3D, tile_data_list: Array[RegionTileDat
 	instance.set_meta(REGION_LOD_META, "hlod")
 	parent.add_child(instance)
 	return instance
+
+
+static func _add_region_stream_hlod(parent: Node3D, region_id: String) -> MeshInstance3D:
+	var manifest_path: String = _region_manifest_path(region_id)
+	var manifest: Dictionary = _load_json_dictionary(manifest_path)
+	if manifest.is_empty():
+		push_error("TerrainVisualBuilder region manifest failed to load for stream HLOD: " + manifest_path)
+		return null
+	var tile_cells: Array[Vector2i] = _tile_cells_from_manifest(manifest)
+	if tile_cells.is_empty():
+		push_error("TerrainVisualBuilder region stream HLOD has no manifest tiles: " + region_id)
+		return null
+	var tile_data_list: Array[RegionTileData] = _load_region_tiles(region_id, tile_cells)
+	if tile_data_list.is_empty():
+		push_error("TerrainVisualBuilder region stream HLOD has no loadable render tiles: " + region_id)
+		return null
+	var instance: MeshInstance3D = MeshInstance3D.new()
+	instance.name = REGION_HLOD_NAME
+	instance.mesh = _build_region_stream_hlod_mesh(tile_data_list)
+	instance.visibility_range_begin = _hlod_visibility_range_begin()
+	instance.visibility_range_end = 0.0
+	instance.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
+	instance.set_meta(REGION_LOD_META, "stream_hlod")
+	parent.add_child(instance)
+	instance.visible = false
+	return instance
+
+
+static func _build_region_stream_hlod_mesh(tile_data_list: Array[RegionTileData]) -> ArrayMesh:
+	var bucket: MeshBucket = MeshBucket.new()
+	for tile_data in tile_data_list:
+		_append_tile_quads_to_bucket(tile_data, REGION_STREAM_HLOD_SAMPLE_STEP, bucket, Vector2.ZERO)
+	var mesh_data: RegionMeshData = RegionMeshData.new()
+	mesh_data.resource_name = "spike_1km_stream_terrain_hlod_mesh"
+	if bucket.indices.size() <= 0:
+		return region_mesh_from_data(mesh_data)
+	var surface_data: MeshSurfaceData = MeshSurfaceData.new()
+	surface_data.surface_id_value = _dominant_surface_id_value(tile_data_list)
+	surface_data.vertices = bucket.vertices
+	surface_data.normals = bucket.normals
+	surface_data.uvs = bucket.uvs
+	surface_data.indices = bucket.indices
+	mesh_data.surfaces.append(surface_data)
+	return region_mesh_from_data(mesh_data)
+
+
+static func _dominant_surface_id_value(tile_data_list: Array[RegionTileData]) -> int:
+	var counts: Dictionary[int, int] = {}
+	for tile_data in tile_data_list:
+		if tile_data.surface_image == null or tile_data.surface_image.is_empty():
+			continue
+		var sample_step_x: int = maxi(tile_data.surface_image.get_width() / 8, 1)
+		var sample_step_y: int = maxi(tile_data.surface_image.get_height() / 8, 1)
+		for y in range(0, tile_data.surface_image.get_height(), sample_step_y):
+			for x in range(0, tile_data.surface_image.get_width(), sample_step_x):
+				var surface_id_value: int = _surface_id_value_at(tile_data, x, y)
+				counts[surface_id_value] = int(counts.get(surface_id_value, 0)) + 1
+	var best_surface_id_value: int = 0
+	var best_count: int = -1
+	var surface_values: Array[int] = []
+	for key in counts.keys():
+		surface_values.append(int(key))
+	surface_values.sort()
+	for surface_id_value in surface_values:
+		var count: int = int(counts[surface_id_value])
+		if count > best_count:
+			best_surface_id_value = surface_id_value
+			best_count = count
+	return best_surface_id_value
 
 
 static func _add_region_detail_tile(parent: Node3D, region_id: String, tile_data: RegionTileData, hlod_instance: MeshInstance3D) -> MeshInstance3D:
