@@ -12,6 +12,12 @@ const DUST_MOTE_COUNT_FLOOR: int = 1
 const CONTACT_FILL_LIGHT_NAME: String = "VehicleContactFillLight"
 const SOFT_SHADOW_FILTER_QUALITY_SETTING_PATH: String = "rendering/lights_and_shadows/directional_shadow/soft_shadow_filter_quality"
 const EXPECTED_SOFT_SHADOW_FILTER_QUALITY: int = 2
+const VOLUMETRIC_FOG_VOLUME_SIZE_SETTING_PATH: String = "rendering/environment/volumetric_fog/volume_size"
+const EXPECTED_VOLUMETRIC_FOG_VOLUME_SIZE: int = 32
+const VOLUMETRIC_FOG_VOLUME_DEPTH_SETTING_PATH: String = "rendering/environment/volumetric_fog/volume_depth"
+const EXPECTED_VOLUMETRIC_FOG_VOLUME_DEPTH: int = 32
+const VOLUMETRIC_FOG_USE_FILTER_SETTING_PATH: String = "rendering/environment/volumetric_fog/use_filter"
+const EXPECTED_VOLUMETRIC_FOG_USE_FILTER: int = 1
 
 var _scene_root: Node = null
 var _errors: PackedStringArray = PackedStringArray()
@@ -121,6 +127,15 @@ func _inspect_viewport_antialiasing() -> void:
 	var soft_shadow_quality: int = int(ProjectSettings.get_setting(SOFT_SHADOW_FILTER_QUALITY_SETTING_PATH, -1))
 	if soft_shadow_quality != EXPECTED_SOFT_SHADOW_FILTER_QUALITY:
 		_errors.append("Cedar project " + SOFT_SHADOW_FILTER_QUALITY_SETTING_PATH + " expected " + str(EXPECTED_SOFT_SHADOW_FILTER_QUALITY) + ", got " + str(soft_shadow_quality))
+	var volumetric_fog_volume_size: int = int(ProjectSettings.get_setting(VOLUMETRIC_FOG_VOLUME_SIZE_SETTING_PATH, -1))
+	if volumetric_fog_volume_size != EXPECTED_VOLUMETRIC_FOG_VOLUME_SIZE:
+		_errors.append("Cedar project " + VOLUMETRIC_FOG_VOLUME_SIZE_SETTING_PATH + " expected " + str(EXPECTED_VOLUMETRIC_FOG_VOLUME_SIZE) + ", got " + str(volumetric_fog_volume_size))
+	var volumetric_fog_volume_depth: int = int(ProjectSettings.get_setting(VOLUMETRIC_FOG_VOLUME_DEPTH_SETTING_PATH, -1))
+	if volumetric_fog_volume_depth != EXPECTED_VOLUMETRIC_FOG_VOLUME_DEPTH:
+		_errors.append("Cedar project " + VOLUMETRIC_FOG_VOLUME_DEPTH_SETTING_PATH + " expected " + str(EXPECTED_VOLUMETRIC_FOG_VOLUME_DEPTH) + ", got " + str(volumetric_fog_volume_depth))
+	var volumetric_fog_use_filter: int = int(ProjectSettings.get_setting(VOLUMETRIC_FOG_USE_FILTER_SETTING_PATH, -1))
+	if volumetric_fog_use_filter != EXPECTED_VOLUMETRIC_FOG_USE_FILTER:
+		_errors.append("Cedar project " + VOLUMETRIC_FOG_USE_FILTER_SETTING_PATH + " expected " + str(EXPECTED_VOLUMETRIC_FOG_USE_FILTER) + ", got " + str(volumetric_fog_use_filter))
 
 
 func _inspect_mood_toggle(world_environment: WorldEnvironment) -> void:
