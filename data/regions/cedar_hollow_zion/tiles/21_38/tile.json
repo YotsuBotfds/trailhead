@@ -1,4 +1,48 @@
 {
+  "schema_version": 1,
+  "region_id": "cedar_hollow_zion",
+  "tile": {
+    "cx": 21,
+    "cy": 38,
+    "key": "21_38"
+  },
+  "tile_size_m": 100.0,
+  "heightmap": {
+    "path": "heightmap.bin",
+    "format": "float32_le",
+    "shape": [
+      101,
+      101
+    ],
+    "sha256": "f3ed5a974ee34a2cffacb931d97aa9db887f7e538507a02bb743d88ffc96553d",
+    "min_y": 1388.48425293,
+    "max_y": 1394.39074707,
+    "row_axis": "z_increasing",
+    "column_axis": "x_increasing"
+  },
+  "surface_id": {
+    "path": "surface_id.png",
+    "format": "png_l8",
+    "shape": [
+      100,
+      100
+    ],
+    "sha256": "2292f3dd5cbe6579437a9a97932f1ad7783e958ecf6a627dce3ba3d5d929215b",
+    "counts": {
+      "3": 1820,
+      "4": 8180
+    }
+  },
+  "bake": {
+    "seed": 20260615,
+    "seed_derivation": "explicit integer EROSION_SEED=20260615; no Python str hash",
+    "erosion_strategy": "unified-array erosion before tile slicing",
+    "bake_spec_version": "1.0.0-zion-1m",
+    "tool": "tools/bake_zion_terrain.py",
+    "tool_version": "zion-terrain.2026-06-15"
+  },
+  "source": "1m",
+  "crs": "EPSG:32612",
   "bounds_utm": [
     324581.824656,
     4121512.509121,
@@ -6,20 +50,7 @@
     4121612.509121
   ],
   "cell_spacing_m": 1.0,
-  "collision_path": "res://data/collision/cedar_hollow_zion_tile_CX21_CZ38.res",
-  "crs": "EPSG:32612",
-  "dtype": "float32_le",
-  "height_max": 1394.3907470703125,
-  "height_min": 1388.4842529296875,
-  "heightmap_path": "res://data/regions/cedar_hollow_zion/tiles/21_38/heightmap.bin",
-  "heightmap_sha256": "f3ed5a974ee34a2cffacb931d97aa9db887f7e538507a02bb743d88ffc96553d",
-  "map_depth": 101,
-  "map_width": 101,
-  "region_id": "cedar_hollow_zion",
-  "schema_version": 1,
-  "source": "1m",
-  "tile": [
-    21,
-    38
-  ]
+  "collision": {
+    "path": "res://data/collision/cedar_hollow_zion_tile_CX21_CZ38.res"
+  }
 }
