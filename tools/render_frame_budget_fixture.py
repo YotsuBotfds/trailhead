@@ -21,6 +21,11 @@ EXPECTED_PHASES = (
     "east_shift_5_tile_burst",
     "steady_streamed_window",
 )
+EXPECTED_ACTIVATION_WAIT_MAX_FRAMES = {
+    "initial_25_tile_burst": 7,
+    "east_shift_5_tile_burst": 2,
+}
+EXPECTED_VISUAL_TILE_COMMITS_PER_FRAME = 4
 
 
 def main() -> int:
@@ -99,6 +104,8 @@ def _validate_payload(payload: dict[str, Any]) -> list[str]:
             errors.append("render frame cap should be enabled")
         if int(runtime.get("target_max_fps", 0)) != 60:
             errors.append("render target_max_fps should be 60")
+        if int(runtime.get("visual_tile_commits_per_frame", 0)) != EXPECTED_VISUAL_TILE_COMMITS_PER_FRAME:
+            errors.append("render visual_tile_commits_per_frame should be " + str(EXPECTED_VISUAL_TILE_COMMITS_PER_FRAME))
         if runtime.get("frame_cap_skip_requested") is not True:
             errors.append("render frame-budget probe should skip runtime frame cap")
         if runtime.get("frame_cap_applied") is not False:
@@ -162,9 +169,7 @@ def _validate_phase(phase: dict[str, Any]) -> list[str]:
             draw_stats = visible_bucket.get("draw_calls")
             if isinstance(draw_stats, dict) and float(draw_stats.get("avg", 0.0)) <= 0.0:
                 errors.append(name + " should render visible draw calls when streamed visual cells are active")
-        activation_wait = phase.get("activation_ready_wait")
-        if active_cells > 0 and isinstance(activation_wait, dict) and "frames" in activation_wait and int(activation_wait.get("frames", -1)) != 0:
-            errors.append(name + " should activate from ready prefetched visual data without waiting frames")
+        errors.extend(_validate_activation_wait(phase, active_cells))
     memory = phase.get("memory_mb")
     if not isinstance(memory, dict):
         errors.append(name + " missing memory_mb")
@@ -186,6 +191,27 @@ def _validate_ready_wait(value: Any, label: str, active_expected: bool) -> list[
         elif float(metric) < 0.0:
             errors.append(label + "." + key + " should be non-negative")
     return errors
+
+
+def _validate_activation_wait(phase: dict[str, Any], active_cells: int) -> list[str]:
+    name = str(phase.get("name", "<missing>"))
+    activation_wait = phase.get("activation_ready_wait")
+    if active_cells <= 0 or not isinstance(activation_wait, dict):
+        return []
+    if "frames" not in activation_wait:
+        if name in EXPECTED_ACTIVATION_WAIT_MAX_FRAMES:
+            return [name + " activation_ready_wait.frames missing"]
+        return []
+    frames = int(activation_wait.get("frames", -1))
+    if name in EXPECTED_ACTIVATION_WAIT_MAX_FRAMES:
+        if frames <= 0:
+            return [name + " should drain ready tile commits over at least one bounded frame"]
+        max_frames = EXPECTED_ACTIVATION_WAIT_MAX_FRAMES[name]
+        if frames > max_frames:
+            return [name + " activation wait should stay <= " + str(max_frames) + " frames, got " + str(frames)]
+    elif frames != 0:
+        return [name + " should not wait for activation commits"]
+    return []
 
 
 def _validate_stats(value: Any, label: str) -> list[str]:

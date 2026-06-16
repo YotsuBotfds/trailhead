@@ -19,6 +19,8 @@ var _ready_foliage_data_by_cell: Dictionary[Vector2i, Variant] = {}
 var _load_failures_by_cell: Dictionary[Vector2i, String] = {}
 var _queued_builds: Dictionary[Vector2i, bool] = {}
 var _cancelled_builds: Dictionary[Vector2i, bool] = {}
+var _commit_queue: Array[Vector2i] = []
+var _queued_commits: Dictionary[Vector2i, bool] = {}
 var _workers: Array[Thread] = []
 var _work_mutex: Mutex = Mutex.new()
 var _work_semaphore: Semaphore = Semaphore.new()
@@ -78,6 +80,8 @@ func reset_stream() -> void:
 	_load_failures_by_cell.clear()
 	_queued_builds.clear()
 	_cancelled_builds.clear()
+	_commit_queue.clear()
+	_queued_commits.clear()
 	_clear_worker_queues()
 	_configured = false
 	_region_id = ""
@@ -95,6 +99,7 @@ func _process(_delta: float) -> void:
 	if _workers.is_empty():
 		_process_build_queue_synchronously()
 	_drain_worker_results()
+	_drain_commit_queue()
 
 
 func active_visual_cells() -> Array[Vector2i]:
@@ -111,6 +116,10 @@ func ready_visual_cell_count() -> int:
 
 func ready_foliage_cell_count() -> int:
 	return _ready_foliage_data_by_cell.size()
+
+
+func pending_visual_commit_count() -> int:
+	return _commit_queue.size()
 
 
 func foliage_cell_count() -> int:
@@ -187,7 +196,7 @@ func _on_world_tile_activated(cell: Vector2i) -> void:
 	if _visual_tiles_by_cell.has(cell) and _foliage_tiles_by_cell.has(cell):
 		return
 	if _ready_tile_data_by_cell.has(cell):
-		_commit_ready_cell(cell)
+		_enqueue_ready_commit(cell)
 		return
 	if _queued_builds.has(cell):
 		return
@@ -201,6 +210,7 @@ func _on_world_tile_evicted(cell: Vector2i) -> void:
 	if not _configured:
 		return
 	_active_cells.erase(cell)
+	_remove_queued_commit(cell)
 	_free_visual_cell(cell)
 	_free_foliage_cell(cell)
 	_load_failures_by_cell.erase(cell)
@@ -227,6 +237,7 @@ func _on_world_tile_unprefetched(cell: Vector2i) -> void:
 	if _active_cells.has(cell):
 		return
 	_cancel_build(cell)
+	_remove_queued_commit(cell)
 	_ready_tile_data_by_cell.erase(cell)
 	_ready_foliage_data_by_cell.erase(cell)
 	_load_failures_by_cell.erase(cell)
@@ -293,7 +304,40 @@ func _drain_worker_results() -> void:
 		_ready_tile_data_by_cell[cell] = result["visual_tile_data"]
 		_ready_foliage_data_by_cell[cell] = result["foliage_tile_data"]
 		if _active_cells.has(cell):
-			_commit_ready_cell(cell)
+			_enqueue_ready_commit(cell)
+
+
+func _enqueue_ready_commit(cell: Vector2i) -> void:
+	if _queued_commits.has(cell):
+		return
+	if _visual_tiles_by_cell.has(cell) and _foliage_tiles_by_cell.has(cell):
+		return
+	if not _ready_tile_data_by_cell.has(cell):
+		return
+	_queued_commits[cell] = true
+	_commit_queue.append(cell)
+
+
+func _remove_queued_commit(cell: Vector2i) -> void:
+	if not _queued_commits.has(cell):
+		return
+	_queued_commits.erase(cell)
+	_commit_queue.erase(cell)
+
+
+func _drain_commit_queue() -> void:
+	if _commit_queue.is_empty():
+		return
+	var commit_budget: int = maxi(GameConfig.render_visual_tile_commits_per_frame, 1)
+	_commit_queue.sort_custom(Callable(self, "_cell_less"))
+	var committed_count: int = 0
+	while committed_count < commit_budget and not _commit_queue.is_empty():
+		var cell: Vector2i = _commit_queue.pop_front()
+		_queued_commits.erase(cell)
+		if not _active_cells.has(cell):
+			continue
+		_commit_ready_cell(cell)
+		committed_count += 1
 
 
 func _commit_ready_cell(cell: Vector2i) -> void:

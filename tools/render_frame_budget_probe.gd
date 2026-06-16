@@ -98,6 +98,7 @@ func _run() -> void:
 		"render_runtime": {
 			"engine_max_fps": Engine.max_fps,
 			"target_max_fps": GameConfig.render_max_fps,
+			"visual_tile_commits_per_frame": GameConfig.render_visual_tile_commits_per_frame,
 			"frame_cap_enabled": GameConfig.render_frame_cap_enabled,
 			"frame_cap_skip_requested": RenderRuntimeConfigScript.frame_cap_skip_requested(),
 			"frame_cap_applied": int(get_meta(RenderRuntimeConfigScript.RENDER_MAX_FPS_META, 0)) > 0,

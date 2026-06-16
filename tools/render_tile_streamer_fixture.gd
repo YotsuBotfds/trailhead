@@ -41,6 +41,9 @@ func _inspect() -> void:
 	_require_foliage_cell_count("first foliage prefetch after ready stays unattached", 0)
 
 	EventBus.world_tile_activated.emit(FIRST_CELL)
+	await _wait_for_pending_commit_count("first activation pending commit", 1)
+	await _wait_for_cell_count("first activation", 1)
+	await _wait_for_foliage_cell_count("first foliage activation", 1)
 	_require_cell_count("first activation", 1)
 	_require_foliage_cell_count("first foliage activation", 1)
 	_require_cells("first activation cells", [FIRST_CELL])
@@ -89,6 +92,8 @@ func _inspect() -> void:
 	await _wait_for_ready_cell_count("reactivation prefetch ready", 1)
 	await _wait_for_ready_foliage_cell_count("reactivation foliage prefetch ready", 1)
 	EventBus.world_tile_activated.emit(FIRST_CELL)
+	await _wait_for_cell_count("reactivation", 2)
+	await _wait_for_foliage_cell_count("reactivation foliage", 2)
 	_require_cell_count("reactivation", 2)
 	_require_foliage_cell_count("reactivation foliage", 2)
 	_require_cells("reactivation cells", [FIRST_CELL, SECOND_CELL])
@@ -100,6 +105,7 @@ func _inspect() -> void:
 	EventBus.world_tile_unprefetched.emit(FIRST_CELL)
 	_require_ready_cell_count("unprefetch drops inactive ready payload", 0)
 	_require_ready_foliage_cell_count("unprefetch drops inactive foliage ready payload", 0)
+	_require_pending_commit_count("unprefetch drops inactive pending commit", 0)
 	EventBus.world_tile_activated.emit(FIRST_CELL)
 	await _wait_for_cell_count("post-unprefetch activation", 2)
 	await _wait_for_foliage_cell_count("post-unprefetch foliage activation", 2)
@@ -390,6 +396,12 @@ func _require_ready_foliage_cell_count(label: String, expected_count: int) -> vo
 		_errors.append(label + " expected " + str(expected_count) + " ready foliage cells, got " + str(observed_count))
 
 
+func _require_pending_commit_count(label: String, expected_count: int) -> void:
+	var observed_count: int = int(_streamer.call("pending_visual_commit_count"))
+	if observed_count != expected_count:
+		_errors.append(label + " expected " + str(expected_count) + " pending visual commits, got " + str(observed_count))
+
+
 func _wait_for_cell_count(label: String, expected_count: int) -> void:
 	for _frame_index in range(WAIT_FRAMES):
 		if int(_streamer.call("visual_cell_count")) == expected_count:
@@ -420,6 +432,14 @@ func _wait_for_ready_foliage_cell_count(label: String, expected_count: int) -> v
 			return
 		await get_tree().process_frame
 	_require_ready_foliage_cell_count(label, expected_count)
+
+
+func _wait_for_pending_commit_count(label: String, expected_count: int) -> void:
+	for _frame_index in range(WAIT_FRAMES):
+		if int(_streamer.call("pending_visual_commit_count")) == expected_count:
+			return
+		await get_tree().process_frame
+	_require_pending_commit_count(label, expected_count)
 
 
 func _require_cells(label: String, expected_cells: Array[Vector2i]) -> void:
