@@ -279,7 +279,7 @@ func _apply_drive_forces() -> void:
 func _apply_traction_force(forward: Vector3, throttle: float) -> void:
 	if not bool(_state.get("on_ground")) or absf(throttle) <= GameConfig.self_right_forward_epsilon:
 		return
-	var requested_force: float = absf(throttle) * maxf(GameConfig.motor_torque, GameConfig.traction_base_force)
+	var requested_force: float = absf(throttle) * GameConfig.traction_base_force
 	var traction_ceiling: float = maxf(0.0, _surface_friction * _surface_normal_load * GameConfig.traction_grip_force_ceiling_scale)
 	var delivered_force: float = minf(requested_force, traction_ceiling)
 	if delivered_force <= 0.0:
