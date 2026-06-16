@@ -67,16 +67,20 @@ func _inspect_atmosphere(world_environment: WorldEnvironment, sun: DirectionalLi
 		_errors.append("atmosphere grade brightness should follow GameConfig")
 	if environment.sdfgi_enabled:
 		_errors.append("atmosphere should keep SDFGI disabled")
-	if environment.ssao_enabled != GameConfig.atmosphere_ssao_enabled:
-		_errors.append("atmosphere SSAO enabled state should follow GameConfig")
+	if not GameConfig.atmosphere_ssao_enabled:
+		_errors.append("atmosphere should keep SSAO enabled in GameConfig")
+	if not environment.ssao_enabled:
+		_errors.append("atmosphere should keep SSAO enabled on the environment")
 	if absf(environment.ssao_radius - maxf(GameConfig.atmosphere_ssao_radius, 0.0)) > FLOAT_EPSILON:
 		_errors.append("atmosphere SSAO radius should follow GameConfig")
 	if absf(environment.ssao_intensity - maxf(GameConfig.atmosphere_ssao_intensity, 0.0)) > FLOAT_EPSILON:
 		_errors.append("atmosphere SSAO intensity should follow GameConfig")
 	if absf(environment.ssao_light_affect - clampf(GameConfig.atmosphere_ssao_light_affect, 0.0, 1.0)) > FLOAT_EPSILON:
 		_errors.append("atmosphere SSAO light affect should follow GameConfig")
-	if environment.ssil_enabled != GameConfig.atmosphere_ssil_enabled:
-		_errors.append("atmosphere SSIL enabled state should follow GameConfig")
+	if GameConfig.atmosphere_ssil_enabled:
+		_errors.append("atmosphere should keep SSIL disabled in GameConfig")
+	if environment.ssil_enabled:
+		_errors.append("atmosphere should keep SSIL disabled on the environment")
 	if absf(environment.ssil_radius - maxf(GameConfig.atmosphere_ssil_radius, 0.0)) > FLOAT_EPSILON:
 		_errors.append("atmosphere SSIL radius should follow GameConfig")
 	if absf(environment.ssil_intensity - maxf(GameConfig.atmosphere_ssil_intensity, 0.0)) > FLOAT_EPSILON:
