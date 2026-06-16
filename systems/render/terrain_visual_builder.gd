@@ -10,6 +10,8 @@ const GENERATED_SURFACE_TEXTURE_DIR: String = "res://assets/textures/surface_vis
 const TEXTURE_SOURCE_PATH_META: StringName = &"trailhead_source_path"
 
 static var _terrain_material_cache: Dictionary[StringName, StandardMaterial3D] = {}
+static var _foliage_mesh_cache: Dictionary[int, Mesh] = {}
+static var _foliage_material_cache: Dictionary[int, Material] = {}
 
 const REGION_ID_META: StringName = &"trailhead_region_id"
 const REGION_LOD_META: StringName = &"trailhead_region_lod"
@@ -380,11 +382,11 @@ static func _add_terrain_pipeline_warmup(parent: Node3D) -> int:
 
 
 static func _add_foliage_pipeline_warmup(parent: Node3D) -> int:
-	var lod0_mesh: Mesh = _region_foliage_mesh("region_foliage_lod0_pipeline_warmup_mesh")
-	var lod0_material: Material = _region_foliage_material("region_foliage_lod0_pipeline_warmup_material", REGION_FOLIAGE_LOD0_COLOR)
+	var lod0_mesh: Mesh = _region_foliage_mesh_for_lod(0)
+	var lod0_material: Material = _region_foliage_material_for_lod(0)
 	_add_foliage_pipeline_warmup_instance(parent, REGION_PIPELINE_WARMUP_FOLIAGE_LOD0_NAME, lod0_mesh, lod0_material)
-	var lod1_mesh: Mesh = _region_foliage_mesh("region_foliage_lod1_pipeline_warmup_mesh")
-	var lod1_material: Material = _region_foliage_material("region_foliage_lod1_pipeline_warmup_material", REGION_FOLIAGE_LOD1_COLOR)
+	var lod1_mesh: Mesh = _region_foliage_mesh_for_lod(1)
+	var lod1_material: Material = _region_foliage_material_for_lod(1)
 	_add_foliage_pipeline_warmup_instance(parent, REGION_PIPELINE_WARMUP_FOLIAGE_LOD1_NAME, lod1_mesh, lod1_material)
 	return 2
 
@@ -803,10 +805,10 @@ static func _add_region_foliage(parent: Node3D, manifest: Dictionary, tile_data_
 		return root
 
 	var tile_data_by_cell: Dictionary[Vector2i, RegionTileData] = _tile_data_by_cell(tile_data_list)
-	var lod0_mesh: Mesh = _region_foliage_mesh("region_foliage_lod0_mesh")
-	var lod1_mesh: Mesh = _region_foliage_mesh("region_foliage_lod1_mesh")
-	var lod0_material: Material = _region_foliage_material("region_foliage_lod0_material", REGION_FOLIAGE_LOD0_COLOR)
-	var lod1_material: Material = _region_foliage_material("region_foliage_lod1_material", REGION_FOLIAGE_LOD1_COLOR)
+	var lod0_mesh: Mesh = _region_foliage_mesh_for_lod(0)
+	var lod1_mesh: Mesh = _region_foliage_mesh_for_lod(1)
+	var lod0_material: Material = _region_foliage_material_for_lod(0)
+	var lod1_material: Material = _region_foliage_material_for_lod(1)
 	var cell_count_x: int = int(ceil(bounds.size.x / REGION_FOLIAGE_CELL_SIZE_M))
 	var cell_count_z: int = int(ceil(bounds.size.y / REGION_FOLIAGE_CELL_SIZE_M))
 	for cell_z in range(cell_count_z):
@@ -900,12 +902,9 @@ static func _add_foliage_cell_from_data(parent: Node3D, cell_data: FoliageCellDa
 	instance.name = cell_data.node_name
 	instance.position = cell_data.position
 	if mesh == null:
-		mesh = _region_foliage_mesh("region_foliage_lod" + str(cell_data.lod_index) + "_mesh")
+		mesh = _region_foliage_mesh_for_lod(cell_data.lod_index)
 	if material == null:
-		var material_color: Color = REGION_FOLIAGE_LOD0_COLOR
-		if cell_data.lod_index > 0:
-			material_color = REGION_FOLIAGE_LOD1_COLOR
-		material = _region_foliage_material("region_foliage_lod" + str(cell_data.lod_index) + "_material", material_color)
+		material = _region_foliage_material_for_lod(cell_data.lod_index)
 	instance.material_override = material
 	instance.extra_cull_margin = REGION_FOLIAGE_CULL_MARGIN
 	instance.visibility_range_begin = cell_data.visibility_range_begin
@@ -925,6 +924,33 @@ static func _add_foliage_cell_from_data(parent: Node3D, cell_data: FoliageCellDa
 		multimesh.set_instance_color(i, cell_data.colors[i])
 	instance.multimesh = multimesh
 	parent.add_child(instance)
+
+
+static func _region_foliage_mesh_for_lod(lod_index: int) -> Mesh:
+	var safe_lod_index: int = _region_foliage_lod_index(lod_index)
+	if _foliage_mesh_cache.has(safe_lod_index):
+		return _foliage_mesh_cache[safe_lod_index]
+	var mesh: Mesh = _region_foliage_mesh("region_foliage_lod" + str(safe_lod_index) + "_mesh")
+	_foliage_mesh_cache[safe_lod_index] = mesh
+	return mesh
+
+
+static func _region_foliage_material_for_lod(lod_index: int) -> Material:
+	var safe_lod_index: int = _region_foliage_lod_index(lod_index)
+	if _foliage_material_cache.has(safe_lod_index):
+		return _foliage_material_cache[safe_lod_index]
+	var material_color: Color = REGION_FOLIAGE_LOD0_COLOR
+	if safe_lod_index > 0:
+		material_color = REGION_FOLIAGE_LOD1_COLOR
+	var material: Material = _region_foliage_material("region_foliage_lod" + str(safe_lod_index) + "_material", material_color)
+	_foliage_material_cache[safe_lod_index] = material
+	return material
+
+
+static func _region_foliage_lod_index(lod_index: int) -> int:
+	if lod_index <= 0:
+		return 0
+	return 1
 
 
 static func _region_foliage_mesh(mesh_name: String) -> ArrayMesh:

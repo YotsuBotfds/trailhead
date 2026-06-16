@@ -257,6 +257,8 @@ func _require_foliage_tile(cell: Vector2i) -> Node3D:
 		_errors.append("foliage cell should be a Node3D: " + str(cell))
 		return null
 	var multimesh_count: int = 0
+	var meshes_by_lod: Dictionary[String, Mesh] = {}
+	var materials_by_lod: Dictionary[String, Material] = {}
 	for child in foliage_tile.get_children():
 		var multimesh_instance: MultiMeshInstance3D = child as MultiMeshInstance3D
 		if multimesh_instance == null:
@@ -264,12 +266,27 @@ func _require_foliage_tile(cell: Vector2i) -> Node3D:
 		multimesh_count += 1
 		if not multimesh_instance.has_meta(TerrainVisualBuilderScript.REGION_LOD_META):
 			_errors.append("foliage child missing LOD metadata: " + String(child.name))
+			continue
+		var region_lod: String = String(multimesh_instance.get_meta(TerrainVisualBuilderScript.REGION_LOD_META))
+		var material: Material = multimesh_instance.material_override
+		if material == null:
+			_errors.append("foliage child missing material_override: " + String(child.name))
+		elif materials_by_lod.has(region_lod) and materials_by_lod[region_lod] != material:
+			_errors.append("foliage children should share material_override for " + region_lod)
+		elif not materials_by_lod.has(region_lod):
+			materials_by_lod[region_lod] = material
 		if not multimesh_instance.has_meta(TerrainVisualBuilderScript.VISIBILITY_RADIUS_META):
 			_errors.append("foliage child missing visibility radius metadata: " + String(child.name))
 		if multimesh_instance.multimesh == null:
 			_errors.append("foliage child missing MultiMesh: " + String(child.name))
 		elif multimesh_instance.multimesh.custom_aabb.size == Vector3.ZERO:
 			_errors.append("foliage child missing custom_aabb: " + String(child.name))
+		elif multimesh_instance.multimesh.mesh == null:
+			_errors.append("foliage child missing shared mesh: " + String(child.name))
+		elif meshes_by_lod.has(region_lod) and meshes_by_lod[region_lod] != multimesh_instance.multimesh.mesh:
+			_errors.append("foliage children should share mesh for " + region_lod)
+		elif not meshes_by_lod.has(region_lod):
+			meshes_by_lod[region_lod] = multimesh_instance.multimesh.mesh
 	if multimesh_count <= 0:
 		_errors.append("foliage cell should contain MultiMeshInstance3D children: " + str(cell))
 	return foliage_tile
