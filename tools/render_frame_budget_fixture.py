@@ -26,6 +26,7 @@ EXPECTED_ACTIVATION_WAIT_MAX_FRAMES = {
     "east_shift_5_tile_burst": 2,
 }
 EXPECTED_VISUAL_TILE_COMMITS_PER_FRAME = 4
+EXPECTED_ACTIVE_VISIBLE_PRIMITIVES_MAX = 6000.0
 
 
 def main() -> int:
@@ -169,6 +170,9 @@ def _validate_phase(phase: dict[str, Any]) -> list[str]:
             draw_stats = visible_bucket.get("draw_calls")
             if isinstance(draw_stats, dict) and float(draw_stats.get("avg", 0.0)) <= 0.0:
                 errors.append(name + " should render visible draw calls when streamed visual cells are active")
+            primitive_stats = visible_bucket.get("primitives")
+            if isinstance(primitive_stats, dict) and float(primitive_stats.get("avg", 0.0)) > EXPECTED_ACTIVE_VISIBLE_PRIMITIVES_MAX:
+                errors.append(name + " visible primitives should stay <= " + _fmt(EXPECTED_ACTIVE_VISIBLE_PRIMITIVES_MAX))
         errors.extend(_validate_activation_wait(phase, active_cells))
     memory = phase.get("memory_mb")
     if not isinstance(memory, dict):

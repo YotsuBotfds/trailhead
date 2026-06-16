@@ -7,6 +7,7 @@ const FIRST_CELL: Vector2i = Vector2i(2, 2)
 const SECOND_CELL: Vector2i = Vector2i(2, 3)
 const FLOAT_EPSILON: float = 0.001
 const WAIT_FRAMES: int = 180
+const EXPECTED_STREAM_HLOD_MAX_PRIMITIVES: int = 5000
 
 var _streamer: Node3D = null
 var _errors: PackedStringArray = PackedStringArray()
@@ -208,6 +209,8 @@ func _require_stream_hlod(expected_visible: bool) -> void:
 		_errors.append("streamed TerrainHLOD missing mesh")
 	elif hlod.mesh.get_surface_count() <= 0:
 		_errors.append("streamed TerrainHLOD mesh has no surfaces")
+	elif _mesh_index_count(hlod.mesh) / 3 > EXPECTED_STREAM_HLOD_MAX_PRIMITIVES:
+		_errors.append("streamed TerrainHLOD primitive count should stay <= " + str(EXPECTED_STREAM_HLOD_MAX_PRIMITIVES))
 	if hlod.visible != expected_visible:
 		_errors.append("streamed TerrainHLOD visible expected " + str(expected_visible) + ", got " + str(hlod.visible))
 	if hlod.visibility_range_fade_mode != GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED:
