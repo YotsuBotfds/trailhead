@@ -5,7 +5,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-WORKER_COUNTS = (1, 2, 8)
+WORKER_COUNTS = (0, 1, 2, 8)
 RESULT_PREFIX = "tile_streamer_fixture_result="
 
 
@@ -54,7 +54,7 @@ def main() -> int:
             )
             return 1
 
-    print("ok: TileStreamer worker-count determinism for 1/2/8 workers")
+    print("ok: TileStreamer worker-count determinism for 0/1/2/8 workers")
     return 0
 
 

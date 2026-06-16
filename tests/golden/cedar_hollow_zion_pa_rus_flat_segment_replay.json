@@ -5,6 +5,7 @@
 	"scene": "cedar_hollow_zion",
 	"controller": "scripted",
 	"scenario": "real_terrain_flat_segment",
+	"stream_route": "",
 	"route_segment": "",
 	"spawn": "trailhead",
 	"target": "0,0,-50.1",

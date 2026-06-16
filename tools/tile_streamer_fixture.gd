@@ -274,7 +274,7 @@ func _cells_to_string(cells: Array[Vector2i]) -> String:
 func _read_worker_count_arg() -> int:
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with(WORKER_COUNT_ARG):
-			return maxi(int(arg.substr(WORKER_COUNT_ARG.length())), 1)
+			return maxi(int(arg.substr(WORKER_COUNT_ARG.length())), 0)
 	return 1
 
 

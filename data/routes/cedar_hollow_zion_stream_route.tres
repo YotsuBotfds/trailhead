@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="RouteDef" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://systems/world/route_def.gd" id="1_script"]
+
+[resource]
+script = ExtResource("1_script")
+scene_id = &"cedar_hollow_zion"
+terrain_def_path = "res://data/terrain/cedar_hollow_zion_terrain_def.tres"
+bounds_min = Vector3(900.0, 1180.0, 600.0)
+bounds_max = Vector3(1500.0, 1220.0, 1100.0)
+spawn_ids = Array[StringName]([&"stream_west"])
+spawn_positions = Array[Vector3]([Vector3(1150.0, 1197.56, 800.0)])
+spawn_yaw_degrees = Array[float]([-90.0])
+landmark_ids = Array[StringName]([&"stream_west", &"stream_seam_x_11_12", &"stream_east"])
+landmark_display_names = Array[String](["Stream West", "11-12 Seam", "Stream East"])
+landmark_positions = Array[Vector3]([Vector3(1150.0, 1197.49, 800.0), Vector3(1200.0, 1197.79, 800.0), Vector3(1250.0, 1198.71, 800.0)])
+landmark_radii = Array[float]([8.0, 5.0, 10.0])
+segment_ids = Array[StringName]([&"stream_west_to_east"])
+segment_spawn_ids = Array[StringName]([&"stream_west"])
+segment_target_landmark_ids = Array[StringName]([&"stream_east"])
+segment_waypoint_offsets = Array[int]([0])
+segment_waypoint_counts = Array[int]([1])
+segment_waypoints = Array[Vector3]([Vector3(1200.0, 1197.79, 800.0)])
+segment_max_ticks = Array[int]([3000])
+segment_target_radii = Array[float]([10.0])
+segment_rough_throttle = Array[bool]([true])

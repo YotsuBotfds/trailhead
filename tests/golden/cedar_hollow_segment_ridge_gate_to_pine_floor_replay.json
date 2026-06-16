@@ -5,6 +5,7 @@
 	"scene": "cedar_hollow",
 	"controller": "pd",
 	"scenario": "",
+	"stream_route": "",
 	"route_segment": "ridge_gate_to_pine_floor",
 	"spawn": "ridge_gate",
 	"target": "pine_floor",
@@ -22,6 +23,7 @@
 	},
 	"predicates": {
 		"event_bus_contract": true,
+		"expected_activation_ticks_matched": true,
 		"golden_replay_matched": true,
 		"never_stuck": true,
 		"reached_target": true,
