@@ -52,6 +52,9 @@ PROVENANCE_HASHES: dict[str, str] = {
     "data/surfaces/tall_grass.tres": (
         "b43b60328b9e147346d50731bcdc3a3cc82a6013fd5fb3bfc467ce931ede87b2"
     ),
+    "data/surfaces/slickrock_dry.tres": (
+        "07110b71f182d50c7185da5a283926df7115ad794f4b816cfc797562e5147d5f"
+    ),
     "data/terrain/cedar_hollow_zion_surface_id.png": (
         "8f6d89991da0fde23f8593c0605406ec8c0c6b2ef02fc598289e61cb7901e88d"
     ),
