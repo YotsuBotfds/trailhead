@@ -1,7 +1,7 @@
 extends Node
 
 const PHYSICS_TICKS_PER_SECOND: int = 120
-const FIXED_DT: float = 1.0 / 120.0
+const FIXED_DT: float = 1.0 / float(PHYSICS_TICKS_PER_SECOND)
 const UNITS_PER_METER: float = 1.0
 const GRAVITY_MAGNITUDE: float = 9.8
 const GRAVITY_VECTOR: Vector3 = Vector3.DOWN * GRAVITY_MAGNITUDE
