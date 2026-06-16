@@ -13,6 +13,7 @@ const TEXTURE_SOURCE_PATH_META: StringName = &"trailhead_source_path"
 static var _terrain_material_cache: Dictionary[StringName, StandardMaterial3D] = {}
 static var _foliage_mesh_cache: Dictionary[int, Mesh] = {}
 static var _foliage_material_cache: Dictionary[int, Material] = {}
+static var _surface_index_albedo_array_cache: Texture2DArray = null
 
 const REGION_ID_META: StringName = &"trailhead_region_id"
 const REGION_LOD_META: StringName = &"trailhead_region_lod"
@@ -76,6 +77,9 @@ const CONTROL_ORIGIN_XZ_UNIFORM: StringName = &"control_origin_xz"
 const CONTROL_SIZE_XZ_UNIFORM: StringName = &"control_size_xz"
 const TERRAIN_ROUGHNESS_UNIFORM: StringName = &"terrain_roughness"
 const TERRAIN_SPECULAR_UNIFORM: StringName = &"terrain_specular"
+const ALBEDO_ARRAY_UNIFORM: StringName = &"albedo_array"
+const USE_ALBEDO_ARRAY_UNIFORM: StringName = &"use_albedo_array"
+const SURFACE_UV_SCALE_UNIFORM_PREFIX: String = "surface_uv_scale_"
 
 
 class RegionTileData:
@@ -705,6 +709,10 @@ static func _surface_index_material(surface_data: MeshSurfaceData) -> ShaderMate
 	var surface_texture: Texture2D = _load_texture(surface_data.surface_id_path)
 	if surface_texture != null:
 		material.set_shader_parameter(SURFACE_ID_TEXTURE_UNIFORM, surface_texture)
+	var albedo_array: Texture2DArray = _surface_index_albedo_array()
+	if albedo_array != null:
+		material.set_shader_parameter(ALBEDO_ARRAY_UNIFORM, albedo_array)
+		material.set_shader_parameter(USE_ALBEDO_ARRAY_UNIFORM, true)
 	material.set_shader_parameter(CONTROL_ORIGIN_XZ_UNIFORM, surface_data.control_origin_xz)
 	material.set_shader_parameter(CONTROL_SIZE_XZ_UNIFORM, surface_data.control_size_xz)
 	material.set_shader_parameter(TERRAIN_ROUGHNESS_UNIFORM, _average_default_surface_roughness())
@@ -728,7 +736,76 @@ static func _apply_surface_index_palette(material: ShaderMaterial) -> void:
 		if visual_def != null:
 			var wetness: float = clampf(float(visual_def.get("wetness")), 0.0, 1.0)
 			color = _wet_albedo_color(visual_def.get("albedo_color"), wetness)
+			var texture_uv_scale: Vector2 = visual_def.get("texture_uv_scale")
+			material.set_shader_parameter(StringName(SURFACE_UV_SCALE_UNIFORM_PREFIX + str(id_value)), texture_uv_scale)
 		material.set_shader_parameter(StringName("surface_color_" + str(id_value)), color)
+
+
+static func _surface_index_albedo_array() -> Texture2DArray:
+	if _surface_index_albedo_array_cache != null:
+		return _surface_index_albedo_array_cache
+	var target_size: Vector2i = _surface_index_albedo_target_size()
+	var images: Array[Image] = []
+	for id_value in range(8):
+		var image: Image = _surface_index_albedo_image(id_value, target_size)
+		if image == null:
+			return null
+		images.append(image)
+	var texture_array: Texture2DArray = Texture2DArray.new()
+	var create_error: Error = texture_array.create_from_images(images)
+	if create_error != OK:
+		push_error("Terrain surface-index albedo array failed to create: " + error_string(create_error))
+		return null
+	texture_array.resource_name = "terrain_surface_index_albedo_array"
+	_surface_index_albedo_array_cache = texture_array
+	return _surface_index_albedo_array_cache
+
+
+static func _surface_index_albedo_target_size() -> Vector2i:
+	for id_value in range(8):
+		var image: Image = _load_surface_index_source_albedo_image(id_value)
+		if image == null:
+			continue
+		return Vector2i(image.get_width(), image.get_height())
+	return Vector2i(4, 4)
+
+
+static func _surface_index_albedo_image(id_value: int, target_size: Vector2i) -> Image:
+	var image: Image = _load_surface_index_source_albedo_image(id_value)
+	if image == null:
+		image = Image.create(target_size.x, target_size.y, false, Image.FORMAT_RGBA8)
+		image.fill(_surface_index_fallback_color(id_value))
+	else:
+		if image.get_width() != target_size.x or image.get_height() != target_size.y:
+			image.resize(target_size.x, target_size.y, Image.INTERPOLATE_LANCZOS)
+		image.convert(Image.FORMAT_RGBA8)
+	var mip_error: Error = image.generate_mipmaps()
+	if mip_error != OK:
+		push_error("Terrain surface-index albedo mipmaps failed for layer " + str(id_value) + ": " + error_string(mip_error))
+	return image
+
+
+static func _load_surface_index_source_albedo_image(id_value: int) -> Image:
+	var surface_id: StringName = _surface_id_for_value(id_value)
+	var visual_def: Resource = SurfaceVisualCatalogResource.call("default_visual_for_surface_id", surface_id)
+	if visual_def == null:
+		return null
+	var albedo_texture_path: String = visual_def.get("albedo_texture_path")
+	if albedo_texture_path.is_empty():
+		return null
+	var image: Image = Image.load_from_file(ProjectSettings.globalize_path(albedo_texture_path))
+	if image == null or image.is_empty():
+		return null
+	return image
+
+
+static func _surface_index_fallback_color(id_value: int) -> Color:
+	var surface_id: StringName = _surface_id_for_value(id_value)
+	var visual_def: Resource = SurfaceVisualCatalogResource.call("default_visual_for_surface_id", surface_id)
+	if visual_def == null:
+		return Color(0.50, 0.47, 0.38, 1.0)
+	var wetness: float = clampf(float(visual_def.get("wetness")), 0.0, 1.0)
+	return _wet_albedo_color(visual_def.get("albedo_color"), wetness)
 
 
 static func _average_default_surface_roughness() -> float:

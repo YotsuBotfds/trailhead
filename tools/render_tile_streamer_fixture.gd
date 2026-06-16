@@ -258,6 +258,13 @@ func _require_visual_tile(cell: Vector2i) -> MeshInstance3D:
 			_errors.append("streamed visual cell terrain should use the surface-index ShaderMaterial: " + String(mesh_instance.name))
 		elif material.resource_name != TerrainVisualBuilderScript.TERRAIN_INDEX_MATERIAL_NAME:
 			_errors.append("streamed visual cell material expected " + TerrainVisualBuilderScript.TERRAIN_INDEX_MATERIAL_NAME + ", got " + material.resource_name)
+		else:
+			var use_albedo_array: bool = bool(material.get_shader_parameter(TerrainVisualBuilderScript.USE_ALBEDO_ARRAY_UNIFORM))
+			if not use_albedo_array:
+				_errors.append("streamed visual cell material should enable the albedo Texture2DArray: " + String(mesh_instance.name))
+			var albedo_array: Texture2DArray = material.get_shader_parameter(TerrainVisualBuilderScript.ALBEDO_ARRAY_UNIFORM) as Texture2DArray
+			if albedo_array == null:
+				_errors.append("streamed visual cell material missing albedo Texture2DArray: " + String(mesh_instance.name))
 	var collision_count: int = _count_collision_objects(mesh_instance)
 	if collision_count > 0:
 		_errors.append("streamed visual cell should not create collision objects: " + String(mesh_instance.name))
