@@ -10,7 +10,6 @@ signal world_recoverable_object_tagged(object_id: StringName)
 signal world_photograph_taken(nearest_landmark_id: StringName, sim_tick: int)
 signal world_golden_line_matched(segment_id: StringName, sim_tick: int)
 signal world_egg_triggered(egg_id: StringName)
-signal world_egg_sequence_step(sequence_id: StringName, step_index: int)
 # Resolves Q33; world_ prefix follows the group-prefix rule for world-system events.
 signal world_tile_activated(cell: Vector2i)
 signal world_tile_evicted(cell: Vector2i)
