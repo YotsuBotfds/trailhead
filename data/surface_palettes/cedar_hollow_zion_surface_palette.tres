@@ -6,4 +6,4 @@
 script = ExtResource("1_script")
 image_path = "res://data/terrain/cedar_hollow_zion_surface_id.png"
 id_values = Array[int]([1, 2, 3, 4, 5, 6])
-surface_ids = Array[StringName]([&"wet_stone", &"packed_gravel", &"packed_dirt", &"loose_rock", &"tall_grass", &"packed_gravel"])
+surface_ids = Array[StringName]([&"wet_stone", &"packed_gravel", &"packed_dirt", &"loose_rock", &"tall_grass", &"paved_road"])
