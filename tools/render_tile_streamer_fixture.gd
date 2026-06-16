@@ -250,6 +250,14 @@ func _require_visual_tile(cell: Vector2i) -> MeshInstance3D:
 		_errors.append("visual cell missing mesh: " + String(mesh_instance.name))
 	elif mesh_instance.mesh.get_surface_count() <= 0:
 		_errors.append("visual cell mesh has no surfaces: " + String(mesh_instance.name))
+	elif mesh_instance.mesh.get_surface_count() != 1:
+		_errors.append("streamed visual cell terrain should collapse to one surface, got " + str(mesh_instance.mesh.get_surface_count()) + ": " + String(mesh_instance.name))
+	else:
+		var material: ShaderMaterial = mesh_instance.mesh.surface_get_material(0) as ShaderMaterial
+		if material == null:
+			_errors.append("streamed visual cell terrain should use the surface-index ShaderMaterial: " + String(mesh_instance.name))
+		elif material.resource_name != TerrainVisualBuilderScript.TERRAIN_INDEX_MATERIAL_NAME:
+			_errors.append("streamed visual cell material expected " + TerrainVisualBuilderScript.TERRAIN_INDEX_MATERIAL_NAME + ", got " + material.resource_name)
 	var collision_count: int = _count_collision_objects(mesh_instance)
 	if collision_count > 0:
 		_errors.append("streamed visual cell should not create collision objects: " + String(mesh_instance.name))

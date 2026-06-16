@@ -5,6 +5,7 @@ const CedarTerrainDef: Resource = preload("res://data/terrain/cedar_hollow_terra
 const TerrainSurfacePaletteResource: Resource = preload("res://data/surface_palettes/cedar_hollow_terrain.tres")
 const SurfaceVisualCatalogResource: Resource = preload("res://data/surface_visuals/cedar_hollow_surface_visuals.tres")
 const TerrainTrackOverlayShader: Shader = preload("res://systems/render/terrain_track_overlay.gdshader")
+const TerrainSurfaceIndexShader: Shader = preload("res://systems/render/terrain_surface_index.gdshader")
 const DETAIL_MASK_TEXTURE_PATH: String = "res://assets/textures/surface_visuals/generated/terrain_detail_mask.png"
 const GENERATED_SURFACE_TEXTURE_DIR: String = "res://assets/textures/surface_visuals/generated/"
 const TEXTURE_SOURCE_PATH_META: StringName = &"trailhead_source_path"
@@ -22,6 +23,7 @@ const TILE_SURFACE_ID_PATH_META: StringName = &"trailhead_surface_id_path"
 const HEIGHTMESH_NAME: String = "cedar_hollow_heightmesh"
 const TERRAIN_TILE_NAME_PREFIX: String = "terrain_visual_tile_"
 const TERRAIN_MATERIAL_PREFIX: String = "terrain_mat_"
+const TERRAIN_INDEX_MATERIAL_NAME: String = "terrain_surface_index_material"
 const SPIKE_1KM_REGION_ID: String = "spike_1km"
 const SPIKE_1KM_SCENE_ROOT_NAME: String = "Spike1KmRegion"
 const REGION_ROOT_NAME: String = "TerrainVisuals"
@@ -69,6 +71,11 @@ const TRACK_BOUNDS_MAX_UNIFORM: StringName = &"track_bounds_max"
 const TRACK_DARKENING_UNIFORM: StringName = &"track_darkening"
 const RUT_DARKENING_UNIFORM: StringName = &"rut_darkening"
 const RUT_DARKENING_SCALE: float = 0.75
+const SURFACE_ID_TEXTURE_UNIFORM: StringName = &"surface_id_texture"
+const CONTROL_ORIGIN_XZ_UNIFORM: StringName = &"control_origin_xz"
+const CONTROL_SIZE_XZ_UNIFORM: StringName = &"control_size_xz"
+const TERRAIN_ROUGHNESS_UNIFORM: StringName = &"terrain_roughness"
+const TERRAIN_SPECULAR_UNIFORM: StringName = &"terrain_specular"
 
 
 class RegionTileData:
@@ -97,6 +104,10 @@ class MeshSurfaceData:
 	var normals: PackedVector3Array = PackedVector3Array()
 	var uvs: PackedVector2Array = PackedVector2Array()
 	var indices: PackedInt32Array = PackedInt32Array()
+	var use_surface_index_material: bool = false
+	var surface_id_path: String = ""
+	var control_origin_xz: Vector2 = Vector2.ZERO
+	var control_size_xz: Vector2 = Vector2.ONE
 
 
 class RegionMeshData:
@@ -236,7 +247,7 @@ static func build_region_visual_tile_data(region_id: String, cell: Vector2i) -> 
 	var tile_origin_xz: Vector2 = _tile_origin_xz(tile_data)
 	visual_tile_data.node_name = region_detail_tile_node_name(region_id, tile_data.cell)
 	visual_tile_data.position = Vector3(tile_origin_xz.x, 0.0, tile_origin_xz.y)
-	visual_tile_data.mesh_data = build_region_mesh_data([tile_data], REGION_DETAIL_SAMPLE_STEP, tile_data.key + "_terrain_detail_mesh", tile_origin_xz)
+	visual_tile_data.mesh_data = build_region_surface_index_mesh_data(tile_data, REGION_DETAIL_SAMPLE_STEP, tile_data.key + "_terrain_detail_mesh", tile_origin_xz)
 	visual_tile_data.visibility_range_end = _detail_visibility_range_end(tile_data)
 	visual_tile_data.visibility_radius = _tile_visibility_radius(tile_data)
 	visual_tile_data.heightmap_path = tile_data.heightmap_path
@@ -371,6 +382,8 @@ static func _add_terrain_pipeline_warmup(parent: Node3D) -> int:
 		var material: StandardMaterial3D = _material_for_visual_def(visual_def)
 		_append_pipeline_warmup_surface(mesh, material, material_count)
 		material_count += 1
+	_append_pipeline_warmup_surface(mesh, _surface_index_warmup_material(), material_count)
+	material_count += 1
 	if material_count <= 0:
 		return 0
 	var instance: MeshInstance3D = MeshInstance3D.new()
@@ -453,7 +466,8 @@ static func _add_region_detail_tile(parent: Node3D, region_id: String, tile_data
 	instance.name = region_detail_tile_node_name(region_id, tile_data.cell)
 	var tile_origin_xz: Vector2 = _tile_origin_xz(tile_data)
 	instance.position = Vector3(tile_origin_xz.x, 0.0, tile_origin_xz.y)
-	instance.mesh = _build_region_mesh([tile_data], REGION_DETAIL_SAMPLE_STEP, tile_data.key + "_terrain_detail_mesh", tile_origin_xz)
+	var mesh_data: RegionMeshData = build_region_surface_index_mesh_data(tile_data, REGION_DETAIL_SAMPLE_STEP, tile_data.key + "_terrain_detail_mesh", tile_origin_xz)
+	instance.mesh = region_mesh_from_data(mesh_data)
 	instance.visibility_range_end = _detail_visibility_range_end(tile_data)
 	instance.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
 	instance.set_meta(REGION_LOD_META, "detail")
@@ -494,6 +508,28 @@ static func build_region_mesh_data(tile_data_list: Array[RegionTileData], sample
 	return mesh_data
 
 
+static func build_region_surface_index_mesh_data(tile_data: RegionTileData, sample_step: int, mesh_name: String, local_origin_xz: Vector2) -> RegionMeshData:
+	var bucket: MeshBucket = MeshBucket.new()
+	_append_tile_quads_to_bucket(tile_data, sample_step, bucket, local_origin_xz)
+
+	var mesh_data: RegionMeshData = RegionMeshData.new()
+	mesh_data.resource_name = mesh_name
+	if bucket.indices.size() <= 0:
+		return mesh_data
+	var surface_data: MeshSurfaceData = MeshSurfaceData.new()
+	surface_data.surface_id_value = 0
+	surface_data.vertices = bucket.vertices
+	surface_data.normals = bucket.normals
+	surface_data.uvs = bucket.uvs
+	surface_data.indices = bucket.indices
+	surface_data.use_surface_index_material = true
+	surface_data.surface_id_path = tile_data.surface_id_path
+	surface_data.control_origin_xz = Vector2(float(tile_data.cell.x) * tile_data.tile_size_m, float(tile_data.cell.y) * tile_data.tile_size_m)
+	surface_data.control_size_xz = Vector2(tile_data.tile_size_m, tile_data.tile_size_m)
+	mesh_data.surfaces.append(surface_data)
+	return mesh_data
+
+
 static func region_mesh_from_data(mesh_data: RegionMeshData) -> ArrayMesh:
 	var mesh: ArrayMesh = ArrayMesh.new()
 	mesh.resource_name = mesh_data.resource_name
@@ -505,7 +541,10 @@ static func region_mesh_from_data(mesh_data: RegionMeshData) -> ArrayMesh:
 		arrays[Mesh.ARRAY_TEX_UV] = surface_data.uvs
 		arrays[Mesh.ARRAY_INDEX] = surface_data.indices
 		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-		mesh.surface_set_material(mesh.get_surface_count() - 1, _material_for_surface_value(surface_data.surface_id_value))
+		if surface_data.use_surface_index_material:
+			mesh.surface_set_material(mesh.get_surface_count() - 1, _surface_index_material(surface_data))
+		else:
+			mesh.surface_set_material(mesh.get_surface_count() - 1, _material_for_surface_value(surface_data.surface_id_value))
 	return mesh
 
 
@@ -523,6 +562,28 @@ static func _append_tile_quads(tile_data: RegionTileData, sample_step: int, buck
 			var surface_row: int = _surface_sample_coord(row, next_row, tile_data.surface_image.get_height())
 			var surface_id_value: int = _surface_id_value_at(tile_data, surface_col, surface_row)
 			var bucket: MeshBucket = _bucket_for_surface_value(buckets, surface_id_value)
+			var corner_a: int = _bucket_vertex(bucket, tile_data, col, row, local_origin_xz)
+			var corner_b: int = _bucket_vertex(bucket, tile_data, next_col, row, local_origin_xz)
+			var corner_c: int = _bucket_vertex(bucket, tile_data, col, next_row, local_origin_xz)
+			var corner_d: int = _bucket_vertex(bucket, tile_data, next_col, next_row, local_origin_xz)
+			bucket.indices.append(corner_a)
+			bucket.indices.append(corner_c)
+			bucket.indices.append(corner_b)
+			bucket.indices.append(corner_b)
+			bucket.indices.append(corner_c)
+			bucket.indices.append(corner_d)
+
+
+static func _append_tile_quads_to_bucket(tile_data: RegionTileData, sample_step: int, bucket: MeshBucket, local_origin_xz: Vector2) -> void:
+	if tile_data.width <= 1 or tile_data.depth <= 1:
+		return
+	var safe_step: int = maxi(sample_step, 1)
+	var max_col: int = tile_data.width - 1
+	var max_row: int = tile_data.depth - 1
+	for row in range(0, max_row, safe_step):
+		var next_row: int = mini(row + safe_step, max_row)
+		for col in range(0, max_col, safe_step):
+			var next_col: int = mini(col + safe_step, max_col)
 			var corner_a: int = _bucket_vertex(bucket, tile_data, col, row, local_origin_xz)
 			var corner_b: int = _bucket_vertex(bucket, tile_data, next_col, row, local_origin_xz)
 			var corner_c: int = _bucket_vertex(bucket, tile_data, col, next_row, local_origin_xz)
@@ -635,6 +696,54 @@ static func _sorted_surface_values(buckets: Dictionary[int, MeshBucket]) -> Arra
 		values.append(int(key))
 	values.sort()
 	return values
+
+
+static func _surface_index_material(surface_data: MeshSurfaceData) -> ShaderMaterial:
+	var material: ShaderMaterial = ShaderMaterial.new()
+	material.resource_name = TERRAIN_INDEX_MATERIAL_NAME
+	material.shader = TerrainSurfaceIndexShader
+	var surface_texture: Texture2D = _load_texture(surface_data.surface_id_path)
+	if surface_texture != null:
+		material.set_shader_parameter(SURFACE_ID_TEXTURE_UNIFORM, surface_texture)
+	material.set_shader_parameter(CONTROL_ORIGIN_XZ_UNIFORM, surface_data.control_origin_xz)
+	material.set_shader_parameter(CONTROL_SIZE_XZ_UNIFORM, surface_data.control_size_xz)
+	material.set_shader_parameter(TERRAIN_ROUGHNESS_UNIFORM, _average_default_surface_roughness())
+	material.set_shader_parameter(TERRAIN_SPECULAR_UNIFORM, 0.18)
+	_apply_surface_index_palette(material)
+	return material
+
+
+static func _surface_index_warmup_material() -> ShaderMaterial:
+	var surface_data: MeshSurfaceData = MeshSurfaceData.new()
+	surface_data.control_origin_xz = Vector2.ZERO
+	surface_data.control_size_xz = Vector2(GameConfig.STREAM_TILE_SIZE_M, GameConfig.STREAM_TILE_SIZE_M)
+	return _surface_index_material(surface_data)
+
+
+static func _apply_surface_index_palette(material: ShaderMaterial) -> void:
+	for id_value in range(8):
+		var surface_id: StringName = _surface_id_for_value(id_value)
+		var visual_def: Resource = SurfaceVisualCatalogResource.call("default_visual_for_surface_id", surface_id)
+		var color: Color = Color(0.50, 0.47, 0.38, 1.0)
+		if visual_def != null:
+			var wetness: float = clampf(float(visual_def.get("wetness")), 0.0, 1.0)
+			color = _wet_albedo_color(visual_def.get("albedo_color"), wetness)
+		material.set_shader_parameter(StringName("surface_color_" + str(id_value)), color)
+
+
+static func _average_default_surface_roughness() -> float:
+	var roughness_sum: float = 0.0
+	var roughness_count: int = 0
+	for id_value in range(1, 8):
+		var surface_id: StringName = _surface_id_for_value(id_value)
+		var visual_def: Resource = SurfaceVisualCatalogResource.call("default_visual_for_surface_id", surface_id)
+		if visual_def == null:
+			continue
+		roughness_sum += _wet_roughness(float(visual_def.get("roughness")), clampf(float(visual_def.get("wetness")), 0.0, 1.0))
+		roughness_count += 1
+	if roughness_count <= 0:
+		return 0.88
+	return roughness_sum / float(roughness_count)
 
 
 static func _material_for_surface_value(surface_id_value: int) -> StandardMaterial3D:

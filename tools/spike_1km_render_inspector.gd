@@ -82,6 +82,8 @@ func _inspect_detail_tiles(detail_root: Node) -> void:
 			_errors.append("TerrainDetailTiles child should be MeshInstance3D: " + String(child.name))
 			continue
 		_require_mesh_surfaces(mesh_instance, "TerrainDetailTiles/" + String(child.name))
+		if mesh_instance.mesh != null and mesh_instance.mesh.get_surface_count() != 1:
+			_errors.append("TerrainDetailTiles/" + String(child.name) + " should collapse to one surface, got " + str(mesh_instance.mesh.get_surface_count()))
 		if mesh_instance.visibility_parent.is_empty():
 			_errors.append("TerrainDetailTiles/" + String(child.name) + " should set visibility_parent")
 		var visibility_radius: float = _visibility_radius(mesh_instance, "TerrainDetailTiles/" + String(child.name))
