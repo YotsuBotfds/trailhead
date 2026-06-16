@@ -5,7 +5,7 @@
 [resource]
 script = ExtResource("1_script")
 scene_id = &"spike_1km"
-terrain_def_path = "res://data/terrain/cedar_hollow_zion_terrain_def.tres"
+terrain_def_path = "res://data/terrain/spike_1km_terrain_def.tres"
 bounds_min = Vector3(0.0, -2.0, 0.0)
 bounds_max = Vector3(1000.0, 2.0, 1000.0)
 spawn_ids = Array[StringName]([&"west_gate", &"east_gate", &"north_gate"])
