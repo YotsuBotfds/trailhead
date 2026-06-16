@@ -97,6 +97,10 @@ func _inspect_atmosphere(world_environment: WorldEnvironment, sun: DirectionalLi
 		_errors.append("GoldenHourSun shadow opacity should follow GameConfig")
 	if sun.light_volumetric_fog_energy <= 0.0:
 		_errors.append("GoldenHourSun should contribute to volumetric fog")
+	if sun.directional_shadow_mode != DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS:
+		_errors.append("GoldenHourSun should use 2-split directional shadows")
+	if sun.directional_shadow_blend_splits:
+		_errors.append("GoldenHourSun should not blend shadow splits")
 
 
 func _inspect_viewport_antialiasing() -> void:

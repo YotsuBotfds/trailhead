@@ -43,9 +43,23 @@ static func _apply_sun_atmosphere(sun: DirectionalLight3D) -> void:
 	sun.light_angular_distance = maxf(GameConfig.atmosphere_pcss_sun_angular_distance, 0.0)
 	sun.directional_shadow_max_distance = maxf(GameConfig.atmosphere_pcss_shadow_max_distance, 0.1)
 	sun.directional_shadow_fade_start = SHADOW_FADE_START
+	sun.directional_shadow_mode = _directional_shadow_mode(GameConfig.atmosphere_directional_shadow_mode)
+	sun.directional_shadow_blend_splits = GameConfig.atmosphere_directional_shadow_blend_splits
 	sun.shadow_blur = maxf(GameConfig.atmosphere_pcss_shadow_blur, 0.0)
 	sun.shadow_opacity = clampf(GameConfig.atmosphere_pcss_shadow_opacity, 0.0, 1.0)
 	sun.light_volumetric_fog_energy = 0.82
+
+
+static func _directional_shadow_mode(mode: int) -> int:
+	match mode:
+		GameConfig.DIRECTIONAL_SHADOW_ORTHOGONAL:
+			return DirectionalLight3D.SHADOW_ORTHOGONAL
+		GameConfig.DIRECTIONAL_SHADOW_PARALLEL_2_SPLITS:
+			return DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
+		GameConfig.DIRECTIONAL_SHADOW_PARALLEL_4_SPLITS:
+			return DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
+		_:
+			return DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
 
 
 static func _apply_height_fog(environment: Environment, mood: int) -> void:
