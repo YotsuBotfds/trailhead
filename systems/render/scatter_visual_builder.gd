@@ -7,6 +7,7 @@ const BranchScene: PackedScene = preload("res://assets/models/scatter/branch_a.g
 const PineconeScene: PackedScene = preload("res://assets/models/scatter/pinecone.glb")
 const FernClumpScene: PackedScene = preload("res://assets/models/scatter/fern_clump.glb")
 const CattailScene: PackedScene = preload("res://assets/models/scatter/cattail.glb")
+const GrassShader: Shader = preload("res://systems/render/grass_billboard.gdshader")
 
 const EXPECTED_GRASS_TUFTS: int = 72
 const EXPECTED_BOULDERS: int = 5
@@ -59,39 +60,6 @@ const CROSSING_CHASE_QA_POSITION: Vector3 = Vector3(4.25, 0.0, -6.55)
 const CROSSING_CHASE_QA_YAW_DEGREES: float = -70.0
 const CHASE_CLEAR_CORRIDOR_LENGTH: float = 0.7
 const CHASE_CLEAR_CORRIDOR_HALF_WIDTH: float = 0.18
-const GRASS_SHADER_CODE: String = "shader_type spatial;\n" \
-		+ "render_mode cull_disabled, diffuse_lambert, specular_schlick_ggx;\n" \
-		+ "uniform vec4 blade_base_color : source_color = vec4(0.07, 0.18, 0.055, 1.0);\n" \
-		+ "uniform vec4 blade_tip_color : source_color = vec4(0.48, 0.66, 0.23, 1.0);\n" \
-		+ "uniform float blade_height_reference = 0.42;\n" \
-		+ "uniform float wind_strength = 0.012;\n" \
-		+ "uniform float wind_speed = 0.65;\n" \
-		+ "uniform float wind_time_factor = 1.0;\n" \
-		+ "uniform vec4 backlight_color : source_color = vec4(1.0, 0.62, 0.30, 1.0);\n" \
-		+ "uniform float backlight_energy = 0.32;\n" \
-		+ "varying float blade_height;\n" \
-		+ "varying float tip_mix_shift;\n" \
-		+ "void vertex() {\n" \
-		+ "	blade_height = smoothstep(0.0, blade_height_reference, VERTEX.y);\n" \
-		+ "	tip_mix_shift = INSTANCE_CUSTOM.w;\n" \
-		+ "	float wind_phase = INSTANCE_CUSTOM.y * TAU;\n" \
-		+ "	float wind_time = TIME * wind_speed * wind_time_factor;\n" \
-		+ "	float sway = sin(wind_phase + wind_time);\n" \
-		+ "	float flutter = sin(wind_phase * 1.73 + wind_time * 1.47 + INSTANCE_CUSTOM.z * 2.91);\n" \
-		+ "	float gust = 0.88 + sin(wind_time * 0.37 + INSTANCE_CUSTOM.w * TAU) * 0.12;\n" \
-		+ "	float bend = (sway * 0.72 + flutter * 0.28) * gust * wind_strength * blade_height * blade_height * INSTANCE_CUSTOM.x;\n" \
-		+ "	VERTEX.x += bend;\n" \
-		+ "	VERTEX.z += bend * (INSTANCE_CUSTOM.z * 0.7 - 0.35);\n" \
-		+ "}\n" \
-		+ "void fragment() {\n" \
-		+ "	float tip_mix = smoothstep(0.0, 1.0, blade_height + (tip_mix_shift - 0.5) * 0.22);\n" \
-		+ "	vec3 blade_color = mix(blade_base_color.rgb, blade_tip_color.rgb, tip_mix);\n" \
-		+ "	blade_color = mix(blade_color, blade_base_color.rgb * 0.72, (1.0 - blade_height) * 0.24);\n" \
-		+ "	ALBEDO = blade_color * COLOR.rgb;\n" \
-		+ "	ROUGHNESS = 0.86;\n" \
-		+ "	SPECULAR = 0.16;\n" \
-		+ "	BACKLIGHT = backlight_color.rgb * backlight_energy * (0.35 + blade_height * 0.65) * COLOR.rgb;\n" \
-		+ "}\n"
 
 
 static func build_cedar_hollow(parent: Node3D) -> Node3D:
@@ -236,10 +204,8 @@ static func _find_first_mesh(parent: Node) -> Mesh:
 
 
 static func _create_grass_material() -> ShaderMaterial:
-	var shader: Shader = Shader.new()
-	shader.code = GRASS_SHADER_CODE
 	var material: ShaderMaterial = ShaderMaterial.new()
-	material.shader = shader
+	material.shader = GrassShader
 	material.set_shader_parameter(&"blade_base_color", GRASS_BASE_COLOR)
 	material.set_shader_parameter(&"blade_tip_color", GRASS_TIP_COLOR)
 	var wind_strength: float = 0.0

@@ -15,17 +15,7 @@ const RIBBON_SIZE: Vector3 = Vector3(0.30, 0.035, 0.035)
 const RIBBON_OFFSET: Vector3 = Vector3(0.0, 0.18, 0.0)
 const UNTAGGED_COLOR: Color = Color(0.42, 0.33, 0.23, 1.0)
 const TAGGED_COLOR: Color = Color(1.0, 0.47, 0.11, 1.0)
-const TAGGED_SHADER_CODE: String = \
-	"shader_type spatial;\n" + \
-	"render_mode unshaded, cull_disabled;\n" + \
-	"instance uniform bool tagged = false;\n" + \
-	"uniform vec4 untagged_color : source_color = vec4(0.42, 0.33, 0.23, 1.0);\n" + \
-	"uniform vec4 tagged_color : source_color = vec4(1.0, 0.47, 0.11, 1.0);\n" + \
-	"void fragment() {\n" + \
-	"\tvec4 color = tagged ? tagged_color : untagged_color;\n" + \
-	"\tALBEDO = color.rgb;\n" + \
-	"\tALPHA = color.a;\n" + \
-	"}\n"
+const TaggedShader: Shader = preload("res://systems/render/recoverable_tagged.gdshader")
 
 var _world_root: Node = null
 var _recoverable_ids: Array[StringName] = []
@@ -196,11 +186,9 @@ func _ensure_ribbon_mesh(recoverable: Node3D) -> MeshInstance3D:
 
 
 func _make_recoverable_material(resource_name: String) -> ShaderMaterial:
-	var shader: Shader = Shader.new()
-	shader.code = TAGGED_SHADER_CODE
 	var material: ShaderMaterial = ShaderMaterial.new()
 	material.resource_name = resource_name + "_tagged_material"
-	material.shader = shader
+	material.shader = TaggedShader
 	material.set_shader_parameter("untagged_color", UNTAGGED_COLOR)
 	material.set_shader_parameter("tagged_color", TAGGED_COLOR)
 	return material
