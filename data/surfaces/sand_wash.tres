@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="SurfaceDef" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://systems/world/surface_def.gd" id="1_script"]
+
+[resource]
+script = ExtResource("1_script")
+id = &"sand_wash"
+display_name = "Sand Wash"
+friction = 0.6
+rolling_drag = 0.55
+slip = 0.18
+bog_enabled = false
+bog_threshold = 0.2
+dust_residue = 0.3

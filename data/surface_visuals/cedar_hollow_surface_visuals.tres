@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="SurfaceVisualCatalog" load_steps=14 format=3]
+[gd_resource type="Resource" script_class="SurfaceVisualCatalog" load_steps=16 format=3]
 
 [ext_resource type="Script" path="res://systems/render/surface_visual_catalog.gd" id="1_catalog"]
 [ext_resource type="Script" path="res://systems/render/surface_visual_def.gd" id="2_visual"]
@@ -82,6 +82,26 @@ texture_uv_scale = Vector2(74.0, 74.0)
 detail_uv_scale = Vector2(232.0, 232.0)
 triplanar = true
 normal_scale = 1.75
+
+[sub_resource type="Resource" id="SurfaceVisualDef_sand_wash"]
+script = ExtResource("2_visual")
+id = &"sand_wash_default"
+surface_id = &"sand_wash"
+display_name = "Sand Wash"
+default_for_surface = true
+albedo_color = Color(0.96, 0.86, 0.66, 1.0)
+roughness = 0.9
+wetness = 0.0
+tire_audio_gain = 0.7
+tire_audio_pitch = 0.56
+albedo_texture_path = "res://assets/textures/surface_visuals/ambientcg/dried_mud_albedo.jpg"
+normal_texture_path = "res://assets/textures/surface_visuals/ambientcg/dried_mud_normal.jpg"
+detail_albedo_texture_path = "res://assets/textures/surface_visuals/generated/terrain_detail_albedo.png"
+detail_normal_texture_path = "res://assets/textures/surface_visuals/generated/terrain_detail_normal.png"
+texture_uv_scale = Vector2(70.0, 70.0)
+detail_uv_scale = Vector2(224.0, 224.0)
+triplanar = true
+normal_scale = 1.55
 
 [sub_resource type="Resource" id="SurfaceVisualDef_tall_grass"]
 script = ExtResource("2_visual")
@@ -183,6 +203,26 @@ detail_uv_scale = Vector2(220.0, 220.0)
 triplanar = true
 normal_scale = 2.25
 
+[sub_resource type="Resource" id="SurfaceVisualDef_slickrock_dry"]
+script = ExtResource("2_visual")
+id = &"slickrock_dry_default"
+surface_id = &"slickrock_dry"
+display_name = "Dry Slickrock"
+default_for_surface = true
+albedo_color = Color(0.82, 0.78, 0.7, 1.0)
+roughness = 0.84
+wetness = 0.0
+tire_audio_gain = 1.05
+tire_audio_pitch = 1.45
+albedo_texture_path = "res://assets/textures/surface_visuals/ambientcg/loose_rock_default_albedo.jpg"
+normal_texture_path = "res://assets/textures/surface_visuals/ambientcg/loose_rock_default_normal.jpg"
+detail_albedo_texture_path = "res://assets/textures/surface_visuals/generated/terrain_detail_albedo.png"
+detail_normal_texture_path = "res://assets/textures/surface_visuals/generated/terrain_detail_normal.png"
+texture_uv_scale = Vector2(64.0, 64.0)
+detail_uv_scale = Vector2(224.0, 224.0)
+triplanar = true
+normal_scale = 1.85
+
 [sub_resource type="Resource" id="SurfaceVisualDef_mossy_wet_stone"]
 script = ExtResource("2_visual")
 id = &"mossy_wet_stone"
@@ -226,5 +266,5 @@ normal_scale = 1.55
 
 [resource]
 script = ExtResource("1_catalog")
-visual_defs = Array[Resource]([SubResource("SurfaceVisualDef_packed_gravel"), SubResource("SurfaceVisualDef_paved_road"), SubResource("SurfaceVisualDef_packed_dirt"), SubResource("SurfaceVisualDef_pine_floor_dirt"), SubResource("SurfaceVisualDef_tall_grass"), SubResource("SurfaceVisualDef_mud"), SubResource("SurfaceVisualDef_dried_mud"), SubResource("SurfaceVisualDef_loose_rock"), SubResource("SurfaceVisualDef_wet_stone"), SubResource("SurfaceVisualDef_mossy_wet_stone"), SubResource("SurfaceVisualDef_wood_plank")])
+visual_defs = Array[Resource]([SubResource("SurfaceVisualDef_packed_gravel"), SubResource("SurfaceVisualDef_paved_road"), SubResource("SurfaceVisualDef_packed_dirt"), SubResource("SurfaceVisualDef_pine_floor_dirt"), SubResource("SurfaceVisualDef_sand_wash"), SubResource("SurfaceVisualDef_tall_grass"), SubResource("SurfaceVisualDef_mud"), SubResource("SurfaceVisualDef_dried_mud"), SubResource("SurfaceVisualDef_loose_rock"), SubResource("SurfaceVisualDef_wet_stone"), SubResource("SurfaceVisualDef_slickrock_dry"), SubResource("SurfaceVisualDef_mossy_wet_stone"), SubResource("SurfaceVisualDef_wood_plank")])
 fallback_surface_id = &"packed_dirt"

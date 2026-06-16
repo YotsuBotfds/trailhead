@@ -6,8 +6,13 @@ const CedarTerrainDef: Resource = preload("res://data/terrain/cedar_hollow_terra
 const TERRAIN_SURFACE_MAP_PROBE_SCENE_ID: String = "terrain_surface_map_probe"
 const ZION_TERRAIN_SURFACE_MAP_PROBE_SCENE_ID: String = "zion_surface_map_probe"
 const SURFACE_STRIP_IDS: Array[StringName] = [
+	&"paved_road",
+	&"slickrock_dry",
+	&"packed_gravel",
 	&"packed_dirt",
 	&"tall_grass",
+	&"loose_rock",
+	&"sand_wash",
 	&"mud",
 	&"wet_stone"
 ]

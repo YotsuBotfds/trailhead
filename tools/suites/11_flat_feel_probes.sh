@@ -34,6 +34,6 @@ run_sim "$out_dir/surface_sweep.json" \
 	--scenario=surface_sweep \
 	--spawn=flat_spawn \
 	--seed=12345 \
-	--max-ticks=440 \
+	--max-ticks=590 \
 	--stuck-window=120 \
 	--stuck-min-progress=0.05
