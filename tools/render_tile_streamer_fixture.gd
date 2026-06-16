@@ -28,6 +28,7 @@ func _inspect() -> void:
 	_require_cell_count("configured empty", 0)
 	_require_cells("configured active cells", [])
 	_require_detail_root()
+	_require_pipeline_warmup()
 
 	EventBus.world_tile_activated.emit(FIRST_CELL)
 	_require_cell_count("first activation", 1)
@@ -82,6 +83,77 @@ func _require_detail_root() -> void:
 	var detail_root: Node = terrain_root.get_node_or_null(TerrainVisualBuilderScript.REGION_DETAIL_ROOT_NAME)
 	if detail_root == null:
 		_errors.append("streamer missing TerrainDetailTiles root")
+
+
+func _require_pipeline_warmup() -> void:
+	var terrain_root: Node = _streamer.get_node_or_null(TerrainVisualBuilderScript.REGION_ROOT_NAME)
+	if terrain_root == null:
+		return
+	var warmup_root: Node = terrain_root.get_node_or_null(TerrainVisualBuilderScript.REGION_PIPELINE_WARMUP_ROOT_NAME)
+	if warmup_root == null:
+		_errors.append("streamer missing PipelineWarmup root")
+		return
+	var warmup_node: Node3D = warmup_root as Node3D
+	if warmup_node == null:
+		_errors.append("PipelineWarmup should be Node3D")
+	elif warmup_node.visible:
+		_errors.append("PipelineWarmup should be hidden")
+	if warmup_root.process_mode != Node.PROCESS_MODE_DISABLED:
+		_errors.append("PipelineWarmup process_mode should be DISABLED")
+	var terrain_material_count: int = _require_int_meta(
+		warmup_root,
+		TerrainVisualBuilderScript.PIPELINE_WARMUP_TERRAIN_MATERIAL_COUNT_META,
+		"PipelineWarmup"
+	)
+	if terrain_material_count <= 0:
+		_errors.append("PipelineWarmup terrain material count should be positive")
+	var foliage_lod_count: int = _require_int_meta(
+		warmup_root,
+		TerrainVisualBuilderScript.PIPELINE_WARMUP_FOLIAGE_LOD_COUNT_META,
+		"PipelineWarmup"
+	)
+	if foliage_lod_count != 2:
+		_errors.append("PipelineWarmup foliage LOD count expected 2, got " + str(foliage_lod_count))
+	var terrain_warmup: MeshInstance3D = warmup_root.get_node_or_null(TerrainVisualBuilderScript.REGION_PIPELINE_WARMUP_TERRAIN_NAME) as MeshInstance3D
+	if terrain_warmup == null:
+		_errors.append("PipelineWarmup terrain child should be MeshInstance3D")
+	elif terrain_warmup.mesh == null:
+		_errors.append("PipelineWarmup terrain child missing mesh")
+	elif terrain_warmup.mesh.get_surface_count() != terrain_material_count:
+		_errors.append("PipelineWarmup terrain surface count expected " + str(terrain_material_count) + ", got " + str(terrain_warmup.mesh.get_surface_count()))
+	_require_warmup_multimesh(
+		warmup_root.get_node_or_null(TerrainVisualBuilderScript.REGION_PIPELINE_WARMUP_FOLIAGE_LOD0_NAME) as MultiMeshInstance3D,
+		"PipelineWarmup foliage LOD0"
+	)
+	_require_warmup_multimesh(
+		warmup_root.get_node_or_null(TerrainVisualBuilderScript.REGION_PIPELINE_WARMUP_FOLIAGE_LOD1_NAME) as MultiMeshInstance3D,
+		"PipelineWarmup foliage LOD1"
+	)
+	var collision_count: int = _count_collision_objects(warmup_root)
+	if collision_count > 0:
+		_errors.append("PipelineWarmup should not contain collision objects: " + str(collision_count))
+
+
+func _require_int_meta(node: Node, meta_name: StringName, label: String) -> int:
+	if not node.has_meta(meta_name):
+		_errors.append(label + " missing metadata: " + String(meta_name))
+		return 0
+	return int(node.get_meta(meta_name))
+
+
+func _require_warmup_multimesh(multimesh_instance: MultiMeshInstance3D, label: String) -> void:
+	if multimesh_instance == null:
+		_errors.append(label + " should be MultiMeshInstance3D")
+		return
+	if multimesh_instance.material_override == null:
+		_errors.append(label + " missing material_override")
+	if multimesh_instance.multimesh == null:
+		_errors.append(label + " missing MultiMesh")
+		return
+	if multimesh_instance.multimesh.instance_count != 1:
+		_errors.append(label + " instance_count expected 1, got " + str(multimesh_instance.multimesh.instance_count))
+	if multimesh_instance.multimesh.mesh == null:
+		_errors.append(label + " missing warmup mesh")
 
 
 func _require_visual_tile(cell: Vector2i) -> MeshInstance3D:

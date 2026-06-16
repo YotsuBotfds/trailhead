@@ -1,6 +1,7 @@
 extends Node
 
 const SpikeRegionScene: PackedScene = preload("res://scenes/regions/spike_1km.tscn")
+const TerrainVisualBuilderScript: GDScript = preload("res://systems/render/terrain_visual_builder.gd")
 const EXPECTED_DETAIL_TILE_COUNT: int = 100
 const EXPECTED_REGION_SIZE_M: float = 1000.0
 const FLOAT_EPSILON: float = 0.001
@@ -33,6 +34,10 @@ func _inspect() -> void:
 	if terrain_root == null:
 		_finish()
 		return
+
+	var warmup_root: Node = _require_node(terrain_root, TerrainVisualBuilderScript.REGION_PIPELINE_WARMUP_ROOT_NAME)
+	if warmup_root != null:
+		_inspect_pipeline_warmup(warmup_root)
 
 	var hlod: MeshInstance3D = _require_node(terrain_root, "TerrainHLOD") as MeshInstance3D
 	if hlod == null:
@@ -134,6 +139,82 @@ func _inspect_foliage_cells(foliage_root: Node) -> void:
 		_errors.append("FoliageCells should contain foliage_lod0 cells")
 	if lod1_count <= 0:
 		_errors.append("FoliageCells should contain foliage_lod1 cells")
+
+
+func _inspect_pipeline_warmup(warmup_root: Node) -> void:
+	var warmup_node: Node3D = warmup_root as Node3D
+	if warmup_node == null:
+		_errors.append("PipelineWarmup should be Node3D")
+	elif warmup_node.visible:
+		_errors.append("PipelineWarmup should be hidden")
+	if warmup_root.process_mode != Node.PROCESS_MODE_DISABLED:
+		_errors.append("PipelineWarmup process_mode should be DISABLED")
+	var terrain_material_count: int = _require_int_meta(
+		warmup_root,
+		TerrainVisualBuilderScript.PIPELINE_WARMUP_TERRAIN_MATERIAL_COUNT_META,
+		"PipelineWarmup"
+	)
+	if terrain_material_count <= 0:
+		_errors.append("PipelineWarmup terrain material count should be positive")
+	var foliage_lod_count: int = _require_int_meta(
+		warmup_root,
+		TerrainVisualBuilderScript.PIPELINE_WARMUP_FOLIAGE_LOD_COUNT_META,
+		"PipelineWarmup"
+	)
+	if foliage_lod_count != 2:
+		_errors.append("PipelineWarmup foliage LOD count expected 2, got " + str(foliage_lod_count))
+	var terrain_warmup: MeshInstance3D = _require_node(warmup_root, TerrainVisualBuilderScript.REGION_PIPELINE_WARMUP_TERRAIN_NAME) as MeshInstance3D
+	if terrain_warmup == null:
+		_errors.append("PipelineWarmup terrain child should be MeshInstance3D")
+	else:
+		if terrain_warmup.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF:
+			_errors.append("PipelineWarmup terrain should not cast shadows")
+		if terrain_warmup.mesh == null:
+			_errors.append("PipelineWarmup terrain missing mesh")
+		else:
+			if terrain_warmup.mesh.get_surface_count() != terrain_material_count:
+				_errors.append("PipelineWarmup terrain surface count expected " + str(terrain_material_count) + ", got " + str(terrain_warmup.mesh.get_surface_count()))
+			_require_surface_materials(terrain_warmup, "PipelineWarmup terrain")
+	var lod0_warmup: MultiMeshInstance3D = _require_node(warmup_root, TerrainVisualBuilderScript.REGION_PIPELINE_WARMUP_FOLIAGE_LOD0_NAME) as MultiMeshInstance3D
+	_require_warmup_multimesh(lod0_warmup, "PipelineWarmup foliage LOD0")
+	var lod1_warmup: MultiMeshInstance3D = _require_node(warmup_root, TerrainVisualBuilderScript.REGION_PIPELINE_WARMUP_FOLIAGE_LOD1_NAME) as MultiMeshInstance3D
+	_require_warmup_multimesh(lod1_warmup, "PipelineWarmup foliage LOD1")
+	var collision_count: int = _count_collision_objects(warmup_root)
+	if collision_count > 0:
+		_errors.append("PipelineWarmup should not contain collision objects: " + str(collision_count))
+
+
+func _require_int_meta(node: Node, meta_name: StringName, label: String) -> int:
+	if not node.has_meta(meta_name):
+		_errors.append(label + " missing metadata: " + String(meta_name))
+		return 0
+	return int(node.get_meta(meta_name))
+
+
+func _require_surface_materials(mesh_instance: MeshInstance3D, label: String) -> void:
+	if mesh_instance.mesh == null:
+		return
+	for surface_index in range(mesh_instance.mesh.get_surface_count()):
+		var material: Material = mesh_instance.mesh.surface_get_material(surface_index)
+		if material == null:
+			_errors.append(label + " surface " + str(surface_index) + " missing material")
+
+
+func _require_warmup_multimesh(multimesh_instance: MultiMeshInstance3D, label: String) -> void:
+	if multimesh_instance == null:
+		_errors.append(label + " should be MultiMeshInstance3D")
+		return
+	if multimesh_instance.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF:
+		_errors.append(label + " should not cast shadows")
+	if multimesh_instance.material_override == null:
+		_errors.append(label + " missing material_override")
+	if multimesh_instance.multimesh == null:
+		_errors.append(label + " missing MultiMesh")
+		return
+	if multimesh_instance.multimesh.instance_count != 1:
+		_errors.append(label + " instance_count expected 1, got " + str(multimesh_instance.multimesh.instance_count))
+	if multimesh_instance.multimesh.mesh == null:
+		_errors.append(label + " missing warmup mesh")
 
 
 func _visibility_radius(node: Node, label: String) -> float:

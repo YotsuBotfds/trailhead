@@ -26,10 +26,16 @@ const REGION_ROOT_NAME: String = "TerrainVisuals"
 const REGION_DETAIL_ROOT_NAME: String = "TerrainDetailTiles"
 const REGION_HLOD_NAME: String = "TerrainHLOD"
 const REGION_FOLIAGE_ROOT_NAME: String = "FoliageCells"
+const REGION_PIPELINE_WARMUP_ROOT_NAME: String = "PipelineWarmup"
+const REGION_PIPELINE_WARMUP_TERRAIN_NAME: String = "TerrainMaterialWarmup"
+const REGION_PIPELINE_WARMUP_FOLIAGE_LOD0_NAME: String = "FoliageLOD0Warmup"
+const REGION_PIPELINE_WARMUP_FOLIAGE_LOD1_NAME: String = "FoliageLOD1Warmup"
 const REGION_MANIFEST_FILE: String = "collision_tiles_manifest.json"
 const REGION_TILE_SIDE_CAR_FILE: String = "tile.json"
 const REGION_TILE_HEIGHTMAP_FILE: String = "heightmap.bin"
 const REGION_TILE_SURFACE_ID_FILE: String = "surface_id.png"
+const PIPELINE_WARMUP_TERRAIN_MATERIAL_COUNT_META: StringName = &"trailhead_pipeline_warmup_terrain_material_count"
+const PIPELINE_WARMUP_FOLIAGE_LOD_COUNT_META: StringName = &"trailhead_pipeline_warmup_foliage_lod_count"
 const HEIGHTMAP_FLOAT_BYTE_SIZE: int = 4
 const REGION_DETAIL_SAMPLE_STEP: int = 1
 const REGION_HLOD_SAMPLE_STEP: int = 5
@@ -46,6 +52,8 @@ const REGION_FOLIAGE_Y_OFFSET: float = 0.035
 const REGION_FOLIAGE_CULL_MARGIN: float = 0.08
 const REGION_FOLIAGE_LOD0_SCALE: Vector3 = Vector3(0.16, 0.42, 0.16)
 const REGION_FOLIAGE_LOD1_SCALE: Vector3 = Vector3(0.42, 0.58, 0.42)
+const REGION_FOLIAGE_LOD0_COLOR: Color = Color(0.24, 0.38, 0.14, 0.92)
+const REGION_FOLIAGE_LOD1_COLOR: Color = Color(0.28, 0.34, 0.16, 0.86)
 const WET_DIFFUSE_MULTIPLIER: float = 0.2
 const WET_ROUGHNESS: float = 0.12
 const WET_CLEARCOAT: float = 0.58
@@ -131,6 +139,7 @@ static func build_region(parent: Node3D, region_id: String) -> Node3D:
 		push_error("TerrainVisualBuilder region has no loadable render tiles: " + region_id)
 		return root
 
+	_add_region_pipeline_warmup(root)
 	var hlod_instance: MeshInstance3D = _add_region_hlod(root, tile_data_list)
 	var detail_root: Node3D = Node3D.new()
 	detail_root.name = REGION_DETAIL_ROOT_NAME
@@ -147,6 +156,7 @@ static func build_region_stream_root(parent: Node3D, region_id: String) -> Node3
 	root.set_meta(REGION_ID_META, region_id)
 	parent.add_child(root)
 
+	_add_region_pipeline_warmup(root)
 	var detail_root: Node3D = Node3D.new()
 	detail_root.name = REGION_DETAIL_ROOT_NAME
 	detail_root.set_meta(REGION_ID_META, region_id)
@@ -190,6 +200,96 @@ static func _foliage_lod1_visibility_range_begin(cell_radius: float) -> float:
 
 static func _foliage_lod1_visibility_range_end(cell_radius: float) -> float:
 	return maxf(GameConfig.cam_far + cell_radius, _foliage_lod1_visibility_range_begin(cell_radius))
+
+
+static func _add_region_pipeline_warmup(parent: Node3D) -> Node3D:
+	var root: Node3D = Node3D.new()
+	root.name = REGION_PIPELINE_WARMUP_ROOT_NAME
+	root.visible = false
+	root.process_mode = Node.PROCESS_MODE_DISABLED
+	parent.add_child(root)
+
+	var terrain_material_count: int = _add_terrain_pipeline_warmup(root)
+	var foliage_lod_count: int = _add_foliage_pipeline_warmup(root)
+	root.set_meta(PIPELINE_WARMUP_TERRAIN_MATERIAL_COUNT_META, terrain_material_count)
+	root.set_meta(PIPELINE_WARMUP_FOLIAGE_LOD_COUNT_META, foliage_lod_count)
+	return root
+
+
+static func _add_terrain_pipeline_warmup(parent: Node3D) -> int:
+	var visual_defs: Array[Resource] = _surface_visual_defs()
+	if visual_defs.is_empty():
+		return 0
+	var mesh: ArrayMesh = ArrayMesh.new()
+	mesh.resource_name = "region_terrain_pipeline_warmup_mesh"
+	var material_count: int = 0
+	for visual_def in visual_defs:
+		var material: StandardMaterial3D = _material_for_visual_def(visual_def)
+		_append_pipeline_warmup_surface(mesh, material, material_count)
+		material_count += 1
+	if material_count <= 0:
+		return 0
+	var instance: MeshInstance3D = MeshInstance3D.new()
+	instance.name = REGION_PIPELINE_WARMUP_TERRAIN_NAME
+	instance.mesh = mesh
+	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	parent.add_child(instance)
+	return material_count
+
+
+static func _add_foliage_pipeline_warmup(parent: Node3D) -> int:
+	var lod0_mesh: Mesh = _region_foliage_mesh("region_foliage_lod0_pipeline_warmup_mesh")
+	var lod0_material: Material = _region_foliage_material("region_foliage_lod0_pipeline_warmup_material", REGION_FOLIAGE_LOD0_COLOR)
+	_add_foliage_pipeline_warmup_instance(parent, REGION_PIPELINE_WARMUP_FOLIAGE_LOD0_NAME, lod0_mesh, lod0_material)
+	var lod1_mesh: Mesh = _region_foliage_mesh("region_foliage_lod1_pipeline_warmup_mesh")
+	var lod1_material: Material = _region_foliage_material("region_foliage_lod1_pipeline_warmup_material", REGION_FOLIAGE_LOD1_COLOR)
+	_add_foliage_pipeline_warmup_instance(parent, REGION_PIPELINE_WARMUP_FOLIAGE_LOD1_NAME, lod1_mesh, lod1_material)
+	return 2
+
+
+static func _add_foliage_pipeline_warmup_instance(parent: Node3D, instance_name: String, mesh: Mesh, material: Material) -> void:
+	var multimesh: MultiMesh = MultiMesh.new()
+	multimesh.transform_format = MultiMesh.TRANSFORM_3D
+	multimesh.use_colors = true
+	multimesh.mesh = mesh
+	multimesh.instance_count = 1
+	multimesh.set_instance_transform(0, Transform3D(Basis.IDENTITY, Vector3.ZERO))
+	multimesh.set_instance_color(0, Color.WHITE)
+
+	var instance: MultiMeshInstance3D = MultiMeshInstance3D.new()
+	instance.name = instance_name
+	instance.multimesh = multimesh
+	instance.material_override = material
+	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	parent.add_child(instance)
+
+
+static func _append_pipeline_warmup_surface(mesh: ArrayMesh, material: Material, surface_index: int) -> void:
+	var x_offset: float = float(surface_index) * 0.02
+	var vertices: PackedVector3Array = PackedVector3Array()
+	vertices.append(Vector3(x_offset, 0.0, 0.0))
+	vertices.append(Vector3(x_offset + 0.01, 0.0, 0.0))
+	vertices.append(Vector3(x_offset, 0.01, 0.0))
+	var normals: PackedVector3Array = PackedVector3Array()
+	normals.append(Vector3.BACK)
+	normals.append(Vector3.BACK)
+	normals.append(Vector3.BACK)
+	var uvs: PackedVector2Array = PackedVector2Array()
+	uvs.append(Vector2.ZERO)
+	uvs.append(Vector2.RIGHT)
+	uvs.append(Vector2.UP)
+	var indices: PackedInt32Array = PackedInt32Array()
+	indices.append(0)
+	indices.append(1)
+	indices.append(2)
+	var arrays: Array = []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = vertices
+	arrays[Mesh.ARRAY_NORMAL] = normals
+	arrays[Mesh.ARRAY_TEX_UV] = uvs
+	arrays[Mesh.ARRAY_INDEX] = indices
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	mesh.surface_set_material(mesh.get_surface_count() - 1, material)
 
 
 static func _add_region_hlod(parent: Node3D, tile_data_list: Array[RegionTileData]) -> MeshInstance3D:
@@ -379,6 +479,19 @@ static func _material_for_surface_value(surface_id_value: int) -> StandardMateri
 	return material
 
 
+static func _surface_visual_defs() -> Array[Resource]:
+	var visual_defs: Array[Resource] = []
+	var visual_defs_value: Variant = SurfaceVisualCatalogResource.get("visual_defs")
+	if not (visual_defs_value is Array):
+		return visual_defs
+	var visual_defs_array: Array = visual_defs_value as Array
+	for item in visual_defs_array:
+		var visual_def: Resource = item as Resource
+		if visual_def != null:
+			visual_defs.append(visual_def)
+	return visual_defs
+
+
 static func _surface_id_for_value(surface_id_value: int) -> StringName:
 	var fallback_surface_id: StringName = SurfaceVisualCatalogResource.get("fallback_surface_id")
 	return StringName(TerrainSurfacePaletteResource.call("surface_id_for", surface_id_value, fallback_surface_id))
@@ -524,8 +637,8 @@ static func _add_region_foliage(parent: Node3D, manifest: Dictionary, tile_data_
 	var tile_data_by_cell: Dictionary[Vector2i, RegionTileData] = _tile_data_by_cell(tile_data_list)
 	var lod0_mesh: Mesh = _region_foliage_mesh("region_foliage_lod0_mesh")
 	var lod1_mesh: Mesh = _region_foliage_mesh("region_foliage_lod1_mesh")
-	var lod0_material: Material = _region_foliage_material("region_foliage_lod0_material", Color(0.24, 0.38, 0.14, 0.92))
-	var lod1_material: Material = _region_foliage_material("region_foliage_lod1_material", Color(0.28, 0.34, 0.16, 0.86))
+	var lod0_material: Material = _region_foliage_material("region_foliage_lod0_material", REGION_FOLIAGE_LOD0_COLOR)
+	var lod1_material: Material = _region_foliage_material("region_foliage_lod1_material", REGION_FOLIAGE_LOD1_COLOR)
 	var cell_count_x: int = int(ceil(bounds.size.x / REGION_FOLIAGE_CELL_SIZE_M))
 	var cell_count_z: int = int(ceil(bounds.size.y / REGION_FOLIAGE_CELL_SIZE_M))
 	for cell_z in range(cell_count_z):
