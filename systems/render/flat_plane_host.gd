@@ -3,6 +3,7 @@ extends Node3D
 
 const VehicleScene: PackedScene = preload("res://scenes/vehicle.tscn")
 const VehicleInputScript: GDScript = preload("res://systems/vehicle/vehicle_input.gd")
+const ChaseCameraMath: GDScript = preload("res://systems/render/chase_camera_math.gd")
 const ProceduralBuggyVisualScript: GDScript = preload("res://systems/render/procedural_buggy_visual.gd")
 const VehicleResidueVisualScript: GDScript = preload("res://systems/render/vehicle_residue_visual.gd")
 const AtmosphereVisualBuilderScript: GDScript = preload("res://systems/render/atmosphere_visual_builder.gd")
@@ -199,8 +200,8 @@ func _update_camera(delta: float) -> void:
 	var state: RefCounted = _vehicle.call("get_state")
 	var vehicle_position: Vector3 = state.get("position")
 	var vehicle_basis: Basis = state.get("basis")
-	var back: Vector3 = vehicle_basis.z.normalized()
-	var forward: Vector3 = -vehicle_basis.z.normalized()
+	var back: Vector3 = ChaseCameraMath.rod_back(vehicle_basis, _chase_back_current)
+	var forward: Vector3 = -back
 	var steer: float = clampf(float(_vehicle_input.get("steer")), -1.0, 1.0)
 	var desired_position: Vector3 = vehicle_position + back * GameConfig.cam_distance + Vector3.UP * GameConfig.cam_height
 	if not _camera_initialized:
@@ -209,7 +210,11 @@ func _update_camera(delta: float) -> void:
 		_chase_look_target_current = _chase_camera_look_target(vehicle_position, vehicle_basis, forward, steer)
 		_camera_initialized = true
 	else:
-		_chase_back_current = _chase_back_current.slerp(back, _chase_camera_follow_alpha(delta, GameConfig.cam_yaw_spring)).normalized()
+		var yaw_alpha: float = _chase_camera_follow_alpha(delta, GameConfig.cam_yaw_spring)
+		if _chase_back_current.dot(back) < -0.999:
+			_chase_back_current = back
+		else:
+			_chase_back_current = _chase_back_current.slerp(back, yaw_alpha).normalized()
 		var smoothed_desired: Vector3 = vehicle_position + _chase_back_current * GameConfig.cam_distance + Vector3.UP * GameConfig.cam_height
 		var follow_alpha_y: float = _chase_camera_follow_alpha(delta, GameConfig.cam_spring_vy)
 		var current_position: Vector3 = _camera.global_position

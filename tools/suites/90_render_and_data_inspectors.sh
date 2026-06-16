@@ -21,3 +21,6 @@ printf 'run: spike 1km render LOD\n'
 
 printf 'run: data resources\n'
 "$godot_bin" --headless --path . res://tools/data_resource_inspector.tscn
+
+printf 'run: chase camera rod (FX-25 horizontal-rod guard)\n'
+"$godot_bin" --headless --path . --script res://tools/chase_camera_rod_fixture.gd
