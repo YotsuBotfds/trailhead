@@ -9,6 +9,7 @@ const VehicleInputScript: GDScript = preload("res://systems/vehicle/vehicle_inpu
 const ChaseCameraRigScript: GDScript = preload("res://systems/render/chase_camera_rig.gd")
 const TerrainVisualBuilderScript: GDScript = preload("res://systems/render/terrain_visual_builder.gd")
 const TerrainVisualStreamerScript: GDScript = preload("res://systems/render/terrain_visual_streamer.gd")
+const WaterVisualBuilderScript: GDScript = preload("res://systems/render/water_visual_builder.gd")
 const AtmosphereVisualBuilderScript: GDScript = preload("res://systems/render/atmosphere_visual_builder.gd")
 const DustTiltShiftVisualBuilderScript: GDScript = preload("res://systems/render/dust_tilt_shift_visual_builder.gd")
 const ProceduralBuggyVisualScript: GDScript = preload("res://systems/render/procedural_buggy_visual.gd")
@@ -30,6 +31,11 @@ const CAMERA_MODE_ORBIT: int = 1
 const CAMERA_MODE_FPV: int = 2
 const MOOD_DUSK: int = 0
 const MOOD_DAWN: int = 1
+const ZION_DUSK_FOG_DENSITY: float = 0.0035
+const ZION_DAWN_FOG_DENSITY: float = 0.0065
+const ZION_FOG_AERIAL_PERSPECTIVE: float = 0.16
+const ZION_FOG_SKY_AFFECT: float = 0.34
+const ZION_VOLUMETRIC_FOG_SKY_AFFECT: float = 0.24
 const ZION_REGION_ID: String = "cedar_hollow_zion"
 const ZION_SPAWN_ID: StringName = &"stream_west"
 const WORLD_REGION_ID_META: StringName = &"trailhead_world_region_id"
@@ -155,6 +161,7 @@ func _setup_world() -> void:
 	_terrain_visual_streamer.name = "TerrainVisualStreamer"
 	_world.add_child(_terrain_visual_streamer)
 	_terrain_visual_streamer.call("configure_region", ZION_REGION_ID)
+	WaterVisualBuilderScript.build_zion_virgin_river(_world)
 
 
 func _setup_terrain_tracks(terrain_root: Node3D) -> void:
@@ -407,22 +414,47 @@ func _apply_mood() -> void:
 	if _world_environment == null or _world_environment.environment == null:
 		return
 	var environment: Environment = _world_environment.environment
-	environment.background_mode = Environment.BG_COLOR
-	environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	var sky: Sky = environment.sky
+	if sky == null or not (sky.sky_material is PhysicalSkyMaterial):
+		sky = Sky.new()
+		sky.sky_material = PhysicalSkyMaterial.new()
+	var sky_material: PhysicalSkyMaterial = sky.sky_material as PhysicalSkyMaterial
+	environment.sky = sky
+	environment.background_mode = Environment.BG_SKY
+	environment.ambient_light_source = Environment.AMBIENT_SOURCE_BG
 	environment.fog_enabled = true
 	if _mood == MOOD_DAWN:
-		environment.background_color = GameConfig.dawn_background_color
-		environment.ambient_light_color = GameConfig.dawn_ambient_color
 		environment.ambient_light_energy = GameConfig.dawn_ambient_energy
 		environment.fog_density = GameConfig.dawn_fog_density
 		environment.fog_light_color = GameConfig.dawn_fog_light_color
 	else:
-		environment.background_color = GameConfig.dusk_background_color
-		environment.ambient_light_color = GameConfig.dusk_ambient_color
 		environment.ambient_light_energy = GameConfig.dusk_ambient_energy
 		environment.fog_density = GameConfig.dusk_fog_density
 		environment.fog_light_color = GameConfig.dusk_fog_light_color
 	AtmosphereVisualBuilderScript.apply_mood(_world_environment, _sun, _mood)
+	_apply_zion_vista_mood(environment, sky_material)
+
+
+func _apply_zion_vista_mood(environment: Environment, sky_material: PhysicalSkyMaterial) -> void:
+	if sky_material == null:
+		return
+	environment.fog_aerial_perspective = ZION_FOG_AERIAL_PERSPECTIVE
+	environment.fog_sky_affect = ZION_FOG_SKY_AFFECT
+	environment.volumetric_fog_sky_affect = ZION_VOLUMETRIC_FOG_SKY_AFFECT
+	if _mood == MOOD_DAWN:
+		environment.fog_density = ZION_DAWN_FOG_DENSITY
+		sky_material.rayleigh_color = Color(0.38, 0.58, 0.72, 1.0)
+		sky_material.mie_color = Color(0.92, 0.82, 0.64, 1.0)
+		sky_material.ground_color = Color(0.46, 0.37, 0.28, 1.0)
+		sky_material.turbidity = 5.2
+		sky_material.energy_multiplier = 1.15
+	else:
+		environment.fog_density = ZION_DUSK_FOG_DENSITY
+		sky_material.rayleigh_color = Color(0.42, 0.50, 0.64, 1.0)
+		sky_material.mie_color = Color(0.98, 0.62, 0.36, 1.0)
+		sky_material.ground_color = Color(0.42, 0.28, 0.18, 1.0)
+		sky_material.turbidity = 4.6
+		sky_material.energy_multiplier = 1.22
 
 
 func _collect_visual_wheels() -> void:

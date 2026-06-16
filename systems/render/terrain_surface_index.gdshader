@@ -24,8 +24,24 @@ uniform vec2 surface_uv_scale_6 = vec2(58.0, 58.0);
 uniform vec2 surface_uv_scale_7 = vec2(42.0, 42.0);
 uniform float terrain_roughness = 0.88;
 uniform float terrain_specular = 0.18;
+uniform vec4 zion_sandstone_color : source_color = vec4(0.82, 0.42, 0.20, 1.0);
+uniform vec4 zion_sand_color : source_color = vec4(0.78, 0.66, 0.47, 1.0);
+uniform vec4 zion_strata_dark_color : source_color = vec4(0.42, 0.18, 0.10, 1.0);
+uniform float zion_sandstone_slope_start = 0.18;
+uniform float zion_sandstone_slope_end = 0.56;
+uniform float zion_sand_height_start = 1193.2;
+uniform float zion_sand_height_end = 1198.8;
+uniform float zion_strata_scale = 0.46;
+uniform float zion_strata_strength = 0.38;
+uniform float zion_detile_strength = 0.14;
 
 varying vec2 world_xz;
+varying float world_y;
+varying float local_normal_y;
+
+float hash21(vec2 value) {
+	return fract(sin(dot(value, vec2(127.1, 311.7))) * 43758.5453123);
+}
 
 vec4 surface_color_for_id(float surface_id_value) {
 	if (surface_id_value < 0.5) {
@@ -84,7 +100,10 @@ vec2 surface_uv_scale_for_id(float surface_id_value) {
 }
 
 void vertex() {
-	world_xz = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xz;
+	vec4 world_position = MODEL_MATRIX * vec4(VERTEX, 1.0);
+	world_xz = world_position.xz;
+	world_y = world_position.y;
+	local_normal_y = abs(normalize(NORMAL).y);
 }
 
 void fragment() {
@@ -99,6 +118,20 @@ void fragment() {
 	} else {
 		ALBEDO = surface_color.rgb;
 	}
+	float slope_mask = 1.0 - clamp(local_normal_y, 0.0, 1.0);
+	float sandstone_mask = smoothstep(zion_sandstone_slope_start, zion_sandstone_slope_end, slope_mask);
+	float high_wall_mask = smoothstep(zion_sand_height_start + 4.0, zion_sand_height_end + 18.0, world_y);
+	float low_flat_mask = (1.0 - sandstone_mask) * (1.0 - smoothstep(zion_sand_height_start, zion_sand_height_end, world_y));
+	float cliff_mask = max(sandstone_mask, high_wall_mask * 0.58);
+	float strata_wave = sin(world_y * zion_strata_scale + hash21(floor(world_xz * 0.08)) * 6.283185);
+	float strata_mask = smoothstep(0.64, 0.92, strata_wave) * cliff_mask;
+	float detile = hash21(floor(world_xz * 0.055)) * 2.0 - 1.0;
+	vec3 zion_albedo = ALBEDO;
+	zion_albedo = mix(zion_albedo, zion_sand_color.rgb, low_flat_mask * 0.68);
+	zion_albedo = mix(zion_albedo, zion_sandstone_color.rgb, cliff_mask * 0.74);
+	zion_albedo = mix(zion_albedo, zion_strata_dark_color.rgb, strata_mask * zion_strata_strength);
+	zion_albedo *= 1.0 + detile * zion_detile_strength;
+	ALBEDO = clamp(zion_albedo, vec3(0.0), vec3(1.0));
 	ROUGHNESS = terrain_roughness;
 	SPECULAR = terrain_specular;
 }

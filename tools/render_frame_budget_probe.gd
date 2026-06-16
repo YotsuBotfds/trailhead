@@ -8,6 +8,13 @@ const DEFAULT_REGION_ID: String = "spike_1km"
 const WINDOW_SIZE: Vector2i = Vector2i(1280, 720)
 const CAMERA_POSITION: Vector3 = Vector3(508.0, 4.0, 208.0)
 const CAMERA_TARGET: Vector3 = Vector3(540.0, 1.0, 245.0)
+const SPIKE_INITIAL_MIN_CELL: Vector2i = Vector2i(2, 2)
+const SPIKE_INITIAL_MAX_CELL: Vector2i = Vector2i(6, 6)
+const ZION_REGION_ID: String = "cedar_hollow_zion"
+const ZION_CAMERA_POSITION: Vector3 = Vector3(1148.0, 1201.0, 790.0)
+const ZION_CAMERA_TARGET: Vector3 = Vector3(1255.0, 1200.0, 835.0)
+const ZION_INITIAL_MIN_CELL: Vector2i = Vector2i(9, 6)
+const ZION_INITIAL_MAX_CELL: Vector2i = Vector2i(13, 10)
 const BASELINE_FRAMES: int = 12
 const BURST_FRAMES: int = 24
 const STEADY_FRAMES: int = 36
@@ -19,6 +26,10 @@ const SAMPLE_LABEL_CANVAS: String = "canvas"
 
 var _out_path: String = DEFAULT_OUT_PATH
 var _region_id: String = DEFAULT_REGION_ID
+var _camera_position: Vector3 = CAMERA_POSITION
+var _camera_target: Vector3 = CAMERA_TARGET
+var _initial_min_cell: Vector2i = SPIKE_INITIAL_MIN_CELL
+var _initial_max_cell: Vector2i = SPIKE_INITIAL_MAX_CELL
 var _streamer: Node3D = null
 var _result: Dictionary[String, Variant] = {}
 var _errors: PackedStringArray = PackedStringArray()
@@ -27,6 +38,7 @@ var _errors: PackedStringArray = PackedStringArray()
 func _ready() -> void:
 	RenderRuntimeConfigScript.apply_to(self)
 	_parse_args()
+	_apply_region_defaults()
 	if DisplayServer.get_name() != "headless":
 		DisplayServer.window_set_size(WINDOW_SIZE)
 	_setup_render_shell()
@@ -47,13 +59,24 @@ func _parse_args() -> void:
 			_region_id = text.trim_prefix("--region=")
 
 
+func _apply_region_defaults() -> void:
+	if _region_id != ZION_REGION_ID:
+		return
+	if _out_path == DEFAULT_OUT_PATH:
+		_out_path = "res://tests/out/render_frame_budget/zion_streamed.json"
+	_camera_position = ZION_CAMERA_POSITION
+	_camera_target = ZION_CAMERA_TARGET
+	_initial_min_cell = ZION_INITIAL_MIN_CELL
+	_initial_max_cell = ZION_INITIAL_MAX_CELL
+
+
 func _setup_render_shell() -> void:
 	var camera: Camera3D = Camera3D.new()
 	camera.name = "FrameBudgetCamera"
 	camera.current = true
 	camera.fov = GameConfig.cam_fov_base
 	camera.far = maxf(GameConfig.orbit_cam_far, 500.0)
-	camera.look_at_from_position(CAMERA_POSITION, CAMERA_TARGET, Vector3.UP)
+	camera.look_at_from_position(_camera_position, _camera_target, Vector3.UP)
 	add_child(camera)
 
 	var sun: DirectionalLight3D = DirectionalLight3D.new()
@@ -107,23 +130,23 @@ func _run() -> void:
 		},
 		"window_size": [WINDOW_SIZE.x, WINDOW_SIZE.y],
 		"camera": {
-			"position": _vector3_to_array(CAMERA_POSITION),
-			"target": _vector3_to_array(CAMERA_TARGET),
+			"position": _vector3_to_array(_camera_position),
+			"target": _vector3_to_array(_camera_target),
 		},
 		"phases": [],
 	}
 
 	await _sample_phase("baseline_empty_streamer", BASELINE_FRAMES, 0.0, 0.0, {}, {})
 
-	var initial_cells: Array[Vector2i] = _rect_cells(Vector2i(2, 2), Vector2i(6, 6))
+	var initial_cells: Array[Vector2i] = _rect_cells(_initial_min_cell, _initial_max_cell)
 	var initial_prefetch_ms: float = _emit_prefetches(initial_cells)
 	var initial_prefetch_wait: Dictionary = await _wait_for_ready_visual_cell_count("initial_25_tile_prefetch", 25)
 	var initial_activation_ms: float = _emit_activations(initial_cells)
 	var initial_ready_wait: Dictionary = await _wait_for_visual_cell_count("initial_25_tile_burst", 25)
 	await _sample_phase("initial_25_tile_burst", BURST_FRAMES, initial_activation_ms, initial_prefetch_ms, initial_ready_wait, initial_prefetch_wait)
 
-	var shifted_out_cells: Array[Vector2i] = _rect_cells(Vector2i(2, 2), Vector2i(2, 6))
-	var shifted_in_cells: Array[Vector2i] = _rect_cells(Vector2i(7, 2), Vector2i(7, 6))
+	var shifted_out_cells: Array[Vector2i] = _rect_cells(_initial_min_cell, Vector2i(_initial_min_cell.x, _initial_max_cell.y))
+	var shifted_in_cells: Array[Vector2i] = _rect_cells(Vector2i(_initial_max_cell.x + 1, _initial_min_cell.y), Vector2i(_initial_max_cell.x + 1, _initial_max_cell.y))
 	var shift_prefetch_ms: float = _emit_prefetches(shifted_in_cells)
 	var shift_prefetch_wait: Dictionary = await _wait_for_ready_visual_cell_count("east_shift_5_tile_prefetch", 5)
 	var shift_activation_ms: float = _emit_shift(shifted_out_cells, shifted_in_cells)

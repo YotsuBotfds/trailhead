@@ -7,6 +7,7 @@ const CedarSurfaceVisualCatalog: Resource = preload("res://data/surface_visuals/
 const VehicleStateScript: GDScript = preload("res://systems/vehicle/vehicle_state.gd")
 const SurfaceMapScript: GDScript = preload("res://systems/world/surface_map.gd")
 const TerrainVisualBuilderScript: GDScript = preload("res://systems/render/terrain_visual_builder.gd")
+const CedarHollowHostScript: GDScript = preload("res://systems/render/cedar_hollow_host.gd")
 const FeatureVisualBuilderScript: GDScript = preload("res://systems/render/feature_visual_builder.gd")
 const ScatterVisualBuilderScript: GDScript = preload("res://systems/render/scatter_visual_builder.gd")
 const GroundDetailVisualBuilderScript: GDScript = preload("res://systems/render/ground_detail_visual_builder.gd")
@@ -1328,7 +1329,7 @@ func _inspect_default_environment(world_environment: WorldEnvironment) -> void:
 		GameConfig.dusk_background_color,
 		GameConfig.dusk_ambient_color,
 		GameConfig.dusk_ambient_energy,
-		GameConfig.dusk_fog_density,
+		CedarHollowHostScript.ZION_DUSK_FOG_DENSITY,
 		GameConfig.dusk_fog_light_color
 	)
 
@@ -2258,7 +2259,7 @@ func _require_dawn_mood(world_environment: WorldEnvironment, sun: DirectionalLig
 		GameConfig.dawn_background_color,
 		GameConfig.dawn_ambient_color,
 		GameConfig.dawn_ambient_energy,
-		GameConfig.dawn_fog_density,
+		CedarHollowHostScript.ZION_DAWN_FOG_DENSITY,
 		GameConfig.dawn_fog_light_color
 	)
 	if sun.light_color != GameConfig.dawn_sun_color:
@@ -2268,16 +2269,16 @@ func _require_dawn_mood(world_environment: WorldEnvironment, sun: DirectionalLig
 
 
 func _require_environment_mood(environment: Environment, mood_name: String, background_color: Color, ambient_color: Color, ambient_energy: float, fog_density: float, fog_light_color: Color) -> void:
-	if environment.background_mode != Environment.BG_COLOR:
-		_errors.append("GoldenHourEnvironment " + mood_name + " should use color background mode")
-	if environment.ambient_light_source != Environment.AMBIENT_SOURCE_COLOR:
-		_errors.append("GoldenHourEnvironment " + mood_name + " should use color ambient source")
+	if environment.background_mode != Environment.BG_SKY:
+		_errors.append("GoldenHourEnvironment " + mood_name + " should use sky background mode")
+	if environment.ambient_light_source != Environment.AMBIENT_SOURCE_BG:
+		_errors.append("GoldenHourEnvironment " + mood_name + " should use sky ambient source")
+	if environment.sky == null:
+		_errors.append("GoldenHourEnvironment " + mood_name + " should assign Sky")
+	elif not (environment.sky.sky_material is PhysicalSkyMaterial):
+		_errors.append("GoldenHourEnvironment " + mood_name + " should use PhysicalSkyMaterial")
 	if not environment.fog_enabled:
 		_errors.append("GoldenHourEnvironment " + mood_name + " should enable fog")
-	if environment.background_color != background_color:
-		_errors.append("GoldenHourEnvironment " + mood_name + " background color mismatch")
-	if environment.ambient_light_color != ambient_color:
-		_errors.append("GoldenHourEnvironment " + mood_name + " ambient color mismatch")
 	if absf(environment.ambient_light_energy - ambient_energy) > FLOAT_EPSILON:
 		_errors.append("GoldenHourEnvironment " + mood_name + " ambient energy expected " + str(ambient_energy) + ", got " + str(environment.ambient_light_energy))
 	if absf(environment.fog_density - fog_density) > FLOAT_EPSILON:

@@ -16,6 +16,15 @@ static func build_cedar_hollow(parent: Node3D) -> Node3D:
 	return root
 
 
+static func build_zion_virgin_river(parent: Node3D) -> Node3D:
+	var root: Node3D = Node3D.new()
+	root.name = ROOT_NAME
+	parent.add_child(root)
+	_add_water_plane(root, "virgin_river_west", Vector3(1164.0, 1194.25, 835.0), Vector2(72.0, 5.6), 0.0)
+	_add_water_plane(root, "virgin_river_east", Vector3(1236.0, 1194.65, 834.0), Vector2(72.0, 5.4), 1.5)
+	return root
+
+
 static func _add_water_plane(parent: Node3D, node_name: String, position: Vector3, size: Vector2, yaw_degrees: float) -> MeshInstance3D:
 	var mesh: PlaneMesh = PlaneMesh.new()
 	mesh.size = size

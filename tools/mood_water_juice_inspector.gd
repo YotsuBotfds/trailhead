@@ -10,6 +10,7 @@ const TILT_SHIFT_LAYER_NAME: String = "TiltShiftLayer"
 const TILT_SHIFT_RECT_NAME: String = "TiltShiftOverlay"
 const TILT_SHIFT_LAYER_INDEX: int = 2
 const WATER_SURFACE_COUNT: int = 3
+const ZION_WATER_SURFACE_COUNT: int = 2
 const DUST_MOTE_COUNT_FLOOR: int = 1
 const CONTACT_FILL_LIGHT_NAME: String = "VehicleContactFillLight"
 const SOFT_SHADOW_FILTER_QUALITY_SETTING_PATH: String = "rendering/lights_and_shadows/directional_shadow/soft_shadow_filter_quality"
@@ -144,11 +145,9 @@ func _inspect_mood_toggle(world_environment: WorldEnvironment) -> void:
 	if world_environment == null or world_environment.environment == null:
 		return
 	var environment: Environment = world_environment.environment
-	if environment.background_color != GameConfig.dusk_background_color:
-		_errors.append("dusk mood background should remain GameConfig-driven")
+	_require_physical_sky_environment(environment, "dusk")
 	_scene_root.call("toggle_mood")
-	if environment.background_color != GameConfig.dawn_background_color:
-		_errors.append("dawn mood background should remain GameConfig-driven after toggle")
+	_require_physical_sky_environment(environment, "dawn")
 	if environment.fog_light_color != GameConfig.dawn_fog_light_color:
 		_errors.append("dawn mood fog light color should remain GameConfig-driven")
 	if environment.fog_height_density <= 0.0:
@@ -156,8 +155,18 @@ func _inspect_mood_toggle(world_environment: WorldEnvironment) -> void:
 	if not environment.volumetric_fog_enabled:
 		_errors.append("dawn mood should keep volumetric fog")
 	_scene_root.call("toggle_mood")
-	if environment.background_color != GameConfig.dusk_background_color:
-		_errors.append("dusk mood background should restore after second toggle")
+	_require_physical_sky_environment(environment, "dusk restore")
+
+
+func _require_physical_sky_environment(environment: Environment, label: String) -> void:
+	if environment.background_mode != Environment.BG_SKY:
+		_errors.append(label + " mood should use sky background mode")
+	if environment.ambient_light_source != Environment.AMBIENT_SOURCE_BG:
+		_errors.append(label + " mood should use sky ambient source")
+	if environment.sky == null:
+		_errors.append(label + " mood should assign a Sky resource")
+	elif not (environment.sky.sky_material is PhysicalSkyMaterial):
+		_errors.append(label + " mood should use PhysicalSkyMaterial")
 
 
 func _inspect_dust_and_tilt_shift() -> void:
@@ -332,8 +341,6 @@ func _require_surface_burst(parent: Node, path: String) -> void:
 func _inspect_water_visuals() -> void:
 	var water_root: Node = _scene_root.get_node_or_null("CedarHollow/WaterVisuals")
 	if water_root == null:
-		if _is_streamed_zion_host():
-			return
 		_errors.append("missing node CedarHollow/WaterVisuals")
 		return
 	var water_count: int = 0
@@ -343,6 +350,12 @@ func _inspect_water_visuals() -> void:
 			continue
 		water_count += 1
 		_inspect_water_surface(water)
+	if _is_streamed_zion_host():
+		if water_count != ZION_WATER_SURFACE_COUNT:
+			_errors.append("Zion WaterVisuals expected " + str(ZION_WATER_SURFACE_COUNT) + " water surfaces, got " + str(water_count))
+		_require_node(water_root, "virgin_river_west")
+		_require_node(water_root, "virgin_river_east")
+		return
 	if water_count != WATER_SURFACE_COUNT:
 		_errors.append("WaterVisuals expected " + str(WATER_SURFACE_COUNT) + " water surfaces, got " + str(water_count))
 	_require_node(water_root, "bog_pool_water")

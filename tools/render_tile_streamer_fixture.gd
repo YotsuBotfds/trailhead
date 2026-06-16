@@ -299,6 +299,9 @@ func _require_visual_tile(cell: Vector2i) -> MeshInstance3D:
 			var albedo_array: Texture2DArray = material.get_shader_parameter(TerrainVisualBuilderScript.ALBEDO_ARRAY_UNIFORM) as Texture2DArray
 			if albedo_array == null:
 				_errors.append("streamed visual cell material missing albedo Texture2DArray: " + String(mesh_instance.name))
+			_require_shader_color(material, TerrainVisualBuilderScript.ZION_SANDSTONE_COLOR_UNIFORM, "streamed visual cell material", String(mesh_instance.name))
+			_require_shader_color(material, TerrainVisualBuilderScript.ZION_SAND_COLOR_UNIFORM, "streamed visual cell material", String(mesh_instance.name))
+			_require_shader_float(material, TerrainVisualBuilderScript.ZION_STRATA_STRENGTH_UNIFORM, "streamed visual cell material", String(mesh_instance.name))
 	var collision_count: int = _count_collision_objects(mesh_instance)
 	if collision_count > 0:
 		_errors.append("streamed visual cell should not create collision objects: " + String(mesh_instance.name))
@@ -326,6 +329,8 @@ func _require_foliage_tile(cell: Vector2i) -> Node3D:
 		var material: Material = multimesh_instance.material_override
 		if material == null:
 			_errors.append("foliage child missing material_override: " + String(child.name))
+		elif not _is_grass_shader_material(material):
+			_errors.append("foliage child should use grass_billboard ShaderMaterial: " + String(child.name))
 		elif materials_by_lod.has(region_lod) and materials_by_lod[region_lod] != material:
 			_errors.append("foliage children should share material_override for " + region_lod)
 		elif not materials_by_lod.has(region_lod):
@@ -334,6 +339,8 @@ func _require_foliage_tile(cell: Vector2i) -> Node3D:
 			_errors.append("foliage child missing visibility radius metadata: " + String(child.name))
 		if multimesh_instance.multimesh == null:
 			_errors.append("foliage child missing MultiMesh: " + String(child.name))
+		elif not multimesh_instance.multimesh.use_custom_data:
+			_errors.append("foliage child should enable MultiMesh custom data for wind: " + String(child.name))
 		elif multimesh_instance.multimesh.custom_aabb.size == Vector3.ZERO:
 			_errors.append("foliage child missing custom_aabb: " + String(child.name))
 		elif multimesh_instance.multimesh.mesh == null:
@@ -345,6 +352,25 @@ func _require_foliage_tile(cell: Vector2i) -> Node3D:
 	if multimesh_count <= 0:
 		_errors.append("foliage cell should contain MultiMeshInstance3D children: " + str(cell))
 	return foliage_tile
+
+
+func _is_grass_shader_material(material: Material) -> bool:
+	var shader_material: ShaderMaterial = material as ShaderMaterial
+	if shader_material == null or shader_material.shader == null:
+		return false
+	return shader_material.shader.resource_path == "res://systems/render/grass_billboard.gdshader"
+
+
+func _require_shader_color(material: ShaderMaterial, parameter_name: StringName, label: String, node_name: String) -> void:
+	var value: Variant = material.get_shader_parameter(parameter_name)
+	if not (value is Color):
+		_errors.append(label + " " + node_name + " missing Color shader parameter " + String(parameter_name))
+
+
+func _require_shader_float(material: ShaderMaterial, parameter_name: StringName, label: String, node_name: String) -> void:
+	var value: Variant = material.get_shader_parameter(parameter_name)
+	if not (value is float):
+		_errors.append(label + " " + node_name + " missing float shader parameter " + String(parameter_name))
 
 
 func _require_no_visual_cell(cell: Vector2i) -> void:

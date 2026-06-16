@@ -6,6 +6,7 @@ const TerrainSurfacePaletteResource: Resource = preload("res://data/surface_pale
 const SurfaceVisualCatalogResource: Resource = preload("res://data/surface_visuals/cedar_hollow_surface_visuals.tres")
 const TerrainTrackOverlayShader: Shader = preload("res://systems/render/terrain_track_overlay.gdshader")
 const TerrainSurfaceIndexShader: Shader = preload("res://systems/render/terrain_surface_index.gdshader")
+const GrassShader: Shader = preload("res://systems/render/grass_billboard.gdshader")
 const DETAIL_MASK_TEXTURE_PATH: String = "res://assets/textures/surface_visuals/generated/terrain_detail_mask.png"
 const GENERATED_SURFACE_TEXTURE_DIR: String = "res://assets/textures/surface_visuals/generated/"
 const TEXTURE_SOURCE_PATH_META: StringName = &"trailhead_source_path"
@@ -80,6 +81,16 @@ const TERRAIN_ROUGHNESS_UNIFORM: StringName = &"terrain_roughness"
 const TERRAIN_SPECULAR_UNIFORM: StringName = &"terrain_specular"
 const ALBEDO_ARRAY_UNIFORM: StringName = &"albedo_array"
 const USE_ALBEDO_ARRAY_UNIFORM: StringName = &"use_albedo_array"
+const ZION_SANDSTONE_COLOR_UNIFORM: StringName = &"zion_sandstone_color"
+const ZION_SAND_COLOR_UNIFORM: StringName = &"zion_sand_color"
+const ZION_STRATA_DARK_COLOR_UNIFORM: StringName = &"zion_strata_dark_color"
+const ZION_SANDSTONE_SLOPE_START_UNIFORM: StringName = &"zion_sandstone_slope_start"
+const ZION_SANDSTONE_SLOPE_END_UNIFORM: StringName = &"zion_sandstone_slope_end"
+const ZION_SAND_HEIGHT_START_UNIFORM: StringName = &"zion_sand_height_start"
+const ZION_SAND_HEIGHT_END_UNIFORM: StringName = &"zion_sand_height_end"
+const ZION_STRATA_SCALE_UNIFORM: StringName = &"zion_strata_scale"
+const ZION_STRATA_STRENGTH_UNIFORM: StringName = &"zion_strata_strength"
+const ZION_DETILE_STRENGTH_UNIFORM: StringName = &"zion_detile_strength"
 const SURFACE_UV_SCALE_UNIFORM_PREFIX: String = "surface_uv_scale_"
 
 
@@ -144,6 +155,7 @@ class FoliageCellData:
 	var cast_shadow: int = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var transforms: Array[Transform3D] = []
 	var colors: Array[Color] = []
+	var custom_data: Array[Color] = []
 
 
 class RegionFoliageTileData:
@@ -414,10 +426,12 @@ static func _add_foliage_pipeline_warmup_instance(parent: Node3D, instance_name:
 	var multimesh: MultiMesh = MultiMesh.new()
 	multimesh.transform_format = MultiMesh.TRANSFORM_3D
 	multimesh.use_colors = true
+	multimesh.use_custom_data = true
 	multimesh.mesh = mesh
 	multimesh.instance_count = 1
 	multimesh.set_instance_transform(0, Transform3D(Basis.IDENTITY, Vector3.ZERO))
 	multimesh.set_instance_color(0, Color.WHITE)
+	multimesh.set_instance_custom_data(0, Color(0.8, 0.25, 0.65, 0.4))
 
 	var instance: MultiMeshInstance3D = MultiMeshInstance3D.new()
 	instance.name = instance_name
@@ -788,6 +802,7 @@ static func _surface_index_material(surface_data: MeshSurfaceData) -> ShaderMate
 	material.set_shader_parameter(CONTROL_SIZE_XZ_UNIFORM, surface_data.control_size_xz)
 	material.set_shader_parameter(TERRAIN_ROUGHNESS_UNIFORM, _average_default_surface_roughness())
 	material.set_shader_parameter(TERRAIN_SPECULAR_UNIFORM, 0.18)
+	_apply_zion_surface_index_tuning(material)
 	_apply_surface_index_palette(material)
 	return material
 
@@ -810,6 +825,19 @@ static func _apply_surface_index_palette(material: ShaderMaterial) -> void:
 			var texture_uv_scale: Vector2 = visual_def.get("texture_uv_scale")
 			material.set_shader_parameter(StringName(SURFACE_UV_SCALE_UNIFORM_PREFIX + str(id_value)), texture_uv_scale)
 		material.set_shader_parameter(StringName("surface_color_" + str(id_value)), color)
+
+
+static func _apply_zion_surface_index_tuning(material: ShaderMaterial) -> void:
+	material.set_shader_parameter(ZION_SANDSTONE_COLOR_UNIFORM, Color(0.82, 0.42, 0.20, 1.0))
+	material.set_shader_parameter(ZION_SAND_COLOR_UNIFORM, Color(0.86, 0.74, 0.54, 1.0))
+	material.set_shader_parameter(ZION_STRATA_DARK_COLOR_UNIFORM, Color(0.36, 0.14, 0.08, 1.0))
+	material.set_shader_parameter(ZION_SANDSTONE_SLOPE_START_UNIFORM, 0.08)
+	material.set_shader_parameter(ZION_SANDSTONE_SLOPE_END_UNIFORM, 0.38)
+	material.set_shader_parameter(ZION_SAND_HEIGHT_START_UNIFORM, 1193.0)
+	material.set_shader_parameter(ZION_SAND_HEIGHT_END_UNIFORM, 1202.0)
+	material.set_shader_parameter(ZION_STRATA_SCALE_UNIFORM, 0.58)
+	material.set_shader_parameter(ZION_STRATA_STRENGTH_UNIFORM, 0.48)
+	material.set_shader_parameter(ZION_DETILE_STRENGTH_UNIFORM, 0.18)
 
 
 static func _surface_index_albedo_array() -> Texture2DArray:
@@ -1096,6 +1124,7 @@ static func _build_region_foliage_cell_data(tile_data_by_cell: Dictionary[Vector
 		return null
 	var transforms: Array[Transform3D] = []
 	var colors: Array[Color] = []
+	var custom_data: Array[Color] = []
 	var max_attempts: int = maxi(base_count * 3, base_count)
 	for attempt in range(max_attempts):
 		if transforms.size() >= base_count:
@@ -1122,6 +1151,11 @@ static func _build_region_foliage_cell_data(tile_data_by_cell: Dictionary[Vector
 		transforms.append(Transform3D(basis, Vector3(world_x, height + REGION_FOLIAGE_Y_OFFSET, world_z)))
 		var color_warmth: float = _region_foliage_unit(foliage_cell, lod_index, attempt, 7)
 		colors.append(Color(0.84 + color_warmth * 0.22, 0.92 + color_warmth * 0.14, 0.72 + color_warmth * 0.12, 1.0))
+		var wind_weight: float = 0.45 + _region_foliage_unit(foliage_cell, lod_index, attempt, 8) * 0.55
+		var wind_phase: float = _region_foliage_unit(foliage_cell, lod_index, attempt, 9)
+		var wind_flutter: float = _region_foliage_unit(foliage_cell, lod_index, attempt, 10)
+		var tip_shift: float = _region_foliage_unit(foliage_cell, lod_index, attempt, 11)
+		custom_data.append(Color(wind_weight, wind_phase, wind_flutter, tip_shift))
 
 	if transforms.is_empty():
 		return null
@@ -1139,6 +1173,7 @@ static func _build_region_foliage_cell_data(tile_data_by_cell: Dictionary[Vector
 	cell_data.visibility_radius = foliage_cell_radius
 	cell_data.transforms = transforms
 	cell_data.colors = colors
+	cell_data.custom_data = custom_data
 	if lod_index == 0:
 		cell_data.visibility_range_end = _foliage_lod0_visibility_range_end(foliage_cell_radius)
 		cell_data.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
@@ -1173,12 +1208,14 @@ static func _add_foliage_cell_from_data(parent: Node3D, cell_data: FoliageCellDa
 	var multimesh: MultiMesh = MultiMesh.new()
 	multimesh.transform_format = MultiMesh.TRANSFORM_3D
 	multimesh.use_colors = true
+	multimesh.use_custom_data = true
 	multimesh.mesh = mesh
 	multimesh.custom_aabb = cell_data.custom_aabb
 	multimesh.instance_count = cell_data.transforms.size()
 	for i in range(cell_data.transforms.size()):
 		multimesh.set_instance_transform(i, cell_data.transforms[i])
 		multimesh.set_instance_color(i, cell_data.colors[i])
+		multimesh.set_instance_custom_data(i, cell_data.custom_data[i])
 	instance.multimesh = multimesh
 	parent.add_child(instance)
 
@@ -1259,13 +1296,18 @@ static func _region_foliage_mesh(mesh_name: String) -> ArrayMesh:
 	return mesh
 
 
-static func _region_foliage_material(material_name: String, color: Color) -> StandardMaterial3D:
-	var material: StandardMaterial3D = StandardMaterial3D.new()
+static func _region_foliage_material(material_name: String, color: Color) -> ShaderMaterial:
+	var material: ShaderMaterial = ShaderMaterial.new()
 	material.resource_name = material_name
-	material.albedo_color = color
-	material.roughness = 0.88
-	material.cull_mode = BaseMaterial3D.CULL_DISABLED
-	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_HASH
+	material.shader = GrassShader
+	material.set_shader_parameter("blade_base_color", Color(color.r * 0.72, color.g * 0.72, color.b * 0.70, color.a))
+	material.set_shader_parameter("blade_tip_color", Color(minf(color.r * 1.28, 1.0), minf(color.g * 1.22, 1.0), minf(color.b * 1.16, 1.0), color.a))
+	material.set_shader_parameter("blade_height_reference", REGION_FOLIAGE_LOD1_SCALE.y)
+	material.set_shader_parameter("wind_strength", 0.035)
+	material.set_shader_parameter("wind_speed", 0.75)
+	material.set_shader_parameter("wind_time_factor", 0.018)
+	material.set_shader_parameter("backlight_color", Color(0.95, 0.74, 0.42, 1.0))
+	material.set_shader_parameter("backlight_energy", 0.20)
 	return material
 
 

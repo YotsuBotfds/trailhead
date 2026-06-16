@@ -200,6 +200,12 @@ func _require_surface_materials(mesh_instance: MeshInstance3D, label: String) ->
 		var material: Material = mesh_instance.mesh.surface_get_material(surface_index)
 		if material == null:
 			_errors.append(label + " surface " + str(surface_index) + " missing material")
+			continue
+		var shader_material: ShaderMaterial = material as ShaderMaterial
+		if shader_material != null and shader_material.resource_name == TerrainVisualBuilderScript.TERRAIN_INDEX_MATERIAL_NAME:
+			_require_shader_color(shader_material, TerrainVisualBuilderScript.ZION_SANDSTONE_COLOR_UNIFORM, label)
+			_require_shader_color(shader_material, TerrainVisualBuilderScript.ZION_SAND_COLOR_UNIFORM, label)
+			_require_shader_float(shader_material, TerrainVisualBuilderScript.ZION_STRATA_STRENGTH_UNIFORM, label)
 
 
 func _require_warmup_multimesh(multimesh_instance: MultiMeshInstance3D, label: String) -> void:
@@ -210,13 +216,36 @@ func _require_warmup_multimesh(multimesh_instance: MultiMeshInstance3D, label: S
 		_errors.append(label + " should not cast shadows")
 	if multimesh_instance.material_override == null:
 		_errors.append(label + " missing material_override")
+	elif not _is_grass_shader_material(multimesh_instance.material_override):
+		_errors.append(label + " should use grass_billboard ShaderMaterial")
 	if multimesh_instance.multimesh == null:
 		_errors.append(label + " missing MultiMesh")
 		return
+	if not multimesh_instance.multimesh.use_custom_data:
+		_errors.append(label + " should enable MultiMesh custom data for wind")
 	if multimesh_instance.multimesh.instance_count != 1:
 		_errors.append(label + " instance_count expected 1, got " + str(multimesh_instance.multimesh.instance_count))
 	if multimesh_instance.multimesh.mesh == null:
 		_errors.append(label + " missing warmup mesh")
+
+
+func _is_grass_shader_material(material: Material) -> bool:
+	var shader_material: ShaderMaterial = material as ShaderMaterial
+	if shader_material == null or shader_material.shader == null:
+		return false
+	return shader_material.shader.resource_path == "res://systems/render/grass_billboard.gdshader"
+
+
+func _require_shader_color(material: ShaderMaterial, parameter_name: StringName, label: String) -> void:
+	var value: Variant = material.get_shader_parameter(parameter_name)
+	if not (value is Color):
+		_errors.append(label + " missing Color shader parameter " + String(parameter_name))
+
+
+func _require_shader_float(material: ShaderMaterial, parameter_name: StringName, label: String) -> void:
+	var value: Variant = material.get_shader_parameter(parameter_name)
+	if not (value is float):
+		_errors.append(label + " missing float shader parameter " + String(parameter_name))
 
 
 func _visibility_radius(node: Node, label: String) -> float:

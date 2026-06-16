@@ -2,7 +2,9 @@ extends Node
 
 const CedarHollowPlayableScene: PackedScene = preload("res://scenes/cedar_hollow_playable.tscn")
 const TerrainVisualBuilderScript: GDScript = preload("res://systems/render/terrain_visual_builder.gd")
+const WaterVisualBuilderScript: GDScript = preload("res://systems/render/water_visual_builder.gd")
 const SurfaceMapScript: GDScript = preload("res://systems/world/surface_map.gd")
+const WATER_SHADER_PATH: String = "res://systems/render/water_visual.gdshader"
 const ZION_REGION_ID: String = "cedar_hollow_zion"
 const WORLD_REGION_ID_META: StringName = &"trailhead_world_region_id"
 const SPAWN_POSITION: Vector3 = Vector3(1150.0, 1197.56, 800.0)
@@ -19,7 +21,6 @@ const STRIP_ONLY_ROOTS: Array[String] = [
 	"PropVisuals",
 	"ScatterVisuals",
 	"BoundaryVisuals",
-	"WaterVisuals",
 ]
 
 var _scene_root: Node = null
@@ -41,6 +42,7 @@ func _inspect() -> void:
 	if world != null:
 		_require_world_region(world)
 		_require_no_strip_only_roots(world)
+		_require_zion_water_visuals(world)
 	var streamer: Node = _require_node(_scene_root, "CedarHollow/TerrainVisualStreamer")
 	var visual_root: Node = _require_node(_scene_root, "CedarHollow/TerrainVisualStreamer/" + TerrainVisualBuilderScript.REGION_ROOT_NAME)
 	if visual_root != null:
@@ -71,6 +73,27 @@ func _require_no_strip_only_roots(world: Node) -> void:
 			_errors.append("Zion playable should not build strip-only root: " + root_name)
 	if world.get_node_or_null("cedar_hollow_heightmap_collision") != null:
 		_errors.append("Zion playable should not instantiate Cedar strip collision")
+
+
+func _require_zion_water_visuals(world: Node) -> void:
+	var water_root: Node = _require_node(world, WaterVisualBuilderScript.ROOT_NAME)
+	if water_root == null:
+		return
+	_require_node(water_root, "virgin_river_west")
+	_require_node(water_root, "virgin_river_east")
+	for child in water_root.get_children():
+		var water: MeshInstance3D = child as MeshInstance3D
+		if water == null:
+			continue
+		if not water.is_in_group(WaterVisualBuilderScript.WATER_SURFACE_GROUP):
+			_errors.append(String(water.name) + " should be in " + WaterVisualBuilderScript.WATER_SURFACE_GROUP)
+		if _count_collision_objects(water) > 0:
+			_errors.append(String(water.name) + " should be render-only and collision-free")
+		var material: ShaderMaterial = water.material_override as ShaderMaterial
+		if material == null or material.shader == null:
+			_errors.append(String(water.name) + " should use water ShaderMaterial")
+		elif material.shader.resource_path != WATER_SHADER_PATH:
+			_errors.append(String(water.name) + " shader expected " + WATER_SHADER_PATH + ", got " + material.shader.resource_path)
 
 
 func _require_stream_roots(visual_root: Node) -> void:
