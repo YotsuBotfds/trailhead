@@ -20,7 +20,7 @@ detail_albedo_texture_path = "res://assets/textures/surface_visuals/generated/te
 detail_normal_texture_path = "res://assets/textures/surface_visuals/generated/terrain_detail_normal.png"
 texture_uv_scale = Vector2(72.0, 72.0)
 detail_uv_scale = Vector2(224.0, 224.0)
-triplanar = true
+triplanar = false
 normal_scale = 1.85
 
 [sub_resource type="Resource" id="SurfaceVisualDef_paved_road"]
@@ -40,7 +40,7 @@ detail_albedo_texture_path = "res://assets/textures/surface_visuals/generated/te
 detail_normal_texture_path = "res://assets/textures/surface_visuals/generated/terrain_detail_normal.png"
 texture_uv_scale = Vector2(92.0, 92.0)
 detail_uv_scale = Vector2(224.0, 224.0)
-triplanar = true
+triplanar = false
 normal_scale = 1.15
 
 [sub_resource type="Resource" id="SurfaceVisualDef_packed_dirt"]
@@ -60,7 +60,7 @@ detail_albedo_texture_path = "res://assets/textures/surface_visuals/generated/te
 detail_normal_texture_path = "res://assets/textures/surface_visuals/generated/terrain_detail_normal.png"
 texture_uv_scale = Vector2(68.0, 68.0)
 detail_uv_scale = Vector2(216.0, 216.0)
-triplanar = true
+triplanar = false
 normal_scale = 1.9
 
 [sub_resource type="Resource" id="SurfaceVisualDef_pine_floor_dirt"]
@@ -80,7 +80,7 @@ detail_albedo_texture_path = "res://assets/textures/surface_visuals/generated/te
 detail_normal_texture_path = "res://assets/textures/surface_visuals/generated/terrain_detail_normal.png"
 texture_uv_scale = Vector2(74.0, 74.0)
 detail_uv_scale = Vector2(232.0, 232.0)
-triplanar = true
+triplanar = false
 normal_scale = 1.75
 
 [sub_resource type="Resource" id="SurfaceVisualDef_sand_wash"]
@@ -100,7 +100,7 @@ detail_albedo_texture_path = "res://assets/textures/surface_visuals/generated/te
 detail_normal_texture_path = "res://assets/textures/surface_visuals/generated/terrain_detail_normal.png"
 texture_uv_scale = Vector2(70.0, 70.0)
 detail_uv_scale = Vector2(224.0, 224.0)
-triplanar = true
+triplanar = false
 normal_scale = 1.55
 
 [sub_resource type="Resource" id="SurfaceVisualDef_tall_grass"]
@@ -120,7 +120,7 @@ detail_albedo_texture_path = "res://assets/textures/surface_visuals/generated/te
 detail_normal_texture_path = "res://assets/textures/surface_visuals/generated/terrain_detail_normal.png"
 texture_uv_scale = Vector2(64.0, 64.0)
 detail_uv_scale = Vector2(216.0, 216.0)
-triplanar = true
+triplanar = false
 normal_scale = 1.65
 
 [sub_resource type="Resource" id="SurfaceVisualDef_mud"]
@@ -140,7 +140,7 @@ detail_albedo_texture_path = "res://assets/textures/surface_visuals/generated/te
 detail_normal_texture_path = "res://assets/textures/surface_visuals/generated/terrain_detail_normal.png"
 texture_uv_scale = Vector2(62.0, 62.0)
 detail_uv_scale = Vector2(208.0, 208.0)
-triplanar = true
+triplanar = false
 normal_scale = 2.15
 
 [sub_resource type="Resource" id="SurfaceVisualDef_dried_mud"]
@@ -160,7 +160,7 @@ detail_albedo_texture_path = "res://assets/textures/surface_visuals/generated/te
 detail_normal_texture_path = "res://assets/textures/surface_visuals/generated/terrain_detail_normal.png"
 texture_uv_scale = Vector2(66.0, 66.0)
 detail_uv_scale = Vector2(212.0, 212.0)
-triplanar = true
+triplanar = false
 normal_scale = 1.9
 
 [sub_resource type="Resource" id="SurfaceVisualDef_loose_rock"]
@@ -261,7 +261,7 @@ detail_albedo_texture_path = "res://assets/textures/surface_visuals/generated/te
 detail_normal_texture_path = "res://assets/textures/surface_visuals/generated/terrain_detail_normal.png"
 texture_uv_scale = Vector2(42.0, 42.0)
 detail_uv_scale = Vector2(160.0, 160.0)
-triplanar = true
+triplanar = false
 normal_scale = 1.55
 
 [resource]

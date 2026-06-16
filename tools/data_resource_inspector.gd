@@ -20,6 +20,23 @@ const WET_DEFAULT_SURFACE_IDS: Array[StringName] = [
 	&"mud",
 	&"wet_stone"
 ]
+const TRIPLANAR_FALSE_VISUAL_IDS: Array[StringName] = [
+	&"packed_gravel_default",
+	&"paved_road_default",
+	&"packed_dirt_default",
+	&"pine_floor_dirt",
+	&"sand_wash_default",
+	&"tall_grass_default",
+	&"mud_default",
+	&"dried_mud",
+	&"wood_plank_default"
+]
+const TRIPLANAR_TRUE_VISUAL_IDS: Array[StringName] = [
+	&"loose_rock_default",
+	&"wet_stone_default",
+	&"slickrock_dry_default",
+	&"mossy_wet_stone"
+]
 const EXPECTED_G2_LANDMARK_IDS: Array[StringName] = [
 	&"ridge_gate",
 	&"pine_floor",
@@ -113,6 +130,7 @@ func _inspect_surface_visual_texture_paths() -> void:
 		var detail_uv_scale: Vector2 = visual_def.get("detail_uv_scale")
 		var wetness: float = float(visual_def.get("wetness"))
 		var normal_scale: float = float(visual_def.get("normal_scale"))
+		var triplanar: bool = bool(visual_def.get("triplanar"))
 		if albedo_texture_path.is_empty():
 			_errors.append("SurfaceVisualDef " + String(visual_id) + " should have an albedo texture path")
 		if normal_texture_path.is_empty():
@@ -121,8 +139,14 @@ func _inspect_surface_visual_texture_paths() -> void:
 			_errors.append("SurfaceVisualDef " + String(visual_id) + " should have a detail albedo texture path")
 		if detail_normal_texture_path.is_empty():
 			_errors.append("SurfaceVisualDef " + String(visual_id) + " should have a detail normal texture path")
-		if not bool(visual_def.get("triplanar")):
-			_errors.append("SurfaceVisualDef " + String(visual_id) + " should enable triplanar terrain mapping")
+		var expects_triplanar_false: bool = TRIPLANAR_FALSE_VISUAL_IDS.has(visual_id)
+		var expects_triplanar_true: bool = TRIPLANAR_TRUE_VISUAL_IDS.has(visual_id)
+		if expects_triplanar_false and triplanar:
+			_errors.append("SurfaceVisualDef " + String(visual_id) + " should disable triplanar terrain mapping for flat ground")
+		if expects_triplanar_true and not triplanar:
+			_errors.append("SurfaceVisualDef " + String(visual_id) + " should enable triplanar terrain mapping for rock/stone")
+		if not expects_triplanar_false and not expects_triplanar_true:
+			_errors.append("SurfaceVisualDef " + String(visual_id) + " should declare a triplanar optimization class")
 		if detail_uv_scale.x <= texture_uv_scale.x or detail_uv_scale.y <= texture_uv_scale.y:
 			_errors.append("SurfaceVisualDef " + String(visual_id) + " detail_uv_scale should be finer than texture_uv_scale")
 		if normal_scale < 1.0:
