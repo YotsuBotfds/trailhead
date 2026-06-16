@@ -35,10 +35,14 @@ func _inspect() -> void:
 	_require_cells("first activation cells", [FIRST_CELL])
 	var first_tile: MeshInstance3D = _require_visual_tile(FIRST_CELL)
 	var first_surface_count: int = 0
+	var first_vertex_count: int = 0
+	var first_index_count: int = 0
 	var first_bounds: AABB = AABB()
 	var first_materials_by_name: Dictionary[String, StandardMaterial3D] = {}
 	if first_tile != null and first_tile.mesh != null:
 		first_surface_count = first_tile.mesh.get_surface_count()
+		first_vertex_count = _mesh_vertex_count(first_tile.mesh)
+		first_index_count = _mesh_index_count(first_tile.mesh)
 		first_bounds = first_tile.mesh.get_aabb()
 		first_materials_by_name = _surface_materials_by_name(first_tile)
 
@@ -64,7 +68,7 @@ func _inspect() -> void:
 	_require_cell_count("reactivation", 2)
 	_require_cells("reactivation cells", [FIRST_CELL, SECOND_CELL])
 	var rebuilt_tile: MeshInstance3D = _require_visual_tile(FIRST_CELL)
-	_require_rebuilt_tile(first_surface_count, first_bounds, rebuilt_tile)
+	_require_rebuilt_tile(first_surface_count, first_vertex_count, first_index_count, first_bounds, rebuilt_tile)
 	_require_cached_materials_reused(first_materials_by_name, rebuilt_tile)
 
 	_streamer.call("reset_stream")
@@ -203,16 +207,40 @@ func _require_no_visual_cell(cell: Vector2i) -> void:
 		_errors.append("visual cell should have been evicted: " + str(cell))
 
 
-func _require_rebuilt_tile(expected_surface_count: int, expected_bounds: AABB, tile: MeshInstance3D) -> void:
+func _require_rebuilt_tile(expected_surface_count: int, expected_vertex_count: int, expected_index_count: int, expected_bounds: AABB, tile: MeshInstance3D) -> void:
 	if tile == null or tile.mesh == null:
 		return
 	if tile.mesh.get_surface_count() != expected_surface_count:
 		_errors.append("rebuilt tile surface count expected " + str(expected_surface_count) + ", got " + str(tile.mesh.get_surface_count()))
+	var rebuilt_vertex_count: int = _mesh_vertex_count(tile.mesh)
+	if rebuilt_vertex_count != expected_vertex_count:
+		_errors.append("rebuilt tile vertex count expected " + str(expected_vertex_count) + ", got " + str(rebuilt_vertex_count))
+	var rebuilt_index_count: int = _mesh_index_count(tile.mesh)
+	if rebuilt_index_count != expected_index_count:
+		_errors.append("rebuilt tile index count expected " + str(expected_index_count) + ", got " + str(rebuilt_index_count))
 	var rebuilt_bounds: AABB = tile.mesh.get_aabb()
 	if rebuilt_bounds.position.distance_to(expected_bounds.position) > FLOAT_EPSILON:
 		_errors.append("rebuilt tile bounds position drifted")
 	if rebuilt_bounds.size.distance_to(expected_bounds.size) > FLOAT_EPSILON:
 		_errors.append("rebuilt tile bounds size drifted")
+
+
+func _mesh_vertex_count(mesh: Mesh) -> int:
+	var count: int = 0
+	for surface_index in range(mesh.get_surface_count()):
+		var arrays: Array = mesh.surface_get_arrays(surface_index)
+		var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array
+		count += vertices.size()
+	return count
+
+
+func _mesh_index_count(mesh: Mesh) -> int:
+	var count: int = 0
+	for surface_index in range(mesh.get_surface_count()):
+		var arrays: Array = mesh.surface_get_arrays(surface_index)
+		var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX] as PackedInt32Array
+		count += indices.size()
+	return count
 
 
 func _require_cached_materials_reused(expected_materials_by_name: Dictionary[String, StandardMaterial3D], tile: MeshInstance3D) -> void:

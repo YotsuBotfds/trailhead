@@ -39,6 +39,8 @@ const PIPELINE_WARMUP_FOLIAGE_LOD_COUNT_META: StringName = &"trailhead_pipeline_
 const HEIGHTMAP_FLOAT_BYTE_SIZE: int = 4
 const REGION_DETAIL_SAMPLE_STEP: int = 1
 const REGION_HLOD_SAMPLE_STEP: int = 5
+const REGION_VERTEX_KEY_CELL_OFFSET: int = 32768
+const REGION_VERTEX_KEY_CELL_STRIDE: int = 65536
 const REGION_FOLIAGE_CELL_SIZE_M: float = 32.0
 const REGION_FOLIAGE_LOD0_BASE_COUNT: int = 8
 const REGION_FOLIAGE_LOD1_BASE_COUNT: int = 3
@@ -83,7 +85,7 @@ class MeshBucket:
 	var normals: PackedVector3Array = PackedVector3Array()
 	var uvs: PackedVector2Array = PackedVector2Array()
 	var indices: PackedInt32Array = PackedInt32Array()
-	var vertex_indices: Dictionary[String, int] = {}
+	var vertex_indices: Dictionary[int, int] = {}
 
 
 func _ready() -> void:
@@ -387,7 +389,7 @@ static func _bucket_for_surface_value(buckets: Dictionary[int, MeshBucket], surf
 
 
 static func _bucket_vertex(bucket: MeshBucket, tile_data: RegionTileData, col: int, row: int, local_origin_xz: Vector2) -> int:
-	var key: String = _tile_key(tile_data.cell) + ":" + str(row) + ":" + str(col)
+	var key: int = _tile_vertex_key(tile_data, col, row)
 	if bucket.vertex_indices.has(key):
 		return int(bucket.vertex_indices[key])
 	var vertex_index: int = bucket.vertices.size()
@@ -397,6 +399,13 @@ static func _bucket_vertex(bucket: MeshBucket, tile_data: RegionTileData, col: i
 	bucket.normals.append(_tile_normal(tile_data, col, row))
 	bucket.uvs.append(_tile_world_xz(tile_data, col, row))
 	return vertex_index
+
+
+static func _tile_vertex_key(tile_data: RegionTileData, col: int, row: int) -> int:
+	var local_key: int = row * tile_data.width + col
+	var cell_x_key: int = tile_data.cell.x + REGION_VERTEX_KEY_CELL_OFFSET
+	var cell_y_key: int = tile_data.cell.y + REGION_VERTEX_KEY_CELL_OFFSET
+	return ((cell_x_key * REGION_VERTEX_KEY_CELL_STRIDE + cell_y_key) * tile_data.width * tile_data.depth) + local_key
 
 
 static func _tile_vertex(tile_data: RegionTileData, col: int, row: int, local_origin_xz: Vector2) -> Vector3:
