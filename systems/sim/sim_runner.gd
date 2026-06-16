@@ -135,6 +135,8 @@ var _fixture_spawn_freeze_pending: bool = false
 var _fixture_has_expected_activation_ticks: bool = false
 var _fixture_expected_activation_ticks: Dictionary[String, int] = {}
 var _activation_ticks: Dictionary[String, int] = {}
+var _state_export_ticks: Array[int] = []
+var _state_exports: Dictionary[String, Dictionary] = {}
 var _streaming_enabled: bool = false
 var _streaming_route_key: String = ""
 var _streaming_region_id: String = ""
@@ -148,6 +150,8 @@ func _ready() -> void:
 	_scenario_id = String(_args.get("scenario", ""))
 	_scene_id = String(_args.get("scene", "flat_plane"))
 	_streaming_route_key = String(_args.get("stream-route", ""))
+	if not _configure_state_exports():
+		return
 	if _streaming_route_key != "":
 		if not _configure_streaming_route(_streaming_route_key):
 			return
@@ -286,6 +290,29 @@ func _parse_args(raw: PackedStringArray) -> Dictionary[String, Variant]:
 				out[key] = "true"
 		i += 1
 	return out
+
+
+func _configure_state_exports() -> bool:
+	_state_export_ticks.clear()
+	_state_exports.clear()
+	var raw_ticks: String = String(_args.get("export-state-ticks", ""))
+	if raw_ticks == "":
+		return true
+	var values: PackedStringArray = raw_ticks.split(",", false)
+	for value in values:
+		var tick_text: String = String(value).strip_edges()
+		if tick_text == "":
+			continue
+		if not tick_text.is_valid_int():
+			_finish_runner_error("export-state-ticks contains a non-integer tick: " + tick_text)
+			return false
+		var tick: int = int(tick_text)
+		if tick < 0:
+			_finish_runner_error("export-state-ticks contains a negative tick: " + tick_text)
+			return false
+		if not _state_export_ticks.has(tick):
+			_state_export_ticks.append(tick)
+	return true
 
 
 func _configure_route_smoke(route_key: String) -> bool:
@@ -1279,6 +1306,8 @@ func _record(state: RefCounted, input: RefCounted) -> void:
 		}
 	}
 	_telemetry.append(row)
+	if _state_export_ticks.has(_tick):
+		_state_exports[str(_tick)] = _state_export_from_values(_tick, state_position, state_basis, state_velocity, state_angular_velocity)
 	_record_contamination_metrics(vehicle_contamination)
 	if bool(input.get("self_right")):
 		_self_right_input_count += 1
@@ -1562,6 +1591,7 @@ func _finish(passed: bool) -> void:
 		},
 		"telemetry": _telemetry
 	}
+	_append_optional_state_exports(result)
 	if not _write_json(path, result):
 		return
 	_reset_streamer()
@@ -1662,6 +1692,32 @@ func _write_json(path: String, result: Dictionary) -> bool:
 
 func _vec3_to_array(v: Vector3) -> Array[float]:
 	return [v.x, v.y, v.z]
+
+
+func _basis_to_array(basis: Basis) -> Array[Variant]:
+	return [
+		_vec3_to_array(basis.x),
+		_vec3_to_array(basis.y),
+		_vec3_to_array(basis.z)
+	]
+
+
+func _state_export_from_values(tick: int, position: Vector3, basis: Basis, linear_velocity: Vector3, angular_velocity: Vector3) -> Dictionary:
+	return {
+		"tick": tick,
+		"transform": {
+			"basis": _basis_to_array(basis),
+			"origin": _vec3_to_array(position)
+		},
+		"linear_velocity": _vec3_to_array(linear_velocity),
+		"angular_velocity": _vec3_to_array(angular_velocity)
+	}
+
+
+func _append_optional_state_exports(result: Dictionary) -> void:
+	if _state_exports.is_empty():
+		return
+	result["state_exports"] = _state_exports
 
 
 func _requires_target() -> bool:
