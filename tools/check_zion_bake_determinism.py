@@ -49,6 +49,9 @@ PROVENANCE_HASHES: dict[str, str] = {
     "data/surfaces/loose_rock.tres": (
         "bf6bf48674ad4242631c65cc1bdc12ceec14df2c763f75eae82dcebeabee1731"
     ),
+    "data/surfaces/sand_wash.tres": (
+        "a1bfe27d9873965849efe6a0d65500820bc5dd2471feec25de59c10a4518edfa"
+    ),
     "data/surfaces/tall_grass.tres": (
         "b43b60328b9e147346d50731bcdc3a3cc82a6013fd5fb3bfc467ce931ede87b2"
     ),

@@ -9,6 +9,7 @@ const EXPECTED_SURFACE_IDS: Array[StringName] = [
 	&"mud",
 	&"packed_dirt",
 	&"packed_gravel",
+	&"sand_wash",
 	&"tall_grass",
 	&"wet_stone",
 	&"wood_plank"
