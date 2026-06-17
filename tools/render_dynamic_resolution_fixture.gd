@@ -2,7 +2,7 @@ extends Node
 
 const RenderDynamicResolutionControllerScript: GDScript = preload("res://systems/render/render_dynamic_resolution_controller.gd")
 const FLOAT_EPSILON: float = 0.001
-const INITIAL_SCALE: float = 0.71
+const INITIAL_SCALE: float = 0.93
 const OVER_BUDGET_FRAME_MS: float = 24.0
 const UNDER_BUDGET_FRAME_MS: float = 8.0
 
