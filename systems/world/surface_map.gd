@@ -92,6 +92,9 @@ func surface_id_from_collider_at(collider: Object, world_position: Vector3) -> S
 			return surface_id_at_world_position(terrain_position, DEFAULT_SURFACE_ID)
 		_increment_source_count(SOURCE_FALLBACK)
 		return DEFAULT_SURFACE_ID
+	if _terrain_sampler_ready:
+		_increment_source_count(SOURCE_TERRAIN)
+		return surface_id_at_world_position(world_position, DEFAULT_SURFACE_ID)
 	_increment_source_count(SOURCE_FALLBACK)
 	return DEFAULT_SURFACE_ID
 

@@ -11,7 +11,10 @@ assert_metrics "$out_dir/spike_1km_streamed_west_gate_to_east_gate.json" \
 	--predicate=reached_target \
 	--predicate=target_landmark_event_observed \
 	--landmark=east_gate \
+	--surface=loose_rock:1100 \
 	--surface=packed_dirt:120 \
+	--metric-min=surface_source_terrain_count:1 \
+	--metric-max=surface_source_fallback_count:0 \
 	--metric-min=activation_tick_count:25 \
 	--metric-max=max_flipped_ticks:0
 
@@ -28,6 +31,8 @@ assert_metrics "$out_dir/cedar_hollow_zion_streamed_corridor.json" \
 	--predicate=reached_target \
 	--predicate=target_landmark_event_observed \
 	--landmark=stream_east \
-	--surface=packed_dirt:120 \
+	--surface=paved_road:1200 \
+	--metric-min=surface_source_terrain_count:1 \
+	--metric-max=surface_source_fallback_count:0 \
 	--metric-min=activation_tick_count:25 \
 	--metric-max=max_flipped_ticks:0
