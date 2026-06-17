@@ -31,6 +31,7 @@ var _errors: PackedStringArray = PackedStringArray()
 var _capture_paths_written: PackedStringArray = PackedStringArray()
 var _capture_names_written: Array[String] = []
 var _capture_camera: Camera3D = null
+var _capture_camera_active: bool = false
 
 
 func _ready() -> void:
@@ -91,22 +92,22 @@ func _run() -> void:
 	_set_camera_mode(CAMERA_MODE_CHASE)
 	await _wait_for_streaming()
 	await _wait_for_render()
-	_capture_checked("zion_stream_west_dusk_chase")
+	await _capture_checked("zion_stream_west_dusk_chase")
 	_use_scenic_capture_camera(180.0, 42.0, 14.0, Vector3(0.0, -2.0, 38.0))
-	await _wait_for_render()
-	_capture_checked("zion_stream_west_dusk_orbit")
+	await _capture_checked("zion_stream_west_dusk_orbit")
 	_reset_vehicle(Vector3(1200.0, 1197.79, 800.0), -90.0)
 	_disable_capture_camera()
 	_set_camera_mode(CAMERA_MODE_CHASE)
 	await _wait_for_streaming()
 	await _wait_for_render()
-	_capture_checked("zion_seam_dusk_chase")
+	await _capture_checked("zion_seam_dusk_chase")
 	_reset_vehicle(Vector3(1250.0, 1198.71, 850.0), -90.0)
+	_disable_capture_camera()
 	_set_mood(MOOD_DAWN)
-	_use_scenic_capture_camera(0.0, 48.0, 16.0, Vector3(0.0, -2.0, -38.0))
 	await _wait_for_streaming()
 	await _wait_for_render()
-	_capture_checked("zion_stream_east_dawn_orbit")
+	_use_scenic_capture_camera(0.0, 48.0, 16.0, Vector3(0.0, -2.0, -38.0))
+	await _capture_checked("zion_stream_east_dawn_orbit")
 	_verify_capture_set()
 	await _finish()
 
@@ -165,29 +166,35 @@ func _use_scenic_capture_camera(yaw_degrees: float, distance: float, height: flo
 	if vehicle == null:
 		_errors.append("Zion visual capture host is missing Vehicle")
 		return
-	var camera: Camera3D = _host.get_node_or_null("ChaseCamera") as Camera3D
-	if camera == null:
-		_errors.append("Zion visual capture host is missing ChaseCamera")
+	if _capture_camera == null:
+		_errors.append("Zion visual capture host is missing " + CAPTURE_CAMERA_NAME)
 		return
 	var state: RefCounted = vehicle.call("get_state")
 	var vehicle_position: Vector3 = state.get("position")
 	var yaw_radians: float = deg_to_rad(yaw_degrees)
 	var target: Vector3 = vehicle_position + target_offset
 	var offset: Vector3 = Vector3(sin(yaw_radians), 0.0, cos(yaw_radians)) * distance
-	_set_host_cameras_current(false)
-	if _capture_camera != null:
-		_capture_camera.current = false
-	camera.global_position = target + offset + Vector3.UP * height
-	camera.look_at(target, Vector3.UP)
-	camera.fov = CAPTURE_CAMERA_FOV
-	camera.far = GameConfig.cam_far
-	camera.current = true
-	camera.make_current()
+	_capture_camera.global_position = target + offset + Vector3.UP * height
+	_capture_camera.look_at(target, Vector3.UP)
+	_capture_camera.fov = CAPTURE_CAMERA_FOV
+	_capture_camera.far = GameConfig.cam_far
+	_capture_camera_active = true
+	_activate_capture_camera()
 
 
 func _disable_capture_camera() -> void:
+	_capture_camera_active = false
 	if _capture_camera != null:
 		_capture_camera.current = false
+
+
+func _activate_capture_camera() -> void:
+	if _capture_camera == null:
+		_errors.append("Zion visual capture host is missing " + CAPTURE_CAMERA_NAME)
+		return
+	_set_host_cameras_current(false)
+	_capture_camera.current = true
+	_capture_camera.make_current()
 
 
 func _set_host_cameras_current(is_current: bool) -> void:
@@ -208,8 +215,22 @@ func _set_mood(mood: int) -> void:
 
 
 func _capture_checked(capture_name: String) -> void:
+	await _flush_current_camera_frame(capture_name)
 	_require_visible_streamed_terrain(capture_name)
 	_capture(capture_name)
+
+
+func _flush_current_camera_frame(capture_name: String) -> void:
+	await get_tree().process_frame
+	var camera: Camera3D = _current_camera()
+	if camera == null:
+		_errors.append(capture_name + " has no current camera to flush")
+		return
+	if _capture_camera_active:
+		_activate_capture_camera()
+	else:
+		camera.make_current()
+	await RenderingServer.frame_post_draw
 
 
 func _capture(capture_name: String) -> void:
@@ -265,6 +286,8 @@ func _require_visible_streamed_terrain(capture_name: String) -> void:
 
 
 func _current_camera() -> Camera3D:
+	if _capture_camera_active:
+		return _capture_camera
 	if _capture_camera != null and _capture_camera.current:
 		return _capture_camera
 	if _host == null:
@@ -321,6 +344,24 @@ func _verify_capture_set() -> void:
 		if not EXPECTED_CAPTURE_NAMES.has(capture_name):
 			_errors.append("unexpected Zion visual capture PNG in output dir: " + absolute_dir.path_join(file_name))
 	dir.list_dir_end()
+	_verify_capture_hashes_distinct()
+
+
+func _verify_capture_hashes_distinct() -> void:
+	var capture_names_by_md5: Dictionary[String, String] = {}
+	for capture_name in EXPECTED_CAPTURE_NAMES:
+		var path: String = _capture_file_path(capture_name)
+		if not FileAccess.file_exists(path):
+			continue
+		var md5: String = FileAccess.get_md5(path)
+		if md5.is_empty():
+			_errors.append("failed to hash Zion visual capture PNG: " + path)
+			continue
+		if capture_names_by_md5.has(md5):
+			var first_capture_name: String = capture_names_by_md5[md5]
+			_errors.append("Zion visual captures must be byte-distinct, but " + first_capture_name + ".png and " + capture_name + ".png share MD5 " + md5)
+			continue
+		capture_names_by_md5[md5] = capture_name
 
 
 func _absolute_out_dir() -> String:
