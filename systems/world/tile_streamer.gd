@@ -17,6 +17,7 @@ var _has_last_sampled_world_position: bool = false
 var _streaming_enabled: bool = false
 var _current_cell: Vector2i = Vector2i.ZERO
 var _stream_generation: int = 0
+var _stream_tick: int = 0
 var _worker_count: int = DEFAULT_WORKER_COUNT
 var _forced_unready_ticks_by_cell: Dictionary[Vector2i, int] = {}
 
@@ -24,6 +25,7 @@ var _ready_flags: Dictionary[Vector2i, bool] = {}
 var _heightmap_data_by_cell: Dictionary[Vector2i, Dictionary] = {}
 var _active_shapes_by_cell: Dictionary[Vector2i, HeightMapShape3D] = {}
 var _active_bodies_by_cell: Dictionary[Vector2i, RID] = {}
+var _activated_ticks_by_cell: Dictionary[Vector2i, int] = {}
 var _load_failures_by_cell: Dictionary[Vector2i, String] = {}
 var _queued_builds: Dictionary[Vector2i, bool] = {}
 var _cancelled_builds: Dictionary[Vector2i, bool] = {}
@@ -82,6 +84,30 @@ func is_collision_ready_at(world_position: Vector3) -> bool:
 	return _active_bodies_by_cell.has(_cell_for_world_position(world_position))
 
 
+func is_collision_settled_at(world_position: Vector3) -> bool:
+	var cell: Vector2i = _cell_for_world_position(world_position)
+	if not _active_bodies_by_cell.has(cell):
+		return false
+	if not _activated_ticks_by_cell.has(cell):
+		return false
+	return _stream_tick > _activated_ticks_by_cell[cell]
+
+
+func collision_activation_tick_at(world_position: Vector3) -> int:
+	var cell: Vector2i = _cell_for_world_position(world_position)
+	if not _activated_ticks_by_cell.has(cell):
+		return -1
+	return _activated_ticks_by_cell[cell]
+
+
+func current_stream_tick() -> int:
+	return _stream_tick
+
+
+func region_id() -> String:
+	return _region_id
+
+
 func force_collision_unready_for_tests(cells: Array[Vector2i], delay_ticks: int) -> void:
 	var sorted_cells: Array[Vector2i] = _copy_cells(cells)
 	_sort_cells(sorted_cells)
@@ -99,6 +125,7 @@ func reset() -> void:
 	_stop_workers()
 	_streaming_enabled = false
 	_stream_generation += 1
+	_stream_tick = 0
 	_region_id = ""
 	_followed_node = null
 	_use_fixed_world_position = false
@@ -110,6 +137,7 @@ func reset() -> void:
 	_ready_flags.clear()
 	_heightmap_data_by_cell.clear()
 	_active_shapes_by_cell.clear()
+	_activated_ticks_by_cell.clear()
 	_load_failures_by_cell.clear()
 	_queued_builds.clear()
 	_cancelled_builds.clear()
@@ -165,6 +193,7 @@ func _physics_process(_delta: float) -> void:
 		return
 	if _region_id.is_empty():
 		return
+	_stream_tick += 1
 
 	var sampled_world_position: Vector3 = _sample_world_position()
 	_current_cell = _cell_for_world_position(sampled_world_position)
@@ -197,6 +226,7 @@ func _process_unloads(cells: Array[Vector2i]) -> void:
 			PhysicsServer3D.free_rid(body_rid)
 		_active_bodies_by_cell.erase(cell)
 		_active_shapes_by_cell.erase(cell)
+		_activated_ticks_by_cell.erase(cell)
 		_ready_flags.erase(cell)
 		_heightmap_data_by_cell.erase(cell)
 		_cancel_build(cell)
@@ -236,6 +266,7 @@ func _activate_cell(cell: Vector2i) -> void:
 	PhysicsServer3D.body_set_space(body_rid, _physics_space())
 	_active_bodies_by_cell[cell] = body_rid
 	_active_shapes_by_cell[cell] = shape
+	_activated_ticks_by_cell[cell] = _stream_tick
 	EventBus.world_tile_activated.emit(cell)
 
 
@@ -540,6 +571,7 @@ func _unload_all_active_bodies() -> void:
 			PhysicsServer3D.free_rid(body_rid)
 	_active_bodies_by_cell.clear()
 	_active_shapes_by_cell.clear()
+	_activated_ticks_by_cell.clear()
 
 
 func _sample_current_cell() -> Vector2i:
@@ -616,6 +648,7 @@ func _deactivate_cell_for_tests(cell: Vector2i) -> void:
 		PhysicsServer3D.free_rid(body_rid)
 	_active_bodies_by_cell.erase(cell)
 	_active_shapes_by_cell.erase(cell)
+	_activated_ticks_by_cell.erase(cell)
 
 
 func _cell_for_world_position(world_position: Vector3) -> Vector2i:

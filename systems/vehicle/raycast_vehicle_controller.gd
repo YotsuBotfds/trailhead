@@ -4,6 +4,8 @@ extends "res://systems/vehicle/vehicle_controller.gd"
 const RaycastVehicleInputScript: GDScript = preload("res://systems/vehicle/vehicle_input.gd")
 const RaycastVehicleStateScript: GDScript = preload("res://systems/vehicle/vehicle_state.gd")
 const VehicleContaminationStateScript: GDScript = preload("res://systems/vehicle/vehicle_contamination_state.gd")
+const TerrainBuilderScript: GDScript = preload("res://systems/world/terrain_builder.gd")
+const SPIKE_TERRAIN_DEF_PATH: String = "res://data/terrain/spike_1km_terrain_def.tres"
 
 var _body: RigidBody3D = null
 var _wheel_rays: Array[RayCast3D] = []
@@ -27,6 +29,13 @@ var _tile_streamer: Node = null
 var _streaming_collision_freeze_active: bool = false
 var _streaming_collision_hold_transform: Transform3D = Transform3D.IDENTITY
 var _streaming_collision_freeze_ticks: int = 0
+var _streaming_collision_release_count: int = 0
+var _streaming_collision_release_same_tick_as_activation_count: int = 0
+var _streaming_collision_release_min_activation_lag_ticks: int = 2147483647
+var _streaming_collision_release_max_downward_speed_mps: float = 0.0
+var _streaming_collision_last_release_stream_tick: int = -1
+var _streaming_collision_last_release_activation_tick: int = -1
+var _streaming_collision_snap_count: int = 0
 
 
 func _ready() -> void:
@@ -55,6 +64,36 @@ func streaming_collision_freeze_ticks() -> int:
 
 func is_streaming_collision_frozen() -> bool:
 	return _streaming_collision_freeze_active
+
+
+func streaming_collision_release_count() -> int:
+	return _streaming_collision_release_count
+
+
+func streaming_collision_release_same_tick_as_activation_count() -> int:
+	return _streaming_collision_release_same_tick_as_activation_count
+
+
+func streaming_collision_release_min_activation_lag_ticks() -> int:
+	if _streaming_collision_release_min_activation_lag_ticks == 2147483647:
+		return 0
+	return _streaming_collision_release_min_activation_lag_ticks
+
+
+func streaming_collision_release_max_downward_speed_mps() -> float:
+	return _streaming_collision_release_max_downward_speed_mps
+
+
+func streaming_collision_last_release_stream_tick() -> int:
+	return _streaming_collision_last_release_stream_tick
+
+
+func streaming_collision_last_release_activation_tick() -> int:
+	return _streaming_collision_last_release_activation_tick
+
+
+func streaming_collision_snap_count() -> int:
+	return _streaming_collision_snap_count
 
 
 func reset_to(spawn: Transform3D) -> void:
@@ -424,8 +463,8 @@ func _update_streaming_collision_freeze() -> bool:
 			_release_streaming_collision_freeze()
 			return true
 		return false
-	var ready: bool = bool(_tile_streamer.call("is_collision_ready_at", _body.global_position))
-	if not ready:
+	var settled: bool = bool(_tile_streamer.call("is_collision_settled_at", _body.global_position))
+	if not settled:
 		_engage_streaming_collision_freeze()
 		return true
 	if _streaming_collision_freeze_active:
@@ -443,7 +482,7 @@ func _streaming_collision_guard_enabled() -> bool:
 		return false
 	if not bool(_tile_streamer.call("is_streaming_enabled")):
 		return false
-	return _tile_streamer.has_method("is_collision_ready_at")
+	return _tile_streamer.has_method("is_collision_settled_at")
 
 
 func _engage_streaming_collision_freeze() -> void:
@@ -455,7 +494,9 @@ func _engage_streaming_collision_freeze() -> void:
 
 
 func _release_streaming_collision_freeze() -> void:
+	_snap_streaming_collision_hold_above_heightfield_if_needed()
 	_apply_streaming_collision_body_state(false)
+	_record_streaming_collision_release()
 	_streaming_collision_freeze_active = false
 
 
@@ -463,9 +504,88 @@ func _reset_streaming_collision_freeze(spawn: Transform3D) -> void:
 	_streaming_collision_freeze_active = false
 	_streaming_collision_hold_transform = spawn
 	_streaming_collision_freeze_ticks = 0
+	_streaming_collision_release_count = 0
+	_streaming_collision_release_same_tick_as_activation_count = 0
+	_streaming_collision_release_min_activation_lag_ticks = 2147483647
+	_streaming_collision_release_max_downward_speed_mps = 0.0
+	_streaming_collision_last_release_stream_tick = -1
+	_streaming_collision_last_release_activation_tick = -1
+	_streaming_collision_snap_count = 0
 	_body.freeze = false
 	_body.sleeping = false
 	PhysicsServer3D.body_set_state(_body.get_rid(), PhysicsServer3D.BODY_STATE_SLEEPING, false)
+
+
+func _snap_streaming_collision_hold_above_heightfield_if_needed() -> void:
+	var terrain_def: Resource = _streaming_collision_terrain_def()
+	if terrain_def == null:
+		return
+	var position: Vector3 = _streaming_collision_hold_transform.origin
+	var horizontal_offset: Vector2 = _streaming_collision_heightfield_horizontal_offset()
+	var terrain_xz: Vector2 = Vector2(position.x, position.z) - horizontal_offset
+	if not bool(terrain_def.call("contains_world_xz", terrain_xz)):
+		return
+	var terrain_height: float = TerrainBuilderScript.heightmap_height_at_world_xz(terrain_def, Vector2(position.x, position.z), horizontal_offset)
+	var safe_y: float = terrain_height + _streaming_collision_spawn_clearance()
+	if position.y >= safe_y:
+		return
+	position.y = safe_y
+	_streaming_collision_hold_transform.origin = position
+	_streaming_collision_snap_count += 1
+
+
+func _streaming_collision_terrain_def() -> Resource:
+	if _tile_streamer == null or not _tile_streamer.has_method("region_id"):
+		return null
+	var streamer_region_id: String = String(_tile_streamer.call("region_id"))
+	if streamer_region_id == TerrainBuilderScript.CEDAR_SCENE_ID:
+		return TerrainBuilderScript.cedar_terrain_def()
+	if streamer_region_id == TerrainBuilderScript.CEDAR_HOLLOW_10M_SCENE_ID:
+		return TerrainBuilderScript.cedar_hollow_10m_terrain_def()
+	if streamer_region_id == "spike_1km":
+		return load(SPIKE_TERRAIN_DEF_PATH) as Resource
+	return null
+
+
+func _streaming_collision_heightfield_horizontal_offset() -> Vector2:
+	if _tile_streamer == null or not _tile_streamer.has_method("region_id"):
+		return Vector2.ZERO
+	var streamer_region_id: String = String(_tile_streamer.call("region_id"))
+	if streamer_region_id == TerrainBuilderScript.CEDAR_HOLLOW_10M_SCENE_ID:
+		return TerrainBuilderScript.cedar_hollow_10m_horizontal_offset()
+	return Vector2.ZERO
+
+
+func _streaming_collision_spawn_clearance() -> float:
+	var ray_length: float = GameConfig.susp_rest_length + GameConfig.susp_travel + GameConfig.wheel_radius
+	var static_compression: float = clampf((GameConfig.chassis_mass * GameConfig.GRAVITY_MAGNITUDE * 0.25) / maxf(GameConfig.susp_stiffness, 0.001), 0.0, 1.0)
+	return ray_length - static_compression * GameConfig.susp_travel
+
+
+func _record_streaming_collision_release() -> void:
+	_streaming_collision_release_count += 1
+	var release_tick: int = _streaming_collision_stream_tick()
+	var activation_tick: int = _streaming_collision_activation_tick(_streaming_collision_hold_transform.origin)
+	_streaming_collision_last_release_stream_tick = release_tick
+	_streaming_collision_last_release_activation_tick = activation_tick
+	if release_tick >= 0 and activation_tick >= 0:
+		var lag_ticks: int = release_tick - activation_tick
+		_streaming_collision_release_min_activation_lag_ticks = mini(_streaming_collision_release_min_activation_lag_ticks, lag_ticks)
+		if lag_ticks <= 0:
+			_streaming_collision_release_same_tick_as_activation_count += 1
+	_streaming_collision_release_max_downward_speed_mps = maxf(_streaming_collision_release_max_downward_speed_mps, maxf(0.0, -_body.linear_velocity.y))
+
+
+func _streaming_collision_stream_tick() -> int:
+	if _tile_streamer == null or not _tile_streamer.has_method("current_stream_tick"):
+		return -1
+	return int(_tile_streamer.call("current_stream_tick"))
+
+
+func _streaming_collision_activation_tick(world_position: Vector3) -> int:
+	if _tile_streamer == null or not _tile_streamer.has_method("collision_activation_tick_at"):
+		return -1
+	return int(_tile_streamer.call("collision_activation_tick_at", world_position))
 
 
 func _apply_streaming_collision_body_state(should_freeze: bool) -> void:

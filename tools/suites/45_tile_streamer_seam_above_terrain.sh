@@ -21,4 +21,9 @@ assert_metrics "$out_dir/tile_streamer_seam_above_terrain.json" \
 	--metric-max=max_flipped_ticks:0 \
 	--metric-max=max_position_delta_m:0.35 \
 	--metric-min=streaming_collision_freeze_ticks:1 \
+	--metric-min=streaming_collision_release_count:1 \
+	--metric-max=streaming_collision_release_same_tick_as_activation_count:0 \
+	--metric-min=streaming_collision_release_min_activation_lag_ticks:1 \
+	--metric-max=streaming_collision_release_max_downward_speed_mps:0.001 \
+	--metric-min=final_body_heightfield_clearance_m:0.01 \
 	--metric-min=stream_force_unready_applied:1

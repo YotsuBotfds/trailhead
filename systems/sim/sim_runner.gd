@@ -87,6 +87,8 @@ var _max_position_delta_m: float = 0.0
 var _chassis_clearance_sample_ticks: int = 0
 var _min_chassis_clearance_m: float = 999999.0
 var _max_chassis_penetration_m: float = 0.0
+var _final_body_heightfield_clearance_m: float = 0.0
+var _final_body_heightfield_clearance_valid: bool = false
 var _steering_speed_low_sample_ticks: int = 0
 var _steering_speed_mid_sample_ticks: int = 0
 var _steering_speed_high_sample_ticks: int = 0
@@ -1677,6 +1679,7 @@ func _finish(passed: bool) -> void:
 			"chassis_clearance_sample_ticks": _chassis_clearance_sample_ticks,
 			"min_chassis_clearance_m": _min_chassis_clearance_m if _min_chassis_clearance_m < 999998.0 else null,
 			"max_chassis_penetration_m": _max_chassis_penetration_m,
+			"final_body_heightfield_clearance_m": _final_body_heightfield_clearance_m if _final_body_heightfield_clearance_valid else null,
 			"steering_speed_low_sample_ticks": _steering_speed_low_sample_ticks,
 			"steering_speed_mid_sample_ticks": _steering_speed_mid_sample_ticks,
 			"steering_speed_high_sample_ticks": _steering_speed_high_sample_ticks,
@@ -1752,6 +1755,13 @@ func _finish(passed: bool) -> void:
 			"streaming_region_id": _streaming_region_id,
 			"stream_force_unready_applied": _stream_force_unready_applied,
 			"streaming_collision_freeze_ticks": _vehicle_streaming_collision_freeze_ticks(),
+			"streaming_collision_release_count": _vehicle_streaming_collision_release_count(),
+			"streaming_collision_release_same_tick_as_activation_count": _vehicle_streaming_collision_release_same_tick_as_activation_count(),
+			"streaming_collision_release_min_activation_lag_ticks": _vehicle_streaming_collision_release_min_activation_lag_ticks(),
+			"streaming_collision_release_max_downward_speed_mps": _vehicle_streaming_collision_release_max_downward_speed_mps(),
+			"streaming_collision_last_release_stream_tick": _vehicle_streaming_collision_last_release_stream_tick(),
+			"streaming_collision_last_release_activation_tick": _vehicle_streaming_collision_last_release_activation_tick(),
+			"streaming_collision_snap_count": _vehicle_streaming_collision_snap_count(),
 			"golden_replay": golden_replay
 		},
 		"telemetry": _telemetry
@@ -2183,6 +2193,9 @@ func _record_chassis_heightfield_clearance(position: Vector3, basis: Basis) -> v
 		sampled_this_tick = true
 	if sampled_this_tick:
 		_chassis_clearance_sample_ticks += 1
+	if _heightfield_contains(position.x, position.z):
+		_final_body_heightfield_clearance_m = position.y - _heightfield_height(position.x, position.z)
+		_final_body_heightfield_clearance_valid = true
 
 
 func _uses_heightfield_clearance() -> bool:
@@ -2301,6 +2314,62 @@ func _vehicle_streaming_collision_freeze_ticks() -> int:
 	if not _vehicle.has_method("streaming_collision_freeze_ticks"):
 		return 0
 	return int(_vehicle.call("streaming_collision_freeze_ticks"))
+
+
+func _vehicle_streaming_collision_release_count() -> int:
+	if _vehicle == null:
+		return 0
+	if not _vehicle.has_method("streaming_collision_release_count"):
+		return 0
+	return int(_vehicle.call("streaming_collision_release_count"))
+
+
+func _vehicle_streaming_collision_release_same_tick_as_activation_count() -> int:
+	if _vehicle == null:
+		return 0
+	if not _vehicle.has_method("streaming_collision_release_same_tick_as_activation_count"):
+		return 0
+	return int(_vehicle.call("streaming_collision_release_same_tick_as_activation_count"))
+
+
+func _vehicle_streaming_collision_release_min_activation_lag_ticks() -> int:
+	if _vehicle == null:
+		return 0
+	if not _vehicle.has_method("streaming_collision_release_min_activation_lag_ticks"):
+		return 0
+	return int(_vehicle.call("streaming_collision_release_min_activation_lag_ticks"))
+
+
+func _vehicle_streaming_collision_release_max_downward_speed_mps() -> float:
+	if _vehicle == null:
+		return 0.0
+	if not _vehicle.has_method("streaming_collision_release_max_downward_speed_mps"):
+		return 0.0
+	return float(_vehicle.call("streaming_collision_release_max_downward_speed_mps"))
+
+
+func _vehicle_streaming_collision_last_release_stream_tick() -> int:
+	if _vehicle == null:
+		return -1
+	if not _vehicle.has_method("streaming_collision_last_release_stream_tick"):
+		return -1
+	return int(_vehicle.call("streaming_collision_last_release_stream_tick"))
+
+
+func _vehicle_streaming_collision_last_release_activation_tick() -> int:
+	if _vehicle == null:
+		return -1
+	if not _vehicle.has_method("streaming_collision_last_release_activation_tick"):
+		return -1
+	return int(_vehicle.call("streaming_collision_last_release_activation_tick"))
+
+
+func _vehicle_streaming_collision_snap_count() -> int:
+	if _vehicle == null:
+		return 0
+	if not _vehicle.has_method("streaming_collision_snap_count"):
+		return 0
+	return int(_vehicle.call("streaming_collision_snap_count"))
 
 
 func _surface_sequence_contains(expected: Array[String]) -> bool:
