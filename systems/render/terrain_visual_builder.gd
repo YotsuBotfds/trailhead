@@ -2,7 +2,7 @@ class_name TerrainVisualBuilder
 extends Node3D
 
 const CedarTerrainDef: Resource = preload("res://data/terrain/cedar_hollow_terrain_def.tres")
-const TerrainSurfacePaletteResource: Resource = preload("res://data/surface_palettes/cedar_hollow_terrain.tres")
+const TerrainSurfacePaletteResource: Resource = preload("res://data/surface_palettes/cedar_hollow_zion_surface_palette.tres")
 const SurfaceVisualCatalogResource: Resource = preload("res://data/surface_visuals/cedar_hollow_surface_visuals.tres")
 const TerrainTrackOverlayShader: Shader = preload("res://systems/render/terrain_track_overlay.gdshader")
 const TerrainSurfaceIndexShader: Shader = preload("res://systems/render/terrain_surface_index.gdshader")
@@ -31,6 +31,7 @@ const SPIKE_1KM_SCENE_ROOT_NAME: String = "Spike1KmRegion"
 const REGION_ROOT_NAME: String = "TerrainVisuals"
 const REGION_DETAIL_ROOT_NAME: String = "TerrainDetailTiles"
 const REGION_HLOD_NAME: String = "TerrainHLOD"
+const REGION_HLOD_TILE_NAME_PREFIX: String = "TerrainHLODTile"
 const REGION_FOLIAGE_ROOT_NAME: String = "FoliageCells"
 const REGION_STREAMED_FOLIAGE_ROOT_NAME: String = "StreamedFoliageCells"
 const REGION_PIPELINE_WARMUP_ROOT_NAME: String = "PipelineWarmup"
@@ -353,6 +354,10 @@ static func region_detail_tile_node_name(region_id: String, tile_index: Vector2i
 	return "region_" + _safe_node_name(region_id) + "_detail_tile_" + str(tile_index.x) + "_" + str(tile_index.y)
 
 
+static func _region_stream_hlod_tile_node_name(region_id: String, tile_index: Vector2i) -> String:
+	return REGION_HLOD_TILE_NAME_PREFIX + "_" + _safe_node_name(region_id) + "_" + str(tile_index.x) + "_" + str(tile_index.y)
+
+
 static func _detail_visibility_range_end(tile_data: RegionTileData) -> float:
 	return maxf(maxf(GameConfig.cam_far, GameConfig.vis_range_terrain) + _tile_visibility_radius(tile_data), 0.0)
 
@@ -493,33 +498,49 @@ static func _add_region_stream_hlod(parent: Node3D, region_id: String) -> MeshIn
 	if tile_data_list.is_empty():
 		push_error("TerrainVisualBuilder region stream HLOD has no loadable render tiles: " + region_id)
 		return null
+
+	var root_instance: MeshInstance3D = null
+	var root_origin_xz: Vector2 = Vector2.ZERO
+	for tile_data_index in range(tile_data_list.size()):
+		var tile_data: RegionTileData = tile_data_list[tile_data_index]
+		var tile_origin_xz: Vector2 = _tile_origin_xz(tile_data)
+		var instance: MeshInstance3D = _region_stream_hlod_chunk(region_id, tile_data, tile_origin_xz)
+		if tile_data_index == 0:
+			instance.name = REGION_HLOD_NAME
+			instance.position = Vector3(tile_origin_xz.x, 0.0, tile_origin_xz.y)
+			root_instance = instance
+			root_origin_xz = tile_origin_xz
+			parent.add_child(instance)
+		else:
+			instance.position = Vector3(tile_origin_xz.x - root_origin_xz.x, 0.0, tile_origin_xz.y - root_origin_xz.y)
+			root_instance.add_child(instance)
+	if root_instance != null:
+		root_instance.visible = false
+	return root_instance
+
+
+static func _region_stream_hlod_chunk(region_id: String, tile_data: RegionTileData, tile_origin_xz: Vector2) -> MeshInstance3D:
 	var instance: MeshInstance3D = MeshInstance3D.new()
-	instance.name = REGION_HLOD_NAME
-	instance.mesh = _build_region_stream_hlod_mesh(tile_data_list)
+	instance.name = _region_stream_hlod_tile_node_name(region_id, tile_data.cell)
+	instance.mesh = _build_region_stream_hlod_mesh(tile_data, tile_origin_xz)
 	instance.visibility_range_begin = _hlod_visibility_range_begin()
 	instance.visibility_range_end = 0.0
 	instance.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
 	instance.set_meta(REGION_LOD_META, "stream_hlod")
-	parent.add_child(instance)
-	instance.visible = false
+	instance.set_meta(VISIBILITY_RADIUS_META, _tile_visibility_radius(tile_data))
+	instance.set_meta(TILE_INDEX_META, tile_data.cell)
+	instance.set_meta(TILE_PATH_META, tile_data.heightmap_path)
+	instance.set_meta(TILE_SURFACE_ID_PATH_META, tile_data.surface_id_path)
 	return instance
 
 
-static func _build_region_stream_hlod_mesh(tile_data_list: Array[RegionTileData]) -> ArrayMesh:
-	var bucket: MeshBucket = MeshBucket.new()
-	for tile_data in tile_data_list:
-		_append_tile_quads_to_bucket(tile_data, REGION_STREAM_HLOD_SAMPLE_STEP, bucket, Vector2.ZERO)
-	var mesh_data: RegionMeshData = RegionMeshData.new()
-	mesh_data.resource_name = "spike_1km_stream_terrain_hlod_mesh"
-	if bucket.indices.size() <= 0:
-		return region_mesh_from_data(mesh_data)
-	var surface_data: MeshSurfaceData = MeshSurfaceData.new()
-	surface_data.surface_id_value = _dominant_surface_id_value(tile_data_list)
-	surface_data.vertices = bucket.vertices
-	surface_data.normals = bucket.normals
-	surface_data.uvs = bucket.uvs
-	surface_data.indices = bucket.indices
-	mesh_data.surfaces.append(surface_data)
+static func _build_region_stream_hlod_mesh(tile_data: RegionTileData, local_origin_xz: Vector2) -> ArrayMesh:
+	var mesh_data: RegionMeshData = build_region_surface_index_mesh_data(
+		tile_data,
+		REGION_STREAM_HLOD_SAMPLE_STEP,
+		tile_data.key + "_stream_terrain_hlod_mesh",
+		local_origin_xz
+	)
 	return region_mesh_from_data(mesh_data)
 
 

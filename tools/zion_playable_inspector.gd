@@ -103,8 +103,95 @@ func _require_stream_roots(visual_root: Node) -> void:
 	var hlod: MeshInstance3D = _require_node(visual_root, TerrainVisualBuilderScript.REGION_HLOD_NAME) as MeshInstance3D
 	if hlod == null:
 		_errors.append("Zion streamer TerrainHLOD should be MeshInstance3D")
-	elif hlod.mesh == null:
-		_errors.append("Zion streamer TerrainHLOD is missing mesh")
+	else:
+		_require_stream_hlod(hlod)
+
+
+func _require_stream_hlod(hlod: MeshInstance3D) -> void:
+	var chunks: Array[MeshInstance3D] = []
+	_collect_stream_hlod_chunks(hlod, chunks)
+	if chunks.size() <= 1:
+		_errors.append("Zion streamer TerrainHLOD should be chunked into localized tile HLODs")
+	for chunk in chunks:
+		_require_stream_hlod_chunk(chunk)
+	var center_chunk: MeshInstance3D = _stream_hlod_chunk_for_cell(chunks, EXPECTED_CENTER_CELL)
+	if center_chunk == null:
+		_errors.append("Zion streamer TerrainHLOD missing chunk for spawn cell " + str(EXPECTED_CENTER_CELL))
+		return
+	var center_origin_xz: Vector2 = Vector2(center_chunk.global_position.x, center_chunk.global_position.z)
+	var spawn_xz: Vector2 = Vector2(SPAWN_POSITION.x, SPAWN_POSITION.z)
+	var spawn_distance: float = center_origin_xz.distance_to(spawn_xz)
+	if spawn_distance + POSITION_TOLERANCE_M >= center_chunk.visibility_range_begin:
+		_errors.append(
+			"Zion spawn HLOD chunk should remain begin-gated under the car: distance="
+			+ str(spawn_distance)
+			+ " begin="
+			+ str(center_chunk.visibility_range_begin)
+		)
+
+
+func _collect_stream_hlod_chunks(parent: Node, chunks: Array[MeshInstance3D]) -> void:
+	var mesh_instance: MeshInstance3D = parent as MeshInstance3D
+	if mesh_instance != null and _is_stream_hlod_chunk(mesh_instance):
+		chunks.append(mesh_instance)
+	for child in parent.get_children():
+		_collect_stream_hlod_chunks(child, chunks)
+
+
+func _is_stream_hlod_chunk(chunk: MeshInstance3D) -> bool:
+	if chunk == null or not chunk.has_meta(TerrainVisualBuilderScript.REGION_LOD_META):
+		return false
+	return String(chunk.get_meta(TerrainVisualBuilderScript.REGION_LOD_META)) == "stream_hlod"
+
+
+func _stream_hlod_chunk_for_cell(chunks: Array[MeshInstance3D], cell: Vector2i) -> MeshInstance3D:
+	for chunk in chunks:
+		if not chunk.has_meta(TerrainVisualBuilderScript.TILE_INDEX_META):
+			continue
+		if Vector2i(chunk.get_meta(TerrainVisualBuilderScript.TILE_INDEX_META)) == cell:
+			return chunk
+	return null
+
+
+func _require_stream_hlod_chunk(chunk: MeshInstance3D) -> void:
+	if chunk.mesh == null:
+		_errors.append(String(chunk.name) + " is missing mesh")
+		return
+	if chunk.mesh.get_surface_count() <= 0:
+		_errors.append(String(chunk.name) + " mesh has no surfaces")
+	if not _is_stream_hlod_chunk(chunk):
+		_errors.append(String(chunk.name) + " missing stream_hlod metadata")
+	if not chunk.has_meta(TerrainVisualBuilderScript.TILE_INDEX_META):
+		_errors.append(String(chunk.name) + " missing HLOD tile metadata")
+	else:
+		var cell: Vector2i = Vector2i(chunk.get_meta(TerrainVisualBuilderScript.TILE_INDEX_META))
+		var expected_origin: Vector3 = Vector3(
+			(float(cell.x) + 0.5) * GameConfig.STREAM_TILE_SIZE_M,
+			0.0,
+			(float(cell.y) + 0.5) * GameConfig.STREAM_TILE_SIZE_M
+		)
+		var observed_xz: Vector2 = Vector2(chunk.global_position.x, chunk.global_position.z)
+		var expected_xz: Vector2 = Vector2(expected_origin.x, expected_origin.z)
+		if observed_xz.distance_to(Vector2.ZERO) <= POSITION_TOLERANCE_M:
+			_errors.append(String(chunk.name) + " HLOD origin should not be world zero")
+		if observed_xz.distance_to(expected_xz) > POSITION_TOLERANCE_M:
+			_errors.append(String(chunk.name) + " HLOD origin expected " + str(expected_origin) + ", got " + str(chunk.global_position))
+	if absf(chunk.visibility_range_begin - GameConfig.vis_range_terrain) > POSITION_TOLERANCE_M:
+		_errors.append(String(chunk.name) + " HLOD visibility_range_begin expected " + str(GameConfig.vis_range_terrain) + ", got " + str(chunk.visibility_range_begin))
+	if absf(chunk.visibility_range_end) > POSITION_TOLERANCE_M:
+		_errors.append(String(chunk.name) + " HLOD visibility_range_end should be open-ended")
+	if chunk.visibility_range_fade_mode != GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED:
+		_errors.append(String(chunk.name) + " HLOD visibility_range_fade_mode expected DISABLED")
+	for surface_index in range(chunk.mesh.get_surface_count()):
+		var material: ShaderMaterial = chunk.mesh.surface_get_material(surface_index) as ShaderMaterial
+		if material == null:
+			_errors.append(String(chunk.name) + " HLOD surface " + str(surface_index) + " should use surface-index ShaderMaterial")
+			continue
+		if material.resource_name != TerrainVisualBuilderScript.TERRAIN_INDEX_MATERIAL_NAME:
+			_errors.append(String(chunk.name) + " HLOD material expected " + TerrainVisualBuilderScript.TERRAIN_INDEX_MATERIAL_NAME + ", got " + material.resource_name)
+		var surface_id_texture: Texture2D = material.get_shader_parameter(TerrainVisualBuilderScript.SURFACE_ID_TEXTURE_UNIFORM) as Texture2D
+		if surface_id_texture == null:
+			_errors.append(String(chunk.name) + " HLOD surface-index material missing surface ID texture")
 
 
 func _require_vehicle_spawn() -> void:
