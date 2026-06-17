@@ -23,9 +23,14 @@ var _last_recovery_transform: Transform3D = Transform3D.IDENTITY
 var _recovery_position_history: Array[Vector3] = []
 var _recovery_transform_history: Array[Transform3D] = []
 var _recovery_stuck: bool = false
+var _tile_streamer: Node = null
+var _streaming_collision_freeze_active: bool = false
+var _streaming_collision_hold_transform: Transform3D = Transform3D.IDENTITY
+var _streaming_collision_freeze_ticks: int = 0
 
 
 func _ready() -> void:
+	_tile_streamer = get_node_or_null("/root/TileStreamer")
 	_reset_surface_cache()
 	_build_physics_body()
 	GameManager.register_vehicle(self)
@@ -44,9 +49,18 @@ func get_state() -> VehicleState:
 	return _state
 
 
+func streaming_collision_freeze_ticks() -> int:
+	return _streaming_collision_freeze_ticks
+
+
+func is_streaming_collision_frozen() -> bool:
+	return _streaming_collision_freeze_active
+
+
 func reset_to(spawn: Transform3D) -> void:
 	if _body == null:
 		return
+	_reset_streaming_collision_freeze(spawn)
 	_body.global_transform = spawn
 	_body.linear_velocity = Vector3.ZERO
 	_body.angular_velocity = Vector3.ZERO
@@ -97,6 +111,8 @@ func recover_to_trail() -> void:
 
 func _physics_process(_delta: float) -> void:
 	if _body == null:
+		return
+	if _update_streaming_collision_freeze():
 		return
 	_update_flip_events()
 	_update_recovery_tracking()
@@ -398,6 +414,75 @@ func _apply_speed_limit() -> void:
 	var speed: float = _body.linear_velocity.length()
 	if speed > GameConfig.max_speed:
 		_body.linear_velocity = _body.linear_velocity.normalized() * GameConfig.max_speed
+
+
+func _update_streaming_collision_freeze() -> bool:
+	if _body.freeze and not _streaming_collision_freeze_active:
+		return false
+	if not _streaming_collision_guard_enabled():
+		if _streaming_collision_freeze_active:
+			_release_streaming_collision_freeze()
+			return true
+		return false
+	var ready: bool = bool(_tile_streamer.call("is_collision_ready_at", _body.global_position))
+	if not ready:
+		_engage_streaming_collision_freeze()
+		return true
+	if _streaming_collision_freeze_active:
+		_release_streaming_collision_freeze()
+		return true
+	return false
+
+
+func _streaming_collision_guard_enabled() -> bool:
+	if _tile_streamer == null:
+		_tile_streamer = get_node_or_null("/root/TileStreamer")
+	if _tile_streamer == null:
+		return false
+	if not _tile_streamer.has_method("is_streaming_enabled"):
+		return false
+	if not bool(_tile_streamer.call("is_streaming_enabled")):
+		return false
+	return _tile_streamer.has_method("is_collision_ready_at")
+
+
+func _engage_streaming_collision_freeze() -> void:
+	if not _streaming_collision_freeze_active:
+		_streaming_collision_hold_transform = _body.global_transform
+		_streaming_collision_freeze_active = true
+	_streaming_collision_freeze_ticks += 1
+	_apply_streaming_collision_body_state(true)
+
+
+func _release_streaming_collision_freeze() -> void:
+	_apply_streaming_collision_body_state(false)
+	_streaming_collision_freeze_active = false
+
+
+func _reset_streaming_collision_freeze(spawn: Transform3D) -> void:
+	_streaming_collision_freeze_active = false
+	_streaming_collision_hold_transform = spawn
+	_streaming_collision_freeze_ticks = 0
+	_body.freeze = false
+	_body.sleeping = false
+	PhysicsServer3D.body_set_state(_body.get_rid(), PhysicsServer3D.BODY_STATE_SLEEPING, false)
+
+
+func _apply_streaming_collision_body_state(should_freeze: bool) -> void:
+	_body.freeze = should_freeze
+	_body.sleeping = false
+	var body_rid: RID = _body.get_rid()
+	PhysicsServer3D.body_set_state(body_rid, PhysicsServer3D.BODY_STATE_SLEEPING, false)
+	PhysicsServer3D.body_set_state(body_rid, PhysicsServer3D.BODY_STATE_TRANSFORM, _streaming_collision_hold_transform)
+	PhysicsServer3D.body_set_state(body_rid, PhysicsServer3D.BODY_STATE_LINEAR_VELOCITY, Vector3.ZERO)
+	PhysicsServer3D.body_set_state(body_rid, PhysicsServer3D.BODY_STATE_ANGULAR_VELOCITY, Vector3.ZERO)
+	_body.global_transform = _streaming_collision_hold_transform
+	_body.linear_velocity = Vector3.ZERO
+	_body.angular_velocity = Vector3.ZERO
+	_body.force_update_transform()
+	for ray in _wheel_rays:
+		ray.force_update_transform()
+		ray.force_raycast_update()
 
 
 func _update_flip_events() -> void:

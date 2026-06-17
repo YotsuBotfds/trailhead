@@ -12,10 +12,13 @@ var _region_id: String = ""
 var _followed_node: Node3D = null
 var _fixed_world_position: Vector3 = Vector3.ZERO
 var _use_fixed_world_position: bool = false
+var _last_sampled_world_position: Vector3 = Vector3.ZERO
+var _has_last_sampled_world_position: bool = false
 var _streaming_enabled: bool = false
 var _current_cell: Vector2i = Vector2i.ZERO
 var _stream_generation: int = 0
 var _worker_count: int = DEFAULT_WORKER_COUNT
+var _forced_unready_ticks_by_cell: Dictionary[Vector2i, int] = {}
 
 var _ready_flags: Dictionary[Vector2i, bool] = {}
 var _heightmap_data_by_cell: Dictionary[Vector2i, Dictionary] = {}
@@ -71,6 +74,26 @@ func set_worker_count_for_tests(worker_count: int) -> void:
 	_worker_count = maxi(worker_count, 0)
 
 
+func is_streaming_enabled() -> bool:
+	return _streaming_enabled
+
+
+func is_collision_ready_at(world_position: Vector3) -> bool:
+	return _active_bodies_by_cell.has(_cell_for_world_position(world_position))
+
+
+func force_collision_unready_for_tests(cells: Array[Vector2i], delay_ticks: int) -> void:
+	var sorted_cells: Array[Vector2i] = _copy_cells(cells)
+	_sort_cells(sorted_cells)
+	var safe_delay_ticks: int = maxi(delay_ticks, 0)
+	for cell in sorted_cells:
+		if safe_delay_ticks > 0:
+			_forced_unready_ticks_by_cell[cell] = safe_delay_ticks
+		else:
+			_forced_unready_ticks_by_cell.erase(cell)
+		_deactivate_cell_for_tests(cell)
+
+
 func reset() -> void:
 	set_physics_process(false)
 	_stop_workers()
@@ -79,6 +102,8 @@ func reset() -> void:
 	_region_id = ""
 	_followed_node = null
 	_use_fixed_world_position = false
+	_last_sampled_world_position = Vector3.ZERO
+	_has_last_sampled_world_position = false
 	_last_to_load.clear()
 	_last_to_unload.clear()
 	_unload_all_active_bodies()
@@ -88,6 +113,7 @@ func reset() -> void:
 	_load_failures_by_cell.clear()
 	_queued_builds.clear()
 	_cancelled_builds.clear()
+	_forced_unready_ticks_by_cell.clear()
 	_clear_worker_queues()
 
 
@@ -140,9 +166,10 @@ func _physics_process(_delta: float) -> void:
 	if _region_id.is_empty():
 		return
 
-	_current_cell = _sample_current_cell()
+	var sampled_world_position: Vector3 = _sample_world_position()
+	_current_cell = _cell_for_world_position(sampled_world_position)
 	var desired_active_cells: Array[Vector2i] = _cells_in_radius(_current_cell, GameConfig.STREAM_ACTIVE_RADIUS)
-	var desired_prefetch_cells: Array[Vector2i] = _cells_in_radius(_current_cell, GameConfig.STREAM_PREFETCH_RADIUS)
+	var desired_prefetch_cells: Array[Vector2i] = _prefetch_cells_for_sample(sampled_world_position, _current_cell)
 	var current_active_cells: Array[Vector2i] = _sorted_body_cells()
 
 	_last_to_load = _cell_difference(desired_active_cells, current_active_cells)
@@ -157,6 +184,7 @@ func _physics_process(_delta: float) -> void:
 		_process_build_queue_synchronously()
 	_drain_worker_results()
 	_process_loads(_last_to_load)
+	_record_sampled_world_position(sampled_world_position)
 
 
 func _process_unloads(cells: Array[Vector2i]) -> void:
@@ -176,12 +204,16 @@ func _process_unloads(cells: Array[Vector2i]) -> void:
 
 
 func _process_loads(cells: Array[Vector2i]) -> void:
+	var missing_cells: Array[Vector2i] = []
 	for cell in cells:
 		if not _ready_flags.has(cell):
 			_enqueue_build(cell)
-			_stall_until_ready(cell)
-		if not _ready_flags.has(cell):
-			return
+			missing_cells.append(cell)
+	if not missing_cells.is_empty():
+		return
+	for cell in cells:
+		if _should_withhold_activation_for_tests(cell):
+			continue
 		_activate_cell(cell)
 
 
@@ -356,20 +388,6 @@ func _cancel_build(cell: Vector2i) -> void:
 	_work_mutex.unlock()
 
 
-func _stall_until_ready(cell: Vector2i) -> void:
-	while not _ready_flags.has(cell) and not _load_failures_by_cell.has(cell):
-		_drain_worker_results()
-		if _ready_flags.has(cell) or _load_failures_by_cell.has(cell):
-			return
-		if _workers.is_empty():
-			_process_build_queue_synchronously()
-			_drain_worker_results()
-			if not _ready_flags.has(cell) and not _load_failures_by_cell.has(cell):
-				_record_load_failure(cell, "TileStreamer: no workers and tile not built: " + _tile_key(cell))
-			return
-		_result_semaphore.wait()
-
-
 func _drain_worker_results() -> void:
 	var results: Array[Dictionary] = []
 	_work_mutex.lock()
@@ -534,6 +552,70 @@ func _sample_world_position() -> Vector3:
 	if _followed_node != null:
 		return _followed_node.global_position
 	return global_position
+
+
+func _record_sampled_world_position(world_position: Vector3) -> void:
+	_last_sampled_world_position = world_position
+	_has_last_sampled_world_position = true
+
+
+func _prefetch_cells_for_sample(world_position: Vector3, center_cell: Vector2i) -> Array[Vector2i]:
+	var cells: Array[Vector2i] = _cells_in_radius(center_cell, GameConfig.STREAM_PREFETCH_RADIUS)
+	if _use_fixed_world_position:
+		return cells
+	if not _has_last_sampled_world_position:
+		return cells
+	var travel_delta: Vector3 = world_position - _last_sampled_world_position
+	travel_delta.y = 0.0
+	if travel_delta.length() < GameConfig.STREAM_PREFETCH_TRAVEL_MIN_DISTANCE_M:
+		return cells
+	var travel_cell_step: Vector2i = _travel_cell_step(travel_delta)
+	if travel_cell_step == Vector2i.ZERO:
+		return cells
+	var lookahead_cells: int = maxi(GameConfig.STREAM_PREFETCH_TRAVEL_LOOKAHEAD_CELLS, 0)
+	for step in range(1, lookahead_cells + 1):
+		var bias_center: Vector2i = center_cell + Vector2i(travel_cell_step.x * step, travel_cell_step.y * step)
+		_append_unique_cells(cells, _cells_in_radius(bias_center, GameConfig.STREAM_ACTIVE_RADIUS))
+	_sort_cells(cells)
+	return cells
+
+
+func _travel_cell_step(travel_delta: Vector3) -> Vector2i:
+	if absf(travel_delta.x) >= absf(travel_delta.z):
+		if absf(travel_delta.x) < GameConfig.STREAM_PREFETCH_TRAVEL_MIN_DISTANCE_M:
+			return Vector2i.ZERO
+		return Vector2i(int(signf(travel_delta.x)), 0)
+	if absf(travel_delta.z) < GameConfig.STREAM_PREFETCH_TRAVEL_MIN_DISTANCE_M:
+		return Vector2i.ZERO
+	return Vector2i(0, int(signf(travel_delta.z)))
+
+
+func _append_unique_cells(cells: Array[Vector2i], cells_to_add: Array[Vector2i]) -> void:
+	for cell in cells_to_add:
+		if not cells.has(cell):
+			cells.append(cell)
+
+
+func _should_withhold_activation_for_tests(cell: Vector2i) -> bool:
+	if not _forced_unready_ticks_by_cell.has(cell):
+		return false
+	var remaining_ticks: int = _forced_unready_ticks_by_cell[cell]
+	if remaining_ticks <= 0:
+		_forced_unready_ticks_by_cell.erase(cell)
+		return false
+	_forced_unready_ticks_by_cell[cell] = remaining_ticks - 1
+	return true
+
+
+func _deactivate_cell_for_tests(cell: Vector2i) -> void:
+	if not _active_bodies_by_cell.has(cell):
+		return
+	var body_rid: RID = _active_bodies_by_cell[cell]
+	if body_rid.is_valid():
+		PhysicsServer3D.body_set_space(body_rid, RID())
+		PhysicsServer3D.free_rid(body_rid)
+	_active_bodies_by_cell.erase(cell)
+	_active_shapes_by_cell.erase(cell)
 
 
 func _cell_for_world_position(world_position: Vector3) -> Vector2i:
