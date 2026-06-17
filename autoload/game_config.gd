@@ -24,6 +24,7 @@ const STREAM_PREFETCH_RADIUS: int = 3
 const STREAM_PREFETCH_TRAVEL_LOOKAHEAD_CELLS: int = 2
 const STREAM_PREFETCH_TRAVEL_MIN_DISTANCE_M: float = 0.01
 const STREAM_TILE_DATA_BASE: String = "res://data/regions/"
+const streaming_collision_freeze_max_ticks: int = 600
 const DIRECTIONAL_SHADOW_ORTHOGONAL: int = 0
 const DIRECTIONAL_SHADOW_PARALLEL_2_SPLITS: int = 1
 const DIRECTIONAL_SHADOW_PARALLEL_4_SPLITS: int = 2

@@ -123,6 +123,8 @@ var _landmark_event_count: int = 0
 var _flipped_event_count: int = 0
 var _self_righted_event_count: int = 0
 var _recovered_to_trail_event_count: int = 0
+var _streaming_freeze_expired_event_count: int = 0
+var _streaming_freeze_expired_max_ticks: int = 0
 var _recoverable_object_tagged_event_count: int = 0
 var _photograph_taken_event_count: int = 0
 var _golden_line_matched_event_count: int = 0
@@ -1748,6 +1750,8 @@ func _finish(passed: bool) -> void:
 			"flipped_event_count": _flipped_event_count,
 			"self_righted_event_count": _self_righted_event_count,
 			"recovered_to_trail_event_count": _recovered_to_trail_event_count,
+			"streaming_collision_freeze_expired_event_count": _streaming_freeze_expired_event_count,
+			"streaming_collision_freeze_expired_max_ticks": _streaming_freeze_expired_max_ticks,
 			"max_recovery_displacement": _max_recovery_displacement,
 			"min_progress_window": _min_progress_window if _min_progress_window < 999998.0 else null,
 			"stuck_window_ticks": _stuck_window_ticks,
@@ -1759,6 +1763,8 @@ func _finish(passed: bool) -> void:
 			"streaming_region_id": _streaming_region_id,
 			"stream_force_unready_applied": _stream_force_unready_applied,
 			"streaming_collision_freeze_ticks": _vehicle_streaming_collision_freeze_ticks(),
+			"streaming_collision_max_consecutive_freeze_ticks": _vehicle_streaming_collision_max_consecutive_freeze_ticks(),
+			"streaming_collision_freeze_expired_count": _vehicle_streaming_collision_freeze_expired_count(),
 			"streaming_collision_release_count": _vehicle_streaming_collision_release_count(),
 			"streaming_collision_release_same_tick_as_activation_count": _vehicle_streaming_collision_release_same_tick_as_activation_count(),
 			"streaming_collision_release_min_activation_lag_ticks": _vehicle_streaming_collision_release_min_activation_lag_ticks(),
@@ -2320,6 +2326,22 @@ func _vehicle_streaming_collision_freeze_ticks() -> int:
 	return int(_vehicle.call("streaming_collision_freeze_ticks"))
 
 
+func _vehicle_streaming_collision_max_consecutive_freeze_ticks() -> int:
+	if _vehicle == null:
+		return 0
+	if not _vehicle.has_method("streaming_collision_max_consecutive_freeze_ticks"):
+		return 0
+	return int(_vehicle.call("streaming_collision_max_consecutive_freeze_ticks"))
+
+
+func _vehicle_streaming_collision_freeze_expired_count() -> int:
+	if _vehicle == null:
+		return 0
+	if not _vehicle.has_method("streaming_collision_freeze_expired_count"):
+		return 0
+	return int(_vehicle.call("streaming_collision_freeze_expired_count"))
+
+
 func _vehicle_streaming_collision_release_count() -> int:
 	if _vehicle == null:
 		return 0
@@ -2672,6 +2694,8 @@ func _connect_event_bus() -> void:
 		EventBus.vehicle_self_righted.connect(_on_vehicle_self_righted)
 	if not EventBus.vehicle_recovered_to_trail.is_connected(_on_vehicle_recovered_to_trail):
 		EventBus.vehicle_recovered_to_trail.connect(_on_vehicle_recovered_to_trail)
+	if not EventBus.vehicle_streaming_freeze_expired.is_connected(_on_vehicle_streaming_freeze_expired):
+		EventBus.vehicle_streaming_freeze_expired.connect(_on_vehicle_streaming_freeze_expired)
 	if not EventBus.world_recoverable_object_tagged.is_connected(_on_world_recoverable_object_tagged):
 		EventBus.world_recoverable_object_tagged.connect(_on_world_recoverable_object_tagged)
 	if not EventBus.world_photograph_taken.is_connected(_on_world_photograph_taken):
@@ -2794,3 +2818,8 @@ func _on_vehicle_recovered_to_trail(from_position: Vector3, to_position: Vector3
 	var from_flat: Vector3 = Vector3(from_position.x, 0.0, from_position.z)
 	var to_flat: Vector3 = Vector3(to_position.x, 0.0, to_position.z)
 	_max_recovery_displacement = maxf(_max_recovery_displacement, from_flat.distance_to(to_flat))
+
+
+func _on_vehicle_streaming_freeze_expired(_from_position: Vector3, _to_position: Vector3, frozen_ticks: int) -> void:
+	_streaming_freeze_expired_event_count += 1
+	_streaming_freeze_expired_max_ticks = maxi(_streaming_freeze_expired_max_ticks, frozen_ticks)

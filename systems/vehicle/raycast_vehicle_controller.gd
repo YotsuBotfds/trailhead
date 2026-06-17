@@ -29,6 +29,9 @@ var _tile_streamer: Node = null
 var _streaming_collision_freeze_active: bool = false
 var _streaming_collision_hold_transform: Transform3D = Transform3D.IDENTITY
 var _streaming_collision_freeze_ticks: int = 0
+var _streaming_collision_consecutive_freeze_ticks: int = 0
+var _streaming_collision_max_consecutive_freeze_ticks: int = 0
+var _streaming_collision_freeze_expired_count: int = 0
 var _streaming_collision_release_count: int = 0
 var _streaming_collision_release_same_tick_as_activation_count: int = 0
 var _streaming_collision_release_min_activation_lag_ticks: int = 2147483647
@@ -60,6 +63,14 @@ func get_state() -> VehicleState:
 
 func streaming_collision_freeze_ticks() -> int:
 	return _streaming_collision_freeze_ticks
+
+
+func streaming_collision_max_consecutive_freeze_ticks() -> int:
+	return _streaming_collision_max_consecutive_freeze_ticks
+
+
+func streaming_collision_freeze_expired_count() -> int:
+	return _streaming_collision_freeze_expired_count
 
 
 func is_streaming_collision_frozen() -> bool:
@@ -465,15 +476,15 @@ func _update_streaming_collision_freeze() -> bool:
 		return false
 	var ready: bool = bool(_tile_streamer.call("is_collision_ready_at", _body.global_position))
 	if not ready:
-		_engage_streaming_collision_freeze()
+		_continue_streaming_collision_freeze()
 		return true
 	if _streaming_collision_freeze_active:
 		var settled: bool = bool(_tile_streamer.call("is_collision_settled_at", _streaming_collision_hold_transform.origin))
 		if not settled:
-			_engage_streaming_collision_freeze()
+			_continue_streaming_collision_freeze()
 			return true
 		if not _place_streaming_collision_hold_on_confirmed_ground():
-			_engage_streaming_collision_freeze()
+			_continue_streaming_collision_freeze()
 			return true
 		_release_streaming_collision_freeze()
 		return true
@@ -492,24 +503,54 @@ func _streaming_collision_guard_enabled() -> bool:
 	return _tile_streamer.has_method("is_collision_ready_at") and _tile_streamer.has_method("is_collision_settled_at")
 
 
+func _continue_streaming_collision_freeze() -> void:
+	_engage_streaming_collision_freeze()
+	if _streaming_collision_consecutive_freeze_ticks >= maxi(GameConfig.streaming_collision_freeze_max_ticks, 1):
+		_expire_streaming_collision_freeze()
+
+
 func _engage_streaming_collision_freeze() -> void:
 	if not _streaming_collision_freeze_active:
 		_streaming_collision_hold_transform = _body.global_transform
 		_streaming_collision_freeze_active = true
 	_streaming_collision_freeze_ticks += 1
+	_streaming_collision_consecutive_freeze_ticks += 1
+	_streaming_collision_max_consecutive_freeze_ticks = maxi(_streaming_collision_max_consecutive_freeze_ticks, _streaming_collision_consecutive_freeze_ticks)
 	_apply_streaming_collision_body_state(true)
+
+
+func _expire_streaming_collision_freeze() -> void:
+	var from_position: Vector3 = _body.global_position
+	var frozen_ticks: int = _streaming_collision_consecutive_freeze_ticks
+	var anchor: Transform3D = _last_recovery_transform
+	var forward: Vector3 = _horizontal_forward(anchor.basis)
+	var fallback: Transform3D = _upright_transform(anchor.origin, forward)
+	fallback.origin.y += GameConfig.recover_lift
+	_streaming_collision_hold_transform = fallback
+	_streaming_collision_freeze_expired_count += 1
+	_release_streaming_collision_freeze()
+	_last_stable_forward = forward
+	_recovery_position_history.clear()
+	_recovery_transform_history.clear()
+	_recovery_stuck = false
+	EventBus.vehicle_streaming_freeze_expired.emit(from_position, fallback.origin, frozen_ticks)
+	_update_state()
 
 
 func _release_streaming_collision_freeze() -> void:
 	_apply_streaming_collision_body_state(false)
 	_record_streaming_collision_release()
 	_streaming_collision_freeze_active = false
+	_streaming_collision_consecutive_freeze_ticks = 0
 
 
 func _reset_streaming_collision_freeze(spawn: Transform3D) -> void:
 	_streaming_collision_freeze_active = false
 	_streaming_collision_hold_transform = spawn
 	_streaming_collision_freeze_ticks = 0
+	_streaming_collision_consecutive_freeze_ticks = 0
+	_streaming_collision_max_consecutive_freeze_ticks = 0
+	_streaming_collision_freeze_expired_count = 0
 	_streaming_collision_release_count = 0
 	_streaming_collision_release_same_tick_as_activation_count = 0
 	_streaming_collision_release_min_activation_lag_ticks = 2147483647
