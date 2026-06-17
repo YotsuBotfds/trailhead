@@ -7,15 +7,23 @@ const TILE_KEY_SEPARATOR: String = "_"
 const HEIGHTMAP_SIDE_CAR_PATH: String = "tile.json"
 const HEIGHTMAP_BIN_PATH: String = "heightmap.bin"
 const DEFAULT_WORKER_COUNT: int = 1
+const MIN_NONBLOCKING_WORKER_COUNT: int = 1
+const PHYSICS_DELTA_CLAMP_EPSILON: float = 0.000001
 
 var _region_id: String = ""
 var _followed_node: Node3D = null
 var _fixed_world_position: Vector3 = Vector3.ZERO
 var _use_fixed_world_position: bool = false
+var _last_sampled_world_position: Vector3 = Vector3.ZERO
+var _has_last_sampled_world_position: bool = false
 var _streaming_enabled: bool = false
 var _current_cell: Vector2i = Vector2i.ZERO
 var _stream_generation: int = 0
 var _worker_count: int = DEFAULT_WORKER_COUNT
+var _deferred_activation_count: int = 0
+var _deferred_activation_by_cell: Dictionary[Vector2i, int] = {}
+var _max_observed_physics_delta: float = 0.0
+var _max_effective_physics_delta: float = 0.0
 
 var _ready_flags: Dictionary[Vector2i, bool] = {}
 var _heightmap_data_by_cell: Dictionary[Vector2i, Dictionary] = {}
@@ -65,10 +73,22 @@ func configure_fixed_position(new_region_id: String, world_position: Vector3) ->
 
 func set_fixed_world_position(world_position: Vector3) -> void:
 	_fixed_world_position = world_position
+	_use_fixed_world_position = true
 
 
 func set_worker_count_for_tests(worker_count: int) -> void:
-	_worker_count = maxi(worker_count, 0)
+	_worker_count = maxi(worker_count, MIN_NONBLOCKING_WORKER_COUNT)
+
+
+func forget_ready_cells_for_tests(cells: Array[Vector2i]) -> void:
+	var sorted_cells: Array[Vector2i] = _copy_cells(cells)
+	_sort_cells(sorted_cells)
+	for cell in sorted_cells:
+		if _active_bodies_by_cell.has(cell):
+			continue
+		_ready_flags.erase(cell)
+		_heightmap_data_by_cell.erase(cell)
+		_cancel_build(cell)
 
 
 func reset() -> void:
@@ -79,6 +99,12 @@ func reset() -> void:
 	_region_id = ""
 	_followed_node = null
 	_use_fixed_world_position = false
+	_last_sampled_world_position = Vector3.ZERO
+	_has_last_sampled_world_position = false
+	_deferred_activation_count = 0
+	_deferred_activation_by_cell.clear()
+	_max_observed_physics_delta = 0.0
+	_max_effective_physics_delta = 0.0
 	_last_to_load.clear()
 	_last_to_unload.clear()
 	_unload_all_active_bodies()
@@ -134,15 +160,41 @@ func expected_prefetch_cells_for_position(world_position: Vector3) -> Array[Vect
 	return _cells_in_radius(_cell_for_world_position(world_position), GameConfig.STREAM_PREFETCH_RADIUS)
 
 
-func _physics_process(_delta: float) -> void:
+func deferred_activation_count() -> int:
+	return _deferred_activation_count
+
+
+func deferred_activation_cells() -> Array[Vector2i]:
+	return _sorted_deferred_activation_cells()
+
+
+func deferred_activation_counts() -> Dictionary[Vector2i, int]:
+	var copy: Dictionary[Vector2i, int] = {}
+	for cell in _sorted_deferred_activation_cells():
+		copy[cell] = _deferred_activation_by_cell[cell]
+	return copy
+
+
+func max_observed_physics_delta() -> float:
+	return _max_observed_physics_delta
+
+
+func max_effective_physics_delta() -> float:
+	return _max_effective_physics_delta
+
+
+func _physics_process(delta: float) -> void:
 	if not _streaming_enabled:
 		return
 	if _region_id.is_empty():
 		return
 
-	_current_cell = _sample_current_cell()
+	var activation_allowed: bool = _record_physics_delta(delta)
+	var sampled_world_position: Vector3 = _sample_world_position()
+	_current_cell = _cell_for_world_position(sampled_world_position)
 	var desired_active_cells: Array[Vector2i] = _cells_in_radius(_current_cell, GameConfig.STREAM_ACTIVE_RADIUS)
-	var desired_prefetch_cells: Array[Vector2i] = _cells_in_radius(_current_cell, GameConfig.STREAM_PREFETCH_RADIUS)
+	var desired_prefetch_cells: Array[Vector2i] = _prefetch_cells_for_sample(sampled_world_position, _current_cell)
+	_record_sampled_world_position(sampled_world_position)
 	var current_active_cells: Array[Vector2i] = _sorted_body_cells()
 
 	_last_to_load = _cell_difference(desired_active_cells, current_active_cells)
@@ -152,11 +204,13 @@ func _physics_process(_delta: float) -> void:
 	_process_unloads(_last_to_unload)
 	_forget_ready_cells_outside_prefetch(desired_prefetch_cells)
 	_cancel_prefetch_builds_outside(desired_prefetch_cells)
+	_enqueue_builds_for_cells(desired_active_cells)
 	_enqueue_builds_for_cells(desired_prefetch_cells)
-	if _workers.is_empty():
-		_process_build_queue_synchronously()
 	_drain_worker_results()
-	_process_loads(_last_to_load)
+	if activation_allowed:
+		_process_loads(_last_to_load)
+	else:
+		_record_deferred_activations(_last_to_load)
 
 
 func _process_unloads(cells: Array[Vector2i]) -> void:
@@ -176,12 +230,15 @@ func _process_unloads(cells: Array[Vector2i]) -> void:
 
 
 func _process_loads(cells: Array[Vector2i]) -> void:
+	var missing_cells: Array[Vector2i] = []
 	for cell in cells:
 		if not _ready_flags.has(cell):
 			_enqueue_build(cell)
-			_stall_until_ready(cell)
-		if not _ready_flags.has(cell):
-			return
+			missing_cells.append(cell)
+	if not missing_cells.is_empty():
+		_record_deferred_activations(missing_cells)
+		return
+	for cell in cells:
 		_activate_cell(cell)
 
 
@@ -356,20 +413,6 @@ func _cancel_build(cell: Vector2i) -> void:
 	_work_mutex.unlock()
 
 
-func _stall_until_ready(cell: Vector2i) -> void:
-	while not _ready_flags.has(cell) and not _load_failures_by_cell.has(cell):
-		_drain_worker_results()
-		if _ready_flags.has(cell) or _load_failures_by_cell.has(cell):
-			return
-		if _workers.is_empty():
-			_process_build_queue_synchronously()
-			_drain_worker_results()
-			if not _ready_flags.has(cell) and not _load_failures_by_cell.has(cell):
-				_record_load_failure(cell, "TileStreamer: no workers and tile not built: " + _tile_key(cell))
-			return
-		_result_semaphore.wait()
-
-
 func _drain_worker_results() -> void:
 	var results: Array[Dictionary] = []
 	_work_mutex.lock()
@@ -411,8 +454,6 @@ func _build_result_less(left: Dictionary, right: Dictionary) -> bool:
 func _start_workers() -> void:
 	_stop_workers()
 	_worker_should_stop = false
-	if _worker_count == 0:
-		return
 	for _index in range(_worker_count):
 		var thread: Thread = Thread.new()
 		var start_error: Error = thread.start(Callable(self, "_worker_loop"))
@@ -434,38 +475,6 @@ func _stop_workers() -> void:
 		thread.wait_to_finish()
 	_workers.clear()
 	_worker_should_stop = false
-
-
-func _process_build_queue_synchronously() -> void:
-	while true:
-		var job: Dictionary = {}
-		_work_mutex.lock()
-		if not _build_queue.is_empty():
-			job = _build_queue.pop_front() as Dictionary
-		_work_mutex.unlock()
-
-		if job.is_empty():
-			return
-
-		var cell: Vector2i = job["cell"] as Vector2i
-		var generation: int = int(job["generation"])
-		_work_mutex.lock()
-		var should_skip: bool = _worker_should_stop or generation != _stream_generation or _cancelled_builds.has(cell)
-		_work_mutex.unlock()
-		if should_skip:
-			continue
-
-		var result: Dictionary = _load_heightmap_data(
-			cell,
-			String(job["sidecar_path"]),
-			String(job["heightmap_path"])
-		)
-		result["generation"] = generation
-
-		_work_mutex.lock()
-		if not _worker_should_stop and generation == _stream_generation and not _cancelled_builds.has(cell):
-			_result_queue.append(result)
-		_work_mutex.unlock()
 
 
 func _clear_worker_queues() -> void:
@@ -536,6 +545,68 @@ func _sample_world_position() -> Vector3:
 	return global_position
 
 
+func _record_sampled_world_position(world_position: Vector3) -> void:
+	_last_sampled_world_position = world_position
+	_has_last_sampled_world_position = true
+
+
+func _record_physics_delta(delta: float) -> bool:
+	var observed_delta: float = maxf(delta, 0.0)
+	var effective_delta: float = minf(observed_delta, GameConfig.STREAM_PHYSICS_DELTA_CLAMP)
+	_max_observed_physics_delta = maxf(_max_observed_physics_delta, observed_delta)
+	_max_effective_physics_delta = maxf(_max_effective_physics_delta, effective_delta)
+	return observed_delta <= GameConfig.STREAM_PHYSICS_DELTA_CLAMP + PHYSICS_DELTA_CLAMP_EPSILON
+
+
+func _prefetch_cells_for_sample(world_position: Vector3, center_cell: Vector2i) -> Array[Vector2i]:
+	var cells: Array[Vector2i] = _cells_in_radius(center_cell, GameConfig.STREAM_PREFETCH_RADIUS)
+	if _use_fixed_world_position:
+		return cells
+	if not _has_last_sampled_world_position:
+		return cells
+	var travel_delta: Vector3 = world_position - _last_sampled_world_position
+	travel_delta.y = 0.0
+	if travel_delta.length() < GameConfig.STREAM_PREFETCH_TRAVEL_MIN_DISTANCE_M:
+		return cells
+	var travel_cell_step: Vector2i = _travel_cell_step(travel_delta)
+	if travel_cell_step == Vector2i.ZERO:
+		return cells
+	var lookahead_cells: int = maxi(GameConfig.STREAM_PREFETCH_TRAVEL_LOOKAHEAD_CELLS, 0)
+	for step in range(1, lookahead_cells + 1):
+		var bias_center: Vector2i = center_cell + Vector2i(travel_cell_step.x * step, travel_cell_step.y * step)
+		_append_unique_cells(cells, _cells_in_radius(bias_center, GameConfig.STREAM_ACTIVE_RADIUS))
+	_sort_cells(cells)
+	return cells
+
+
+func _travel_cell_step(travel_delta: Vector3) -> Vector2i:
+	if absf(travel_delta.x) >= absf(travel_delta.z):
+		if absf(travel_delta.x) < GameConfig.STREAM_PREFETCH_TRAVEL_MIN_DISTANCE_M:
+			return Vector2i.ZERO
+		return Vector2i(int(signf(travel_delta.x)), 0)
+	if absf(travel_delta.z) < GameConfig.STREAM_PREFETCH_TRAVEL_MIN_DISTANCE_M:
+		return Vector2i.ZERO
+	return Vector2i(0, int(signf(travel_delta.z)))
+
+
+func _append_unique_cells(cells: Array[Vector2i], cells_to_add: Array[Vector2i]) -> void:
+	for cell in cells_to_add:
+		if not cells.has(cell):
+			cells.append(cell)
+
+
+func _record_deferred_activations(cells: Array[Vector2i]) -> void:
+	for cell in cells:
+		if _active_bodies_by_cell.has(cell):
+			continue
+		_record_deferred_activation(cell)
+
+
+func _record_deferred_activation(cell: Vector2i) -> void:
+	_deferred_activation_count += 1
+	_deferred_activation_by_cell[cell] = int(_deferred_activation_by_cell.get(cell, 0)) + 1
+
+
 func _cell_for_world_position(world_position: Vector3) -> Vector2i:
 	var tile_size_m: float = GameConfig.STREAM_TILE_SIZE_M
 	return Vector2i(
@@ -591,6 +662,14 @@ func _sorted_ready_cells() -> Array[Vector2i]:
 func _sorted_failure_cells() -> Array[Vector2i]:
 	var cells: Array[Vector2i] = []
 	for cell in _load_failures_by_cell.keys():
+		cells.append(cell)
+	_sort_cells(cells)
+	return cells
+
+
+func _sorted_deferred_activation_cells() -> Array[Vector2i]:
+	var cells: Array[Vector2i] = []
+	for cell in _deferred_activation_by_cell.keys():
 		cells.append(cell)
 	_sort_cells(cells)
 	return cells
