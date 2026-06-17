@@ -7,6 +7,7 @@ const SPIKE_ROUTE_PATH: String = "res://data/routes/spike_1km_route.tres"
 const ZION_STREAM_ROUTE_PATH: String = "res://data/routes/cedar_hollow_zion_stream_route.tres"
 const CEDAR_TERRAIN_DEF_PATH: String = "res://data/terrain/cedar_hollow_terrain_def.tres"
 const ZION_TERRAIN_DEF_PATH: String = "res://data/terrain/cedar_hollow_zion_terrain_def.tres"
+const SPIKE_TERRAIN_DEF_PATH: String = "res://data/terrain/spike_1km_terrain_def.tres"
 const CEDAR_COLLISION_BODY_NAME: String = "cedar_hollow_heightmap_collision"
 const INVALID_COLLISION_TILE: Vector2i = Vector2i(2147483647, 2147483647)
 const CedarHollowSceneResource: PackedScene = preload("res://scenes/cedar_hollow.tscn")
@@ -80,9 +81,14 @@ var _max_contact_normal_tilt_deg: float = 0.0
 var _contact_normal_min_y: float = 1.0
 var _max_abs_lateral_speed: float = 0.0
 var _final_abs_lateral_speed: float = 0.0
+var _has_previous_recorded_position: bool = false
+var _previous_recorded_position: Vector3 = Vector3.ZERO
+var _max_position_delta_m: float = 0.0
 var _chassis_clearance_sample_ticks: int = 0
 var _min_chassis_clearance_m: float = 999999.0
 var _max_chassis_penetration_m: float = 0.0
+var _final_body_heightfield_clearance_m: float = 0.0
+var _final_body_heightfield_clearance_valid: bool = false
 var _steering_speed_low_sample_ticks: int = 0
 var _steering_speed_mid_sample_ticks: int = 0
 var _steering_speed_high_sample_ticks: int = 0
@@ -165,6 +171,11 @@ var _state_exports: Dictionary[String, Dictionary] = {}
 var _streaming_enabled: bool = false
 var _streaming_route_key: String = ""
 var _streaming_region_id: String = ""
+var _stream_force_unready_enabled: bool = false
+var _stream_force_unready_cell: Vector2i = Vector2i.ZERO
+var _stream_force_unready_trigger_x: float = 0.0
+var _stream_force_unready_ticks: int = 0
+var _stream_force_unready_applied: bool = false
 
 
 func _ready() -> void:
@@ -229,6 +240,8 @@ func _ready() -> void:
 	_rng.seed = int(_args.get("seed", 0))
 	if not _load_optional_segment_fixture_data():
 		return
+	if not _configure_stream_force_unready():
+		return
 	_connect_event_bus()
 	_configure_flat_bounds()
 	if not _setup_surface_map():
@@ -282,6 +295,7 @@ func _physics_process(_delta: float) -> void:
 	if _done or _vehicle == null or _controller == null:
 		return
 	var state: RefCounted = _vehicle.call("get_state")
+	_maybe_force_streaming_unready(state)
 	_record(state, _last_input)
 	if _has_reached_target(state) or bool(_controller.call("is_done")):
 		_done = true
@@ -462,6 +476,51 @@ func _load_optional_segment_fixture_data() -> bool:
 	if data.has("expected_activation_ticks") and not _configure_fixture_expected_activation_ticks(data["expected_activation_ticks"]):
 		return false
 	return true
+
+
+func _configure_stream_force_unready() -> bool:
+	_stream_force_unready_enabled = false
+	_stream_force_unready_cell = Vector2i.ZERO
+	_stream_force_unready_trigger_x = 0.0
+	_stream_force_unready_ticks = 0
+	_stream_force_unready_applied = false
+	var cell_text: String = String(_args.get("stream-force-unready-cell", ""))
+	if cell_text == "":
+		return true
+	if not _streaming_enabled:
+		_finish_runner_error("stream-force-unready-cell requires --stream-route")
+		return false
+	if not _args.has("stream-force-unready-trigger-x"):
+		_finish_runner_error("stream-force-unready-cell requires --stream-force-unready-trigger-x")
+		return false
+	if not _args.has("stream-force-unready-ticks"):
+		_finish_runner_error("stream-force-unready-cell requires --stream-force-unready-ticks")
+		return false
+	var errors: Array[String] = []
+	_stream_force_unready_cell = _stream_force_unready_cell_from_text(cell_text, "stream-force-unready-cell", errors)
+	_stream_force_unready_trigger_x = float(_args.get("stream-force-unready-trigger-x"))
+	_stream_force_unready_ticks = int(_args.get("stream-force-unready-ticks"))
+	if _stream_force_unready_ticks <= 0:
+		errors.append("stream-force-unready-ticks must be > 0")
+	if not errors.is_empty():
+		_finish_runner_error(_join_strings(errors, "; "))
+		return false
+	_stream_force_unready_enabled = true
+	return true
+
+
+func _stream_force_unready_cell_from_text(value: String, label: String, errors: Array[String]) -> Vector2i:
+	var normalized: String = value.replace("_", ",")
+	var parts: PackedStringArray = normalized.split(",", false)
+	if parts.size() != 2:
+		errors.append(label + " must be cx,cy")
+		return Vector2i.ZERO
+	var cell_x_text: String = String(parts[0]).strip_edges()
+	var cell_y_text: String = String(parts[1]).strip_edges()
+	if not cell_x_text.is_valid_int() or not cell_y_text.is_valid_int():
+		errors.append(label + " must contain integer cx/cy values")
+		return Vector2i.ZERO
+	return Vector2i(int(cell_x_text), int(cell_y_text))
 
 
 func _configure_fixture_collision_tiles(value: Variant) -> bool:
@@ -1111,6 +1170,21 @@ func _streamer_failures_string(failures: Dictionary) -> String:
 	return _join_strings(parts, ", ")
 
 
+func _maybe_force_streaming_unready(state: RefCounted) -> void:
+	if not _stream_force_unready_enabled or _stream_force_unready_applied:
+		return
+	var state_position: Vector3 = state.get("position")
+	if state_position.x < _stream_force_unready_trigger_x:
+		return
+	var streamer: Node = _streamer_node()
+	if streamer == null:
+		_finish_runner_error("stream-force-unready requires TileStreamer autoload")
+		return
+	var cells: Array[Vector2i] = [_stream_force_unready_cell]
+	streamer.call("force_collision_unready_for_tests", cells, _stream_force_unready_ticks)
+	_stream_force_unready_applied = true
+
+
 func _reset_streamer() -> void:
 	if not _streaming_enabled:
 		return
@@ -1336,6 +1410,10 @@ func _record(state: RefCounted, input: RefCounted) -> void:
 	var control_right_displacement: float = (state_position - _initial_position).dot(_initial_control_right)
 	var descent_from_initial: float = _initial_position.y - state_position.y
 	var flat_displacement_from_initial: float = Vector2(state_position.x - _initial_position.x, state_position.z - _initial_position.z).length()
+	if _has_previous_recorded_position:
+		_max_position_delta_m = maxf(_max_position_delta_m, state_position.distance_to(_previous_recorded_position))
+	_previous_recorded_position = state_position
+	_has_previous_recorded_position = true
 	var row: Dictionary = {
 		"tick": _tick,
 		"position": _vec3_to_array(state_position),
@@ -1597,9 +1675,11 @@ func _finish(passed: bool) -> void:
 			"contact_normal_min_y": _contact_normal_min_y,
 			"max_abs_lateral_speed": _max_abs_lateral_speed,
 			"final_abs_lateral_speed": _final_abs_lateral_speed,
+			"max_position_delta_m": _max_position_delta_m,
 			"chassis_clearance_sample_ticks": _chassis_clearance_sample_ticks,
 			"min_chassis_clearance_m": _min_chassis_clearance_m if _min_chassis_clearance_m < 999998.0 else null,
 			"max_chassis_penetration_m": _max_chassis_penetration_m,
+			"final_body_heightfield_clearance_m": _final_body_heightfield_clearance_m if _final_body_heightfield_clearance_valid else null,
 			"steering_speed_low_sample_ticks": _steering_speed_low_sample_ticks,
 			"steering_speed_mid_sample_ticks": _steering_speed_mid_sample_ticks,
 			"steering_speed_high_sample_ticks": _steering_speed_high_sample_ticks,
@@ -1673,6 +1753,15 @@ func _finish(passed: bool) -> void:
 			"expected_activation_ticks": expected_activation_ticks,
 			"streaming_enabled": _streaming_enabled,
 			"streaming_region_id": _streaming_region_id,
+			"stream_force_unready_applied": _stream_force_unready_applied,
+			"streaming_collision_freeze_ticks": _vehicle_streaming_collision_freeze_ticks(),
+			"streaming_collision_release_count": _vehicle_streaming_collision_release_count(),
+			"streaming_collision_release_same_tick_as_activation_count": _vehicle_streaming_collision_release_same_tick_as_activation_count(),
+			"streaming_collision_release_min_activation_lag_ticks": _vehicle_streaming_collision_release_min_activation_lag_ticks(),
+			"streaming_collision_release_max_downward_speed_mps": _vehicle_streaming_collision_release_max_downward_speed_mps(),
+			"streaming_collision_last_release_stream_tick": _vehicle_streaming_collision_last_release_stream_tick(),
+			"streaming_collision_last_release_activation_tick": _vehicle_streaming_collision_last_release_activation_tick(),
+			"streaming_collision_snap_count": _vehicle_streaming_collision_snap_count(),
 			"golden_replay": golden_replay
 		},
 		"telemetry": _telemetry
@@ -2104,11 +2193,15 @@ func _record_chassis_heightfield_clearance(position: Vector3, basis: Basis) -> v
 		sampled_this_tick = true
 	if sampled_this_tick:
 		_chassis_clearance_sample_ticks += 1
+	if _heightfield_contains(position.x, position.z):
+		_final_body_heightfield_clearance_m = position.y - _heightfield_height(position.x, position.z)
+		_final_body_heightfield_clearance_valid = true
 
 
 func _uses_heightfield_clearance() -> bool:
 	return _scene_id == TerrainBuilderScript.CEDAR_SCENE_ID \
 		or _scene_id == TerrainBuilderScript.CEDAR_HOLLOW_10M_SCENE_ID \
+		or _scene_id == "spike_1km" \
 		or _scene_id == "heightmap_ramp_probe"
 
 
@@ -2137,6 +2230,8 @@ func _heightfield_terrain_def() -> Resource:
 		return TerrainBuilderScript.cedar_terrain_def()
 	if _scene_id == TerrainBuilderScript.CEDAR_HOLLOW_10M_SCENE_ID:
 		return TerrainBuilderScript.cedar_hollow_10m_terrain_def()
+	if _scene_id == "spike_1km":
+		return load(SPIKE_TERRAIN_DEF_PATH) as Resource
 	return null
 
 
@@ -2211,6 +2306,70 @@ func _terrain_surface_id_counts() -> Dictionary:
 	if _surface_map == null:
 		return {}
 	return _surface_map.call("terrain_id_counts")
+
+
+func _vehicle_streaming_collision_freeze_ticks() -> int:
+	if _vehicle == null:
+		return 0
+	if not _vehicle.has_method("streaming_collision_freeze_ticks"):
+		return 0
+	return int(_vehicle.call("streaming_collision_freeze_ticks"))
+
+
+func _vehicle_streaming_collision_release_count() -> int:
+	if _vehicle == null:
+		return 0
+	if not _vehicle.has_method("streaming_collision_release_count"):
+		return 0
+	return int(_vehicle.call("streaming_collision_release_count"))
+
+
+func _vehicle_streaming_collision_release_same_tick_as_activation_count() -> int:
+	if _vehicle == null:
+		return 0
+	if not _vehicle.has_method("streaming_collision_release_same_tick_as_activation_count"):
+		return 0
+	return int(_vehicle.call("streaming_collision_release_same_tick_as_activation_count"))
+
+
+func _vehicle_streaming_collision_release_min_activation_lag_ticks() -> int:
+	if _vehicle == null:
+		return 0
+	if not _vehicle.has_method("streaming_collision_release_min_activation_lag_ticks"):
+		return 0
+	return int(_vehicle.call("streaming_collision_release_min_activation_lag_ticks"))
+
+
+func _vehicle_streaming_collision_release_max_downward_speed_mps() -> float:
+	if _vehicle == null:
+		return 0.0
+	if not _vehicle.has_method("streaming_collision_release_max_downward_speed_mps"):
+		return 0.0
+	return float(_vehicle.call("streaming_collision_release_max_downward_speed_mps"))
+
+
+func _vehicle_streaming_collision_last_release_stream_tick() -> int:
+	if _vehicle == null:
+		return -1
+	if not _vehicle.has_method("streaming_collision_last_release_stream_tick"):
+		return -1
+	return int(_vehicle.call("streaming_collision_last_release_stream_tick"))
+
+
+func _vehicle_streaming_collision_last_release_activation_tick() -> int:
+	if _vehicle == null:
+		return -1
+	if not _vehicle.has_method("streaming_collision_last_release_activation_tick"):
+		return -1
+	return int(_vehicle.call("streaming_collision_last_release_activation_tick"))
+
+
+func _vehicle_streaming_collision_snap_count() -> int:
+	if _vehicle == null:
+		return 0
+	if not _vehicle.has_method("streaming_collision_snap_count"):
+		return 0
+	return int(_vehicle.call("streaming_collision_snap_count"))
 
 
 func _surface_sequence_contains(expected: Array[String]) -> bool:

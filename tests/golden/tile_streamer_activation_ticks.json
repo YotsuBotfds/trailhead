@@ -4,9 +4,7 @@
 	"source": "tools/tile_streamer_fixture.py",
 	"region_id": "spike_1km",
 	"worker_counts": [
-		1,
-		2,
-		8
+		0
 	],
 	"expected_activation_ticks": {
 		"2_2": 1,

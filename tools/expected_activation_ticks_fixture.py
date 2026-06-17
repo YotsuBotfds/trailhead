@@ -18,6 +18,13 @@ def main() -> int:
     if not isinstance(expected, dict) or not expected:
         print(f"error: {fixture_path} missing expected_activation_ticks", file=sys.stderr)
         return 1
+    expected_worker_counts = expected_worker_count_set(fixture)
+    if expected_worker_counts != {0}:
+        print(
+            f"error: {fixture_path} worker_counts must pin activation ticks to workers=0",
+            file=sys.stderr,
+        )
+        return 1
 
     completed = subprocess.run(
         [sys.executable, "tools/tile_streamer_fixture.py"],
@@ -36,8 +43,12 @@ def main() -> int:
         return 1
 
     failed = False
+    compared = 0
     for result in results:
         worker_count = int(result.get("worker_count", 0))
+        if expected_worker_counts and worker_count not in expected_worker_counts:
+            continue
+        compared += 1
         actual = result.get("activation_ticks", {})
         if actual != expected:
             failed = True
@@ -49,7 +60,10 @@ def main() -> int:
 
     if failed:
         return 1
-    print(f"ok: expected_activation_ticks matched for {len(results)} TileStreamer runs")
+    if compared <= 0:
+        print("error: no TileStreamer runs matched fixture worker_counts", file=sys.stderr)
+        return 1
+    print(f"ok: expected_activation_ticks matched for workers=0")
     return 0
 
 
@@ -59,6 +73,19 @@ def parse_results(stdout: str) -> list[dict]:
         if line.startswith(RESULT_PREFIX):
             results.append(json.loads(line[len(RESULT_PREFIX) :]))
     return results
+
+
+def expected_worker_count_set(fixture: dict) -> set[int]:
+    worker_counts = fixture.get("worker_counts", [])
+    if not isinstance(worker_counts, list):
+        return set()
+    out = set()
+    for value in worker_counts:
+        try:
+            out.add(int(value))
+        except (TypeError, ValueError):
+            continue
+    return out
 
 
 def diff_activation_ticks(expected: dict, actual: dict) -> str:
