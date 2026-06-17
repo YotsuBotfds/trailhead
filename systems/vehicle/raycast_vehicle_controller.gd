@@ -4,8 +4,8 @@ extends "res://systems/vehicle/vehicle_controller.gd"
 const RaycastVehicleInputScript: GDScript = preload("res://systems/vehicle/vehicle_input.gd")
 const RaycastVehicleStateScript: GDScript = preload("res://systems/vehicle/vehicle_state.gd")
 const VehicleContaminationStateScript: GDScript = preload("res://systems/vehicle/vehicle_contamination_state.gd")
-const TerrainBuilderScript: GDScript = preload("res://systems/world/terrain_builder.gd")
-const SPIKE_TERRAIN_DEF_PATH: String = "res://data/terrain/spike_1km_terrain_def.tres"
+const STREAMING_COLLISION_RELEASE_RAY_UP_MARGIN_M: float = 2.0
+const STREAMING_COLLISION_RELEASE_RAY_DOWN_LENGTH_M: float = 8.0
 
 var _body: RigidBody3D = null
 var _wheel_rays: Array[RayCast3D] = []
@@ -463,11 +463,18 @@ func _update_streaming_collision_freeze() -> bool:
 			_release_streaming_collision_freeze()
 			return true
 		return false
-	var settled: bool = bool(_tile_streamer.call("is_collision_settled_at", _body.global_position))
-	if not settled:
+	var ready: bool = bool(_tile_streamer.call("is_collision_ready_at", _body.global_position))
+	if not ready:
 		_engage_streaming_collision_freeze()
 		return true
 	if _streaming_collision_freeze_active:
+		var settled: bool = bool(_tile_streamer.call("is_collision_settled_at", _streaming_collision_hold_transform.origin))
+		if not settled:
+			_engage_streaming_collision_freeze()
+			return true
+		if not _place_streaming_collision_hold_on_confirmed_ground():
+			_engage_streaming_collision_freeze()
+			return true
 		_release_streaming_collision_freeze()
 		return true
 	return false
@@ -482,7 +489,7 @@ func _streaming_collision_guard_enabled() -> bool:
 		return false
 	if not bool(_tile_streamer.call("is_streaming_enabled")):
 		return false
-	return _tile_streamer.has_method("is_collision_settled_at")
+	return _tile_streamer.has_method("is_collision_ready_at") and _tile_streamer.has_method("is_collision_settled_at")
 
 
 func _engage_streaming_collision_freeze() -> void:
@@ -494,7 +501,6 @@ func _engage_streaming_collision_freeze() -> void:
 
 
 func _release_streaming_collision_freeze() -> void:
-	_snap_streaming_collision_hold_above_heightfield_if_needed()
 	_apply_streaming_collision_body_state(false)
 	_record_streaming_collision_release()
 	_streaming_collision_freeze_active = false
@@ -516,44 +522,32 @@ func _reset_streaming_collision_freeze(spawn: Transform3D) -> void:
 	PhysicsServer3D.body_set_state(_body.get_rid(), PhysicsServer3D.BODY_STATE_SLEEPING, false)
 
 
-func _snap_streaming_collision_hold_above_heightfield_if_needed() -> void:
-	var terrain_def: Resource = _streaming_collision_terrain_def()
-	if terrain_def == null:
-		return
+func _place_streaming_collision_hold_on_confirmed_ground() -> bool:
+	var world: World3D = _body.get_world_3d()
+	if world == null:
+		return false
 	var position: Vector3 = _streaming_collision_hold_transform.origin
-	var horizontal_offset: Vector2 = _streaming_collision_heightfield_horizontal_offset()
-	var terrain_xz: Vector2 = Vector2(position.x, position.z) - horizontal_offset
-	if not bool(terrain_def.call("contains_world_xz", terrain_xz)):
-		return
-	var terrain_height: float = TerrainBuilderScript.heightmap_height_at_world_xz(terrain_def, Vector2(position.x, position.z), horizontal_offset)
-	var safe_y: float = terrain_height + _streaming_collision_spawn_clearance()
-	if position.y >= safe_y:
-		return
-	position.y = safe_y
+	var from: Vector3 = position + Vector3.UP * STREAMING_COLLISION_RELEASE_RAY_UP_MARGIN_M
+	var to: Vector3 = position + Vector3.DOWN * STREAMING_COLLISION_RELEASE_RAY_DOWN_LENGTH_M
+	var exclude: Array[RID] = [_body.get_rid()]
+	var query: PhysicsRayQueryParameters3D = PhysicsRayQueryParameters3D.create(from, to, _streaming_collision_terrain_collision_mask(), exclude)
+	var hit: Dictionary[Variant, Variant] = world.direct_space_state.intersect_ray(query)
+	if not hit.has("position"):
+		return false
+	var hit_position: Vector3 = hit["position"] as Vector3
+	position.y = hit_position.y + _streaming_collision_spawn_clearance()
 	_streaming_collision_hold_transform.origin = position
 	_streaming_collision_snap_count += 1
+	return true
 
 
-func _streaming_collision_terrain_def() -> Resource:
-	if _tile_streamer == null or not _tile_streamer.has_method("region_id"):
-		return null
-	var streamer_region_id: String = String(_tile_streamer.call("region_id"))
-	if streamer_region_id == TerrainBuilderScript.CEDAR_SCENE_ID:
-		return TerrainBuilderScript.cedar_terrain_def()
-	if streamer_region_id == TerrainBuilderScript.CEDAR_HOLLOW_10M_SCENE_ID:
-		return TerrainBuilderScript.cedar_hollow_10m_terrain_def()
-	if streamer_region_id == "spike_1km":
-		return load(SPIKE_TERRAIN_DEF_PATH) as Resource
-	return null
-
-
-func _streaming_collision_heightfield_horizontal_offset() -> Vector2:
-	if _tile_streamer == null or not _tile_streamer.has_method("region_id"):
-		return Vector2.ZERO
-	var streamer_region_id: String = String(_tile_streamer.call("region_id"))
-	if streamer_region_id == TerrainBuilderScript.CEDAR_HOLLOW_10M_SCENE_ID:
-		return TerrainBuilderScript.cedar_hollow_10m_horizontal_offset()
-	return Vector2.ZERO
+func _streaming_collision_terrain_collision_mask() -> int:
+	if _tile_streamer != null and _tile_streamer.has_method("terrain_collision_mask"):
+		return int(_tile_streamer.call("terrain_collision_mask"))
+	if not _wheel_rays.is_empty():
+		var ray: RayCast3D = _wheel_rays[0]
+		return int(ray.collision_mask)
+	return 1
 
 
 func _streaming_collision_spawn_clearance() -> float:

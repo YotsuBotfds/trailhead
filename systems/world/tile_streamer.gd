@@ -108,6 +108,10 @@ func region_id() -> String:
 	return _region_id
 
 
+func terrain_collision_mask() -> int:
+	return DEFAULT_COLLISION_LAYER
+
+
 func force_collision_unready_for_tests(cells: Array[Vector2i], delay_ticks: int) -> void:
 	var sorted_cells: Array[Vector2i] = _copy_cells(cells)
 	_sort_cells(sorted_cells)

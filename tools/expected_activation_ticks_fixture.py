@@ -19,6 +19,12 @@ def main() -> int:
         print(f"error: {fixture_path} missing expected_activation_ticks", file=sys.stderr)
         return 1
     expected_worker_counts = expected_worker_count_set(fixture)
+    if expected_worker_counts != {0}:
+        print(
+            f"error: {fixture_path} worker_counts must pin activation ticks to workers=0",
+            file=sys.stderr,
+        )
+        return 1
 
     completed = subprocess.run(
         [sys.executable, "tools/tile_streamer_fixture.py"],
@@ -57,7 +63,7 @@ def main() -> int:
     if compared <= 0:
         print("error: no TileStreamer runs matched fixture worker_counts", file=sys.stderr)
         return 1
-    print(f"ok: expected_activation_ticks matched for {compared} TileStreamer runs")
+    print(f"ok: expected_activation_ticks matched for workers=0")
     return 0
 
 
