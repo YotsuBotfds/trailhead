@@ -1642,6 +1642,7 @@ func _finish(passed: bool) -> void:
 	var golden_replay_matched: bool = bool(golden_replay.get("matched", true))
 	predicates["golden_replay_matched"] = golden_replay_matched
 	var all_predicates_passed: bool = target_predicate_passed and scenario_predicate_passed and surface_event_observed and target_landmark_event_observed and event_bus_contract_passed and self_right_heading_preserved and expected_activation_ticks_matched and never_stuck_predicate_passed and _upright_or_recovered and _stayed_in_bounds and golden_replay_matched
+	var surface_source_counts: Dictionary = _surface_source_counts()
 	var result: Dictionary = {
 		"scene": _scene_id,
 		"controller": _controller_id,
@@ -1733,7 +1734,10 @@ func _finish(passed: bool) -> void:
 			"last_pace_clock_incident_event": String(_last_pace_clock_incident_event),
 			"pace_clock_incident_event_sequence": _pace_clock_incident_event_sequence,
 			"surface_contact_ticks": _surface_contact_ticks,
-			"surface_source_counts": _surface_source_counts(),
+			"surface_source_counts": surface_source_counts,
+			"surface_source_tagged_count": int(surface_source_counts.get(SurfaceMapScript.SOURCE_TAGGED, 0)),
+			"surface_source_terrain_count": int(surface_source_counts.get(SurfaceMapScript.SOURCE_TERRAIN, 0)),
+			"surface_source_fallback_count": int(surface_source_counts.get(SurfaceMapScript.SOURCE_FALLBACK, 0)),
 			"terrain_surface_id_counts": _terrain_surface_id_counts(),
 			"vehicle_contamination": _final_vehicle_contamination,
 			"max_vehicle_contamination": _max_vehicle_contamination_dictionary(),
