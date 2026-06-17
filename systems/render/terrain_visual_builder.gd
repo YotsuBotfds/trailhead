@@ -672,12 +672,13 @@ static func _append_tile_quads(tile_data: RegionTileData, sample_step: int, buck
 			var corner_b: int = _bucket_vertex(bucket, tile_data, next_col, row, local_origin_xz)
 			var corner_c: int = _bucket_vertex(bucket, tile_data, col, next_row, local_origin_xz)
 			var corner_d: int = _bucket_vertex(bucket, tile_data, next_col, next_row, local_origin_xz)
+			# Godot culls the opposite winding from above; keep terrain front-facing.
 			bucket.indices.append(corner_a)
-			bucket.indices.append(corner_c)
-			bucket.indices.append(corner_b)
 			bucket.indices.append(corner_b)
 			bucket.indices.append(corner_c)
+			bucket.indices.append(corner_b)
 			bucket.indices.append(corner_d)
+			bucket.indices.append(corner_c)
 
 
 static func _append_tile_quads_to_bucket(tile_data: RegionTileData, sample_step: int, bucket: MeshBucket, local_origin_xz: Vector2) -> void:
@@ -694,12 +695,13 @@ static func _append_tile_quads_to_bucket(tile_data: RegionTileData, sample_step:
 			var corner_b: int = _bucket_vertex(bucket, tile_data, next_col, row, local_origin_xz)
 			var corner_c: int = _bucket_vertex(bucket, tile_data, col, next_row, local_origin_xz)
 			var corner_d: int = _bucket_vertex(bucket, tile_data, next_col, next_row, local_origin_xz)
+			# Godot culls the opposite winding from above; keep terrain front-facing.
 			bucket.indices.append(corner_a)
-			bucket.indices.append(corner_c)
-			bucket.indices.append(corner_b)
 			bucket.indices.append(corner_b)
 			bucket.indices.append(corner_c)
+			bucket.indices.append(corner_b)
 			bucket.indices.append(corner_d)
+			bucket.indices.append(corner_c)
 
 
 static func _surface_sample_coord(start_index: int, end_index: int, sample_count: int) -> int:
