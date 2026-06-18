@@ -107,6 +107,8 @@ var _drive_started: bool = false
 func _ready() -> void:
 	RenderRuntimeConfigScript.apply_to(self)
 	_ensure_default_input_map()
+	_setup_title_card_hud()
+	await get_tree().process_frame
 	_setup_surface_map()
 	_setup_world()
 	_spawn_vehicle()
@@ -423,10 +425,7 @@ func _setup_hud() -> void:
 	_speed_hud.visible = GameConfig.speed_hud_enabled
 	add_child(_speed_hud)
 	_speed_hud.call("configure", _vehicle)
-	if GameConfig.title_card_enabled:
-		_title_card_hud = TitleCardHud.new() as CanvasLayer
-		_title_card_hud.name = "TitleCardHud"
-		add_child(_title_card_hud)
+	_setup_title_card_hud()
 	_controls_hint_hud = ControlsHintHudScript.new() as CanvasLayer
 	_controls_hint_hud.name = "ControlsHintHud"
 	_controls_hint_hud.visible = GameConfig.controls_hint_hud_enabled
@@ -436,6 +435,14 @@ func _setup_hud() -> void:
 	_debug_overlay_hud.visible = GameConfig.debug_overlay_enabled_by_default
 	add_child(_debug_overlay_hud)
 	_debug_overlay_hud.call("configure", self)
+
+
+func _setup_title_card_hud() -> void:
+	if _title_card_hud != null or not GameConfig.title_card_enabled:
+		return
+	_title_card_hud = TitleCardHud.new() as CanvasLayer
+	_title_card_hud.name = "TitleCardHud"
+	add_child(_title_card_hud)
 
 
 func _sample_golden_line() -> void:
@@ -762,6 +769,9 @@ func _apply_zion_vista_mood(environment: Environment, sky_material: Material) ->
 		physical_sky_material.mie_color = GameConfig.dusk_sky_horizon_color
 		physical_sky_material.ground_color = GameConfig.dusk_sky_ground_color
 		physical_sky_material.turbidity = GameConfig.dusk_sky_turbidity
+		physical_sky_material.sun_disk_scale = GameConfig.dusk_sky_sun_disk_scale
+		physical_sky_material.mie_coefficient = GameConfig.dusk_sky_mie_coefficient
+		physical_sky_material.mie_eccentricity = GameConfig.dusk_sky_mie_eccentricity
 		physical_sky_material.energy_multiplier = 1.22
 
 
@@ -812,6 +822,18 @@ func _update_visual_wheels(delta: float) -> void:
 		var wheel_mesh: Node3D = _wheel_mesh_for_socket(socket)
 		if wheel_mesh != null:
 			wheel_mesh.rotation = Vector3(_wheel_spin, 0.0, deg_to_rad(90.0))
+	var state_ref: RefCounted = _vehicle.call("get_state")
+	var hit_points: Array[Vector3] = state_ref.get("wheel_hit_point")
+	for i in range(mini(ProceduralBuggyVisualScript.SHOCK_NODE_NAMES.size(), hit_points.size())):
+		var shock_name: String = String(ProceduralBuggyVisualScript.SHOCK_NODE_NAMES[i])
+		var shock: Node3D = _vehicle_visual_root.find_child(shock_name, true, false) as Node3D
+		if shock == null:
+			continue
+		var spring: Node3D = shock.find_child(shock_name + "_spring", false, false) as Node3D
+		if spring == null:
+			continue
+		var compression: float = clampf((shock.global_position.y - hit_points[i].y - GameConfig.wheel_radius) / maxf(GameConfig.susp_travel, 0.001), 0.0, 1.0)
+		spring.scale.y = lerpf(1.0, 0.55, compression)
 
 
 func _update_vehicle_residue_visual(state: RefCounted) -> void:
@@ -883,7 +905,7 @@ func _update_cinematic_camera(delta: float) -> void:
 	var scaled_progress: float = loop_progress * float(position_count)
 	var segment_index: int = int(floorf(scaled_progress)) % position_count
 	var segment_t: float = scaled_progress - floorf(scaled_progress)
-	var eased_t: float = _cinematic_ease(segment_t)
+	var eased_t: float = segment_t
 	var position: Vector3 = _cinematic_catmull(GameConfig.cinematic_tour_positions, segment_index, eased_t)
 	var look_target: Vector3 = _cinematic_catmull(GameConfig.cinematic_tour_look_targets, segment_index, eased_t)
 	_cinematic_camera.global_position = position
@@ -1060,6 +1082,7 @@ class TitleCardHud:
 		func _draw() -> void:
 			if _alpha <= 0.0:
 				return
+			draw_rect(Rect2(Vector2.ZERO, size), Color(0.0, 0.0, 0.0, _alpha))
 			var font: Font = get_theme_default_font()
 			var title_size: Vector2 = font.get_string_size(TITLE_TEXT, HORIZONTAL_ALIGNMENT_CENTER, 0.0, TITLE_FONT_SIZE)
 			var subtitle_size: Vector2 = font.get_string_size(SUBTITLE_TEXT, HORIZONTAL_ALIGNMENT_CENTER, 0.0, SUBTITLE_FONT_SIZE)
