@@ -28,6 +28,19 @@ const WHEEL_DUST_SPREAD_DEG: float = 38.0
 const WHEEL_DUST_DAMPING_MIN: float = 0.18
 const WHEEL_DUST_DAMPING_MAX: float = 0.32
 const WHEEL_DUST_KICK_MAX_RATIO: float = 1.0
+const ROOSTER_NAME_PREFIX: String = "RearRoosterDebris"
+const PEBBLE_BURST_NAME_PREFIX: String = "PebbleScatterBurst"
+const LANDING_RING_NAME_PREFIX: String = "LandingDustRing"
+const ROOSTER_FIXED_SEED: int = 7110
+const PEBBLE_FIXED_SEED: int = 7120
+const LANDING_RING_FIXED_SEED: int = 7130
+const REAR_WHEEL_START_INDEX: int = 2
+const ROOSTER_HEIGHT_OFFSET: float = 0.055
+const ROOSTER_BILLBOARD_SCALE: float = 0.032
+const ROOSTER_PEBBLE_SCALE: float = 0.018
+const ROOSTER_SPREAD_DEG: float = 16.0
+const ROOSTER_GRAVITY: float = -1.10
+const HARD_SURFACE_SMOKE_BLEND: float = 0.72
 
 var _vehicle: Node = null
 var _camera: Camera3D = null
@@ -41,9 +54,13 @@ var _shake_strength: float = 0.0
 var _squash_strength: float = 0.0
 var _surface_id: StringName = &""
 var _wheel_dust: Array[GPUParticles3D] = []
+var _rooster_debris: Array[GPUParticles3D] = []
+var _pebble_bursts: Array[GPUParticles3D] = []
+var _landing_rings: Array[GPUParticles3D] = []
 var _dust_kick_boost: float = 0.0
 var _was_hard_accel: bool = false
 var _was_sliding: bool = false
+var _hard_drive_ratio: float = 0.0
 
 
 func _ready() -> void:
@@ -69,6 +86,7 @@ func configure(vehicle: Node, chase_camera: Camera3D, visual_root: Node3D) -> vo
 		_base_visual_scale = _visual_root.scale
 	_ensure_bursts()
 	_ensure_wheel_dust()
+	_ensure_debris_juice()
 
 
 func _process(delta: float) -> void:
@@ -124,6 +142,8 @@ func _trigger_landing_feedback(impact_speed: float) -> void:
 	_dust_kick_boost = maxf(_dust_kick_boost, WHEEL_DUST_KICK_MAX_RATIO)
 	if _last_speed >= GameConfig.surface_burst_speed_threshold:
 		_emit_surface_burst(_surface_id, global_position)
+	if impact_speed >= GameConfig.landing_ring_speed_threshold:
+		_emit_landing_feedback_at_wheels(impact_speed)
 
 
 # W3-DUST: hard-accel + slide edge detection. Fires the existing surface burst
@@ -132,8 +152,10 @@ func _trigger_landing_feedback(impact_speed: float) -> void:
 # momentarily densify the continuous wheel emitters.
 func _update_dust_kick_events(state: RefCounted, linear_velocity: Vector3) -> void:
 	var accel_delta: float = maxf(_last_speed - _previous_speed, 0.0)
-	var hard_accel: bool = accel_delta >= GameConfig.wheel_dust_accel_delta_threshold
+	var accel_ratio: float = clampf(accel_delta / maxf(GameConfig.wheel_dust_accel_delta_threshold, 0.001), 0.0, 1.0)
+	var hard_accel: bool = accel_ratio >= 1.0
 	var slide: bool = false
+	var slide_ratio: float = 0.0
 	if _last_speed >= GameConfig.wheel_dust_speed_threshold:
 		var basis: Basis = state.get("basis")
 		var forward_dir: Vector3 = basis * Vector3.FORWARD
@@ -142,7 +164,9 @@ func _update_dust_kick_events(state: RefCounted, linear_velocity: Vector3) -> vo
 			var forward_speed: float = linear_velocity.dot(forward_dir)
 			if forward_speed > 0.0:
 				var lateral_velocity: Vector3 = linear_velocity - forward_dir * forward_speed
-				slide = lateral_velocity.length() >= GameConfig.wheel_dust_slide_lateral_threshold
+				slide_ratio = clampf(lateral_velocity.length() / maxf(GameConfig.wheel_dust_slide_lateral_threshold, 0.001), 0.0, 1.0)
+				slide = slide_ratio >= 1.0
+	_hard_drive_ratio = maxf(_hard_drive_ratio, maxf(accel_ratio, slide_ratio))
 	var edge_event: bool = (hard_accel and not _was_hard_accel) or (slide and not _was_sliding)
 	_was_hard_accel = hard_accel
 	_was_sliding = slide
@@ -150,6 +174,8 @@ func _update_dust_kick_events(state: RefCounted, linear_velocity: Vector3) -> vo
 		_dust_kick_boost = maxf(_dust_kick_boost, WHEEL_DUST_KICK_MAX_RATIO)
 		if _last_speed >= GameConfig.surface_burst_speed_threshold:
 			_emit_surface_burst(_surface_id, global_position)
+		if _last_speed >= GameConfig.pebble_burst_speed_threshold:
+			_emit_pebble_scatter_at_rear_wheels()
 
 
 func _update_camera_shake(delta: float) -> void:
@@ -290,18 +316,23 @@ func _ensure_wheel_dust() -> void:
 func _update_wheel_dust(delta: float) -> void:
 	var decay_rate: float = maxf(GameConfig.wheel_dust_kick_decay, 0.1)
 	_dust_kick_boost = maxf(0.0, _dust_kick_boost - decay_rate * delta)
+	_hard_drive_ratio = maxf(0.0, _hard_drive_ratio - decay_rate * delta)
 	if _wheel_dust.is_empty():
 		return
 	if not GameConfig.wheel_dust_enabled or _vehicle == null:
 		_disable_all_wheel_dust()
+		_disable_all_rooster_debris()
 		return
 	var state: RefCounted = _vehicle.call("get_state") as RefCounted
 	if state == null:
 		_disable_all_wheel_dust()
+		_disable_all_rooster_debris()
 		return
 	var wheel_contact: Array[bool] = state.get("wheel_contact")
 	var wheel_surfaces: Array[StringName] = state.get("wheel_surface")
 	var wheel_hit_points: Array[Vector3] = state.get("wheel_hit_point")
+	var basis: Basis = state.get("basis")
+	var linear_velocity: Vector3 = state.get("linear_velocity")
 	var speed_floor: float = maxf(GameConfig.wheel_dust_speed_threshold, 0.001)
 	var speed_full: float = maxf(GameConfig.wheel_dust_speed_full, speed_floor + 0.001)
 	var speed_ratio: float = clampf((_last_speed - speed_floor) / (speed_full - speed_floor), 0.0, 1.0)
@@ -316,6 +347,7 @@ func _update_wheel_dust(delta: float) -> void:
 			speed_floor,
 			boost
 		)
+	_update_rooster_debris(wheel_contact, wheel_surfaces, wheel_hit_points, basis, linear_velocity)
 
 
 func _update_single_wheel_dust(
@@ -339,6 +371,9 @@ func _update_single_wheel_dust(
 		if intensity > 0.0:
 			active = true
 			tint = _wheel_dust_color(surface_id)
+			if _is_hard_smoke_surface(surface_id) and _hard_drive_ratio > 0.0:
+				tint = tint.lerp(GameConfig.wheel_rooster_smoke_color, HARD_SURFACE_SMOKE_BLEND)
+				intensity *= maxf(GameConfig.wheel_rooster_smoke_surface_boost, 0.0)
 			target_ratio = clampf(speed_ratio * intensity * boost, 0.0, 1.0)
 	if active:
 		var material: ParticleProcessMaterial = emitter.process_material as ParticleProcessMaterial
@@ -357,6 +392,68 @@ func _disable_all_wheel_dust() -> void:
 	for emitter in _wheel_dust:
 		if emitter.emitting:
 			emitter.emitting = false
+
+
+func _disable_all_rooster_debris() -> void:
+	for emitter in _rooster_debris:
+		if emitter.emitting:
+			emitter.emitting = false
+
+
+func _update_rooster_debris(
+		wheel_contact: Array[bool],
+		wheel_surfaces: Array[StringName],
+		wheel_hit_points: Array[Vector3],
+		basis: Basis,
+		linear_velocity: Vector3) -> void:
+	if _rooster_debris.is_empty():
+		return
+	var speed_floor: float = maxf(GameConfig.wheel_rooster_speed_threshold, 0.001)
+	var speed_full: float = maxf(GameConfig.wheel_rooster_speed_full, speed_floor + 0.001)
+	var speed_ratio: float = clampf((_last_speed - speed_floor) / (speed_full - speed_floor), 0.0, 1.0)
+	var forward_dir: Vector3 = basis * Vector3.FORWARD
+	var lateral_ratio: float = 0.0
+	if forward_dir.length() > 0.001:
+		forward_dir = forward_dir.normalized()
+		var forward_speed: float = linear_velocity.dot(forward_dir)
+		var lateral_velocity: Vector3 = linear_velocity - forward_dir * forward_speed
+		lateral_ratio = clampf(lateral_velocity.length() / maxf(GameConfig.wheel_dust_slide_lateral_threshold, 0.001), 0.0, 1.0)
+	var drive_ratio: float = clampf(maxf(_hard_drive_ratio, lateral_ratio) * maxf(GameConfig.wheel_rooster_trigger_boost, 0.0), 0.0, 1.0)
+	for rear_slot in range(_rooster_debris.size()):
+		var wheel_index: int = REAR_WHEEL_START_INDEX + rear_slot
+		var emitter: GPUParticles3D = _rooster_debris[rear_slot]
+		var active: bool = false
+		var target_ratio: float = 0.0
+		var tint: Color = Color.WHITE
+		if wheel_index < wheel_contact.size() \
+				and bool(wheel_contact[wheel_index]) \
+				and wheel_index < wheel_surfaces.size() \
+				and wheel_index < wheel_hit_points.size() \
+				and _last_speed >= speed_floor:
+			var surface_id: StringName = wheel_surfaces[wheel_index]
+			var intensity: float = _wheel_dust_intensity(surface_id)
+			if intensity > 0.0 and drive_ratio > 0.0:
+				active = true
+				tint = _wheel_dust_color(surface_id)
+				if _is_hard_smoke_surface(surface_id):
+					tint = tint.lerp(GameConfig.wheel_rooster_smoke_color, HARD_SURFACE_SMOKE_BLEND)
+					intensity *= maxf(GameConfig.wheel_rooster_smoke_surface_boost, 0.0)
+				target_ratio = clampf(speed_ratio * drive_ratio * intensity, 0.0, 1.0)
+				emitter.global_position = wheel_hit_points[wheel_index] + Vector3.UP * ROOSTER_HEIGHT_OFFSET
+				emitter.global_basis = basis
+		if active:
+			var material: ParticleProcessMaterial = emitter.process_material as ParticleProcessMaterial
+			if material != null:
+				material.color = tint
+			emitter.amount_ratio = target_ratio
+			if not emitter.emitting:
+				emitter.emitting = true
+		elif emitter.emitting:
+			emitter.emitting = false
+
+
+func _is_hard_smoke_surface(surface_id: StringName) -> bool:
+	return surface_id == &"wet_stone" or surface_id == &"slickrock_dry" or surface_id == &"paved_road"
 
 
 func _wheel_dust_intensity(surface_id: StringName) -> float:
@@ -455,3 +552,254 @@ func _wheel_dust_mesh() -> QuadMesh:
 	material.albedo_color = Color.WHITE
 	mesh.material = material
 	return mesh
+
+
+# === W17-VEHICLE-JUICE: rear-wheel debris, pebble scatter, landing rings =================
+
+func _ensure_debris_juice() -> void:
+	_rooster_debris.clear()
+	_pebble_bursts.clear()
+	_landing_rings.clear()
+	for rear_slot in range(2):
+		var rooster_name: String = ROOSTER_NAME_PREFIX + str(rear_slot)
+		var rooster: GPUParticles3D = get_node_or_null(rooster_name) as GPUParticles3D
+		if rooster == null:
+			rooster = _make_rooster_debris_emitter(rooster_name, ROOSTER_FIXED_SEED + rear_slot)
+			add_child(rooster)
+		rooster.emitting = false
+		_rooster_debris.append(rooster)
+	for wheel_index in range(WHEEL_COUNT):
+		var pebble_name: String = PEBBLE_BURST_NAME_PREFIX + str(wheel_index)
+		var pebble_burst: GPUParticles3D = get_node_or_null(pebble_name) as GPUParticles3D
+		if pebble_burst == null:
+			pebble_burst = _make_pebble_burst(pebble_name, PEBBLE_FIXED_SEED + wheel_index)
+			add_child(pebble_burst)
+		_pebble_bursts.append(pebble_burst)
+		var ring_name: String = LANDING_RING_NAME_PREFIX + str(wheel_index)
+		var landing_ring: GPUParticles3D = get_node_or_null(ring_name) as GPUParticles3D
+		if landing_ring == null:
+			landing_ring = _make_landing_ring(ring_name, LANDING_RING_FIXED_SEED + wheel_index)
+			add_child(landing_ring)
+		_landing_rings.append(landing_ring)
+
+
+func _make_rooster_debris_emitter(node_name: String, seed: int) -> GPUParticles3D:
+	var particles: GPUParticles3D = GPUParticles3D.new()
+	particles.name = node_name
+	particles.amount = maxi(GameConfig.wheel_rooster_particles_per_rear_wheel, 1)
+	particles.lifetime = maxf(GameConfig.wheel_rooster_lifetime, 0.05)
+	particles.one_shot = false
+	particles.emitting = false
+	particles.use_fixed_seed = true
+	particles.seed = seed
+	particles.randomness = 0.0
+	particles.fixed_fps = 30
+	particles.amount_ratio = 0.0
+	particles.visibility_range_end = GameConfig.vis_range_dust
+	particles.draw_passes = 2
+	particles.draw_pass_1 = _rooster_dust_mesh()
+	particles.draw_pass_2 = _pebble_mesh("rooster_pebble_material", GameConfig.wheel_dust_color_loose_rock, ROOSTER_PEBBLE_SCALE)
+	particles.process_material = _rooster_process_material()
+	particles.set_meta("surface_feedback", node_name)
+	particles.set_meta("visual_contract", "deterministic_rear_rooster_debris")
+	return particles
+
+
+func _rooster_process_material() -> ParticleProcessMaterial:
+	var material: ParticleProcessMaterial = ParticleProcessMaterial.new()
+	material.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
+	material.emission_sphere_radius = maxf(GameConfig.wheel_rooster_emission_radius, 0.001)
+	material.direction = Vector3.BACK
+	material.spread = ROOSTER_SPREAD_DEG
+	material.gravity = Vector3(0.0, ROOSTER_GRAVITY, 0.0)
+	material.initial_velocity_min = 0.55
+	material.initial_velocity_max = 2.10
+	material.damping_min = 0.10
+	material.damping_max = 0.28
+	material.scale_min = ROOSTER_BILLBOARD_SCALE * 0.45
+	material.scale_max = ROOSTER_BILLBOARD_SCALE
+	material.color = Color.WHITE
+	return material
+
+
+func _rooster_dust_mesh() -> QuadMesh:
+	var mesh: QuadMesh = QuadMesh.new()
+	mesh.size = Vector2(ROOSTER_BILLBOARD_SCALE, ROOSTER_BILLBOARD_SCALE)
+	var material: StandardMaterial3D = StandardMaterial3D.new()
+	material.resource_name = "rear_rooster_dust_material"
+	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	material.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.albedo_color = Color.WHITE
+	mesh.material = material
+	return mesh
+
+
+func _make_pebble_burst(node_name: String, seed: int) -> GPUParticles3D:
+	var particles: GPUParticles3D = GPUParticles3D.new()
+	particles.name = node_name
+	particles.amount = maxi(GameConfig.pebble_burst_particles, 1)
+	particles.lifetime = maxf(GameConfig.pebble_burst_lifetime, 0.05)
+	particles.one_shot = true
+	particles.emitting = false
+	particles.use_fixed_seed = true
+	particles.seed = seed
+	particles.randomness = 0.0
+	particles.fixed_fps = 30
+	particles.visibility_range_end = GameConfig.vis_range_dust
+	particles.draw_pass_1 = _pebble_mesh(node_name + "_material", GameConfig.wheel_dust_color_loose_rock, GameConfig.pebble_burst_scale)
+	particles.process_material = _pebble_burst_process_material()
+	particles.set_meta("surface_feedback", node_name)
+	particles.set_meta("visual_contract", "deterministic_pebble_scatter_burst")
+	return particles
+
+
+func _pebble_burst_process_material() -> ParticleProcessMaterial:
+	var material: ParticleProcessMaterial = ParticleProcessMaterial.new()
+	material.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
+	material.emission_sphere_radius = 0.045
+	material.direction = Vector3.UP
+	material.spread = 72.0
+	material.gravity = Vector3(0.0, -2.6, 0.0)
+	material.initial_velocity_min = 0.45
+	material.initial_velocity_max = 1.35
+	material.angular_velocity_min = -360.0
+	material.angular_velocity_max = 360.0
+	material.damping_min = 0.02
+	material.damping_max = 0.10
+	material.scale_min = 0.55
+	material.scale_max = 1.15
+	material.color = Color.WHITE
+	return material
+
+
+func _pebble_mesh(material_name: String, color: Color, scale: float) -> BoxMesh:
+	var mesh: BoxMesh = BoxMesh.new()
+	mesh.size = Vector3(scale, scale * 0.55, scale * 0.82)
+	var material: StandardMaterial3D = StandardMaterial3D.new()
+	material.resource_name = material_name
+	material.albedo_color = color
+	material.roughness = 0.58
+	material.metallic = 0.0
+	material.rim_enabled = true
+	material.rim = 0.38
+	mesh.material = material
+	return mesh
+
+
+func _make_landing_ring(node_name: String, seed: int) -> GPUParticles3D:
+	var particles: GPUParticles3D = GPUParticles3D.new()
+	particles.name = node_name
+	particles.amount = maxi(GameConfig.landing_ring_particles_per_wheel, 1)
+	particles.lifetime = maxf(GameConfig.landing_ring_lifetime, 0.05)
+	particles.one_shot = true
+	particles.emitting = false
+	particles.use_fixed_seed = true
+	particles.seed = seed
+	particles.randomness = 0.0
+	particles.fixed_fps = 30
+	particles.visibility_range_end = GameConfig.vis_range_dust
+	particles.draw_pass_1 = _landing_ring_mesh()
+	particles.process_material = _landing_ring_process_material()
+	particles.set_meta("surface_feedback", node_name)
+	particles.set_meta("visual_contract", "deterministic_landing_dust_ring")
+	return particles
+
+
+func _landing_ring_process_material() -> ParticleProcessMaterial:
+	var material: ParticleProcessMaterial = ParticleProcessMaterial.new()
+	material.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
+	material.emission_sphere_radius = 0.065
+	material.direction = Vector3.UP
+	material.spread = 88.0
+	material.gravity = Vector3(0.0, -0.12, 0.0)
+	material.initial_velocity_min = 0.45
+	material.initial_velocity_max = 1.25
+	material.damping_min = 0.26
+	material.damping_max = 0.44
+	material.scale_min = GameConfig.landing_ring_scale * 0.45
+	material.scale_max = GameConfig.landing_ring_scale
+	material.color = Color.WHITE
+	return material
+
+
+func _landing_ring_mesh() -> QuadMesh:
+	var mesh: QuadMesh = QuadMesh.new()
+	mesh.size = Vector2(GameConfig.landing_ring_scale, GameConfig.landing_ring_scale)
+	var material: StandardMaterial3D = StandardMaterial3D.new()
+	material.resource_name = "landing_dust_ring_material"
+	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	material.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.albedo_color = Color.WHITE
+	mesh.material = material
+	return mesh
+
+
+func _emit_pebble_scatter_at_rear_wheels() -> void:
+	if _vehicle == null or _pebble_bursts.size() < WHEEL_COUNT:
+		return
+	var state: RefCounted = _vehicle.call("get_state") as RefCounted
+	if state == null:
+		return
+	var wheel_contact: Array[bool] = state.get("wheel_contact")
+	var wheel_surfaces: Array[StringName] = state.get("wheel_surface")
+	var wheel_hit_points: Array[Vector3] = state.get("wheel_hit_point")
+	for wheel_index in range(REAR_WHEEL_START_INDEX, WHEEL_COUNT):
+		if wheel_index < wheel_contact.size() and bool(wheel_contact[wheel_index]):
+			_emit_pebble_burst(wheel_index, wheel_surfaces, wheel_hit_points)
+
+
+func _emit_landing_feedback_at_wheels(impact_speed: float) -> void:
+	if _vehicle == null:
+		return
+	var state: RefCounted = _vehicle.call("get_state") as RefCounted
+	if state == null:
+		return
+	var wheel_contact: Array[bool] = state.get("wheel_contact")
+	var wheel_surfaces: Array[StringName] = state.get("wheel_surface")
+	var wheel_hit_points: Array[Vector3] = state.get("wheel_hit_point")
+	for wheel_index in range(WHEEL_COUNT):
+		if wheel_index < wheel_contact.size() and bool(wheel_contact[wheel_index]):
+			_emit_landing_ring(wheel_index, wheel_surfaces, wheel_hit_points, impact_speed)
+			if impact_speed >= GameConfig.pebble_burst_speed_threshold:
+				_emit_pebble_burst(wheel_index, wheel_surfaces, wheel_hit_points)
+
+
+func _emit_pebble_burst(wheel_index: int, wheel_surfaces: Array[StringName], wheel_hit_points: Array[Vector3]) -> void:
+	if wheel_index >= _pebble_bursts.size() or wheel_index >= wheel_hit_points.size():
+		return
+	var burst: GPUParticles3D = _pebble_bursts[wheel_index]
+	_apply_particle_tint(burst, _surface_color_for_wheel(wheel_index, wheel_surfaces))
+	burst.global_position = wheel_hit_points[wheel_index] + Vector3.UP * ROOSTER_HEIGHT_OFFSET
+	burst.restart()
+	burst.emitting = true
+
+
+func _emit_landing_ring(wheel_index: int, wheel_surfaces: Array[StringName], wheel_hit_points: Array[Vector3], impact_speed: float) -> void:
+	if wheel_index >= _landing_rings.size() or wheel_index >= wheel_hit_points.size():
+		return
+	var ring: GPUParticles3D = _landing_rings[wheel_index]
+	var tint: Color = _surface_color_for_wheel(wheel_index, wheel_surfaces)
+	tint.a = clampf(tint.a + clampf(impact_speed / maxf(GameConfig.cam_shake_landing_speed_threshold * 3.0, 0.001), 0.0, 0.28), 0.0, 0.72)
+	_apply_particle_tint(ring, tint)
+	ring.global_position = wheel_hit_points[wheel_index] + Vector3.UP * WHEEL_DUST_HEIGHT_OFFSET
+	ring.restart()
+	ring.emitting = true
+
+
+func _surface_color_for_wheel(wheel_index: int, wheel_surfaces: Array[StringName]) -> Color:
+	if wheel_index < wheel_surfaces.size():
+		return _wheel_dust_color(wheel_surfaces[wheel_index])
+	return _wheel_dust_color(_surface_id)
+
+
+func _apply_particle_tint(particles: GPUParticles3D, tint: Color) -> void:
+	var process_material: ParticleProcessMaterial = particles.process_material as ParticleProcessMaterial
+	if process_material != null:
+		process_material.color = tint
+	for pass_index in range(particles.draw_passes):
+		var mesh: Mesh = particles.get_draw_pass_mesh(pass_index) as Mesh
+		if mesh != null and mesh.material is StandardMaterial3D:
+			var material: StandardMaterial3D = mesh.material as StandardMaterial3D
+			material.albedo_color = tint
