@@ -18,6 +18,8 @@ const VehicleResidueVisualScript: GDScript = preload("res://systems/render/vehic
 const VehicleJuiceRigScript: GDScript = preload("res://systems/render/vehicle_juice_rig.gd")
 const CedarAudioRigScript: GDScript = preload("res://systems/render/cedar_audio_rig.gd")
 const LandmarkHintHudScript: GDScript = preload("res://systems/render/landmark_hint_hud.gd")
+const SpeedHudScript: GDScript = preload("res://systems/render/speed_hud.gd")
+const ControlsHintHudScript: GDScript = preload("res://systems/render/controls_hint_hud.gd")
 const PhotographSystemScript: GDScript = preload("res://systems/render/photograph_system.gd")
 const RecoverableObjectRenderScript: GDScript = preload("res://systems/render/recoverable_object_render.gd")
 const GoldenLineTrackerScript: GDScript = preload("res://systems/sim/golden_line_tracker.gd")
@@ -58,6 +60,8 @@ var _chase_back_current: Vector3 = Vector3.ZERO
 var _orbit_camera_initialized: bool = false
 var _orbit_yaw_degrees: float = 0.0
 var _landmark_hint_hud: CanvasLayer = null
+var _speed_hud: CanvasLayer = null
+var _controls_hint_hud: CanvasLayer = null
 var _world_environment: WorldEnvironment = null
 var _sun: DirectionalLight3D = null
 var _mood: int = MOOD_DUSK
@@ -301,6 +305,15 @@ func _setup_hud() -> void:
 	_landmark_hint_hud.visible = GameConfig.minimap_enabled_by_default
 	add_child(_landmark_hint_hud)
 	_landmark_hint_hud.call("configure", CedarRoute, _vehicle)
+	_speed_hud = SpeedHudScript.new() as CanvasLayer
+	_speed_hud.name = "SpeedHud"
+	_speed_hud.visible = GameConfig.speed_hud_enabled
+	add_child(_speed_hud)
+	_speed_hud.call("configure", _vehicle)
+	_controls_hint_hud = ControlsHintHudScript.new() as CanvasLayer
+	_controls_hint_hud.name = "ControlsHintHud"
+	_controls_hint_hud.visible = GameConfig.controls_hint_hud_enabled
+	add_child(_controls_hint_hud)
 
 
 func _sample_golden_line() -> void:
