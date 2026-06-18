@@ -91,7 +91,7 @@ var _debug_overlay_hud: CanvasLayer = null
 var _title_card_hud: CanvasLayer = null
 var _world_environment: WorldEnvironment = null
 var _sun: DirectionalLight3D = null
-var _mood: int = MOOD_DUSK
+var _mood: int = MOOD_DAWN
 var _terrain_track_painter: Node = null
 var _terrain_visual_streamer: Node3D = null
 var _photograph_system: Node = null
@@ -121,6 +121,8 @@ func _ready() -> void:
 	_setup_photograph_system()
 	_setup_hud()
 	_setup_frequency_input_panel()
+	if GameConfig.cinematic_auto_open:
+		_enter_cinematic_tour()
 
 
 func _exit_tree() -> void:
@@ -1021,8 +1023,12 @@ class TitleCardHud:
 
 		const TITLE_TEXT: String = "Cedar Hollow"
 		const SUBTITLE_TEXT: String = "LOWER ZION CANYON"
-		const TITLE_FONT_SIZE: int = 46
-		const SUBTITLE_FONT_SIZE: int = 15
+		const TITLE_FONT_SIZE: int = 54
+		const SUBTITLE_FONT_SIZE: int = 18
+		const LOCATION_TEXT: String = "Zion National Park, Utah"
+		const LOCATION_FONT_SIZE: int = 12
+		const LOCATION_SUBTITLE_GAP: float = 8.0
+		const LOCATION_COLOR: Color = Color(0.75, 0.55, 0.22, 0.70)
 		const TITLE_SUBTITLE_GAP: float = 12.0
 		const TITLE_COLOR: Color = Color(0.96, 0.66, 0.32, 0.96)
 		const SUBTITLE_COLOR: Color = Color(0.93, 0.78, 0.50, 0.82)
@@ -1057,7 +1063,8 @@ class TitleCardHud:
 			var font: Font = get_theme_default_font()
 			var title_size: Vector2 = font.get_string_size(TITLE_TEXT, HORIZONTAL_ALIGNMENT_CENTER, 0.0, TITLE_FONT_SIZE)
 			var subtitle_size: Vector2 = font.get_string_size(SUBTITLE_TEXT, HORIZONTAL_ALIGNMENT_CENTER, 0.0, SUBTITLE_FONT_SIZE)
-			var block_height: float = title_size.y + TITLE_SUBTITLE_GAP + subtitle_size.y
+			var location_size: Vector2 = font.get_string_size(LOCATION_TEXT, HORIZONTAL_ALIGNMENT_CENTER, 0.0, LOCATION_FONT_SIZE)
+			var block_height: float = title_size.y + TITLE_SUBTITLE_GAP + subtitle_size.y + LOCATION_SUBTITLE_GAP + location_size.y
 			var center: Vector2 = size * 0.5
 			var title_pos: Vector2 = Vector2(center.x, center.y - block_height * 0.5)
 			var subtitle_pos: Vector2 = Vector2(center.x, title_pos.y + title_size.y + TITLE_SUBTITLE_GAP)
@@ -1065,6 +1072,9 @@ class TitleCardHud:
 			_draw_centered_string(font, SUBTITLE_TEXT, subtitle_pos + SHADOW_OFFSET, SUBTITLE_FONT_SIZE, _with_alpha(SHADOW_COLOR))
 			_draw_centered_string(font, TITLE_TEXT, title_pos, TITLE_FONT_SIZE, _with_alpha(TITLE_COLOR))
 			_draw_centered_string(font, SUBTITLE_TEXT, subtitle_pos, SUBTITLE_FONT_SIZE, _with_alpha(SUBTITLE_COLOR))
+			var location_pos: Vector2 = Vector2(center.x, subtitle_pos.y + subtitle_size.y + LOCATION_SUBTITLE_GAP)
+			_draw_centered_string(font, LOCATION_TEXT, location_pos + SHADOW_OFFSET, LOCATION_FONT_SIZE, _with_alpha(SHADOW_COLOR))
+			_draw_centered_string(font, LOCATION_TEXT, location_pos, LOCATION_FONT_SIZE, _with_alpha(LOCATION_COLOR))
 
 
 		func _draw_centered_string(font: Font, text: String, baseline_pos: Vector2, font_size: int, color: Color) -> void:
