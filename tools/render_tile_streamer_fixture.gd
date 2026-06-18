@@ -159,10 +159,10 @@ func _require_pipeline_warmup() -> void:
 	var warmup_node: Node3D = warmup_root as Node3D
 	if warmup_node == null:
 		_errors.append("PipelineWarmup should be Node3D")
-	elif warmup_node.visible:
-		_errors.append("PipelineWarmup should be hidden")
-	if warmup_root.process_mode != Node.PROCESS_MODE_DISABLED:
-		_errors.append("PipelineWarmup process_mode should be DISABLED")
+	elif not warmup_node.visible:
+		_errors.append("PipelineWarmup should be visible for PSO warmup")
+	if warmup_root.process_mode != Node.PROCESS_MODE_INHERIT:
+		_errors.append("PipelineWarmup process_mode should be INHERIT")
 	var terrain_material_count: int = _require_int_meta(
 		warmup_root,
 		TerrainVisualBuilderScript.PIPELINE_WARMUP_TERRAIN_MATERIAL_COUNT_META,
@@ -270,6 +270,8 @@ func _require_visual_tile(cell: Vector2i) -> MeshInstance3D:
 			_errors.append("streamed visual cell visibility_range_end expected " + str(expected_range_end) + ", got " + str(mesh_instance.visibility_range_end) + ": " + String(mesh_instance.name))
 	if mesh_instance.visibility_range_fade_mode != GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED:
 		_errors.append("streamed visual cell visibility_range_fade_mode expected DISABLED, got " + str(mesh_instance.visibility_range_fade_mode) + ": " + String(mesh_instance.name))
+	if mesh_instance.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF:
+		_errors.append("streamed visual cell should not cast shadows: " + String(mesh_instance.name))
 	if not mesh_instance.has_meta(TerrainVisualBuilderScript.TILE_INDEX_META):
 		_errors.append("visual cell missing tile index metadata: " + String(mesh_instance.name))
 	elif Vector2i(mesh_instance.get_meta(TerrainVisualBuilderScript.TILE_INDEX_META)) != cell:
@@ -320,6 +322,8 @@ func _require_foliage_tile(cell: Vector2i) -> Node3D:
 			_errors.append("foliage child missing LOD metadata: " + String(child.name))
 			continue
 		var region_lod: String = String(multimesh_instance.get_meta(TerrainVisualBuilderScript.REGION_LOD_META))
+		if multimesh_instance.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF:
+			_errors.append("foliage child should not cast shadows: " + String(child.name))
 		var material: Material = multimesh_instance.material_override
 		if material == null:
 			_errors.append("foliage child missing material_override: " + String(child.name))

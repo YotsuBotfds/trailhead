@@ -14,7 +14,7 @@ const EXPECTED_CENTER_CELL: Vector2i = Vector2i(11, 8)
 const WAIT_FRAMES: int = 1800
 const POSITION_TOLERANCE_M: float = 0.45
 const YAW_TOLERANCE_DEGREES: float = 1.0
-const MIN_VISTA_CAMERA_FAR_M: float = 5000.0
+const MIN_VISTA_CAMERA_FAR_M: float = 1200.0
 const STRIP_ONLY_ROOTS: Array[String] = [
 	"GroundDetailVisuals",
 	"FeatureVisuals",

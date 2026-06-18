@@ -1339,10 +1339,22 @@ func _inspect_default_sun(sun: DirectionalLight3D) -> void:
 		_errors.append("GoldenHourSun should start in dusk color")
 	if absf(sun.light_energy - GameConfig.dusk_sun_energy) > FLOAT_EPSILON:
 		_errors.append("GoldenHourSun should start in dusk energy")
-	if sun.directional_shadow_mode != DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS:
-		_errors.append("GoldenHourSun should use 2-split directional shadows")
+	if sun.directional_shadow_mode != _expected_directional_shadow_mode():
+		_errors.append("GoldenHourSun directional shadow mode should follow GameConfig")
 	if sun.directional_shadow_blend_splits:
 		_errors.append("GoldenHourSun should not blend shadow splits")
+
+
+func _expected_directional_shadow_mode() -> int:
+	match GameConfig.atmosphere_directional_shadow_mode:
+		GameConfig.DIRECTIONAL_SHADOW_ORTHOGONAL:
+			return DirectionalLight3D.SHADOW_ORTHOGONAL
+		GameConfig.DIRECTIONAL_SHADOW_PARALLEL_2_SPLITS:
+			return DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
+		GameConfig.DIRECTIONAL_SHADOW_PARALLEL_4_SPLITS:
+			return DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
+		_:
+			return DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
 
 
 func _inspect_camera_defaults(vehicle: Node, chase_camera: Camera3D, orbit_camera: Camera3D, fpv_camera: Camera3D) -> void:

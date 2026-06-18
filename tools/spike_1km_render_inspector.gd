@@ -11,7 +11,7 @@ const REGION_LOD_META: StringName = &"trailhead_region_lod"
 const VISIBILITY_RADIUS_META: StringName = &"trailhead_visibility_radius"
 const EXPECTED_FOLIAGE_LOD0_META: String = "foliage_lod0"
 const EXPECTED_FOLIAGE_LOD1_META: String = "foliage_lod1"
-const EXPECTED_FOLIAGE_LOD0_SHADOW_CASTING: int = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+const EXPECTED_FOLIAGE_LOD0_SHADOW_CASTING: int = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 const EXPECTED_FOLIAGE_LOD1_SHADOW_CASTING: int = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 var _scene_root: Node = null
@@ -92,6 +92,8 @@ func _inspect_detail_tiles(detail_root: Node) -> void:
 			_errors.append("TerrainDetailTiles/" + String(child.name) + " visibility_range_end expected " + str(expected_range_end) + ", got " + str(mesh_instance.visibility_range_end))
 		if mesh_instance.visibility_range_fade_mode != GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED:
 			_errors.append("TerrainDetailTiles/" + String(child.name) + " visibility_range_fade_mode expected DISABLED, got " + str(mesh_instance.visibility_range_fade_mode))
+		if mesh_instance.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF:
+			_errors.append("TerrainDetailTiles/" + String(child.name) + " should not cast shadows")
 		if not mesh_instance.has_meta(TILE_INDEX_META):
 			_errors.append("TerrainDetailTiles/" + String(child.name) + " missing tile index metadata")
 		else:
@@ -121,7 +123,7 @@ func _inspect_foliage_cells(foliage_root: Node) -> void:
 		if region_lod == EXPECTED_FOLIAGE_LOD0_META:
 			lod0_count += 1
 			if multimesh_instance.cast_shadow != EXPECTED_FOLIAGE_LOD0_SHADOW_CASTING:
-				_errors.append("FoliageCells/" + String(child.name) + " LOD0 cast_shadow expected ON, got " + str(multimesh_instance.cast_shadow))
+				_errors.append("FoliageCells/" + String(child.name) + " LOD0 cast_shadow expected OFF, got " + str(multimesh_instance.cast_shadow))
 			var lod0_radius: float = _visibility_radius(multimesh_instance, "FoliageCells/" + String(child.name))
 			var expected_lod0_end: float = _foliage_lod0_visibility_range_end(lod0_radius)
 			if absf(multimesh_instance.visibility_range_end - expected_lod0_end) > FLOAT_EPSILON:
@@ -147,10 +149,10 @@ func _inspect_pipeline_warmup(warmup_root: Node) -> void:
 	var warmup_node: Node3D = warmup_root as Node3D
 	if warmup_node == null:
 		_errors.append("PipelineWarmup should be Node3D")
-	elif warmup_node.visible:
-		_errors.append("PipelineWarmup should be hidden")
-	if warmup_root.process_mode != Node.PROCESS_MODE_DISABLED:
-		_errors.append("PipelineWarmup process_mode should be DISABLED")
+	elif not warmup_node.visible:
+		_errors.append("PipelineWarmup should be visible for PSO warmup")
+	if warmup_root.process_mode != Node.PROCESS_MODE_INHERIT:
+		_errors.append("PipelineWarmup process_mode should be INHERIT")
 	var terrain_material_count: int = _require_int_meta(
 		warmup_root,
 		TerrainVisualBuilderScript.PIPELINE_WARMUP_TERRAIN_MATERIAL_COUNT_META,

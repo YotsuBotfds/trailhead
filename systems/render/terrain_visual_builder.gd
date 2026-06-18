@@ -286,6 +286,7 @@ static func region_visual_tile_from_data(parent: Node3D, visual_tile_data: Regio
 	instance.mesh = region_mesh_from_data(visual_tile_data.mesh_data)
 	instance.visibility_range_end = visual_tile_data.visibility_range_end
 	instance.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
+	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	instance.set_meta(REGION_LOD_META, "detail")
 	instance.set_meta(VISIBILITY_RADIUS_META, visual_tile_data.visibility_radius)
 	instance.set_meta(TILE_INDEX_META, visual_tile_data.cell)
@@ -381,8 +382,7 @@ static func _foliage_lod1_visibility_range_end(cell_radius: float) -> float:
 static func _add_region_pipeline_warmup(parent: Node3D) -> Node3D:
 	var root: Node3D = Node3D.new()
 	root.name = REGION_PIPELINE_WARMUP_ROOT_NAME
-	root.visible = false
-	root.process_mode = Node.PROCESS_MODE_DISABLED
+	root.visible = true
 	parent.add_child(root)
 
 	var terrain_material_count: int = _add_terrain_pipeline_warmup(root)
@@ -578,6 +578,7 @@ static func _add_region_detail_tile(parent: Node3D, region_id: String, tile_data
 	instance.mesh = region_mesh_from_data(mesh_data)
 	instance.visibility_range_end = _detail_visibility_range_end(tile_data)
 	instance.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
+	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	instance.set_meta(REGION_LOD_META, "detail")
 	instance.set_meta(VISIBILITY_RADIUS_META, _tile_visibility_radius(tile_data))
 	instance.set_meta(TILE_INDEX_META, tile_data.cell)
@@ -1195,7 +1196,7 @@ static func _build_region_foliage_cell_data(tile_data_by_cell: Dictionary[Vector
 	cell_data.custom_data = custom_data
 	if lod_index == 0:
 		cell_data.visibility_range_end = _foliage_lod0_visibility_range_end(foliage_cell_radius)
-		cell_data.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+		cell_data.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	else:
 		cell_data.visibility_range_begin = _foliage_lod1_visibility_range_begin(foliage_cell_radius)
 		cell_data.visibility_range_end = _foliage_lod1_visibility_range_end(foliage_cell_radius)
