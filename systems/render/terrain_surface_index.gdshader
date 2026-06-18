@@ -34,6 +34,11 @@ uniform float zion_sand_height_end = 1202.0;
 uniform float zion_strata_scale = 0.58;
 uniform float zion_strata_strength = 0.48;
 uniform float zion_detile_strength = 0.18;
+uniform vec4 zion_varnish_color : source_color = vec4(0.13, 0.08, 0.06, 1.0);  // warm charcoal
+uniform float zion_varnish_strength = 0.5;
+uniform float zion_varnish_wall_threshold = 0.30;   // local_normal_y below this = near-vertical face
+uniform float zion_varnish_height_start = 1300.0;   // varnish mostly on walls above the floor
+uniform float zion_varnish_streak_scale = 0.12;     // horizontal streak frequency
 
 varying vec2 world_xz;
 varying float world_y;
@@ -132,6 +137,16 @@ void fragment() {
 	zion_albedo = mix(zion_albedo, zion_strata_dark_color.rgb, strata_mask * zion_strata_strength);
 	zion_albedo *= 1.0 + detile * zion_detile_strength;
 	ALBEDO = clamp(zion_albedo, vec3(0.0), vec3(1.0));
+	float varnish_wall_mask = 1.0 - smoothstep(zion_varnish_wall_threshold - 0.08, zion_varnish_wall_threshold + 0.08, local_normal_y);
+	float varnish_height_mask = smoothstep(zion_varnish_height_start, zion_varnish_height_start + 80.0, world_y);
+	float varnish_phase = hash21(floor(world_xz * 0.11)) * 6.283185;
+	float varnish_region = hash21(floor(world_xz * 0.045) + vec2(17.0, 3.0));
+	float varnish_s = sin(world_xz.x * zion_varnish_streak_scale + varnish_phase) + sin(world_xz.y * (zion_varnish_streak_scale * 0.87) + varnish_phase * 1.4);
+	float varnish_streak = pow(max(0.0, 1.0 - abs(varnish_s) * 0.5), 2.0);
+	varnish_streak *= smoothstep(0.25, 0.85, varnish_region);
+	varnish_streak *= mix(0.55, 1.0, strata_wave * 0.5 + 0.5);
+	float varnish_amount = varnish_wall_mask * varnish_height_mask * varnish_streak * zion_varnish_strength;
+	ALBEDO = mix(ALBEDO, zion_varnish_color.rgb, clamp(varnish_amount, 0.0, 1.0));
 	ROUGHNESS = terrain_roughness;
 	SPECULAR = terrain_specular;
 }
