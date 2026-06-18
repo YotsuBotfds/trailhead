@@ -1,0 +1,112 @@
+{
+  "bounds_utm": [
+    322481.824656,
+    4117712.509121,
+    327981.824656,
+    4123412.509121
+  ],
+  "cell_spacing_m": 1.0,
+  "crs": "EPSG:32612",
+  "dependencies_recorded": {
+    "numpy": "2.4.6",
+    "pillow": "12.2.0"
+  },
+  "macro_albedo_m_per_px": [
+    21.484375,
+    21.50943396226415
+  ],
+  "macro_albedo_png_path": "data/terrain/cedar_hollow_zion_macro_albedo.png",
+  "macro_albedo_png_sha256": "6d88cf053ac68604eac7033c3095d6952991445783ba92bbb1538806e3de2eb5",
+  "macro_albedo_size": [
+    256,
+    265
+  ],
+  "naip_band_order": "R, G, B, NIR (USGS 4-band convention; NIR band dropped)",
+  "naip_band_read_note": "Pillow reads the 4-band GeoTIFF as mode RGBA; channels 0..2 are taken as R, G, B and channel 3 (NIR) is dropped. Spot-checked against the surface-ID NDVI convention (band1=Red, band4=NIR) used by bake_zion_surface_id_png.py.",
+  "naip_input_path": "data/bake_inputs/zion_naip_2021/zion_naip_2021_corridor_rgbn_1m.tif",
+  "naip_input_sha256": "b38a7440703955a084d1702f1b55cba3c00f1d6cd600c1962a0d96ea202fd9aa",
+  "nodata_policy": "Source NAIP mosaic covers the full terrain box with no nodata samples observed; no nodata fill is performed. Input bytes are hash-gated via naip_input_sha256.",
+  "params": {
+    "brightness_scale_clamp": [
+      0.85,
+      1.18
+    ],
+    "brightness_target": 128.0,
+    "desaturate_keep": 0.6,
+    "downsample": "box-average via summed-area table (every source pixel contributes once)",
+    "gaussian_padding": "reflect",
+    "gaussian_radius": 5,
+    "gaussian_sigma": 1.5,
+    "gaussian_truncate": 3.0,
+    "luma_coef_rec709": [
+      0.2126,
+      0.7152,
+      0.0722
+    ],
+    "png_color_type": 2,
+    "png_filter": 0,
+    "png_zlib_level": 9,
+    "round_mode": "numpy.rint (round-half-to-even) then clip to [0,255]",
+    "target_height": 265,
+    "target_width": 256
+  },
+  "reprojection_note": "No reprojection in this bake: the NAIP mosaic at naip_input_path is already aligned to the surface-ID grid (5501x5701 @ 1 m, EPSG:32612) by bake_zion_surface_id_png.py. Dimensions are asserted at read time.",
+  "schema_version": 1,
+  "shader_sampling_note": "Intended consumer: the unified terrain shader (visual-phase-research-dossier.md P2 'NAIP macro albedo + distance fade'). Sample at world UV = ((world_pos.x - bounds_utm[0]) / (bounds_utm[2] - bounds_utm[0]), (world_pos.y - bounds_utm[1]) / (bounds_utm[3] - bounds_utm[1])); the texture spans the full bounds_utm extent. Use as a gentle MULTIPLICATIVE albedo modulator blended over the surface-ID base palette, NOT as the primary albedo: residual mid-day directional lighting is only partially removed by the desaturation + global brightness normalization, so a strong blend would re-introduce baked shading.",
+  "source": "USGS The National Map USGSNAIPImagery ImageServer",
+  "source_service_url": "https://imagery.nationalmap.gov/arcgis/rest/services/USGSNAIPImagery/ImageServer",
+  "source_year": 2021,
+  "stats": {
+    "downsample": {
+      "col_bin_widths": [
+        21,
+        22
+      ],
+      "row_bin_widths": [
+        21,
+        22
+      ]
+    },
+    "input": {
+      "input_rgb_max": [
+        249,
+        240,
+        241
+      ],
+      "input_rgb_mean": [
+        116.75823211669922,
+        109.2983627319336,
+        93.49114227294922
+      ],
+      "input_rgb_min": [
+        10,
+        21,
+        35
+      ]
+    },
+    "output": {
+      "brightness_scale_applied": 1.1267526504944314,
+      "brightness_scale_raw": 1.1267526504944314,
+      "output_rgb_max": [
+        233,
+        232,
+        226
+      ],
+      "output_rgb_mean": [
+        129.7777712264151,
+        128.02747641509433,
+        122.5016804245283
+      ],
+      "output_rgb_min": [
+        30,
+        36,
+        43
+      ],
+      "post_desat_mean_luma": 113.600797782754
+    }
+  },
+  "surface_map_size": [
+    5501,
+    5701
+  ]
+}
