@@ -82,6 +82,8 @@ func _trigger_landing_feedback(impact_speed: float) -> void:
 	var normalized: float = clampf((impact_speed - threshold) / threshold, 0.0, 1.0)
 	_shake_strength = maxf(_shake_strength, normalized)
 	_squash_strength = maxf(_squash_strength, normalized)
+	if _last_speed >= GameConfig.surface_burst_speed_threshold:
+		_emit_surface_burst(_surface_id, global_position)
 
 
 func _update_camera_shake(delta: float) -> void:
@@ -142,6 +144,8 @@ func _burst_for_surface(surface_id: StringName) -> GPUParticles3D:
 	if surface_id == &"wet_stone":
 		return get_node_or_null(WATER_BURST_NAME) as GPUParticles3D
 	if surface_id == &"packed_dirt" or surface_id == &"packed_gravel" or surface_id == &"loose_rock":
+		return get_node_or_null(DUST_BURST_NAME) as GPUParticles3D
+	if surface_id == &"sand_wash":
 		return get_node_or_null(DUST_BURST_NAME) as GPUParticles3D
 	return null
 
