@@ -279,7 +279,9 @@ func _setup_terrain_tracks(terrain_root: Node3D) -> void:
 		return
 	_terrain_track_painter.name = "TerrainTrackVisualPainter"
 	_world.add_child(_terrain_track_painter)
-	_terrain_track_painter.call("configure", CedarTerrainDef.get("bounds_min_xz"), CedarTerrainDef.get("bounds_max_xz"))
+	var spawn_transform: Transform3D = CedarRoute.call("spawn_transform", ZION_SPAWN_ID)
+	var spawn_xz: Vector2 = Vector2(spawn_transform.origin.x, spawn_transform.origin.z)
+	_terrain_track_painter.call("configure", spawn_xz, spawn_xz)
 	var track_texture: Texture2D = _terrain_track_painter.call("track_texture") as Texture2D
 	var track_bounds_min: Vector2 = _terrain_track_painter.call("render_bounds_min")
 	var track_bounds_max: Vector2 = _terrain_track_painter.call("render_bounds_max")
@@ -819,9 +821,9 @@ func _update_vehicle_residue_visual(state: RefCounted) -> void:
 func _update_terrain_tracks() -> void:
 	if _terrain_track_painter == null:
 		return
-	_apply_terrain_tracks_to_streamed_tiles()
 	var state: RefCounted = _vehicle.call("get_state")
 	_terrain_track_painter.call("apply_vehicle_state", state, GameConfig.FIXED_DT)
+	_apply_terrain_tracks_to_streamed_tiles()
 
 
 func _apply_terrain_tracks_to_streamed_tiles() -> void:

@@ -2,7 +2,6 @@ class_name TerrainTrackVisualPainter
 extends Node3D
 
 const TerrainTrackStampShader: Shader = preload("res://systems/render/terrain_track_stamp.gdshader")
-const CedarTerrainDef: Resource = preload("res://data/terrain/cedar_hollow_terrain_def.tres")
 const VIEWPORT_NAME: String = "TrackPaintViewport"
 const CAMERA_NAME: String = "TrackPaintCamera"
 const STAMP_ROOT_NAME: String = "TrackStampRoot"
@@ -20,6 +19,7 @@ const STAMP_SPACING_RADIUS_FACTOR: float = 0.55
 const MIN_STAMP_SPACING: float = 0.006
 const STAMP_DIRECTION_EPSILON: float = 0.001
 const STAMP_ALPHA_EPSILON: float = 0.01
+const RECENTER_HALF_WINDOW_FACTOR: float = 0.25
 const MIN_STAMPS_PER_WHEEL: int = 8
 const RUT_MUD_SCALE: float = 1.0
 const RUT_WET_SCALE: float = 0.48
@@ -84,6 +84,8 @@ func apply_vehicle_state(state: RefCounted, fixed_delta: float) -> void:
 	var wheel_hit_points: Array[Vector3] = state.get("wheel_hit_point")
 	var wheel_surfaces: Array[StringName] = state.get("wheel_surface")
 	var wheel_count: int = mini(mini(wheel_hit_points.size(), wheel_surfaces.size()), WHEEL_COUNT)
+	var vehicle_position: Vector3 = _window_follow_position(state.get("position"), wheel_hit_points, wheel_count)
+	_update_window_for_vehicle(vehicle_position)
 	for wheel_index in range(wheel_count):
 		var surface_id: StringName = wheel_surfaces[wheel_index]
 		if surface_id == &"":
@@ -109,17 +111,18 @@ func debug_stamp_count() -> int:
 
 
 func _default_bounds_min() -> Vector2:
-	return CedarTerrainDef.get("bounds_min_xz")
+	var half_window: float = _window_extent_meters() * 0.5
+	return Vector2(-half_window, -half_window)
 
 
 func _default_bounds_max() -> Vector2:
-	return CedarTerrainDef.get("bounds_max_xz")
+	var half_window: float = _window_extent_meters() * 0.5
+	return Vector2(half_window, half_window)
 
 
 func _configure_bounds(bounds_min: Vector2, bounds_max: Vector2) -> void:
 	var center: Vector2 = (bounds_min + bounds_max) * 0.5
-	var bounds_size: Vector2 = bounds_max - bounds_min
-	var square_extent: float = maxf(maxf(bounds_size.x, bounds_size.y), MIN_BOUNDS_EXTENT)
+	var square_extent: float = _window_extent_meters()
 	var half_extents: Vector2 = Vector2(square_extent, square_extent) * 0.5
 	_render_bounds_min = center - half_extents
 	_render_bounds_max = center + half_extents
@@ -161,13 +164,49 @@ func _configure_viewport() -> void:
 
 func _target_viewport_resolution() -> int:
 	var pixels_per_meter: float = maxf(GameConfig.terrain_track_painter_pixels_per_meter, 0.0)
-	var extent_resolution: int = _ceil_positive_to_int(_render_square_extent() * pixels_per_meter)
-	return maxi(maxi(GameConfig.terrain_track_painter_resolution, extent_resolution), MIN_VIEWPORT_RESOLUTION)
+	var extent_resolution: int = _ceil_positive_to_int(_window_extent_meters() * pixels_per_meter)
+	var max_resolution: int = maxi(GameConfig.terrain_track_painter_max_resolution, MIN_VIEWPORT_RESOLUTION)
+	return clampi(extent_resolution, MIN_VIEWPORT_RESOLUTION, max_resolution)
+
+
+func _window_extent_meters() -> float:
+	return maxf(GameConfig.terrain_track_painter_window_meters, MIN_BOUNDS_EXTENT)
 
 
 func _render_square_extent() -> float:
 	var bounds_size: Vector2 = _render_bounds_max - _render_bounds_min
 	return maxf(maxf(bounds_size.x, bounds_size.y), MIN_BOUNDS_EXTENT)
+
+
+func _update_window_for_vehicle(vehicle_position: Vector3) -> void:
+	var center: Vector2 = (_render_bounds_min + _render_bounds_max) * 0.5
+	var vehicle_xz: Vector2 = Vector2(vehicle_position.x, vehicle_position.z)
+	var recenter_distance: float = _window_extent_meters() * 0.5 * RECENTER_HALF_WINDOW_FACTOR
+	if (vehicle_xz - center).length() <= recenter_distance:
+		return
+	var half_window: Vector2 = Vector2(_window_extent_meters(), _window_extent_meters()) * 0.5
+	_render_bounds_min = vehicle_xz - half_window
+	_render_bounds_max = vehicle_xz + half_window
+	if _camera != null:
+		_camera.position = Vector3(vehicle_xz.x, TRACK_CAMERA_HEIGHT, vehicle_xz.y)
+		_camera.size = _render_square_extent()
+	_request_viewport_update()
+
+
+func _window_follow_position(vehicle_position: Vector3, wheel_hit_points: Array[Vector3], wheel_count: int) -> Vector3:
+	if vehicle_position != Vector3.ZERO:
+		return vehicle_position
+	var hit_sum: Vector3 = Vector3.ZERO
+	var hit_count: int = 0
+	for wheel_index in range(wheel_count):
+		var hit_point: Vector3 = wheel_hit_points[wheel_index]
+		if hit_point == Vector3.ZERO:
+			continue
+		hit_sum += hit_point
+		hit_count += 1
+	if hit_count <= 0:
+		return vehicle_position
+	return hit_sum / float(hit_count)
 
 
 func _ceil_positive_to_int(value: float) -> int:

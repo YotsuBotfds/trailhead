@@ -362,11 +362,15 @@ var terrain_pom_enabled: bool = true
 var terrain_pom_depth_scale: float = 0.028
 var terrain_pom_min_layers: int = 4
 var terrain_pom_max_layers: int = 6
+
+# --- Terrain tire-track painter: local render window, not whole-region bounds.
 var terrain_track_painter_enabled: bool = true
 var terrain_track_painter_resolution: int = 512
-var terrain_track_painter_pixels_per_meter: float = 14.0
+var terrain_track_painter_pixels_per_meter: float = 8.0
+var terrain_track_painter_window_meters: float = 256.0
+var terrain_track_painter_max_resolution: int = 2048
 var terrain_track_update_interval_ticks: int = 2
-var terrain_track_stamp_radius: float = 0.060
+var terrain_track_stamp_radius: float = 0.065
 var terrain_track_stamp_strength: float = 0.42
 var terrain_track_decay_per_second: float = 0.018
 var terrain_track_surface_mud_strength: float = 1.0
