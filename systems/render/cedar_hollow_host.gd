@@ -62,6 +62,7 @@ var _vehicle_residue_visual: RefCounted = VehicleResidueVisualScript.new()
 var _wheel_spin: float = 0.0
 var _camera_mode: int = CAMERA_MODE_CHASE
 var _photo_mode_active: bool = false
+var _photo_mode_previous_camera_mode: int = CAMERA_MODE_CHASE
 var _photo_mode_previous_speed_hud_visible: bool = false
 var _photo_mode_previous_controls_hint_visible: bool = false
 var _cinematic_tour_active: bool = false
@@ -206,6 +207,9 @@ func _ensure_joypad_bindings() -> void:
 	_ensure_action_button(&"self_right", JOY_BUTTON_Y)
 	_ensure_action_button(&"cam_toggle", JOY_BUTTON_RIGHT_SHOULDER)
 	_ensure_action_button(&"map_toggle", JOY_BUTTON_BACK)
+	_ensure_action_button(&"mood_toggle", JOY_BUTTON_LEFT_SHOULDER)
+	_ensure_action_button(&"cinematic_tour", JOY_BUTTON_B)
+	_ensure_action_button(&"photo_mode", JOY_BUTTON_X)
 
 
 func _ensure_action_axis(action_name: StringName, axis: int, axis_value: float) -> void:
@@ -585,6 +589,7 @@ func _enter_photo_mode() -> void:
 	if _photo_mode_active:
 		return
 	_photo_mode_active = true
+	_photo_mode_previous_camera_mode = _camera_mode
 	_photo_mode_previous_speed_hud_visible = _speed_hud.visible if _speed_hud != null else false
 	_photo_mode_previous_controls_hint_visible = _controls_hint_hud.visible if _controls_hint_hud != null else false
 	_camera_mode = CAMERA_MODE_FPV
@@ -596,7 +601,7 @@ func _exit_photo_mode() -> void:
 	if not _photo_mode_active:
 		return
 	_photo_mode_active = false
-	_camera_mode = CAMERA_MODE_CHASE
+	_camera_mode = _photo_mode_previous_camera_mode
 	_restore_photo_mode_hud()
 	_update_camera(GameConfig.FIXED_DT)
 

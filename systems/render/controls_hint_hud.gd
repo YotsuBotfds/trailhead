@@ -23,7 +23,7 @@ class _ControlsHintPanel:
 	const PANEL_PADDING_Y: float = 9.0
 	const FONT_SIZE: int = 13
 	const HINT_LINE_DRIVE: String = "RT/W: Drive  \u00b7  LT/S: Reverse  \u00b7  A: Handbrake  \u00b7  Y: Reset"
-	const HINT_LINE_FEATURES: String = "RB: Camera  \u00b7  T: Tour  \u00b7  V: Photo  \u00b7  N: Mood  \u00b7  M: Map"
+	const HINT_LINE_FEATURES: String = "RB: Camera  \u00b7  B: Tour  \u00b7  X: Photo  \u00b7  LB: Mood  \u00b7  M: Map"
 	const BG_COLOR: Color = Color(0.05, 0.05, 0.04, 0.42)
 	const TEXT_COLOR: Color = Color(0.90, 0.86, 0.74, 0.80)
 

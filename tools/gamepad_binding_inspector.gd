@@ -28,6 +28,11 @@ const DRIVING_ACTIONS: Array[StringName] = [
 	&"steer_right",
 	&"ebrake",
 ]
+const FEATURE_ACTIONS: Array[StringName] = [
+	&"mood_toggle",
+	&"cinematic_tour",
+	&"photo_mode",
+]
 var _errors: PackedStringArray = PackedStringArray()
 var _host_unavailable: bool = false
 var _host: Node = null
@@ -56,10 +61,15 @@ func _check_host_setup_bindings() -> void:
 		return
 	for action_name in DRIVING_ACTIONS:
 		_strip_joypad_events(action_name)
+	for action_name in FEATURE_ACTIONS:
+		_strip_joypad_events(action_name)
 	host.call("_ensure_default_input_map")
 	for action_name in DRIVING_ACTIONS:
 		if _joypad_event_count(action_name) == 0:
 			_errors.append("host: action " + String(action_name) + " has no joypad event after host setup")
+	for action_name in FEATURE_ACTIONS:
+		if _joypad_event_count(action_name) == 0:
+			_errors.append("host: feature action " + String(action_name) + " has no joypad event after host setup")
 
 
 func _check_idempotent() -> void:
