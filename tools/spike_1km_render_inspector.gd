@@ -165,8 +165,9 @@ func _inspect_pipeline_warmup(warmup_root: Node) -> void:
 		TerrainVisualBuilderScript.PIPELINE_WARMUP_FOLIAGE_LOD_COUNT_META,
 		"PipelineWarmup"
 	)
-	if foliage_lod_count != 2:
-		_errors.append("PipelineWarmup foliage LOD count expected 2, got " + str(foliage_lod_count))
+	var expected_foliage_warmup_nodes: PackedStringArray = TerrainVisualBuilderScript.foliage_pipeline_warmup_node_names()
+	if foliage_lod_count != expected_foliage_warmup_nodes.size():
+		_errors.append("PipelineWarmup foliage warmup count expected " + str(expected_foliage_warmup_nodes.size()) + ", got " + str(foliage_lod_count))
 	var terrain_warmup: MeshInstance3D = _require_node(warmup_root, TerrainVisualBuilderScript.REGION_PIPELINE_WARMUP_TERRAIN_NAME) as MeshInstance3D
 	if terrain_warmup == null:
 		_errors.append("PipelineWarmup terrain child should be MeshInstance3D")
@@ -179,10 +180,9 @@ func _inspect_pipeline_warmup(warmup_root: Node) -> void:
 			if terrain_warmup.mesh.get_surface_count() != terrain_material_count:
 				_errors.append("PipelineWarmup terrain surface count expected " + str(terrain_material_count) + ", got " + str(terrain_warmup.mesh.get_surface_count()))
 			_require_surface_materials(terrain_warmup, "PipelineWarmup terrain")
-	var lod0_warmup: MultiMeshInstance3D = _require_node(warmup_root, TerrainVisualBuilderScript.REGION_PIPELINE_WARMUP_FOLIAGE_LOD0_NAME) as MultiMeshInstance3D
-	_require_warmup_multimesh(lod0_warmup, "PipelineWarmup foliage LOD0")
-	var lod1_warmup: MultiMeshInstance3D = _require_node(warmup_root, TerrainVisualBuilderScript.REGION_PIPELINE_WARMUP_FOLIAGE_LOD1_NAME) as MultiMeshInstance3D
-	_require_warmup_multimesh(lod1_warmup, "PipelineWarmup foliage LOD1")
+	for node_name in expected_foliage_warmup_nodes:
+		var foliage_warmup: MultiMeshInstance3D = _require_node(warmup_root, node_name) as MultiMeshInstance3D
+		_require_warmup_multimesh(foliage_warmup, "PipelineWarmup " + node_name)
 	var collision_count: int = _count_collision_objects(warmup_root)
 	if collision_count > 0:
 		_errors.append("PipelineWarmup should not contain collision objects: " + str(collision_count))

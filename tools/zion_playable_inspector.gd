@@ -124,12 +124,43 @@ func _require_zion_water_visuals(world: Node) -> void:
 func _require_stream_roots(visual_root: Node) -> void:
 	_require_node(visual_root, TerrainVisualBuilderScript.REGION_DETAIL_ROOT_NAME)
 	_require_node(visual_root, TerrainVisualBuilderScript.REGION_STREAMED_FOLIAGE_ROOT_NAME)
-	_require_node(visual_root, TerrainVisualBuilderScript.REGION_PIPELINE_WARMUP_ROOT_NAME)
+	var warmup_root: Node = _require_node(visual_root, TerrainVisualBuilderScript.REGION_PIPELINE_WARMUP_ROOT_NAME)
+	if warmup_root != null:
+		_require_pipeline_warmup(warmup_root)
 	var hlod: MeshInstance3D = _require_node(visual_root, TerrainVisualBuilderScript.REGION_HLOD_NAME) as MeshInstance3D
 	if hlod == null:
 		_errors.append("Zion streamer TerrainHLOD should be MeshInstance3D")
 	else:
 		_require_stream_hlod(hlod)
+
+
+func _require_pipeline_warmup(warmup_root: Node) -> void:
+	var foliage_warmup_count: int = _require_int_meta(
+		warmup_root,
+		TerrainVisualBuilderScript.PIPELINE_WARMUP_FOLIAGE_LOD_COUNT_META,
+		"PipelineWarmup"
+	)
+	var expected_foliage_warmup_nodes: PackedStringArray = TerrainVisualBuilderScript.foliage_pipeline_warmup_node_names()
+	if foliage_warmup_count != expected_foliage_warmup_nodes.size():
+		_errors.append("PipelineWarmup foliage warmup count expected " + str(expected_foliage_warmup_nodes.size()) + ", got " + str(foliage_warmup_count))
+	for node_name in expected_foliage_warmup_nodes:
+		var warmup_instance: MultiMeshInstance3D = _require_node(warmup_root, node_name) as MultiMeshInstance3D
+		if warmup_instance == null:
+			_errors.append("PipelineWarmup " + node_name + " should be MultiMeshInstance3D")
+			continue
+		if warmup_instance.multimesh == null:
+			_errors.append("PipelineWarmup " + node_name + " missing MultiMesh")
+		elif warmup_instance.multimesh.mesh == null:
+			_errors.append("PipelineWarmup " + node_name + " missing mesh")
+		if warmup_instance.material_override == null:
+			_errors.append("PipelineWarmup " + node_name + " missing material")
+
+
+func _require_int_meta(node: Node, meta_name: StringName, label: String) -> int:
+	if not node.has_meta(meta_name):
+		_errors.append(label + " missing metadata: " + String(meta_name))
+		return 0
+	return int(node.get_meta(meta_name))
 
 
 func _require_stream_hlod(hlod: MeshInstance3D) -> void:
@@ -383,8 +414,10 @@ func _require_zion_foliage_placement_audits() -> void:
 	var talus_ok: bool = _require_foliage_audit_ok(talus_audit, "talus foliage audit")
 	if woodland_ok:
 		_require_foliage_dominant_surface(woodland_audit, "woodland foliage audit", 3)
+		_require_foliage_species_present(woodland_audit, "woodland foliage audit", "juniper")
 	if talus_ok:
 		_require_foliage_dominant_surface(talus_audit, "talus foliage audit", 4)
+		_require_foliage_species_present(talus_audit, "talus foliage audit", "yucca")
 	if not woodland_ok or not talus_ok:
 		return
 
@@ -417,6 +450,12 @@ func _require_foliage_dominant_surface(audit: Dictionary[String, Variant], label
 	var observed_share: float = float(audit.get("dominant_surface_share", 0.0))
 	if observed_share < FOLIAGE_DOMINANT_SURFACE_MIN_SHARE:
 		_errors.append(label + " dominant surface share expected >= " + str(FOLIAGE_DOMINANT_SURFACE_MIN_SHARE) + ", got " + str(observed_share))
+
+
+func _require_foliage_species_present(audit: Dictionary[String, Variant], label: String, species_id: String) -> void:
+	var instance_count: int = int(audit.get(species_id + "_instance_count", 0))
+	if instance_count <= 0:
+		_errors.append(label + " expected " + species_id + " instances, got " + str(instance_count))
 
 
 func _tile_streamer_active_cells() -> Array[Vector2i]:
