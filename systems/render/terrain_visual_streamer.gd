@@ -56,6 +56,7 @@ func configure_region(new_region_id: String) -> void:
 		_load_failures_by_cell[Vector2i.ZERO] = "region stream roots missing"
 		_configured = false
 		return
+	_hlod_dirty = true
 	_ensure_event_connections()
 	_start_workers()
 	set_process(true)
