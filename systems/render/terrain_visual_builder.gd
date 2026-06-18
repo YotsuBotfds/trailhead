@@ -16,6 +16,7 @@ static var _surface_index_material_cache: Dictionary[String, ShaderMaterial] = {
 static var _foliage_mesh_cache: Dictionary[int, Mesh] = {}
 static var _foliage_material_cache: Dictionary[int, Material] = {}
 static var _surface_index_albedo_array_cache: Texture2DArray = null
+static var _surface_index_macro_albedo_cache: Texture2D = null
 
 const REGION_ID_META: StringName = &"trailhead_region_id"
 const REGION_LOD_META: StringName = &"trailhead_region_lod"
@@ -92,6 +93,15 @@ const TERRAIN_ROUGHNESS_UNIFORM: StringName = &"terrain_roughness"
 const TERRAIN_SPECULAR_UNIFORM: StringName = &"terrain_specular"
 const ALBEDO_ARRAY_UNIFORM: StringName = &"albedo_array"
 const USE_ALBEDO_ARRAY_UNIFORM: StringName = &"use_albedo_array"
+const MACRO_ALBEDO_TEXTURE_PATH: String = "res://data/terrain/cedar_hollow_zion_macro_albedo.png"
+const MACRO_ALBEDO_TEXTURE_UNIFORM: StringName = &"macro_albedo_texture"
+const MACRO_ALBEDO_ORIGIN_XZ_UNIFORM: StringName = &"macro_albedo_origin_xz"
+const MACRO_ALBEDO_SIZE_XZ_UNIFORM: StringName = &"macro_albedo_size_xz"
+const USE_MACRO_ALBEDO_UNIFORM: StringName = &"use_macro_albedo"
+const MACRO_ALBEDO_STRENGTH_UNIFORM: StringName = &"macro_albedo_strength"
+const MACRO_ALBEDO_REGION_ORIGIN_XZ: Vector2 = Vector2.ZERO
+const MACRO_ALBEDO_REGION_SIZE_XZ: Vector2 = Vector2(5500.0, 5700.0)
+const MACRO_ALBEDO_STRENGTH: float = 0.18
 const ZION_SANDSTONE_COLOR_UNIFORM: StringName = &"zion_sandstone_color"
 const ZION_SAND_COLOR_UNIFORM: StringName = &"zion_sand_color"
 const ZION_STRATA_DARK_COLOR_UNIFORM: StringName = &"zion_strata_dark_color"
@@ -922,6 +932,10 @@ static func _surface_index_material(surface_data: MeshSurfaceData) -> ShaderMate
 	if albedo_array != null:
 		material.set_shader_parameter(ALBEDO_ARRAY_UNIFORM, albedo_array)
 		material.set_shader_parameter(USE_ALBEDO_ARRAY_UNIFORM, true)
+	var macro_albedo_texture: Texture2D = _surface_index_macro_albedo_texture()
+	if macro_albedo_texture != null:
+		material.set_shader_parameter(MACRO_ALBEDO_TEXTURE_UNIFORM, macro_albedo_texture)
+		material.set_shader_parameter(USE_MACRO_ALBEDO_UNIFORM, true)
 	material.set_shader_parameter(CONTROL_ORIGIN_XZ_UNIFORM, surface_data.control_origin_xz)
 	material.set_shader_parameter(CONTROL_SIZE_XZ_UNIFORM, surface_data.control_size_xz)
 	material.set_shader_parameter(TERRAIN_ROUGHNESS_UNIFORM, _average_default_surface_roughness())
@@ -984,6 +998,18 @@ static func _apply_zion_surface_index_tuning(material: ShaderMaterial) -> void:
 	material.set_shader_parameter(ZION_KAYENTA_HEIGHT_START_UNIFORM, 1200.0)
 	material.set_shader_parameter(ZION_KAYENTA_HEIGHT_END_UNIFORM, 1250.0)
 	material.set_shader_parameter(ZION_KAYENTA_STRENGTH_UNIFORM, 0.55)
+	material.set_shader_parameter(MACRO_ALBEDO_ORIGIN_XZ_UNIFORM, MACRO_ALBEDO_REGION_ORIGIN_XZ)
+	material.set_shader_parameter(MACRO_ALBEDO_SIZE_XZ_UNIFORM, MACRO_ALBEDO_REGION_SIZE_XZ)
+	material.set_shader_parameter(MACRO_ALBEDO_STRENGTH_UNIFORM, MACRO_ALBEDO_STRENGTH)
+
+
+static func _surface_index_macro_albedo_texture() -> Texture2D:
+	if _surface_index_macro_albedo_cache != null:
+		return _surface_index_macro_albedo_cache
+	_surface_index_macro_albedo_cache = _load_source_image_texture(MACRO_ALBEDO_TEXTURE_PATH)
+	if _surface_index_macro_albedo_cache == null:
+		push_error("Terrain surface-index macro albedo failed to load: " + MACRO_ALBEDO_TEXTURE_PATH)
+	return _surface_index_macro_albedo_cache
 
 
 static func _surface_index_albedo_array() -> Texture2DArray:
