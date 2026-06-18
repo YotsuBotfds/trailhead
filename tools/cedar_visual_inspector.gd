@@ -2247,6 +2247,8 @@ func _inspect_render_toggles(host: Node, chase_camera: Camera3D, orbit_camera: C
 		host.call("toggle_mood")
 		_require_dawn_mood(world_environment, sun)
 		host.call("toggle_mood")
+		_require_night_mood(world_environment, sun)
+		host.call("toggle_mood")
 		_inspect_default_environment(world_environment)
 		_inspect_default_sun(sun)
 
@@ -2280,6 +2282,28 @@ func _require_dawn_mood(world_environment: WorldEnvironment, sun: DirectionalLig
 		_errors.append("GoldenHourSun should switch to dawn energy")
 
 
+func _require_night_mood(world_environment: WorldEnvironment, sun: DirectionalLight3D) -> void:
+	if world_environment.environment == null:
+		_errors.append("GoldenHourEnvironment has no Environment resource for night toggle")
+		return
+	var environment: Environment = world_environment.environment
+	_require_environment_mood(
+		environment,
+		"night",
+		Color.BLACK,
+		AtmosphereVisualBuilderScript.NIGHT_AMBIENT_COLOR,
+		AtmosphereVisualBuilderScript.NIGHT_AMBIENT_ENERGY,
+		CedarHollowHostScript.ZION_NIGHT_FOG_DENSITY,
+		AtmosphereVisualBuilderScript.NIGHT_FOG_LIGHT_COLOR
+	)
+	if environment.sky == null or not (environment.sky.sky_material is ShaderMaterial):
+		_errors.append("GoldenHourEnvironment night should use ShaderMaterial star sky")
+	if sun.light_color != AtmosphereVisualBuilderScript.NIGHT_MOON_COLOR:
+		_errors.append("GoldenHourSun should switch to night moon color")
+	if absf(sun.light_energy - AtmosphereVisualBuilderScript.NIGHT_MOON_ENERGY) > FLOAT_EPSILON:
+		_errors.append("GoldenHourSun should switch to night moon energy")
+
+
 func _require_environment_mood(environment: Environment, mood_name: String, background_color: Color, ambient_color: Color, ambient_energy: float, fog_density: float, fog_light_color: Color) -> void:
 	if environment.background_mode != Environment.BG_SKY:
 		_errors.append("GoldenHourEnvironment " + mood_name + " should use sky background mode")
@@ -2287,7 +2311,7 @@ func _require_environment_mood(environment: Environment, mood_name: String, back
 		_errors.append("GoldenHourEnvironment " + mood_name + " should use sky ambient source")
 	if environment.sky == null:
 		_errors.append("GoldenHourEnvironment " + mood_name + " should assign Sky")
-	elif not (environment.sky.sky_material is PhysicalSkyMaterial):
+	elif mood_name != "night" and not (environment.sky.sky_material is PhysicalSkyMaterial):
 		_errors.append("GoldenHourEnvironment " + mood_name + " should use PhysicalSkyMaterial")
 	if not environment.fog_enabled:
 		_errors.append("GoldenHourEnvironment " + mood_name + " should enable fog")
