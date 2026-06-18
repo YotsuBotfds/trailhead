@@ -107,8 +107,6 @@ var _drive_started: bool = false
 func _ready() -> void:
 	RenderRuntimeConfigScript.apply_to(self)
 	_ensure_default_input_map()
-	_setup_title_card_hud()
-	await get_tree().process_frame
 	_setup_surface_map()
 	_setup_world()
 	_spawn_vehicle()
@@ -1082,7 +1080,6 @@ class TitleCardHud:
 		func _draw() -> void:
 			if _alpha <= 0.0:
 				return
-			draw_rect(Rect2(Vector2.ZERO, size), Color(0.0, 0.0, 0.0, _alpha))
 			var font: Font = get_theme_default_font()
 			var title_size: Vector2 = font.get_string_size(TITLE_TEXT, HORIZONTAL_ALIGNMENT_CENTER, 0.0, TITLE_FONT_SIZE)
 			var subtitle_size: Vector2 = font.get_string_size(SUBTITLE_TEXT, HORIZONTAL_ALIGNMENT_CENTER, 0.0, SUBTITLE_FONT_SIZE)
