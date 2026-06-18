@@ -33,6 +33,8 @@ var _activated_ticks_by_cell: Dictionary[Vector2i, int] = {}
 var _load_failures_by_cell: Dictionary[Vector2i, String] = {}
 var _queued_builds: Dictionary[Vector2i, bool] = {}
 var _cancelled_builds: Dictionary[Vector2i, bool] = {}
+var _prebuild_queue: Array[Vector2i] = []
+var _prebuilt_shapes_by_cell: Dictionary[Vector2i, HeightMapShape3D] = {}
 var _last_to_load: Array[Vector2i] = []
 var _last_to_unload: Array[Vector2i] = []
 var _workers: Array[Thread] = []
@@ -150,6 +152,8 @@ func reset() -> void:
 	_load_failures_by_cell.clear()
 	_queued_builds.clear()
 	_cancelled_builds.clear()
+	_prebuild_queue.clear()
+	_prebuilt_shapes_by_cell.clear()
 	_forced_unready_ticks_by_cell.clear()
 	_withheld_cells_previous_tick.clear()
 	_withheld_cells_current_tick.clear()
@@ -207,6 +211,7 @@ func _physics_process(_delta: float) -> void:
 		return
 	_stream_tick += 1
 	_begin_withhold_tracking_tick()
+	_drain_prebuild_queue()
 
 	var sampled_world_position: Vector3 = _sample_world_position()
 	_current_cell = _cell_for_world_position(sampled_world_position)
@@ -242,6 +247,7 @@ func _process_unloads(cells: Array[Vector2i]) -> void:
 		_activated_ticks_by_cell.erase(cell)
 		_ready_flags.erase(cell)
 		_heightmap_data_by_cell.erase(cell)
+		_remove_prebuild_state(cell)
 		_cancel_build(cell)
 		EventBus.world_tile_evicted.emit(cell)
 
@@ -287,7 +293,13 @@ func _activate_cell(cell: Vector2i) -> void:
 	if not _heightmap_data_by_cell.has(cell):
 		return
 
-	var shape: HeightMapShape3D = _shape_from_heightmap_data(_heightmap_data_by_cell[cell])
+	var shape: HeightMapShape3D
+	var prebuilt_shape: Variant = _prebuilt_shapes_by_cell.get(cell, null)
+	if prebuilt_shape == null:
+		shape = _shape_from_heightmap_data(_heightmap_data_by_cell[cell])
+	else:
+		shape = prebuilt_shape as HeightMapShape3D
+		_prebuilt_shapes_by_cell.erase(cell)
 	var body_rid: RID = PhysicsServer3D.body_create()
 	PhysicsServer3D.body_set_mode(body_rid, PhysicsServer3D.BODY_MODE_STATIC)
 	PhysicsServer3D.body_set_collision_layer(body_rid, DEFAULT_COLLISION_LAYER)
@@ -399,6 +411,7 @@ func _forget_ready_cells_outside_prefetch(desired_prefetch_cells: Array[Vector2i
 			continue
 		_ready_flags.erase(cell)
 		_heightmap_data_by_cell.erase(cell)
+		_remove_prebuild_state(cell)
 		EventBus.world_tile_unprefetched.emit(cell)
 
 
@@ -482,7 +495,32 @@ func _drain_worker_results() -> void:
 			continue
 		_heightmap_data_by_cell[cell] = result
 		_ready_flags[cell] = true
+		if (
+			not _active_bodies_by_cell.has(cell)
+			and not _prebuild_queue.has(cell)
+			and not _prebuilt_shapes_by_cell.has(cell)
+		):
+			_prebuild_queue.append(cell)
 		EventBus.world_tile_prefetched.emit(cell)
+
+
+func _drain_prebuild_queue() -> void:
+	var budget: int = maxi(GameConfig.stream_collision_prebuild_per_tick, 0)
+	while budget > 0 and not _prebuild_queue.is_empty():
+		var cell: Vector2i = _prebuild_queue.pop_front()
+		if (
+			_ready_flags.has(cell)
+			and _heightmap_data_by_cell.has(cell)
+			and not _active_bodies_by_cell.has(cell)
+			and not _prebuilt_shapes_by_cell.has(cell)
+		):
+			_prebuilt_shapes_by_cell[cell] = _shape_from_heightmap_data(_heightmap_data_by_cell[cell])
+			budget -= 1
+
+
+func _remove_prebuild_state(cell: Vector2i) -> void:
+	_prebuild_queue.erase(cell)
+	_prebuilt_shapes_by_cell.erase(cell)
 
 
 func _begin_withhold_tracking_tick() -> void:
