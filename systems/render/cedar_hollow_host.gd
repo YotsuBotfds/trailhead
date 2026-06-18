@@ -7,6 +7,7 @@ const CedarTerrainDef: Resource = preload("res://data/terrain/cedar_hollow_zion_
 const VehicleScene: PackedScene = preload("res://scenes/vehicle.tscn")
 const VehicleInputScript: GDScript = preload("res://systems/vehicle/vehicle_input.gd")
 const ChaseCameraRigScript: GDScript = preload("res://systems/render/chase_camera_rig.gd")
+const ChaseCameraMath: GDScript = preload("res://systems/render/chase_camera_math.gd")
 const TerrainVisualBuilderScript: GDScript = preload("res://systems/render/terrain_visual_builder.gd")
 const TerrainVisualStreamerScript: GDScript = preload("res://systems/render/terrain_visual_streamer.gd")
 const WaterVisualBuilderScript: GDScript = preload("res://systems/render/water_visual_builder.gd")
@@ -61,8 +62,15 @@ var _chase_camera_rig: RefCounted = ChaseCameraRigScript.new()
 var _chase_camera_initialized: bool = false
 var _chase_look_target_current: Vector3 = Vector3.ZERO
 var _chase_back_current: Vector3 = Vector3.ZERO
+var _chase_up_current: Vector3 = Vector3.UP
+var _chase_vehicle_y_current: float = 0.0
 var _orbit_camera_initialized: bool = false
+var _orbit_vehicle_y_current: float = 0.0
 var _orbit_yaw_degrees: float = 0.0
+var _fpv_camera_initialized: bool = false
+var _fpv_vehicle_y_current: float = 0.0
+var _fpv_back_current: Vector3 = Vector3.ZERO
+var _fpv_up_current: Vector3 = Vector3.UP
 var _landmark_hint_hud: CanvasLayer = null
 var _speed_hud: CanvasLayer = null
 var _controls_hint_hud: CanvasLayer = null
@@ -671,7 +679,7 @@ func _update_camera(delta: float) -> void:
 	var state: RefCounted = _vehicle.call("get_state")
 	_update_chase_camera(delta, state)
 	_update_orbit_camera(delta, state)
-	_update_fpv_camera(state)
+	_update_fpv_camera(delta, state)
 
 
 func _update_chase_camera(delta: float, state: RefCounted) -> void:
@@ -687,42 +695,70 @@ func _sync_chase_camera_rig_from_legacy() -> void:
 	_chase_camera_rig.set("initialized", _chase_camera_initialized)
 	_chase_camera_rig.set("look_target_current", _chase_look_target_current)
 	_chase_camera_rig.set("back_current", _chase_back_current)
+	_chase_camera_rig.set("up_current", _chase_up_current)
+	_chase_camera_rig.set("vehicle_y_current", _chase_vehicle_y_current)
 
 
 func _sync_chase_camera_legacy_from_rig() -> void:
 	_chase_camera_initialized = bool(_chase_camera_rig.get("initialized"))
 	_chase_look_target_current = _chase_camera_rig.get("look_target_current")
 	_chase_back_current = _chase_camera_rig.get("back_current")
+	_chase_up_current = _chase_camera_rig.get("up_current")
+	_chase_vehicle_y_current = float(_chase_camera_rig.get("vehicle_y_current"))
 
 
 func _update_orbit_camera(delta: float, state: RefCounted) -> void:
 	if _orbit_camera == null:
 		return
 	var vehicle_position: Vector3 = state.get("position")
+	var followed_position: Vector3 = _smoothed_orbit_follow_position(vehicle_position, delta)
 	if _camera_mode == CAMERA_MODE_ORBIT:
 		_orbit_yaw_degrees += GameConfig.orbit_cam_speed_deg * delta
 	var yaw_radians: float = deg_to_rad(_orbit_yaw_degrees)
 	var orbit_offset: Vector3 = Vector3(sin(yaw_radians), 0.0, cos(yaw_radians)) * GameConfig.orbit_cam_distance
-	var desired_position: Vector3 = vehicle_position + orbit_offset + Vector3.UP * GameConfig.orbit_cam_height
+	var desired_position: Vector3 = followed_position + orbit_offset + Vector3.UP * GameConfig.orbit_cam_height
 	var follow_alpha: float = clampf(GameConfig.orbit_cam_spring * delta, 0.0, 1.0)
 	if not _orbit_camera_initialized:
 		_orbit_camera.global_position = desired_position
 		_orbit_camera_initialized = true
 	else:
 		_orbit_camera.global_position = _orbit_camera.global_position.lerp(desired_position, follow_alpha)
-	_orbit_camera.look_at(vehicle_position + Vector3.UP * GameConfig.orbit_cam_look_height, Vector3.UP)
+	_orbit_camera.look_at(followed_position + Vector3.UP * GameConfig.orbit_cam_look_height, Vector3.UP)
 	_orbit_camera.fov = GameConfig.orbit_cam_fov
 	_orbit_camera.current = _camera_mode == CAMERA_MODE_ORBIT
 
 
-func _update_fpv_camera(state: RefCounted) -> void:
+func _smoothed_orbit_follow_position(vehicle_position: Vector3, delta: float) -> Vector3:
+	if not _orbit_camera_initialized:
+		_orbit_vehicle_y_current = vehicle_position.y
+	else:
+		var vertical_alpha: float = clampf(GameConfig.cam_vertical_follow_softness * delta, 0.0, 1.0)
+		_orbit_vehicle_y_current = lerpf(_orbit_vehicle_y_current, vehicle_position.y, vertical_alpha)
+	return Vector3(vehicle_position.x, _orbit_vehicle_y_current, vehicle_position.z)
+
+
+func _update_fpv_camera(delta: float, state: RefCounted) -> void:
 	if _fpv_camera == null:
 		return
 	var vehicle_position: Vector3 = state.get("position")
 	var vehicle_basis: Basis = state.get("basis")
-	var forward: Vector3 = -vehicle_basis.z.normalized()
-	var up: Vector3 = vehicle_basis.y.normalized()
-	_fpv_camera.global_position = vehicle_position + forward * GameConfig.fpv_cam_forward + up * GameConfig.fpv_cam_height
-	_fpv_camera.look_at(vehicle_position + forward * GameConfig.fpv_cam_look_ahead + up * GameConfig.fpv_cam_look_height, Vector3.UP)
+	var back: Vector3 = ChaseCameraMath.rod_back(vehicle_basis, _fpv_back_current)
+	var up: Vector3 = ChaseCameraMath.rod_up(vehicle_basis, back, _fpv_up_current, GameConfig.cam_gimbal_up_smooth)
+	var forward: Vector3 = -back
+	var followed_position: Vector3 = _smoothed_fpv_follow_position(vehicle_position, delta)
+	_fpv_back_current = back
+	_fpv_up_current = up
+	_fpv_camera.global_position = followed_position + forward * GameConfig.fpv_cam_forward + up * GameConfig.fpv_cam_height
+	_fpv_camera.look_at(followed_position + forward * GameConfig.fpv_cam_look_ahead + up * GameConfig.fpv_cam_look_height, up)
 	_fpv_camera.fov = GameConfig.fpv_cam_fov
 	_fpv_camera.current = _camera_mode == CAMERA_MODE_FPV
+
+
+func _smoothed_fpv_follow_position(vehicle_position: Vector3, delta: float) -> Vector3:
+	if not _fpv_camera_initialized:
+		_fpv_vehicle_y_current = vehicle_position.y
+		_fpv_camera_initialized = true
+	else:
+		var vertical_alpha: float = clampf(GameConfig.cam_vertical_follow_softness * delta, 0.0, 1.0)
+		_fpv_vehicle_y_current = lerpf(_fpv_vehicle_y_current, vehicle_position.y, vertical_alpha)
+	return Vector3(vehicle_position.x, _fpv_vehicle_y_current, vehicle_position.z)
