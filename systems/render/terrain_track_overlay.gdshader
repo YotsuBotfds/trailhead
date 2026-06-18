@@ -23,7 +23,7 @@ void fragment() {
 		float rut_strength = clamp(track_sample.g, 0.0, 1.0);
 		float wet_strength = clamp(track_sample.b, 0.0, 1.0);
 		float combined = clamp(track_strength + rut_strength * 0.65, 0.0, 1.0);
-		vec3 dry_track = vec3(0.070, 0.050, 0.030);
+		vec3 dry_track = vec3(0.085, 0.060, 0.035);
 		vec3 wet_track = vec3(0.035, 0.028, 0.020);
 		ALBEDO = mix(dry_track, wet_track, wet_strength);
 		ALPHA = combined * clamp(track_darkening + rut_strength * rut_darkening, 0.0, 1.0);
