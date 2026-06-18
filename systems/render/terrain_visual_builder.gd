@@ -123,6 +123,9 @@ const ZION_KAYENTA_COLOR_UNIFORM: StringName = &"zion_kayenta_color"
 const ZION_KAYENTA_HEIGHT_START_UNIFORM: StringName = &"zion_kayenta_height_start"
 const ZION_KAYENTA_HEIGHT_END_UNIFORM: StringName = &"zion_kayenta_height_end"
 const ZION_KAYENTA_STRENGTH_UNIFORM: StringName = &"zion_kayenta_strength"
+const ZION_BLEACH_COLOR_UNIFORM: StringName = &"zion_bleach_color"
+const ZION_BLEACH_HEIGHT_START_UNIFORM: StringName = &"zion_bleach_height_start"
+const ZION_BLEACH_STRENGTH_UNIFORM: StringName = &"zion_bleach_strength"
 const SURFACE_UV_SCALE_UNIFORM_PREFIX: String = "surface_uv_scale_"
 
 
@@ -998,6 +1001,9 @@ static func _apply_zion_surface_index_tuning(material: ShaderMaterial) -> void:
 	material.set_shader_parameter(ZION_KAYENTA_HEIGHT_START_UNIFORM, 1200.0)
 	material.set_shader_parameter(ZION_KAYENTA_HEIGHT_END_UNIFORM, 1250.0)
 	material.set_shader_parameter(ZION_KAYENTA_STRENGTH_UNIFORM, 0.55)
+	material.set_shader_parameter(ZION_BLEACH_COLOR_UNIFORM, Color(0.91, 0.84, 0.72, 1.0))
+	material.set_shader_parameter(ZION_BLEACH_HEIGHT_START_UNIFORM, 1550.0)
+	material.set_shader_parameter(ZION_BLEACH_STRENGTH_UNIFORM, 0.55)
 	material.set_shader_parameter(MACRO_ALBEDO_ORIGIN_XZ_UNIFORM, MACRO_ALBEDO_REGION_ORIGIN_XZ)
 	material.set_shader_parameter(MACRO_ALBEDO_SIZE_XZ_UNIFORM, MACRO_ALBEDO_REGION_SIZE_XZ)
 	material.set_shader_parameter(MACRO_ALBEDO_STRENGTH_UNIFORM, MACRO_ALBEDO_STRENGTH)
