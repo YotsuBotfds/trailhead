@@ -16,6 +16,12 @@ const AMBIENT_BUS_TEST_DB: float = -12.0
 const MAX_AMBIENT_BUS_DUCK_RATIO: float = 0.35
 const REVERB_TEST_WET: float = 0.8
 const MIN_REVERB_RMS_RATIO: float = 1.02
+const IDLE_SPEED: float = 0.0
+const LOW_MOTOR_RPM: float = 120.0
+const HIGH_MOTOR_RPM: float = 760.0
+const MIN_RPM_MOTOR_RATIO: float = 1.35
+const MAX_IDLE_TIRE_MEAN_ABS: float = 0.0005
+const MIN_GRAVEL_TO_PAVED_TIRE_RATIO: float = 1.25
 
 var _audio_rig: Node = null
 var _errors: PackedStringArray = PackedStringArray()
@@ -48,6 +54,7 @@ func _inspect_output_stats() -> void:
 	_require_layer_below(far_dirt_stats, "water", MAX_SILENT_MEAN_ABS)
 	_require_layer_below(far_dirt_stats, "plank", MAX_SILENT_MEAN_ABS)
 	_require_mix_controls(far_dirt_stats, far_position)
+	_require_engine_and_surface_controls(far_position)
 	_require_water_spatial_pan()
 	var wood_stats: Dictionary = _preview(MOVING_SPEED, far_position, &"wood_plank")
 	_require_layer_signal(wood_stats, "plank", MIN_PLANK_MEAN_ABS)
@@ -63,6 +70,10 @@ func _inspect_output_stats() -> void:
 
 func _preview(speed: float, vehicle_position: Vector3, surface_id: StringName) -> Dictionary:
 	return _audio_rig.call("preview_audio_output_stats", speed, vehicle_position, surface_id, FRAME_COUNT)
+
+
+func _preview_with_motor_rpm(speed: float, motor_rpm: float, vehicle_position: Vector3, surface_id: StringName) -> Dictionary:
+	return _audio_rig.call("preview_audio_output_stats_with_motor_rpm", speed, motor_rpm, vehicle_position, surface_id, FRAME_COUNT)
 
 
 func _preview_with_mix_overrides(speed: float, vehicle_position: Vector3, surface_id: StringName, master_volume_db: float, ambient_volume_db: float, reverb_wet: float) -> Dictionary:
@@ -92,6 +103,28 @@ func _require_mix_controls(base_stats: Dictionary, vehicle_position: Vector3) ->
 		_errors.append("ambient audio should produce measurable output before reverb test")
 	elif wet_rms / dry_rms < MIN_REVERB_RMS_RATIO:
 		_errors.append("ambient reverb rms ratio " + str(wet_rms / dry_rms) + " should be at least " + str(MIN_REVERB_RMS_RATIO))
+
+
+func _require_engine_and_surface_controls(vehicle_position: Vector3) -> void:
+	var idle_stats: Dictionary = _preview_with_motor_rpm(IDLE_SPEED, LOW_MOTOR_RPM, vehicle_position, &"packed_dirt")
+	_require_layer_signal(idle_stats, "ambient", MIN_AMBIENT_MEAN_ABS)
+	_require_layer_below(idle_stats, "tire", MAX_IDLE_TIRE_MEAN_ABS)
+	var low_rpm_stats: Dictionary = _preview_with_motor_rpm(MOVING_SPEED, LOW_MOTOR_RPM, vehicle_position, &"packed_dirt")
+	var high_rpm_stats: Dictionary = _preview_with_motor_rpm(MOVING_SPEED, HIGH_MOTOR_RPM, vehicle_position, &"packed_dirt")
+	var low_motor: float = _mean_abs(low_rpm_stats, "motor")
+	var high_motor: float = _mean_abs(high_rpm_stats, "motor")
+	if low_motor <= 0.0:
+		_errors.append("low-rpm motor audio should produce measurable output")
+	elif high_motor / low_motor < MIN_RPM_MOTOR_RATIO:
+		_errors.append("high-rpm motor audio ratio " + str(high_motor / low_motor) + " should be at least " + str(MIN_RPM_MOTOR_RATIO))
+	var paved_stats: Dictionary = _preview(MOVING_SPEED, vehicle_position, &"paved_road")
+	var gravel_stats: Dictionary = _preview(MOVING_SPEED, vehicle_position, &"packed_gravel")
+	var paved_tire: float = _mean_abs(paved_stats, "tire")
+	var gravel_tire: float = _mean_abs(gravel_stats, "tire")
+	if paved_tire <= 0.0:
+		_errors.append("paved tire audio should produce measurable output")
+	elif gravel_tire / paved_tire < MIN_GRAVEL_TO_PAVED_TIRE_RATIO:
+		_errors.append("gravel tire audio should be louder than paved; ratio " + str(gravel_tire / paved_tire))
 
 
 func _require_water_spatial_pan() -> void:

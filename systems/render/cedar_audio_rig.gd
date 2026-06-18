@@ -16,6 +16,11 @@ const REVERB_FEEDBACK: float = 0.74
 const REVERB_INPUT_GAIN: float = 0.34
 const REVERB_SEND_GAIN: float = 0.30
 const OUTPUT_LIMIT: float = 0.18
+const MOTOR_IDLE_RPM: float = 140.0
+const MOTOR_RPM_BUZZ_SCALE: float = 0.34
+const MOTOR_SPEED_BLEND: float = 0.18
+const MOTOR_RPM_VOLUME_GAIN: float = 0.72
+const TIRE_SPEED_GATE: float = 0.08
 
 var _vehicle: Node = null
 var _motor_player: AudioStreamPlayer = null
@@ -93,8 +98,10 @@ func _process(_delta: float) -> void:
 		return
 	var state: RefCounted = _vehicle.call("get_state")
 	var speed: float = float(state.call("speed"))
+	var motor_rpm: float = float(state.get("motor_rpm"))
 	var vehicle_position: Vector3 = state.get("position")
-	_fill_motor(speed)
+	_current_surface_id = _dominant_surface_from_state(state, _current_surface_id)
+	_fill_motor(speed, motor_rpm)
 	_fill_tires(speed)
 	_fill_ambient(vehicle_position)
 	_fill_water(vehicle_position)
@@ -102,6 +109,11 @@ func _process(_delta: float) -> void:
 
 
 func preview_audio_output_stats(speed: float, vehicle_position: Vector3, surface_id: StringName, frame_count: int) -> Dictionary:
+	var fallback_motor_rpm: float = speed * GameConfig.motor_rpm_speed_scale
+	return preview_audio_output_stats_with_motor_rpm(speed, fallback_motor_rpm, vehicle_position, surface_id, frame_count)
+
+
+func preview_audio_output_stats_with_motor_rpm(speed: float, motor_rpm: float, vehicle_position: Vector3, surface_id: StringName, frame_count: int) -> Dictionary:
 	var previous_surface_id: StringName = _current_surface_id
 	var previous_motor_phase: float = _motor_phase
 	var previous_tire_phase: float = _tire_phase
@@ -126,7 +138,7 @@ func preview_audio_output_stats(speed: float, vehicle_position: Vector3, surface
 	var water_stats: Dictionary = _new_audio_stats()
 	var plank_stats: Dictionary = _new_audio_stats()
 	for _i in range(maxi(frame_count, 0)):
-		_record_audio_frame(motor_stats, _next_motor_frame(speed))
+		_record_audio_frame(motor_stats, _next_motor_frame(speed, motor_rpm))
 		_record_audio_frame(tire_stats, _next_tire_frame(speed))
 		_record_audio_frame(ambient_stats, _next_ambient_frame(vehicle_position))
 		_record_audio_frame(water_stats, _next_water_frame(vehicle_position))
@@ -174,7 +186,8 @@ func preview_audio_output_stats_with_mix_overrides(
 	_preview_master_volume_db = master_volume_db
 	_preview_ambient_volume_db = ambient_volume_db
 	_preview_reverb_wet = reverb_wet
-	var stats: Dictionary = preview_audio_output_stats(speed, vehicle_position, surface_id, frame_count)
+	var fallback_motor_rpm: float = speed * GameConfig.motor_rpm_speed_scale
+	var stats: Dictionary = preview_audio_output_stats_with_motor_rpm(speed, fallback_motor_rpm, vehicle_position, surface_id, frame_count)
 	_preview_mix_override_active = previous_override_active
 	_preview_master_volume_db = previous_master_volume_db
 	_preview_ambient_volume_db = previous_ambient_volume_db
@@ -218,12 +231,12 @@ func _start_players() -> void:
 		_plank_playback = _plank_player.get_stream_playback() as AudioStreamGeneratorPlayback
 
 
-func _fill_motor(speed: float) -> void:
+func _fill_motor(speed: float, motor_rpm: float) -> void:
 	if _motor_playback == null:
 		return
 	var frames_available: int = _motor_playback.get_frames_available()
 	for i in range(frames_available):
-		_motor_playback.push_frame(_next_motor_frame(speed))
+		_motor_playback.push_frame(_next_motor_frame(speed, motor_rpm))
 
 
 func _fill_tires(speed: float) -> void:
@@ -258,25 +271,37 @@ func _fill_planks(speed: float) -> void:
 		_plank_playback.push_frame(_next_plank_frame(speed))
 
 
-func _next_motor_frame(speed: float) -> Vector2:
+func _next_motor_frame(speed: float, motor_rpm: float) -> Vector2:
 	var speed_ratio: float = clampf(speed / maxf(GameConfig.max_speed, 0.001), 0.0, 1.25)
-	var frequency: float = GameConfig.audio_motor_base_hz + speed_ratio * GameConfig.audio_motor_speed_hz_gain * maxf(GameConfig.max_speed, 1.0)
+	var expected_max_rpm: float = maxf(GameConfig.max_speed * GameConfig.motor_rpm_speed_scale, 1.0)
+	var rpm_ratio: float = clampf(maxf(motor_rpm, 0.0) / expected_max_rpm, 0.0, 1.35)
+	var rpm_frequency: float = MOTOR_IDLE_RPM + rpm_ratio * GameConfig.audio_motor_speed_hz_gain * maxf(GameConfig.max_speed, 1.0)
+	var speed_frequency: float = GameConfig.audio_motor_base_hz + speed_ratio * GameConfig.audio_motor_speed_hz_gain * maxf(GameConfig.max_speed, 1.0)
+	var frequency: float = lerpf(rpm_frequency, speed_frequency, MOTOR_SPEED_BLEND)
 	var phase_step: float = TAU * frequency / maxf(GameConfig.audio_mix_rate, 1.0)
 	_motor_phase += phase_step
 	if _motor_phase > TAU:
 		_motor_phase -= TAU
-	var wave: float = sin(_motor_phase) * 0.82 + sin(_motor_phase * 2.0) * 0.18
-	return _apply_layer_mix(Vector2(wave, wave) * GameConfig.audio_motor_volume, LAYER_MOTOR)
+	var wave: float = sin(_motor_phase) * 0.48 \
+		+ sin(_motor_phase * 2.0) * 0.24 \
+		+ sin(_motor_phase * 3.0) * 0.14 \
+		+ _next_noise() * MOTOR_RPM_BUZZ_SCALE * (0.35 + rpm_ratio * 0.65)
+	var volume: float = GameConfig.audio_motor_volume * (0.62 + rpm_ratio * MOTOR_RPM_VOLUME_GAIN + speed_ratio * 0.25)
+	return _apply_layer_mix(Vector2(wave, wave) * volume, LAYER_MOTOR)
 
 
 func _next_tire_frame(speed: float) -> Vector2:
 	var frequency: float = GameConfig.audio_tire_base_hz * surface_tire_pitch_for(_current_surface_id)
 	var phase_step: float = TAU * frequency / maxf(GameConfig.audio_mix_rate, 1.0)
-	var volume: float = (GameConfig.audio_tire_volume + speed * GameConfig.audio_tire_speed_volume_gain) * surface_tire_gain_for(_current_surface_id)
+	var speed_ratio: float = clampf(speed / maxf(GameConfig.max_speed, 0.001), 0.0, 1.25)
+	var surface_gain: float = surface_tire_gain_for(_current_surface_id)
+	var speed_gate: float = clampf(speed / TIRE_SPEED_GATE, 0.0, 1.0)
+	var volume: float = (GameConfig.audio_tire_volume + speed * GameConfig.audio_tire_speed_volume_gain) * surface_gain * speed_gate
 	_tire_phase += phase_step
 	if _tire_phase > TAU:
 		_tire_phase -= TAU
-	var wave: float = sin(_tire_phase) * 0.65 + _next_noise() * 0.35
+	var roughness: float = clampf((surface_gain - 0.65) * 0.55 + speed_ratio * 0.35, 0.18, 0.82)
+	var wave: float = sin(_tire_phase) * (1.0 - roughness) + _next_noise() * roughness
 	return _apply_layer_mix(Vector2(wave, wave) * volume, LAYER_TIRE)
 
 
@@ -508,6 +533,26 @@ func insect_pan_for_position(vehicle_position: Vector3) -> float:
 	var radius: float = maxf(GameConfig.audio_water_audible_radius, 0.001)
 	var insect_source_x: float = GameConfig.audio_water_center.x - radius * 0.35
 	return clampf((insect_source_x - vehicle_position.x) / radius, -1.0, 1.0) * INSECT_PAN_WIDTH
+
+
+func _dominant_surface_from_state(state: RefCounted, fallback_surface_id: StringName) -> StringName:
+	var surface_variant: Variant = state.get("wheel_surface")
+	if not surface_variant is Array:
+		return fallback_surface_id
+	var wheel_surface: Array = surface_variant
+	var counts: Dictionary[StringName, int] = {}
+	var best_surface_id: StringName = fallback_surface_id
+	var best_count: int = 0
+	for surface_id_variant in wheel_surface:
+		var surface_id: StringName = StringName(surface_id_variant)
+		if surface_id == &"":
+			continue
+		var current_count: int = int(counts.get(surface_id, 0)) + 1
+		counts[surface_id] = current_count
+		if current_count > best_count:
+			best_count = current_count
+			best_surface_id = surface_id
+	return best_surface_id
 
 
 func _on_vehicle_changed_surface(surface_id: StringName) -> void:
