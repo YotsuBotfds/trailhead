@@ -1869,9 +1869,12 @@ static func _new_region_foliage_tile_audit(cell: Vector2i) -> Dictionary[String,
 		"surface_pixel_count": 0,
 		"dominant_surface_id_value": 0,
 		"dominant_surface_share": 0.0,
+		"surface_id_1_share": 0.0,
+		"surface_id_2_share": 0.0,
 		"surface_id_3_share": 0.0,
 		"surface_id_4_share": 0.0,
 		"surface_id_5_share": 0.0,
+		"surface_id_6_share": 0.0,
 		"slope_checked_count": 0,
 		"slope_rejected_count": 0,
 		"slope_violation_count": 0,
@@ -1900,9 +1903,12 @@ static func _add_region_foliage_surface_audit(audit: Dictionary[String, Variant]
 		return
 	audit["dominant_surface_id_value"] = dominant_surface_id_value
 	audit["dominant_surface_share"] = float(dominant_surface_count) / float(total_pixel_count)
+	audit["surface_id_1_share"] = _surface_count_share(surface_counts, total_pixel_count, 1)
+	audit["surface_id_2_share"] = _surface_count_share(surface_counts, total_pixel_count, 2)
 	audit["surface_id_3_share"] = _surface_count_share(surface_counts, total_pixel_count, 3)
 	audit["surface_id_4_share"] = _surface_count_share(surface_counts, total_pixel_count, 4)
 	audit["surface_id_5_share"] = _surface_count_share(surface_counts, total_pixel_count, 5)
+	audit["surface_id_6_share"] = _surface_count_share(surface_counts, total_pixel_count, 6)
 
 
 static func _surface_counts_for_tile(tile_data: RegionTileData) -> Dictionary[int, int]:
@@ -1964,6 +1970,14 @@ static func _foliage_density_for_surface_species(surface_id_value: int, species_
 	if not bool(TerrainSurfacePaletteResource.call("has_surface_id_value", surface_id_value)):
 		return 0.0
 	var surface_id: StringName = _surface_id_for_value(surface_id_value)
+	if species_id == FOLIAGE_SPECIES_GRASS and surface_id == &"packed_gravel":
+		return GameConfig.scrub_density_packed_gravel
+	if species_id == FOLIAGE_SPECIES_GRASS and surface_id == &"paved_road":
+		return GameConfig.scrub_density_paved_road
+	if species_id == FOLIAGE_SPECIES_GRASS and surface_id == &"wet_stone":
+		return GameConfig.scrub_density_wet_stone
+	if species_id == FOLIAGE_SPECIES_GRASS and surface_id == &"mud":
+		return GameConfig.scrub_density_mud
 	if species_id == FOLIAGE_SPECIES_BOULDER and surface_id == &"packed_gravel":
 		return GameConfig.boulder_density_packed_gravel
 	if species_id == FOLIAGE_SPECIES_BOULDER and surface_id == &"loose_rock":
@@ -1985,6 +1999,8 @@ static func _foliage_species_for_surface_value(surface_id_value: int) -> StringN
 	var surface_id: StringName = _surface_id_for_value(surface_id_value)
 	if surface_id == &"packed_gravel":
 		return FOLIAGE_SPECIES_BOULDER
+	if surface_id == &"paved_road" or surface_id == &"wet_stone" or surface_id == &"mud":
+		return FOLIAGE_SPECIES_GRASS
 	if surface_id == &"packed_dirt":
 		return FOLIAGE_SPECIES_JUNIPER
 	if surface_id == &"tall_grass":
@@ -1999,7 +2015,9 @@ static func _foliage_species_for_candidate(surface_id_value: int, foliage_cell: 
 		return &""
 	var surface_id: StringName = _surface_id_for_value(surface_id_value)
 	if surface_id == &"packed_gravel":
-		return FOLIAGE_SPECIES_BOULDER
+		if _region_foliage_unit(foliage_cell, lod_index, attempt, 12) <= GameConfig.boulder_packed_gravel_candidate_share:
+			return FOLIAGE_SPECIES_BOULDER
+		return FOLIAGE_SPECIES_GRASS
 	if surface_id == &"loose_rock" and _region_foliage_unit(foliage_cell, lod_index, attempt, 12) <= GameConfig.boulder_loose_rock_candidate_share:
 		return FOLIAGE_SPECIES_BOULDER
 	return _foliage_species_for_surface_value(surface_id_value)
@@ -2066,8 +2084,8 @@ static func _foliage_base_scale_for_lod_species(lod_index: int, species_id: Stri
 			return FOLIAGE_JUNIPER_LOD1_SCALE
 		return FOLIAGE_JUNIPER_LOD0_SCALE
 	if lod_index > 0:
-		return REGION_FOLIAGE_LOD1_SCALE
-	return REGION_FOLIAGE_LOD0_SCALE
+		return GameConfig.foliage_grass_scrub_lod1_scale
+	return GameConfig.foliage_grass_scrub_lod0_scale
 
 
 static func _region_foliage_unit(cell: Vector2i, lod_index: int, instance_index: int, salt: int) -> float:
