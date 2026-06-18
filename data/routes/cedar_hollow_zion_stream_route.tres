@@ -6,8 +6,8 @@
 script = ExtResource("1_script")
 scene_id = &"cedar_hollow_zion"
 terrain_def_path = "res://data/terrain/cedar_hollow_zion_terrain_def.tres"
-bounds_min = Vector3(900.0, 1180.0, 600.0)
-bounds_max = Vector3(1500.0, 1220.0, 1100.0)
+bounds_min = Vector3(900.0, 1180.0, 500.0)
+bounds_max = Vector3(1600.0, 1320.0, 1600.0)
 spawn_ids = Array[StringName]([&"stream_west", &"stream_wall_vista", &"demo_canyon_junction"])
 spawn_positions = Array[Vector3]([Vector3(1150.0, 1197.56, 800.0), Vector3(1550.0, 1315.017031, 550.0), Vector3(1550.0, 1203.597964, 1550.0)])
 spawn_yaw_degrees = Array[float]([-90.0, -74.801192, 160.0])

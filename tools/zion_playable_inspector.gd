@@ -1,16 +1,15 @@
 extends Node
 
 const CedarHollowPlayableScene: PackedScene = preload("res://scenes/cedar_hollow_playable.tscn")
+const CedarHollowHostScript: GDScript = preload("res://systems/render/cedar_hollow_host.gd")
+const CedarRoute: Resource = preload("res://data/routes/cedar_hollow_zion_stream_route.tres")
 const TerrainVisualBuilderScript: GDScript = preload("res://systems/render/terrain_visual_builder.gd")
 const WaterVisualBuilderScript: GDScript = preload("res://systems/render/water_visual_builder.gd")
 const SurfaceMapScript: GDScript = preload("res://systems/world/surface_map.gd")
 const WATER_SHADER_PATH: String = "res://systems/render/water_visual.gdshader"
 const ZION_REGION_ID: String = "cedar_hollow_zion"
 const WORLD_REGION_ID_META: StringName = &"trailhead_world_region_id"
-const SPAWN_POSITION: Vector3 = Vector3(1150.0, 1197.56, 800.0)
-const SPAWN_YAW_DEGREES: float = -90.0
 const EXPECTED_ACTIVE_VISUAL_CELLS: int = 25
-const EXPECTED_CENTER_CELL: Vector2i = Vector2i(11, 8)
 const FOLIAGE_STEEP_AUDIT_CELL: Vector2i = Vector2i(22, 51)
 const FOLIAGE_WOODLAND_AUDIT_CELL: Vector2i = Vector2i(0, 20)
 const FOLIAGE_TALUS_AUDIT_CELL: Vector2i = Vector2i(20, 17)
@@ -33,12 +32,28 @@ const STRIP_ONLY_ROOTS: Array[String] = [
 
 var _scene_root: Node = null
 var _errors: PackedStringArray = PackedStringArray()
+var _expected_spawn_id: StringName = &""
+var _expected_spawn_position: Vector3 = Vector3.ZERO
+var _expected_spawn_yaw_degrees: float = 0.0
+var _expected_center_cell: Vector2i = Vector2i.ZERO
 
 
 func _ready() -> void:
+	_resolve_expected_spawn()
 	_scene_root = CedarHollowPlayableScene.instantiate()
 	add_child(_scene_root)
 	call_deferred("_inspect")
+
+
+func _resolve_expected_spawn() -> void:
+	_expected_spawn_id = CedarHollowHostScript.ZION_SPAWN_ID
+	var spawn_transform: Transform3D = CedarRoute.call("spawn_transform", _expected_spawn_id)
+	_expected_spawn_position = spawn_transform.origin
+	_expected_spawn_yaw_degrees = rad_to_deg(spawn_transform.basis.get_euler().y)
+	_expected_center_cell = Vector2i(
+		int(floorf(_expected_spawn_position.x / GameConfig.STREAM_TILE_SIZE_M)),
+		int(floorf(_expected_spawn_position.z / GameConfig.STREAM_TILE_SIZE_M))
+	)
 
 
 func _inspect() -> void:
@@ -124,12 +139,12 @@ func _require_stream_hlod(hlod: MeshInstance3D) -> void:
 		_errors.append("Zion streamer TerrainHLOD should be chunked into localized tile HLODs")
 	for chunk in chunks:
 		_require_stream_hlod_chunk(chunk)
-	var center_chunk: MeshInstance3D = _stream_hlod_chunk_for_cell(chunks, EXPECTED_CENTER_CELL)
+	var center_chunk: MeshInstance3D = _stream_hlod_chunk_for_cell(chunks, _expected_center_cell)
 	if center_chunk == null:
-		_errors.append("Zion streamer TerrainHLOD missing chunk for spawn cell " + str(EXPECTED_CENTER_CELL))
+		_errors.append("Zion streamer TerrainHLOD missing chunk for spawn cell " + str(_expected_center_cell))
 		return
 	var center_origin_xz: Vector2 = Vector2(center_chunk.global_position.x, center_chunk.global_position.z)
-	var spawn_xz: Vector2 = Vector2(SPAWN_POSITION.x, SPAWN_POSITION.z)
+	var spawn_xz: Vector2 = Vector2(_expected_spawn_position.x, _expected_spawn_position.z)
 	var spawn_distance: float = center_origin_xz.distance_to(spawn_xz)
 	if spawn_distance + POSITION_TOLERANCE_M >= center_chunk.visibility_range_begin:
 		_errors.append(
@@ -213,12 +228,12 @@ func _require_vehicle_spawn() -> void:
 		_errors.append("Zion vehicle state is unavailable")
 		return
 	var position: Vector3 = state.get("position")
-	if position.distance_to(SPAWN_POSITION) > POSITION_TOLERANCE_M:
-		_errors.append("Zion vehicle spawn expected " + str(SPAWN_POSITION) + ", got " + str(position))
+	if position.distance_to(_expected_spawn_position) > POSITION_TOLERANCE_M:
+		_errors.append("Zion vehicle spawn expected " + str(_expected_spawn_position) + ", got " + str(position))
 	var basis: Basis = state.get("basis")
 	var yaw_degrees: float = rad_to_deg(basis.get_euler().y)
-	if absf(angle_difference(deg_to_rad(SPAWN_YAW_DEGREES), deg_to_rad(yaw_degrees))) > deg_to_rad(YAW_TOLERANCE_DEGREES):
-		_errors.append("Zion vehicle yaw expected " + str(SPAWN_YAW_DEGREES) + ", got " + str(yaw_degrees))
+	if absf(angle_difference(deg_to_rad(_expected_spawn_yaw_degrees), deg_to_rad(yaw_degrees))) > deg_to_rad(YAW_TOLERANCE_DEGREES):
+		_errors.append("Zion vehicle yaw expected " + str(_expected_spawn_yaw_degrees) + ", got " + str(yaw_degrees))
 
 
 func _require_surface_map() -> void:
@@ -296,8 +311,8 @@ func _require_tile_streamer_active_set() -> void:
 	var active_cells: Array[Vector2i] = _tile_streamer_active_cells()
 	if active_cells.size() != EXPECTED_ACTIVE_VISUAL_CELLS:
 		_errors.append("TileStreamer active cell count expected " + str(EXPECTED_ACTIVE_VISUAL_CELLS) + ", got " + str(active_cells.size()))
-	if not active_cells.has(EXPECTED_CENTER_CELL):
-		_errors.append("TileStreamer active cells should include spawn center cell " + str(EXPECTED_CENTER_CELL))
+	if not active_cells.has(_expected_center_cell):
+		_errors.append("TileStreamer active cells should include spawn center cell " + str(_expected_center_cell))
 	var failures: Dictionary = _tile_streamer_failures()
 	if not failures.is_empty():
 		_errors.append("TileStreamer load failures: " + str(failures))
@@ -310,11 +325,11 @@ func _require_visual_streamer_state(streamer: Node) -> void:
 		_errors.append("Zion visual cell count expected " + str(EXPECTED_ACTIVE_VISUAL_CELLS) + ", got " + str(int(streamer.call("visual_cell_count"))))
 	if int(streamer.call("foliage_cell_count")) != EXPECTED_ACTIVE_VISUAL_CELLS:
 		_errors.append("Zion foliage cell count expected " + str(EXPECTED_ACTIVE_VISUAL_CELLS) + ", got " + str(int(streamer.call("foliage_cell_count"))))
-	if not bool(streamer.call("has_visual_cell", EXPECTED_CENTER_CELL)):
-		_errors.append("Zion streamer missing visual center cell " + str(EXPECTED_CENTER_CELL))
-	if not bool(streamer.call("has_foliage_cell", EXPECTED_CENTER_CELL)):
-		_errors.append("Zion streamer missing foliage center cell " + str(EXPECTED_CENTER_CELL))
-	var center_tile: MeshInstance3D = streamer.call("visual_cell_node", EXPECTED_CENTER_CELL) as MeshInstance3D
+	if not bool(streamer.call("has_visual_cell", _expected_center_cell)):
+		_errors.append("Zion streamer missing visual center cell " + str(_expected_center_cell))
+	if not bool(streamer.call("has_foliage_cell", _expected_center_cell)):
+		_errors.append("Zion streamer missing foliage center cell " + str(_expected_center_cell))
+	var center_tile: MeshInstance3D = streamer.call("visual_cell_node", _expected_center_cell) as MeshInstance3D
 	if center_tile == null:
 		_errors.append("Zion center visual cell should be MeshInstance3D")
 	elif center_tile.mesh == null:
@@ -332,7 +347,7 @@ func _require_center_tile_inside_chase_camera_range(streamer: Node) -> void:
 	var camera: Camera3D = _scene_root.get_node_or_null("ChaseCamera") as Camera3D
 	if camera == null:
 		return
-	var tile: MeshInstance3D = streamer.call("visual_cell_node", EXPECTED_CENTER_CELL) as MeshInstance3D
+	var tile: MeshInstance3D = streamer.call("visual_cell_node", _expected_center_cell) as MeshInstance3D
 	if tile == null or tile.mesh == null:
 		return
 	var global_aabb: AABB = tile.global_transform * tile.mesh.get_aabb()
@@ -457,7 +472,7 @@ func _finish() -> void:
 		_cleanup()
 		get_tree().quit(1)
 		return
-	print("ok: Zion playable streams terrain and foliage around stream_west")
+	print("ok: Zion playable streams terrain and foliage around " + String(_expected_spawn_id))
 	_cleanup()
 	get_tree().quit(0)
 
