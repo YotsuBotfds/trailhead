@@ -218,6 +218,9 @@ func _require_warmup_multimesh(multimesh_instance: MultiMeshInstance3D, label: S
 		_errors.append(label + " should not cast shadows")
 	if multimesh_instance.material_override == null:
 		_errors.append(label + " missing material_override")
+	elif _is_boulder_warmup_label(label):
+		if not (multimesh_instance.material_override is StandardMaterial3D):
+			_errors.append(label + " should use StandardMaterial3D")
 	elif not _is_grass_shader_material(multimesh_instance.material_override):
 		_errors.append(label + " should use grass_billboard ShaderMaterial")
 	if multimesh_instance.multimesh == null:
@@ -236,6 +239,10 @@ func _is_grass_shader_material(material: Material) -> bool:
 	if shader_material == null or shader_material.shader == null:
 		return false
 	return shader_material.shader.resource_path == "res://systems/render/grass_billboard.gdshader"
+
+
+func _is_boulder_warmup_label(label: String) -> bool:
+	return label.find("_boulder") >= 0
 
 
 func _require_shader_color(material: ShaderMaterial, parameter_name: StringName, label: String) -> void:

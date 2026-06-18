@@ -339,6 +339,9 @@ func _require_foliage_tile(cell: Vector2i) -> Node3D:
 		var material: Material = multimesh_instance.material_override
 		if material == null:
 			_errors.append("foliage child missing material_override: " + String(child.name))
+		elif _is_boulder_foliage_child(multimesh_instance):
+			if not (material is StandardMaterial3D):
+				_errors.append("boulder foliage child should use StandardMaterial3D: " + String(child.name))
 		elif not _is_grass_shader_material(material):
 			_errors.append("foliage child should use grass_billboard ShaderMaterial: " + String(child.name))
 		if not multimesh_instance.has_meta(TerrainVisualBuilderScript.VISIBILITY_RADIUS_META):
@@ -372,6 +375,12 @@ func _is_grass_shader_material(material: Material) -> bool:
 	if shader_material == null or shader_material.shader == null:
 		return false
 	return shader_material.shader.resource_path == "res://systems/render/grass_billboard.gdshader"
+
+
+func _is_boulder_foliage_child(multimesh_instance: MultiMeshInstance3D) -> bool:
+	if not multimesh_instance.has_meta(&"trailhead_foliage_species"):
+		return false
+	return StringName(String(multimesh_instance.get_meta(&"trailhead_foliage_species"))) == &"boulder"
 
 
 func _require_shader_color(material: ShaderMaterial, parameter_name: StringName, label: String, node_name: String) -> void:

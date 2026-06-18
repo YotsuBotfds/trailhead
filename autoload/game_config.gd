@@ -141,6 +141,9 @@ var grass_clump_count: int = 72
 var grass_blades_per_clump: int = 5
 var grass_clump_radius: float = 0.22
 var grass_occluder_band_count: int = 16
+var boulder_density_packed_gravel: float = 0.030
+var boulder_density_loose_rock: float = 0.080
+var boulder_loose_rock_candidate_share: float = 0.65
 
 var golden_tick_tolerance: int = 2
 var golden_position_tolerance_m: float = 0.08
