@@ -55,6 +55,20 @@ uniform float zion_kayenta_strength = 0.55;
 uniform vec4 zion_bleach_color : source_color = vec4(0.91, 0.84, 0.72, 1.0);  // pale buff cream
 uniform float zion_bleach_height_start = 1550.0;   // lower edge of the bleached upper walls
 uniform float zion_bleach_strength = 0.55;
+// W6-SURFACE-DETAIL: procedural micro-normal relief + ROUGHNESS wobble so raking
+// golden-hour light catches fine (~1.4 m) sand/rock grain instead of bouncing off
+// a flat-plastic geometric normal. Hash-only (no extra texture fetches); per-surface
+// strength bumps sand/gravel/loose_rock and stays near-zero on pavement/wet_stone.
+uniform float micro_normal_scale = 0.7;            // hash frequency (~1.4 m features)
+uniform float surface_micro_strength_0 = 0.14;     // palette fallback / packed_dirt
+uniform float surface_micro_strength_1 = 0.04;     // wet_stone (smooth)
+uniform float surface_micro_strength_2 = 0.16;     // packed_gravel (bumpy)
+uniform float surface_micro_strength_3 = 0.14;     // packed_dirt (desert floor)
+uniform float surface_micro_strength_4 = 0.18;     // loose_rock (most relief)
+uniform float surface_micro_strength_5 = 0.08;     // tall_grass (hidden by billboards)
+uniform float surface_micro_strength_6 = 0.02;     // paved_road (near-flat)
+uniform float surface_micro_strength_7 = 0.14;     // fallback (sand/dirt-like)
+uniform float micro_roughness_variation = 0.06;    // +/- wobble around terrain_roughness
 
 varying vec2 world_xz;
 varying float world_y;
@@ -134,6 +148,73 @@ vec2 surface_uv_scale_for_id(float surface_id_value) {
 	return surface_uv_scale_0;
 }
 
+float surface_micro_strength_for_id(float surface_id_value) {
+	if (surface_id_value < 0.5) {
+		return surface_micro_strength_0;
+	}
+	if (surface_id_value < 1.5) {
+		return surface_micro_strength_1;
+	}
+	if (surface_id_value < 2.5) {
+		return surface_micro_strength_2;
+	}
+	if (surface_id_value < 3.5) {
+		return surface_micro_strength_3;
+	}
+	if (surface_id_value < 4.5) {
+		return surface_micro_strength_4;
+	}
+	if (surface_id_value < 5.5) {
+		return surface_micro_strength_5;
+	}
+	if (surface_id_value < 6.5) {
+		return surface_micro_strength_6;
+	}
+	if (surface_id_value < 7.5) {
+		return surface_micro_strength_7;
+	}
+	return surface_micro_strength_0;
+}
+
+// Two-octave smooth-hash "micro-height" in world XZ. Each octave is a couple of
+// hash21 corner samples; together they give subtle multi-scale grain rather than a
+// single cellular look. Output is roughly in [-1, 1]. Used only as a heightfield
+// for the surface-micro normal gradient below.
+float micro_height(vec2 world_xz_pos) {
+	vec2 q1 = world_xz_pos * micro_normal_scale;
+	vec2 q2 = world_xz_pos * (micro_normal_scale * 2.17) + vec2(11.7, 4.3);
+	return (hash21_smooth(q1) * 2.0 - 1.0) * 0.68 + (hash21_smooth(q2) * 2.0 - 1.0) * 0.32;
+}
+
+// Perturb a world-space geometric normal by the local micro-height gradient. The
+// gradient is taken in world XZ and applied along the XZ tangent directions projected
+// into the surface tangent plane. Either tangent is skipped if its projection is too
+// short (axis-aligned wall) so we never normalize a zero vector. `strength` controls
+// bump amplitude (tangent tilt per unit gradient) — kept subtle per surface.
+vec3 apply_micro_normal(vec3 geo_world_normal, vec2 world_xz_pos, float strength) {
+	if (strength <= 0.0) {
+		return geo_world_normal;
+	}
+	float eps = 0.35;  // ~0.35 m finite-difference step (well below the ~1.4 m feature)
+	float h_x_neg = micro_height(world_xz_pos + vec2(-eps, 0.0));
+	float h_x_pos = micro_height(world_xz_pos + vec2( eps, 0.0));
+	float h_z_neg = micro_height(world_xz_pos + vec2(0.0, -eps));
+	float h_z_pos = micro_height(world_xz_pos + vec2(0.0,  eps));
+	vec2 grad = vec2(h_x_neg - h_x_pos, h_z_neg - h_z_pos) * strength;
+	vec3 perturbed = geo_world_normal;
+	vec3 tx = vec3(1.0, 0.0, 0.0) - geo_world_normal * geo_world_normal.x;
+	float tx_len2 = dot(tx, tx);
+	if (tx_len2 > 1e-4) {
+		perturbed -= tx * (grad.x / sqrt(tx_len2));
+	}
+	vec3 tz = vec3(0.0, 0.0, 1.0) - geo_world_normal * geo_world_normal.z;
+	float tz_len2 = dot(tz, tz);
+	if (tz_len2 > 1e-4) {
+		perturbed -= tz * (grad.y / sqrt(tz_len2));
+	}
+	return normalize(perturbed);
+}
+
 void vertex() {
 	vec4 world_position = MODEL_MATRIX * vec4(VERTEX, 1.0);
 	world_xz = world_position.xz;
@@ -189,6 +270,17 @@ void fragment() {
 	}
 	float bleach_mask = smoothstep(zion_bleach_height_start, zion_bleach_height_start + 200.0, world_y) * cliff_mask;
 	ALBEDO = mix(ALBEDO, zion_bleach_color.rgb, bleach_mask * zion_bleach_strength);
-	ROUGHNESS = terrain_roughness;
+	// W6-SURFACE-DETAIL: surface micro-relief so raking golden-hour light catches
+	// real texture. A procedural micro-normal (hash only, no extra texture fetches)
+	// perturbs the world-space geometric normal in the surface tangent plane, and a
+	// gentle hashed ROUGHNESS wobble breaks up the uniformly matte floor. Strength
+	// scales per surface -- more on packed_gravel/loose_rock, near-zero on paved_road.
+	// Strata/varnish/bleach/macro-albedo color logic above is untouched.
+	float micro_strength = surface_micro_strength_for_id(surface_id_value);
+	vec3 world_geo_normal_now = normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
+	vec3 world_micro_normal = apply_micro_normal(world_geo_normal_now, world_xz, micro_strength);
+	NORMAL = normalize((VIEW_MATRIX * vec4(world_micro_normal, 0.0)).xyz);
+	float roughness_wobble = (hash21_smooth(world_xz * 0.31) * 2.0 - 1.0) * micro_roughness_variation * (0.5 + micro_strength);
+	ROUGHNESS = clamp(terrain_roughness + roughness_wobble, 0.05, 1.0);
 	SPECULAR = terrain_specular;
 }
