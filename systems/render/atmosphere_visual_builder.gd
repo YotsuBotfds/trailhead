@@ -8,20 +8,25 @@ const DUSK_HERO_SUN_ENERGY: float = 2.50
 const DUSK_HERO_SUN_COLOR: Color = Color(1.0, 0.72, 0.38)
 const DUSK_HERO_AMBIENT_COLOR: Color = Color(0.39, 0.44, 0.52)
 const DUSK_HERO_AMBIENT_ENERGY: float = 0.32
-const DUSK_HERO_FOG_LIGHT_COLOR: Color = Color(0.86, 0.68, 0.50)
+const DUSK_HERO_FOG_LIGHT_COLOR: Color = Color(0.90, 0.70, 0.48)
 const DUSK_HERO_VOLUMETRIC_FOG_ALBEDO: Color = Color(0.92, 0.74, 0.54)
+const DUSK_AERIAL_FOG_DENSITY: float = 0.0065
+const DAWN_VOLUMETRIC_FOG_ALBEDO: Color = Color(0.70, 0.78, 0.82)
 const DUSK_GLOW_INTENSITY: float = 0.18
 const DUSK_GLOW_STRENGTH: float = 0.32
 const DAWN_GLOW_INTENSITY: float = 0.10
 const DAWN_GLOW_STRENGTH: float = 0.20
 const GLOW_BLOOM: float = 0.06
-const DUSK_HEIGHT_FOG_DENSITY: float = 0.018
-const DAWN_HEIGHT_FOG_DENSITY: float = 0.026
+const DUSK_HEIGHT_FOG_DENSITY: float = 0.026
+const DAWN_HEIGHT_FOG_DENSITY: float = 0.032
 const VOLUMETRIC_FOG_DENSITY_FLOOR: float = 0.006
-const VOLUMETRIC_FOG_LENGTH: float = 32.0
-const FOG_HEIGHT: float = 0.06
-const FOG_AERIAL_PERSPECTIVE: float = 0.38
-const FOG_SUN_SCATTER: float = 0.42
+const VOLUMETRIC_FOG_LENGTH: float = 48.0
+const FOG_HEIGHT: float = 0.18
+const FOG_DEPTH_CURVE_FLOOR: float = 1.35
+const FOG_AERIAL_PERSPECTIVE: float = 0.52
+const FOG_SUN_SCATTER: float = 0.58
+const FOG_SKY_AFFECT: float = 0.82
+const VOLUMETRIC_FOG_SKY_AFFECT: float = 0.48
 const SHADOW_FADE_START: float = 0.72
 const CONTACT_FILL_LIGHT_NAME: String = "VehicleContactFillLight"
 const CAMERA_ATTRIBUTES_OWNER_META: StringName = &"atmosphere_camera_attributes_instance_id"
@@ -88,13 +93,16 @@ static func _directional_shadow_mode(mode: int) -> int:
 
 
 static func _apply_mood_environment(environment: Environment, mood: int) -> void:
+	environment.fog_enabled = true
 	if mood == MOOD_DAWN:
 		environment.ambient_light_color = GameConfig.dawn_ambient_color
 		environment.ambient_light_energy = GameConfig.dawn_ambient_energy
+		environment.fog_density = GameConfig.dawn_fog_density
 		environment.fog_light_color = GameConfig.dawn_fog_light_color
 		return
 	environment.ambient_light_color = DUSK_HERO_AMBIENT_COLOR
 	environment.ambient_light_energy = DUSK_HERO_AMBIENT_ENERGY
+	environment.fog_density = DUSK_AERIAL_FOG_DENSITY
 	environment.fog_light_color = DUSK_HERO_FOG_LIGHT_COLOR
 
 
@@ -104,22 +112,22 @@ static func _apply_height_fog(environment: Environment, mood: int) -> void:
 		fallback_density = DAWN_HEIGHT_FOG_DENSITY
 	environment.fog_height = FOG_HEIGHT
 	environment.fog_height_density = _positive_float_or(GameConfig.atmosphere_height_fog_density, fallback_density)
-	environment.fog_depth_curve = maxf(GameConfig.atmosphere_height_fog_falloff, 0.35)
+	environment.fog_depth_curve = maxf(GameConfig.atmosphere_height_fog_falloff, FOG_DEPTH_CURVE_FLOOR)
 	environment.fog_aerial_perspective = FOG_AERIAL_PERSPECTIVE
 	environment.fog_sun_scatter = FOG_SUN_SCATTER
-	environment.fog_sky_affect = 0.72
+	environment.fog_sky_affect = FOG_SKY_AFFECT
 
 
 static func _apply_volumetric_fog(environment: Environment, mood: int) -> void:
 	environment.volumetric_fog_enabled = GameConfig.atmosphere_volumetric_fog_enabled
 	environment.volumetric_fog_density = _positive_float_or(GameConfig.atmosphere_volumetric_fog_density, VOLUMETRIC_FOG_DENSITY_FLOOR)
 	environment.volumetric_fog_length = VOLUMETRIC_FOG_LENGTH
-	environment.volumetric_fog_albedo = DUSK_HERO_VOLUMETRIC_FOG_ALBEDO if mood == MOOD_DUSK else GameConfig.dawn_fog_light_color
-	environment.volumetric_fog_emission = Color(0.18, 0.14, 0.09)
-	environment.volumetric_fog_emission_energy = 0.08
+	environment.volumetric_fog_albedo = DUSK_HERO_VOLUMETRIC_FOG_ALBEDO if mood == MOOD_DUSK else DAWN_VOLUMETRIC_FOG_ALBEDO
+	environment.volumetric_fog_emission = Color(0.20, 0.13, 0.07) if mood == MOOD_DUSK else Color(0.08, 0.12, 0.14)
+	environment.volumetric_fog_emission_energy = 0.10 if mood == MOOD_DUSK else 0.06
 	environment.volumetric_fog_anisotropy = 0.32
 	environment.volumetric_fog_ambient_inject = 0.28
-	environment.volumetric_fog_sky_affect = 0.55
+	environment.volumetric_fog_sky_affect = VOLUMETRIC_FOG_SKY_AFFECT
 	environment.volumetric_fog_temporal_reprojection_enabled = true
 
 
