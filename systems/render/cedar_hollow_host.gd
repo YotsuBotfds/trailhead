@@ -38,7 +38,7 @@ const MOOD_DUSK: int = 0
 const MOOD_DAWN: int = 1
 const MOOD_NIGHT: int = 2
 const ZION_DUSK_FOG_DENSITY: float = 0.0010
-const ZION_DAWN_FOG_DENSITY: float = 0.0045
+const ZION_DAWN_FOG_DENSITY: float = 0.0018
 const ZION_NIGHT_FOG_DENSITY: float = 0.0016
 const ZION_FOG_AERIAL_PERSPECTIVE: float = 0.10
 const ZION_FOG_SKY_AFFECT: float = 0.34
@@ -765,6 +765,9 @@ func _apply_zion_vista_mood(environment: Environment, sky_material: Material) ->
 		physical_sky_material.mie_color = GameConfig.dawn_sky_horizon_color
 		physical_sky_material.ground_color = GameConfig.dawn_sky_ground_color
 		physical_sky_material.turbidity = GameConfig.dawn_sky_turbidity
+		physical_sky_material.sun_disk_scale = 1.0
+		physical_sky_material.mie_coefficient = 0.0045
+		physical_sky_material.mie_eccentricity = 0.80
 		physical_sky_material.energy_multiplier = 1.15
 	else:
 		environment.fog_density = ZION_DUSK_FOG_DENSITY
