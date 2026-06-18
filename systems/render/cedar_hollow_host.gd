@@ -31,6 +31,7 @@ const TerrainTrackVisualPainterScript: GDScript = preload("res://systems/render/
 const FrequencyInputPanelScene: PackedScene = preload("res://ui/frequency_input_panel.tscn")
 const GrasshopperLiveryScript: GDScript = preload("res://systems/render/grasshopper_livery.gd")
 const SurfaceMapScript: GDScript = preload("res://systems/world/surface_map.gd")
+const GrassShader: Shader = preload("res://systems/render/grass_billboard.gdshader")
 const CAMERA_MODE_CHASE: int = 0
 const CAMERA_MODE_ORBIT: int = 1
 const CAMERA_MODE_FPV: int = 2
@@ -60,6 +61,17 @@ var _wheel_sockets: Array[Node3D] = []
 var _vehicle_visual_root: Node = null
 var _vehicle_residue_visual: RefCounted = VehicleResidueVisualScript.new()
 var _wheel_spin: float = 0.0
+var _visual_body_pitch: float = 0.0
+var _visual_body_roll: float = 0.0
+var _visual_body_pitch_velocity: float = 0.0
+var _visual_body_roll_velocity: float = 0.0
+var _visual_antenna_pitch: float = 0.0
+var _visual_antenna_roll: float = 0.0
+var _visual_antenna_pitch_velocity: float = 0.0
+var _visual_antenna_roll_velocity: float = 0.0
+var _visual_last_velocity: Vector3 = Vector3.ZERO
+var _visual_last_velocity_valid: bool = false
+var _grass_crush_materials: Array[ShaderMaterial] = []
 var _camera_mode: int = CAMERA_MODE_CHASE
 var _photo_mode_active: bool = false
 var _photo_mode_previous_camera_mode: int = CAMERA_MODE_CHASE
@@ -784,6 +796,16 @@ func _apply_zion_vista_mood(environment: Environment, sky_material: Material) ->
 func _collect_visual_wheels() -> void:
 	_wheel_sockets.clear()
 	_vehicle_visual_root = null
+	_visual_body_pitch = 0.0
+	_visual_body_roll = 0.0
+	_visual_body_pitch_velocity = 0.0
+	_visual_body_roll_velocity = 0.0
+	_visual_antenna_pitch = 0.0
+	_visual_antenna_roll = 0.0
+	_visual_antenna_pitch_velocity = 0.0
+	_visual_antenna_roll_velocity = 0.0
+	_visual_last_velocity = Vector3.ZERO
+	_visual_last_velocity_valid = false
 	var body: Node = _vehicle.get_node_or_null("PhysicsBody")
 	if body == null:
 		return
@@ -805,7 +827,11 @@ func _collect_visual_wheels() -> void:
 
 func _update_visual_wheels(delta: float) -> void:
 	var state: RefCounted = _vehicle.call("get_state")
+	var acceleration: Vector3 = _visual_acceleration(state, delta)
 	_update_vehicle_residue_visual(state)
+	_update_vehicle_visual_body(state, acceleration, delta)
+	_update_whip_antenna_visual(state, acceleration, delta)
+	_update_grass_crush(state)
 	var tail_material: StandardMaterial3D = ProceduralBuggyVisualScript.get_tail_light_material(_vehicle_visual_root)
 	if tail_material != null:
 		var braking: float = float(_vehicle_input.get("brake"))
@@ -821,7 +847,7 @@ func _update_visual_wheels(delta: float) -> void:
 		spin_step *= -1.0
 	_wheel_spin += spin_step
 	var steer: float = float(_vehicle_input.get("steer"))
-	var steer_angle: float = deg_to_rad(GameConfig.steer_limit_deg) * steer
+	var steer_angle: float = deg_to_rad(GameConfig.wheel_visual_max_steer_deg) * steer
 	for socket in _wheel_sockets:
 		var is_front: bool = socket.name.begins_with("wheel_front")
 		socket.rotation = Vector3(0.0, steer_angle if is_front else 0.0, 0.0)
@@ -840,6 +866,135 @@ func _update_visual_wheels(delta: float) -> void:
 			continue
 		var compression: float = clampf((shock.global_position.y - hit_points[i].y - GameConfig.wheel_radius) / maxf(GameConfig.susp_travel, 0.001), 0.0, 1.0)
 		spring.scale.y = lerpf(1.0, 0.55, compression)
+
+
+func _update_vehicle_visual_body(state: RefCounted, acceleration: Vector3, delta: float) -> void:
+	var visual_root: Node3D = _vehicle_visual_root as Node3D
+	if visual_root == null:
+		return
+	var basis: Basis = state.get("basis")
+	var forward: Vector3 = -basis.z.normalized()
+	var right: Vector3 = basis.x.normalized()
+	var forward_accel: float = acceleration.dot(forward)
+	var lateral_accel: float = acceleration.dot(right)
+	var steer: float = clampf(float(_vehicle_input.get("steer")), -1.0, 1.0)
+	var limit: float = deg_to_rad(maxf(GameConfig.vehicle_visual_body_lean_max_deg, 0.0))
+	var target_pitch: float = clampf(
+			-forward_accel * GameConfig.vehicle_visual_body_pitch_accel_gain,
+			-limit,
+			limit
+	)
+	var target_roll: float = clampf(
+			-steer * GameConfig.vehicle_visual_body_roll_steer_gain
+					-lateral_accel * GameConfig.vehicle_visual_body_roll_lateral_accel_gain,
+			-limit,
+			limit
+	)
+	_visual_body_pitch = _spring_scalar(
+			_visual_body_pitch,
+			target_pitch,
+			delta,
+			GameConfig.vehicle_visual_body_lean_spring,
+			GameConfig.vehicle_visual_body_lean_damping,
+			&"_visual_body_pitch_velocity"
+	)
+	_visual_body_roll = _spring_scalar(
+			_visual_body_roll,
+			target_roll,
+			delta,
+			GameConfig.vehicle_visual_body_lean_spring,
+			GameConfig.vehicle_visual_body_lean_damping,
+			&"_visual_body_roll_velocity"
+	)
+	visual_root.rotation = Vector3(_visual_body_pitch, 0.0, _visual_body_roll)
+
+
+func _update_whip_antenna_visual(state: RefCounted, acceleration: Vector3, delta: float) -> void:
+	var visual_root: Node3D = _vehicle_visual_root as Node3D
+	if visual_root == null:
+		return
+	var antenna: Node3D = ProceduralBuggyVisualScript.get_whip_antenna(visual_root)
+	if antenna == null:
+		return
+	var basis: Basis = state.get("basis")
+	var forward: Vector3 = -basis.z.normalized()
+	var right: Vector3 = basis.x.normalized()
+	var velocity: Vector3 = state.get("linear_velocity")
+	var speed: float = velocity.length()
+	var forward_accel: float = acceleration.dot(forward)
+	var lateral_accel: float = acceleration.dot(right)
+	var landing_impulse: float = maxf(0.0, -acceleration.y) * GameConfig.vehicle_visual_antenna_landing_gain
+	var limit: float = deg_to_rad(maxf(GameConfig.vehicle_visual_antenna_max_deg, 0.0))
+	var target_pitch: float = clampf(
+			speed * GameConfig.vehicle_visual_antenna_speed_lean_gain
+					-forward_accel * GameConfig.vehicle_visual_antenna_accel_gain
+					+ landing_impulse,
+			-limit,
+			limit
+	)
+	var target_roll: float = clampf(
+			-lateral_accel * GameConfig.vehicle_visual_antenna_accel_gain,
+			-limit,
+			limit
+	)
+	_visual_antenna_pitch = _spring_scalar(
+			_visual_antenna_pitch,
+			target_pitch,
+			delta,
+			GameConfig.vehicle_visual_antenna_spring,
+			GameConfig.vehicle_visual_antenna_damping,
+			&"_visual_antenna_pitch_velocity"
+	)
+	_visual_antenna_roll = _spring_scalar(
+			_visual_antenna_roll,
+			target_roll,
+			delta,
+			GameConfig.vehicle_visual_antenna_spring,
+			GameConfig.vehicle_visual_antenna_damping,
+			&"_visual_antenna_roll_velocity"
+	)
+	antenna.rotation = Vector3(_visual_antenna_pitch, 0.0, _visual_antenna_roll)
+
+
+func _visual_acceleration(state: RefCounted, delta: float) -> Vector3:
+	var velocity: Vector3 = state.get("linear_velocity")
+	if not _visual_last_velocity_valid:
+		_visual_last_velocity = velocity
+		_visual_last_velocity_valid = true
+		return Vector3.ZERO
+	var safe_delta: float = maxf(delta, GameConfig.FIXED_DT)
+	var acceleration: Vector3 = (velocity - _visual_last_velocity) / safe_delta
+	_visual_last_velocity = velocity
+	return acceleration
+
+
+func _spring_scalar(current: float, target: float, delta: float, spring: float, damping: float, velocity_property: StringName) -> float:
+	var velocity: float = float(get(velocity_property))
+	velocity += (target - current) * maxf(spring, 0.0) * delta
+	velocity *= maxf(0.0, 1.0 - maxf(damping, 0.0) * delta)
+	set(velocity_property, velocity)
+	return current + velocity * delta
+
+
+func _update_grass_crush(state: RefCounted) -> void:
+	_collect_grass_crush_materials(self)
+	var vehicle_position: Vector3 = state.get("position")
+	for material in _grass_crush_materials:
+		if material == null:
+			continue
+		material.set_shader_parameter(&"vehicle_world_pos", vehicle_position)
+		material.set_shader_parameter(&"crush_radius", maxf(GameConfig.grass_crush_radius, 0.0))
+		material.set_shader_parameter(&"crush_strength", maxf(GameConfig.grass_crush_strength, 0.0))
+
+
+func _collect_grass_crush_materials(root: Node) -> void:
+	for child in root.get_children():
+		var multimesh_instance: MultiMeshInstance3D = child as MultiMeshInstance3D
+		if multimesh_instance != null:
+			var material: ShaderMaterial = multimesh_instance.material_override as ShaderMaterial
+			if material != null and material.shader == GrassShader and not _grass_crush_materials.has(material):
+				_grass_crush_materials.append(material)
+		_collect_grass_crush_materials(child)
 
 
 func _update_vehicle_residue_visual(state: RefCounted) -> void:

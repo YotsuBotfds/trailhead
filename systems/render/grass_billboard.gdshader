@@ -8,6 +8,9 @@ uniform float wind_speed = 0.65;
 uniform float wind_time_factor = 1.0;
 uniform vec4 backlight_color : source_color = vec4(1.0, 0.62, 0.30, 1.0);
 uniform float backlight_energy = 0.32;
+uniform vec3 vehicle_world_pos = vec3(0.0, 0.0, 0.0);
+uniform float crush_radius = 1.2;
+uniform float crush_strength = 0.75;
 varying float blade_height;
 varying float tip_mix_shift;
 void vertex() {
@@ -21,6 +24,15 @@ void vertex() {
 	float bend = (sway * 0.72 + flutter * 0.28) * gust * wind_strength * blade_height * blade_height * INSTANCE_CUSTOM.x;
 	VERTEX.x += bend;
 	VERTEX.z += bend * (INSTANCE_CUSTOM.z * 0.7 - 0.35);
+	vec3 vehicle_local_pos = (inverse(MODEL_MATRIX) * vec4(vehicle_world_pos, 1.0)).xyz;
+	vec2 crush_delta = VERTEX.xz - vehicle_local_pos.xz;
+	float crush_distance = length(crush_delta);
+	float crush_falloff = 1.0 - smoothstep(0.0, max(crush_radius, 0.001), crush_distance);
+	float crush_tip_weight = blade_height * blade_height;
+	vec2 crush_dir = crush_distance > 0.001 ? crush_delta / crush_distance : vec2(1.0, 0.0);
+	float crush_amount = crush_falloff * crush_tip_weight * max(crush_strength, 0.0);
+	VERTEX.xz += crush_dir * crush_amount * 0.18;
+	VERTEX.y -= crush_amount * 0.20;
 }
 void fragment() {
 	float tip_mix = smoothstep(0.0, 1.0, blade_height + (tip_mix_shift - 0.5) * 0.22);

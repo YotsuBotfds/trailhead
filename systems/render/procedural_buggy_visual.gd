@@ -364,6 +364,12 @@ static func get_kayak_material(visual_root: Node) -> StandardMaterial3D:
 	return node.get_meta(KAYAK_MATERIAL_META) as StandardMaterial3D
 
 
+static func get_whip_antenna(visual_root: Node) -> Node3D:
+	if visual_root == null:
+		return null
+	return visual_root.get_node_or_null(String(WHIP_ANTENNA_NODE_NAME)) as Node3D
+
+
 # --- W6-VEHICLE: RC-toy detail polish ----------------------------------------
 # All procedural + cheap, deterministic (no RNG, no wall-clock, no new assets).
 # - whip antenna + bright flag topper (classic RC silhouette)
