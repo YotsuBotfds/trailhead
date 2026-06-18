@@ -383,8 +383,10 @@ func _require_zion_foliage_placement_audits() -> void:
 	var talus_ok: bool = _require_foliage_audit_ok(talus_audit, "talus foliage audit")
 	if woodland_ok:
 		_require_foliage_dominant_surface(woodland_audit, "woodland foliage audit", 3)
+		_require_foliage_species_present(woodland_audit, "woodland foliage audit", "juniper")
 	if talus_ok:
 		_require_foliage_dominant_surface(talus_audit, "talus foliage audit", 4)
+		_require_foliage_species_present(talus_audit, "talus foliage audit", "yucca")
 	if not woodland_ok or not talus_ok:
 		return
 
@@ -417,6 +419,12 @@ func _require_foliage_dominant_surface(audit: Dictionary[String, Variant], label
 	var observed_share: float = float(audit.get("dominant_surface_share", 0.0))
 	if observed_share < FOLIAGE_DOMINANT_SURFACE_MIN_SHARE:
 		_errors.append(label + " dominant surface share expected >= " + str(FOLIAGE_DOMINANT_SURFACE_MIN_SHARE) + ", got " + str(observed_share))
+
+
+func _require_foliage_species_present(audit: Dictionary[String, Variant], label: String, species_id: String) -> void:
+	var instance_count: int = int(audit.get(species_id + "_instance_count", 0))
+	if instance_count <= 0:
+		_errors.append(label + " expected " + species_id + " instances, got " + str(instance_count))
 
 
 func _tile_streamer_active_cells() -> Array[Vector2i]:
