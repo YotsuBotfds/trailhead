@@ -503,6 +503,8 @@ func cycle_camera_mode() -> void:
 
 
 func _update_hud_input() -> void:
+	if _drive_started and _speed_hud != null:
+		_speed_hud.call("set_drive_active", true)
 	if _landmark_hint_hud == null or not Input.is_action_just_pressed("map_toggle"):
 		return
 	toggle_landmark_hint_hud()
