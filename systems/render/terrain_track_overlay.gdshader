@@ -1,7 +1,7 @@
 shader_type spatial;
 render_mode unshaded, blend_mix, depth_draw_never, cull_disabled;
 
-uniform sampler2D track_rt : source_color, repeat_disable, filter_linear;
+uniform sampler2D track_rt : source_color, hint_default_black, repeat_disable, filter_linear;
 uniform vec2 track_bounds_min = vec2(-6.1, -10.6);
 uniform vec2 track_bounds_max = vec2(6.1, 1.6);
 uniform float track_darkening : hint_range(0.0, 1.0) = 0.34;
