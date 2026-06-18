@@ -172,6 +172,7 @@ var cam_look_turn_bias: float = 0.20
 var cam_fov_base: float = 68.0
 var cam_fov_speed_gain: float = 22.0
 var cam_pitch_deg: float = -5.0
+var cam_roll_steer_deg: float = 3.5
 var cam_gimbal_up_smooth: float = 1.0
 var cam_vertical_follow_softness: float = 7.5
 var orbit_cam_height: float = 0.65

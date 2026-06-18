@@ -35,10 +35,15 @@ func update(camera: Camera3D, state: RefCounted, steer: float, delta: float, spe
 	else:
 		back_current = back
 		up_current = up
-		camera.global_position = desired_position
+		var xz_alpha: float = clampf(GameConfig.cam_spring_xz * delta, 0.0, 1.0)
+		var y_alpha: float = clampf(GameConfig.cam_spring_vy * delta * 0.001, 0.0, 1.0)
+		var target_xz: Vector3 = Vector3(desired_position.x, camera.global_position.y, desired_position.z)
+		var target_y: Vector3 = Vector3(camera.global_position.x, desired_position.y, camera.global_position.z)
+		camera.global_position = camera.global_position.lerp(target_xz, xz_alpha).lerp(target_y, y_alpha)
 		# Anchor look target to current vehicle position so world-space lag cannot invert the chase view.
 		look_target_current = _look_target(camera, followed_position, back_current, up_current, steer)
 	camera.look_at(look_target_current, up_current)
+	camera.rotate(camera.basis.z, -steer * deg_to_rad(GameConfig.cam_roll_steer_deg))
 	if speed_fov_enabled:
 		var linear_velocity: Vector3 = state.get("linear_velocity")
 		camera.fov = GameConfig.get_fov_for_speed(linear_velocity.length())
