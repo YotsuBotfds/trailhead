@@ -23,8 +23,8 @@ const STAMP_ALPHA_EPSILON: float = 0.01
 const MIN_STAMPS_PER_WHEEL: int = 8
 const RUT_MUD_SCALE: float = 1.0
 const RUT_WET_SCALE: float = 0.48
-const RUT_SAND_SCALE: float = 0.62
-const RUT_DUST_SCALE: float = 0.26
+const RUT_SAND_SCALE: float = 0.68
+const RUT_DUST_SCALE: float = 0.38
 const WET_MUD_CHANNEL: float = 0.85
 const WET_STONE_CHANNEL: float = 0.70
 
