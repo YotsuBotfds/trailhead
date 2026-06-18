@@ -1477,17 +1477,20 @@ static func _pack_foliage_species_buffer(species_data: FoliageSpeciesCellData) -
 	var write_index: int = 0
 	for i in range(instance_count):
 		var transform: Transform3D = species_data.transforms[i]
+		# Godot 4.6 MultiMesh.buffer is ROW-MAJOR: row r = [basis.x[r], basis.y[r], basis.z[r], origin[r]].
+		# (Was column-major, which collapsed every instance's origin to ~0 → foliage rendered 1197m
+		# underground = invisible. Verified against MultiMesh.set_instance_transform's packing.)
 		buffer[write_index] = transform.basis.x.x
-		buffer[write_index + 1] = transform.basis.x.y
-		buffer[write_index + 2] = transform.basis.x.z
-		buffer[write_index + 3] = transform.basis.y.x
-		buffer[write_index + 4] = transform.basis.y.y
-		buffer[write_index + 5] = transform.basis.y.z
-		buffer[write_index + 6] = transform.basis.z.x
-		buffer[write_index + 7] = transform.basis.z.y
-		buffer[write_index + 8] = transform.basis.z.z
-		buffer[write_index + 9] = transform.origin.x
-		buffer[write_index + 10] = transform.origin.y
+		buffer[write_index + 1] = transform.basis.y.x
+		buffer[write_index + 2] = transform.basis.z.x
+		buffer[write_index + 3] = transform.origin.x
+		buffer[write_index + 4] = transform.basis.x.y
+		buffer[write_index + 5] = transform.basis.y.y
+		buffer[write_index + 6] = transform.basis.z.y
+		buffer[write_index + 7] = transform.origin.y
+		buffer[write_index + 8] = transform.basis.x.z
+		buffer[write_index + 9] = transform.basis.y.z
+		buffer[write_index + 10] = transform.basis.z.z
 		buffer[write_index + 11] = transform.origin.z
 		var color: Color = species_data.colors[i]
 		buffer[write_index + 12] = color.r
