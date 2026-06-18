@@ -51,6 +51,7 @@ func _inspect() -> void:
 	_require_vehicle_spawn()
 	_require_vista_camera_far()
 	_require_surface_map()
+	_require_hud_overlays()
 	await _wait_for_streaming(streamer)
 	_require_tile_streamer_active_set()
 	_require_visual_streamer_state(streamer)
@@ -217,6 +218,25 @@ func _require_surface_map() -> void:
 		return
 	if not bool(surface_map.call("is_terrain_sampler_ready")):
 		_errors.append("Zion playable SurfaceMap terrain sampler is not ready")
+
+
+func _require_hud_overlays() -> void:
+	var speed_hud: Node = _require_node(_scene_root, "SpeedHud")
+	if speed_hud != null:
+		if not (speed_hud is CanvasLayer):
+			_errors.append("SpeedHud should be a CanvasLayer")
+		if speed_hud.get_node_or_null("SpeedHudPanel") == null:
+			_errors.append("SpeedHud should spawn its draw panel after setup")
+		if GameConfig.speed_hud_enabled and not speed_hud.visible:
+			_errors.append("SpeedHud should be visible when speed_hud_enabled is true")
+	var controls_hint: Node = _require_node(_scene_root, "ControlsHintHud")
+	if controls_hint != null:
+		if not (controls_hint is CanvasLayer):
+			_errors.append("ControlsHintHud should be a CanvasLayer")
+		if controls_hint.get_node_or_null("ControlsHintPanel") == null:
+			_errors.append("ControlsHintHud should spawn its draw panel after setup")
+		if GameConfig.controls_hint_hud_enabled and not controls_hint.visible:
+			_errors.append("ControlsHintHud should be visible when controls_hint_hud_enabled is true")
 
 
 func _require_vista_camera_far() -> void:
