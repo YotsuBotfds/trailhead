@@ -482,6 +482,12 @@ func _collect_visual_wheels() -> void:
 func _update_visual_wheels(delta: float) -> void:
 	var state: RefCounted = _vehicle.call("get_state")
 	_update_vehicle_residue_visual(state)
+	var tail_material: StandardMaterial3D = ProceduralBuggyVisual.get_tail_light_material(_vehicle_visual_root)
+	if tail_material != null:
+		var braking: float = float(_vehicle_input.get("brake"))
+		var ebrake: bool = bool(_vehicle_input.get("ebrake"))
+		var glowing: bool = braking > 0.0 or ebrake
+		tail_material.emission_energy_multiplier = GameConfig.brake_light_energy if glowing else 0.0
 	if _wheel_sockets.is_empty():
 		return
 	var speed: float = float(state.call("speed"))
