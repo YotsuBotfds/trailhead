@@ -130,6 +130,12 @@ func _physics_process(delta: float) -> void:
 	_update_camera(delta)
 
 
+func _process(_delta: float) -> void:
+	if _terrain_track_painter == null:
+		return
+	_apply_terrain_tracks_to_streamed_tiles()
+
+
 func _ensure_default_input_map() -> void:
 	_ensure_action(&"throttle", [KEY_W, KEY_UP])
 	_ensure_action(&"brake", [KEY_S, KEY_DOWN])
@@ -243,6 +249,7 @@ func _setup_world() -> void:
 	_terrain_visual_streamer.name = "TerrainVisualStreamer"
 	_world.add_child(_terrain_visual_streamer)
 	_terrain_visual_streamer.call("configure_region", ZION_REGION_ID)
+	_setup_terrain_tracks(_terrain_visual_streamer)
 	WaterVisualBuilderScript.build_zion_virgin_river(_world)
 
 
@@ -660,8 +667,20 @@ func _update_vehicle_residue_visual(state: RefCounted) -> void:
 func _update_terrain_tracks() -> void:
 	if _terrain_track_painter == null:
 		return
+	_apply_terrain_tracks_to_streamed_tiles()
 	var state: RefCounted = _vehicle.call("get_state")
 	_terrain_track_painter.call("apply_vehicle_state", state, GameConfig.FIXED_DT)
+
+
+func _apply_terrain_tracks_to_streamed_tiles() -> void:
+	if _terrain_visual_streamer == null:
+		return
+	var track_texture: Texture2D = _terrain_track_painter.call("track_texture") as Texture2D
+	if track_texture == null:
+		return
+	var track_bounds_min: Vector2 = _terrain_track_painter.call("render_bounds_min")
+	var track_bounds_max: Vector2 = _terrain_track_painter.call("render_bounds_max")
+	TerrainVisualBuilderScript.apply_track_texture(_terrain_visual_streamer, track_texture, track_bounds_min, track_bounds_max)
 
 
 func _wheel_mesh_for_socket(socket: Node3D) -> Node3D:
