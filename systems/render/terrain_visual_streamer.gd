@@ -12,6 +12,7 @@ var _stream_generation: int = 0
 var _worker_count: int = DEFAULT_WORKER_COUNT
 var _configured: bool = false
 var _events_connected: bool = false
+var _hlod_dirty: bool = false
 var _active_cells: Dictionary[Vector2i, bool] = {}
 var _visual_tiles_by_cell: Dictionary[Vector2i, Node3D] = {}
 var _foliage_tiles_by_cell: Dictionary[Vector2i, Node3D] = {}
@@ -22,6 +23,7 @@ var _queued_builds: Dictionary[Vector2i, bool] = {}
 var _cancelled_builds: Dictionary[Vector2i, bool] = {}
 var _commit_queue: Array[Vector2i] = []
 var _queued_commits: Dictionary[Vector2i, bool] = {}
+var _pending_free_cells: Array[Vector2i] = []
 var _workers: Array[Thread] = []
 var _work_mutex: Mutex = Mutex.new()
 var _work_semaphore: Semaphore = Semaphore.new()
@@ -67,6 +69,7 @@ func set_worker_count_for_tests(worker_count: int) -> void:
 
 func reset_stream() -> void:
 	set_process(false)
+	_hlod_dirty = false
 	_stop_workers()
 	_stream_generation += 1
 	_disconnect_event_connections()
@@ -84,6 +87,7 @@ func reset_stream() -> void:
 	_cancelled_builds.clear()
 	_commit_queue.clear()
 	_queued_commits.clear()
+	_pending_free_cells.clear()
 	_clear_worker_queues()
 	_configured = false
 	_region_id = ""
@@ -99,10 +103,14 @@ func reset_stream() -> void:
 func _process(_delta: float) -> void:
 	if not _configured:
 		return
+	if _hlod_dirty:
+		_update_hlod_visibility()
+		_hlod_dirty = false
 	if _workers.is_empty():
 		_process_build_queue_synchronously()
 	_drain_worker_results()
 	_drain_commit_queue()
+	_drain_pending_frees()
 
 
 func active_visual_cells() -> Array[Vector2i]:
@@ -195,8 +203,9 @@ func _disconnect_event_connections() -> void:
 func _on_world_tile_activated(cell: Vector2i) -> void:
 	if not _configured or _detail_root == null or _foliage_root == null:
 		return
+	_pending_free_cells.erase(cell)
 	_active_cells[cell] = true
-	_update_hlod_visibility()
+	_hlod_dirty = true
 	if _visual_tiles_by_cell.has(cell) and _foliage_tiles_by_cell.has(cell):
 		return
 	if _ready_tile_data_by_cell.has(cell):
@@ -214,10 +223,10 @@ func _on_world_tile_evicted(cell: Vector2i) -> void:
 	if not _configured:
 		return
 	_active_cells.erase(cell)
-	_update_hlod_visibility()
+	_hlod_dirty = true
 	_remove_queued_commit(cell)
-	_free_visual_cell(cell)
-	_free_foliage_cell(cell)
+	if not _pending_free_cells.has(cell):
+		_pending_free_cells.append(cell)
 	_load_failures_by_cell.erase(cell)
 
 
@@ -350,6 +359,18 @@ func _commit_ready_cell(cell: Vector2i) -> void:
 		_commit_visual_tile(cell, _ready_tile_data_by_cell[cell])
 	if _ready_foliage_data_by_cell.has(cell):
 		_commit_foliage_tile(cell, _ready_foliage_data_by_cell[cell])
+
+
+func _drain_pending_frees() -> void:
+	if _pending_free_cells.is_empty():
+		return
+	var free_budget: int = maxi(GameConfig.render_visual_tile_frees_per_frame, 1)
+	var freed_count: int = 0
+	while freed_count < free_budget and not _pending_free_cells.is_empty():
+		var cell: Vector2i = _pending_free_cells.pop_front()
+		_free_visual_cell(cell)
+		_free_foliage_cell(cell)
+		freed_count += 1
 
 
 func _commit_visual_tile(cell: Vector2i, visual_tile_data: Variant) -> void:
