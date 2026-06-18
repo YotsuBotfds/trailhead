@@ -101,12 +101,18 @@ const ZION_SAND_HEIGHT_START_UNIFORM: StringName = &"zion_sand_height_start"
 const ZION_SAND_HEIGHT_END_UNIFORM: StringName = &"zion_sand_height_end"
 const ZION_STRATA_SCALE_UNIFORM: StringName = &"zion_strata_scale"
 const ZION_STRATA_STRENGTH_UNIFORM: StringName = &"zion_strata_strength"
+const ZION_STRATA_LIGHT_COLOR_UNIFORM: StringName = &"zion_strata_light_color"
+const ZION_STRATA_DIP_UNIFORM: StringName = &"zion_strata_dip"
 const ZION_DETILE_STRENGTH_UNIFORM: StringName = &"zion_detile_strength"
 const ZION_VARNISH_COLOR_UNIFORM: StringName = &"zion_varnish_color"
 const ZION_VARNISH_STRENGTH_UNIFORM: StringName = &"zion_varnish_strength"
 const ZION_VARNISH_WALL_THRESHOLD_UNIFORM: StringName = &"zion_varnish_wall_threshold"
 const ZION_VARNISH_HEIGHT_START_UNIFORM: StringName = &"zion_varnish_height_start"
 const ZION_VARNISH_STREAK_SCALE_UNIFORM: StringName = &"zion_varnish_streak_scale"
+const ZION_KAYENTA_COLOR_UNIFORM: StringName = &"zion_kayenta_color"
+const ZION_KAYENTA_HEIGHT_START_UNIFORM: StringName = &"zion_kayenta_height_start"
+const ZION_KAYENTA_HEIGHT_END_UNIFORM: StringName = &"zion_kayenta_height_end"
+const ZION_KAYENTA_STRENGTH_UNIFORM: StringName = &"zion_kayenta_strength"
 const SURFACE_UV_SCALE_UNIFORM_PREFIX: String = "surface_uv_scale_"
 
 
@@ -966,12 +972,18 @@ static func _apply_zion_surface_index_tuning(material: ShaderMaterial) -> void:
 	material.set_shader_parameter(ZION_SAND_HEIGHT_END_UNIFORM, 1202.0)
 	material.set_shader_parameter(ZION_STRATA_SCALE_UNIFORM, 0.58)
 	material.set_shader_parameter(ZION_STRATA_STRENGTH_UNIFORM, 0.48)
+	material.set_shader_parameter(ZION_STRATA_LIGHT_COLOR_UNIFORM, Color(0.86, 0.62, 0.38, 1.0))
+	material.set_shader_parameter(ZION_STRATA_DIP_UNIFORM, Vector2(0.15, 0.15))
 	material.set_shader_parameter(ZION_DETILE_STRENGTH_UNIFORM, 0.18)
 	material.set_shader_parameter(ZION_VARNISH_COLOR_UNIFORM, Color(0.13, 0.08, 0.06, 1.0))
 	material.set_shader_parameter(ZION_VARNISH_STRENGTH_UNIFORM, 0.5)
 	material.set_shader_parameter(ZION_VARNISH_WALL_THRESHOLD_UNIFORM, 0.30)
 	material.set_shader_parameter(ZION_VARNISH_HEIGHT_START_UNIFORM, 1300.0)
 	material.set_shader_parameter(ZION_VARNISH_STREAK_SCALE_UNIFORM, 0.12)
+	material.set_shader_parameter(ZION_KAYENTA_COLOR_UNIFORM, Color(0.38, 0.10, 0.06, 1.0))
+	material.set_shader_parameter(ZION_KAYENTA_HEIGHT_START_UNIFORM, 1200.0)
+	material.set_shader_parameter(ZION_KAYENTA_HEIGHT_END_UNIFORM, 1250.0)
+	material.set_shader_parameter(ZION_KAYENTA_STRENGTH_UNIFORM, 0.55)
 
 
 static func _surface_index_albedo_array() -> Texture2DArray:
