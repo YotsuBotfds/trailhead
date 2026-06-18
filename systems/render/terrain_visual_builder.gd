@@ -142,6 +142,10 @@ const ZION_KAYENTA_STRENGTH_UNIFORM: StringName = &"zion_kayenta_strength"
 const ZION_BLEACH_COLOR_UNIFORM: StringName = &"zion_bleach_color"
 const ZION_BLEACH_HEIGHT_START_UNIFORM: StringName = &"zion_bleach_height_start"
 const ZION_BLEACH_STRENGTH_UNIFORM: StringName = &"zion_bleach_strength"
+const ZION_WETROCK_ENABLED_UNIFORM: StringName = &"zion_wetrock_enabled"
+const ZION_WETROCK_HEIGHT_START_UNIFORM: StringName = &"zion_wetrock_height_start"
+const ZION_WETROCK_HEIGHT_END_UNIFORM: StringName = &"zion_wetrock_height_end"
+const ZION_WETROCK_DARKNESS_UNIFORM: StringName = &"zion_wetrock_darkness"
 const SURFACE_UV_SCALE_UNIFORM_PREFIX: String = "surface_uv_scale_"
 
 
@@ -1039,6 +1043,10 @@ static func _apply_zion_surface_index_tuning(material: ShaderMaterial) -> void:
 	material.set_shader_parameter(ZION_BLEACH_COLOR_UNIFORM, Color(0.91, 0.84, 0.72, 1.0))
 	material.set_shader_parameter(ZION_BLEACH_HEIGHT_START_UNIFORM, 1550.0)
 	material.set_shader_parameter(ZION_BLEACH_STRENGTH_UNIFORM, 0.55)
+	material.set_shader_parameter(ZION_WETROCK_ENABLED_UNIFORM, true)
+	material.set_shader_parameter(ZION_WETROCK_HEIGHT_START_UNIFORM, 1230.0)
+	material.set_shader_parameter(ZION_WETROCK_HEIGHT_END_UNIFORM, 1320.0)
+	material.set_shader_parameter(ZION_WETROCK_DARKNESS_UNIFORM, 0.4)
 	material.set_shader_parameter(MACRO_ALBEDO_ORIGIN_XZ_UNIFORM, MACRO_ALBEDO_REGION_ORIGIN_XZ)
 	material.set_shader_parameter(MACRO_ALBEDO_SIZE_XZ_UNIFORM, MACRO_ALBEDO_REGION_SIZE_XZ)
 	material.set_shader_parameter(MACRO_ALBEDO_STRENGTH_UNIFORM, MACRO_ALBEDO_STRENGTH)
