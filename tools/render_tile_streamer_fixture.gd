@@ -181,8 +181,9 @@ func _require_pipeline_warmup() -> void:
 		TerrainVisualBuilderScript.PIPELINE_WARMUP_FOLIAGE_LOD_COUNT_META,
 		"PipelineWarmup"
 	)
-	if foliage_lod_count != 2:
-		_errors.append("PipelineWarmup foliage LOD count expected 2, got " + str(foliage_lod_count))
+	var expected_foliage_warmup_nodes: PackedStringArray = TerrainVisualBuilderScript.foliage_pipeline_warmup_node_names()
+	if foliage_lod_count != expected_foliage_warmup_nodes.size():
+		_errors.append("PipelineWarmup foliage warmup count expected " + str(expected_foliage_warmup_nodes.size()) + ", got " + str(foliage_lod_count))
 	var terrain_warmup: MeshInstance3D = warmup_root.get_node_or_null(TerrainVisualBuilderScript.REGION_PIPELINE_WARMUP_TERRAIN_NAME) as MeshInstance3D
 	if terrain_warmup == null:
 		_errors.append("PipelineWarmup terrain child should be MeshInstance3D")
@@ -190,14 +191,11 @@ func _require_pipeline_warmup() -> void:
 		_errors.append("PipelineWarmup terrain child missing mesh")
 	elif terrain_warmup.mesh.get_surface_count() != terrain_material_count:
 		_errors.append("PipelineWarmup terrain surface count expected " + str(terrain_material_count) + ", got " + str(terrain_warmup.mesh.get_surface_count()))
-	_require_warmup_multimesh(
-		warmup_root.get_node_or_null(TerrainVisualBuilderScript.REGION_PIPELINE_WARMUP_FOLIAGE_LOD0_NAME) as MultiMeshInstance3D,
-		"PipelineWarmup foliage LOD0"
-	)
-	_require_warmup_multimesh(
-		warmup_root.get_node_or_null(TerrainVisualBuilderScript.REGION_PIPELINE_WARMUP_FOLIAGE_LOD1_NAME) as MultiMeshInstance3D,
-		"PipelineWarmup foliage LOD1"
-	)
+	for node_name in expected_foliage_warmup_nodes:
+		_require_warmup_multimesh(
+			warmup_root.get_node_or_null(node_name) as MultiMeshInstance3D,
+			"PipelineWarmup " + node_name
+		)
 	var collision_count: int = _count_collision_objects(warmup_root)
 	if collision_count > 0:
 		_errors.append("PipelineWarmup should not contain collision objects: " + str(collision_count))
@@ -325,8 +323,6 @@ func _require_foliage_tile(cell: Vector2i) -> Node3D:
 		return null
 	var multimesh_count: int = 0
 	var foliage_instance_count: int = 0
-	var meshes_by_lod: Dictionary[String, Mesh] = {}
-	var materials_by_lod: Dictionary[String, Material] = {}
 	var lod_counts: Dictionary[String, int] = {}
 	for child in foliage_tile.get_children():
 		var multimesh_instance: MultiMeshInstance3D = child as MultiMeshInstance3D
@@ -345,10 +341,6 @@ func _require_foliage_tile(cell: Vector2i) -> Node3D:
 			_errors.append("foliage child missing material_override: " + String(child.name))
 		elif not _is_grass_shader_material(material):
 			_errors.append("foliage child should use grass_billboard ShaderMaterial: " + String(child.name))
-		elif materials_by_lod.has(region_lod) and materials_by_lod[region_lod] != material:
-			_errors.append("foliage children should share material_override for " + region_lod)
-		elif not materials_by_lod.has(region_lod):
-			materials_by_lod[region_lod] = material
 		if not multimesh_instance.has_meta(TerrainVisualBuilderScript.VISIBILITY_RADIUS_META):
 			_errors.append("foliage child missing visibility radius metadata: " + String(child.name))
 		if multimesh_instance.multimesh == null:
@@ -364,16 +356,12 @@ func _require_foliage_tile(cell: Vector2i) -> Node3D:
 				_errors.append("foliage child custom_aabb should span the stream tile: " + String(child.name))
 			elif multimesh.mesh == null:
 				_errors.append("foliage child missing shared mesh: " + String(child.name))
-			elif meshes_by_lod.has(region_lod) and meshes_by_lod[region_lod] != multimesh.mesh:
-				_errors.append("foliage children should share mesh for " + region_lod)
-			elif not meshes_by_lod.has(region_lod):
-				meshes_by_lod[region_lod] = multimesh.mesh
-	if multimesh_count != 2:
-		_errors.append("foliage cell should contain exactly two MultiMeshInstance3D LOD children: " + str(cell) + ", got " + str(multimesh_count))
-	if int(lod_counts.get("foliage_lod0", 0)) != 1:
-		_errors.append("foliage cell should contain one foliage_lod0 child: " + str(cell))
-	if int(lod_counts.get("foliage_lod1", 0)) != 1:
-		_errors.append("foliage cell should contain one foliage_lod1 child: " + str(cell))
+	if multimesh_count < 2:
+		_errors.append("foliage cell should contain MultiMeshInstance3D species/LOD children: " + str(cell) + ", got " + str(multimesh_count))
+	if int(lod_counts.get("foliage_lod0", 0)) <= 0:
+		_errors.append("foliage cell should contain foliage_lod0 children: " + str(cell))
+	if int(lod_counts.get("foliage_lod1", 0)) <= 0:
+		_errors.append("foliage cell should contain foliage_lod1 children: " + str(cell))
 	if foliage_instance_count <= 0:
 		_errors.append("foliage cell should contain nonzero MultiMesh instances: " + str(cell))
 	return foliage_tile
