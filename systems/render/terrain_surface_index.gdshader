@@ -55,6 +55,11 @@ uniform float zion_kayenta_strength = 0.55;
 uniform vec4 zion_bleach_color : source_color = vec4(0.91, 0.84, 0.72, 1.0);  // pale buff cream
 uniform float zion_bleach_height_start = 1550.0;   // lower edge of the bleached upper walls
 uniform float zion_bleach_strength = 0.55;
+uniform bool zion_wetrock_enabled = true;
+uniform float zion_wetrock_height_start = 1230.0;
+uniform float zion_wetrock_height_end = 1320.0;
+uniform float zion_wetrock_darkness = 0.4;
+uniform vec4 zion_wetrock_moss_color : source_color = vec4(0.164, 0.219, 0.125, 1.0);
 // W6-SURFACE-DETAIL: procedural micro-normal relief + ROUGHNESS wobble so raking
 // golden-hour light catches fine (~1.4 m) sand/rock grain instead of bouncing off
 // a flat-plastic geometric normal. Hash-only (no extra texture fetches); per-surface
@@ -243,7 +248,9 @@ void fragment() {
 	float strata_wave = sin(world_y * zion_strata_scale + strata_dip_phase + hash21(floor(world_xz * 0.08)) * 6.283185);
 	float kayenta_height_mask = smoothstep(zion_kayenta_height_start, zion_kayenta_height_start + 12.0, world_y) - smoothstep(zion_kayenta_height_end - 18.0, zion_kayenta_height_end, world_y);
 	float kayenta_mask = clamp(kayenta_height_mask, 0.0, 1.0) * sandstone_mask;
-	float detile = hash21_smooth(world_xz * 0.055) * 2.0 - 1.0;
+	float detile_a = hash21_smooth(world_xz * 0.055) * 2.0 - 1.0;
+	float detile_b = hash21_smooth(world_xz * 0.031 + vec2(7.3, 2.1)) * 2.0 - 1.0;
+	float detile = detile_a * 0.5 + detile_b * 0.5;
 	vec3 zion_albedo = ALBEDO;
 	zion_albedo = mix(zion_albedo, zion_sand_color.rgb, low_flat_mask * 0.68);
 	zion_albedo = mix(zion_albedo, zion_sandstone_color.rgb, cliff_mask * 0.74);
@@ -253,6 +260,14 @@ void fragment() {
 	zion_albedo = mix(zion_albedo, strata_tint, cliff_mask * zion_strata_strength);
 	zion_albedo *= 1.0 + detile * zion_detile_strength;
 	ALBEDO = clamp(zion_albedo, vec3(0.0), vec3(1.0));
+	if (zion_wetrock_enabled) {
+		float wetrock_wall = step(local_normal_y, 0.25);
+		float wetrock_height = smoothstep(zion_wetrock_height_start, zion_wetrock_height_start + 15.0, world_y)
+		                     * (1.0 - smoothstep(zion_wetrock_height_end - 15.0, zion_wetrock_height_end, world_y));
+		float wetrock_scatter = step(0.72, hash21(floor(world_xz * 0.018)));
+		float wetrock_mask = wetrock_wall * wetrock_height * wetrock_scatter;
+		ALBEDO = mix(ALBEDO, ALBEDO * (1.0 - zion_wetrock_darkness) + zion_wetrock_moss_color.rgb * 0.08, wetrock_mask);
+	}
 	float varnish_wall_mask = 1.0 - smoothstep(zion_varnish_wall_threshold - 0.08, zion_varnish_wall_threshold + 0.08, local_normal_y);
 	float varnish_height_mask = smoothstep(zion_varnish_height_start, zion_varnish_height_start + 80.0, world_y);
 	float varnish_phase = hash21(floor(world_xz * 0.11)) * 6.283185;
