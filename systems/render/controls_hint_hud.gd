@@ -22,7 +22,8 @@ class _ControlsHintPanel:
 	const PANEL_PADDING_X: float = 14.0
 	const PANEL_PADDING_Y: float = 9.0
 	const FONT_SIZE: int = 13
-	const HINT_TEXT: String = "WASD / Stick: Drive   \u00b7   Space: Handbrake   \u00b7   R: Reset   \u00b7   M: Map"
+	const HINT_LINE_DRIVE: String = "WASD / Stick: Drive   \u00b7   Space: Handbrake   \u00b7   R: Reset"
+	const HINT_LINE_FEATURES: String = "C: Camera   \u00b7   V: Photo   \u00b7   N: Mood   \u00b7   M: Map"
 	const BG_COLOR: Color = Color(0.05, 0.05, 0.04, 0.42)
 	const TEXT_COLOR: Color = Color(0.90, 0.86, 0.74, 0.80)
 
@@ -50,23 +51,35 @@ class _ControlsHintPanel:
 			return
 		var alpha: float = clampf(_alpha, 0.0, 1.0)
 		var font: Font = get_theme_default_font()
-		var text_size: Vector2 = font.get_string_size(HINT_TEXT, HORIZONTAL_ALIGNMENT_LEFT, 0.0, FONT_SIZE)
-		var panel_size: Vector2 = Vector2(text_size.x + PANEL_PADDING_X * 2.0, text_size.y + PANEL_PADDING_Y * 2.0)
+		var drive_size: Vector2 = font.get_string_size(HINT_LINE_DRIVE, HORIZONTAL_ALIGNMENT_LEFT, 0.0, FONT_SIZE)
+		var features_size: Vector2 = font.get_string_size(HINT_LINE_FEATURES, HORIZONTAL_ALIGNMENT_LEFT, 0.0, FONT_SIZE)
+		var text_w: float = maxf(drive_size.x, features_size.x)
+		var panel_size: Vector2 = Vector2(text_w + PANEL_PADDING_X * 2.0, drive_size.y + features_size.y + PANEL_PADDING_Y * 2.0)
 		var origin: Vector2 = _panel_origin(panel_size)
 		draw_rect(
 			Rect2(origin, panel_size),
 			Color(BG_COLOR.r, BG_COLOR.g, BG_COLOR.b, BG_COLOR.a * alpha),
 			true
 		)
-		var text_pos: Vector2 = Vector2(origin.x + PANEL_PADDING_X, origin.y + PANEL_PADDING_Y)
+		var text_x: float = origin.x + PANEL_PADDING_X
+		var text_color: Color = Color(TEXT_COLOR.r, TEXT_COLOR.g, TEXT_COLOR.b, TEXT_COLOR.a * alpha)
 		draw_string(
 			font,
-			text_pos,
-			HINT_TEXT,
+			Vector2(text_x, origin.y + PANEL_PADDING_Y),
+			HINT_LINE_DRIVE,
 			HORIZONTAL_ALIGNMENT_LEFT,
 			0.0,
 			FONT_SIZE,
-			Color(TEXT_COLOR.r, TEXT_COLOR.g, TEXT_COLOR.b, TEXT_COLOR.a * alpha)
+			text_color
+		)
+		draw_string(
+			font,
+			Vector2(text_x, origin.y + PANEL_PADDING_Y + drive_size.y),
+			HINT_LINE_FEATURES,
+			HORIZONTAL_ALIGNMENT_LEFT,
+			0.0,
+			FONT_SIZE,
+			text_color
 		)
 
 
