@@ -63,6 +63,9 @@ const REGION_FOLIAGE_SALT_MULTIPLIER: int = 61
 const REGION_FOLIAGE_Y_OFFSET: float = 0.035
 const FOLIAGE_MAX_SLOPE_NORMAL_Y: float = 0.819
 const REGION_FOLIAGE_CULL_MARGIN: float = 0.08
+# Godot 4.6 MultiMesh.buffer stride for TRANSFORM_3D + use_colors + use_custom_data:
+# per instance = basis.x, basis.y, basis.z, origin (12) + color (4) + custom_data (4).
+const FOLIAGE_MULTIMESH_FLOATS_PER_INSTANCE: int = 20
 const REGION_FOLIAGE_LOD0_SCALE: Vector3 = Vector3(0.16, 0.42, 0.16)
 const REGION_FOLIAGE_LOD1_SCALE: Vector3 = Vector3(0.42, 0.58, 0.42)
 const REGION_FOLIAGE_HEIGHT_SCALE_MAX: float = 1.32
@@ -169,6 +172,7 @@ class FoliageCellData:
 	var transforms: Array[Transform3D] = []
 	var colors: Array[Color] = []
 	var custom_data: Array[Color] = []
+	var packed_buffer: PackedFloat32Array = PackedFloat32Array()
 
 
 class RegionFoliageTileData:
@@ -364,6 +368,8 @@ static func _build_region_foliage_tile_data(region_id: String, cell: Vector2i, a
 				_append_foliage_cell_data_to_tile_lod(lod1_tile_data, lod1_data, tile_origin_xz)
 
 	foliage_tile_data.position = Vector3(tile_origin_xz.x, 0.0, tile_origin_xz.y)
+	_pack_foliage_cell_buffer(lod0_tile_data)
+	_pack_foliage_cell_buffer(lod1_tile_data)
 	foliage_tile_data.cells.append(lod0_tile_data)
 	foliage_tile_data.cells.append(lod1_tile_data)
 	foliage_tile_data.ok = true
@@ -1325,7 +1331,41 @@ static func _build_region_foliage_cell_data_with_audit(tile_data_by_cell: Dictio
 		transform.origin.x -= foliage_origin_xz.x
 		transform.origin.z -= foliage_origin_xz.y
 		cell_data.transforms[i] = transform
+	_pack_foliage_cell_buffer(cell_data)
 	return cell_data
+
+
+static func _pack_foliage_cell_buffer(cell_data: FoliageCellData) -> void:
+	var instance_count: int = cell_data.transforms.size()
+	var buffer: PackedFloat32Array = PackedFloat32Array()
+	buffer.resize(instance_count * FOLIAGE_MULTIMESH_FLOATS_PER_INSTANCE)
+	var write_index: int = 0
+	for i in range(instance_count):
+		var transform: Transform3D = cell_data.transforms[i]
+		buffer[write_index] = transform.basis.x.x
+		buffer[write_index + 1] = transform.basis.x.y
+		buffer[write_index + 2] = transform.basis.x.z
+		buffer[write_index + 3] = transform.basis.y.x
+		buffer[write_index + 4] = transform.basis.y.y
+		buffer[write_index + 5] = transform.basis.y.z
+		buffer[write_index + 6] = transform.basis.z.x
+		buffer[write_index + 7] = transform.basis.z.y
+		buffer[write_index + 8] = transform.basis.z.z
+		buffer[write_index + 9] = transform.origin.x
+		buffer[write_index + 10] = transform.origin.y
+		buffer[write_index + 11] = transform.origin.z
+		var color: Color = cell_data.colors[i]
+		buffer[write_index + 12] = color.r
+		buffer[write_index + 13] = color.g
+		buffer[write_index + 14] = color.b
+		buffer[write_index + 15] = color.a
+		var custom: Color = cell_data.custom_data[i]
+		buffer[write_index + 16] = custom.r
+		buffer[write_index + 17] = custom.g
+		buffer[write_index + 18] = custom.b
+		buffer[write_index + 19] = custom.a
+		write_index += FOLIAGE_MULTIMESH_FLOATS_PER_INSTANCE
+	cell_data.packed_buffer = buffer
 
 
 static func _add_foliage_cell_from_data(parent: Node3D, cell_data: FoliageCellData, mesh: Mesh = null, material: Material = null) -> void:
@@ -1351,10 +1391,7 @@ static func _add_foliage_cell_from_data(parent: Node3D, cell_data: FoliageCellDa
 	multimesh.mesh = mesh
 	multimesh.custom_aabb = cell_data.custom_aabb
 	multimesh.instance_count = cell_data.transforms.size()
-	for i in range(cell_data.transforms.size()):
-		multimesh.set_instance_transform(i, cell_data.transforms[i])
-		multimesh.set_instance_color(i, cell_data.colors[i])
-		multimesh.set_instance_custom_data(i, cell_data.custom_data[i])
+	multimesh.buffer = cell_data.packed_buffer
 	instance.multimesh = multimesh
 	parent.add_child(instance)
 
