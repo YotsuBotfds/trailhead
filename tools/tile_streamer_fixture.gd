@@ -3,23 +3,27 @@ extends Node
 const REGION_ID: String = "spike_1km"
 const START_CELL: Vector2i = Vector2i(4, 4)
 const END_CELL: Vector2i = Vector2i(5, 4)
-const START_SETTLE_TICKS: int = 5
-const END_SETTLE_TICKS: int = 5
+const ACTIVE_SET_READY_TIMEOUT_TICKS: int = 120
+const ACTIVE_SET_CONVERGENCE_MARGIN_TICKS: int = 2
 const PREFETCH_READY_TIMEOUT_TICKS: int = 120
 const CELL_CENTER_OFFSET: float = 0.5
 const WORKER_COUNT_ARG: String = "--tile-streamer-workers="
 
 var _errors: PackedStringArray = PackedStringArray()
+var _streamer: Node = null
 var _activated_cells: Array[Vector2i] = []
 var _evicted_cells: Array[Vector2i] = []
 var _prefetched_cells: Array[Vector2i] = []
 var _unprefetched_cells: Array[Vector2i] = []
+var _activation_events: Array[Variant] = []
 var _all_activated_keys: PackedStringArray = PackedStringArray()
 var _all_prefetched_keys: PackedStringArray = PackedStringArray()
 var _activation_ticks: Dictionary[String, int] = {}
 var _prefetch_ticks: Dictionary[String, int] = {}
+var _non_current_activation_counts_by_tick: Dictionary[int, int] = {}
 var _physics_tick: int = 0
 var _worker_count: int = 1
+var _fixture_sort_origin_cell: Vector2i = Vector2i.ZERO
 
 
 func _ready() -> void:
@@ -32,6 +36,7 @@ func _run() -> void:
 		_errors.append("TileStreamer autoload was not registered")
 		_finish(null)
 		return
+	_streamer = streamer
 
 	_worker_count = _read_worker_count_arg()
 	streamer.call("set_worker_count_for_tests", _worker_count)
@@ -45,32 +50,48 @@ func _run() -> void:
 	if not EventBus.world_tile_unprefetched.is_connected(_on_world_tile_unprefetched):
 		EventBus.world_tile_unprefetched.connect(_on_world_tile_unprefetched)
 
-	streamer.call("configure_fixed_position", REGION_ID, _world_position_for_cell(START_CELL))
-	await _advance_physics_ticks(START_SETTLE_TICKS)
-	await _wait_for_prefetch_ready(streamer, START_CELL)
-
 	var expected_start_cells: Array[Vector2i] = _cells_in_radius(START_CELL, GameConfig.STREAM_ACTIVE_RADIUS)
 	var expected_start_prefetch_cells: Array[Vector2i] = _cells_in_radius(START_CELL, GameConfig.STREAM_PREFETCH_RADIUS)
+	streamer.call("configure_fixed_position", REGION_ID, _world_position_for_cell(START_CELL))
+	await _wait_for_cells_ready(streamer, expected_start_cells, ACTIVE_SET_READY_TIMEOUT_TICKS)
+	await _wait_for_active_set(
+		streamer,
+		expected_start_cells,
+		_activation_convergence_timeout_ticks(expected_start_cells.size(), true)
+	)
+	await _wait_for_prefetch_ready(streamer, START_CELL)
+
 	_require_cells("start active set", streamer.call("active_cells"), expected_start_cells)
-	_require_cells_exact_order("start activation event order", _activated_cells, expected_start_cells)
+	_require_cells_exact_order("start activation event order", _activated_cells, _activation_order_for_cells(START_CELL, expected_start_cells))
 	_require_event_keys_include_cells("start prefetch event coverage", _all_prefetched_keys, expected_start_prefetch_cells)
 	_require_int("start eviction event count", _evicted_cells.size(), 0)
+	_require_activation_budget("start activation budget")
 	_require_no_load_failures(streamer)
 
 	_activated_cells.clear()
 	_evicted_cells.clear()
 	_prefetched_cells.clear()
 	_unprefetched_cells.clear()
-	streamer.call("set_fixed_world_position", _world_position_for_cell(END_CELL))
-	await _advance_physics_ticks(END_SETTLE_TICKS)
-
 	var expected_end_cells: Array[Vector2i] = _cells_in_radius(END_CELL, GameConfig.STREAM_ACTIVE_RADIUS)
 	var expected_loaded_cells: Array[Vector2i] = _cell_difference(expected_end_cells, expected_start_cells)
 	var expected_evicted_cells: Array[Vector2i] = _cell_difference(expected_start_cells, expected_end_cells)
 	var expected_end_prefetch_cells: Array[Vector2i] = _cells_in_radius(END_CELL, GameConfig.STREAM_PREFETCH_RADIUS)
 	var expected_unprefetched_cells: Array[Vector2i] = _cell_difference(expected_start_prefetch_cells, expected_end_prefetch_cells)
+	var end_position: Vector3 = _world_position_for_cell(END_CELL)
+	var end_arrival_tick: int = _physics_tick + 1
+	streamer.call("set_fixed_world_position", end_position)
+	await _advance_physics_ticks(1)
+	_require_current_cell("end current cell on arrival tick", streamer, END_CELL)
+	_require_collision_ready_no_later("end current cell collision-ready on arrival tick", streamer, end_position, end_arrival_tick)
+	await _wait_for_active_set(
+		streamer,
+		expected_end_cells,
+		_activation_convergence_timeout_ticks(expected_loaded_cells.size(), false)
+	)
+	await _advance_physics_ticks(1)
+
 	_require_cells("end active set", streamer.call("active_cells"), expected_end_cells)
-	_require_cells_exact_order("end activation event order", _activated_cells, expected_loaded_cells)
+	_require_cells_exact_order("end activation event order", _activated_cells, _activation_order_for_cells(END_CELL, expected_loaded_cells))
 	_require_cells_exact_order("end eviction event order", _evicted_cells, expected_evicted_cells)
 	_require_cells_exact_order("end unprefetch event order", _unprefetched_cells, expected_unprefetched_cells)
 	var empty_cells: Array[Vector2i] = []
@@ -79,6 +100,7 @@ func _run() -> void:
 	await _wait_for_prefetch_ready(streamer, END_CELL)
 	_require_bool("end ready flags include prefetch ring", _ready_includes_prefetch(streamer, END_CELL))
 	_require_event_keys_include_cells("end prefetch event coverage", _all_prefetched_keys, expected_end_prefetch_cells)
+	_require_activation_budget("end activation budget")
 	_require_no_load_failures(streamer)
 
 	_finish(streamer)
@@ -95,6 +117,23 @@ func _wait_for_prefetch_ready(streamer: Node, center_cell: Vector2i) -> void:
 		if _ready_includes_prefetch(streamer, center_cell):
 			return
 		await _advance_physics_ticks(1)
+	_errors.append("prefetch ready timed out for " + str(center_cell))
+
+
+func _wait_for_cells_ready(streamer: Node, expected_cells: Array[Vector2i], timeout_ticks: int) -> void:
+	for _tick in range(timeout_ticks):
+		if _ready_includes_cells(streamer, expected_cells):
+			return
+		await _advance_physics_ticks(1)
+	_errors.append("active cells ready timed out: " + _cells_to_string(expected_cells))
+
+
+func _wait_for_active_set(streamer: Node, expected_cells: Array[Vector2i], timeout_ticks: int) -> void:
+	for _tick in range(timeout_ticks):
+		if _active_set_matches(streamer, expected_cells):
+			return
+		await _advance_physics_ticks(1)
+	_errors.append("active-set convergence timed out: " + _cells_to_string(expected_cells))
 
 
 func _on_world_tile_activated(cell: Vector2i) -> void:
@@ -103,6 +142,17 @@ func _on_world_tile_activated(cell: Vector2i) -> void:
 	_all_activated_keys.append(key)
 	if not _activation_ticks.has(key):
 		_activation_ticks[key] = _physics_tick
+	var current_cell: Vector2i = _current_streamer_cell()
+	var is_current_cell: bool = cell == current_cell
+	_activation_events.append({
+		"tick": _physics_tick,
+		"cell": key,
+		"current_cell": _cell_key(current_cell),
+		"is_current_cell": is_current_cell,
+	})
+	if not is_current_cell:
+		var count: int = int(_non_current_activation_counts_by_tick.get(_physics_tick, 0)) + 1
+		_non_current_activation_counts_by_tick[_physics_tick] = count
 
 
 func _on_world_tile_evicted(cell: Vector2i) -> void:
@@ -126,6 +176,26 @@ func _ready_includes_prefetch(streamer: Node, center_cell: Vector2i) -> bool:
 	var expected_prefetch_cells: Array[Vector2i] = _cells_in_radius(center_cell, GameConfig.STREAM_PREFETCH_RADIUS)
 	for cell in expected_prefetch_cells:
 		if not ready_cells.has(cell):
+			return false
+	return true
+
+
+func _ready_includes_cells(streamer: Node, expected_cells: Array[Vector2i]) -> bool:
+	var ready_cells: Array[Vector2i] = _variant_to_cell_array(streamer.call("ready_cells"))
+	for cell in expected_cells:
+		if not ready_cells.has(cell):
+			return false
+	return true
+
+
+func _active_set_matches(streamer: Node, expected_cells: Array[Vector2i]) -> bool:
+	var active_cells: Array[Vector2i] = _variant_to_cell_array(streamer.call("active_cells"))
+	var sorted_expected: Array[Vector2i] = _copy_cells(expected_cells)
+	_sort_cells(sorted_expected)
+	if active_cells.size() != sorted_expected.size():
+		return false
+	for index in range(sorted_expected.size()):
+		if active_cells[index] != sorted_expected[index]:
 			return false
 	return true
 
@@ -203,6 +273,40 @@ func _require_bool(label: String, actual: bool) -> void:
 		_errors.append(label)
 
 
+func _require_current_cell(label: String, streamer: Node, expected_cell: Vector2i) -> void:
+	var current_value: Variant = streamer.call("current_cell")
+	if not (current_value is Vector2i):
+		_errors.append(label + " could not read current_cell")
+		return
+	var current_cell: Vector2i = current_value
+	if current_cell != expected_cell:
+		_errors.append(label + " expected " + str(expected_cell) + ", got " + str(current_cell))
+
+
+func _require_collision_ready_no_later(label: String, streamer: Node, world_position: Vector3, latest_tick: int) -> void:
+	if not bool(streamer.call("is_collision_ready_at", world_position)):
+		_errors.append(label + " expected ready collision at " + str(world_position))
+		return
+	var activation_tick: int = int(streamer.call("collision_activation_tick_at", world_position))
+	if activation_tick < 0:
+		_errors.append(label + " missing activation tick at " + str(world_position))
+		return
+	if activation_tick > latest_tick:
+		_errors.append(label + " expected activation <= " + str(latest_tick) + ", got " + str(activation_tick))
+
+
+func _require_activation_budget(label: String) -> void:
+	var budget: int = _activation_budget()
+	var ticks: Array[int] = []
+	for tick_value in _non_current_activation_counts_by_tick.keys():
+		ticks.append(int(tick_value))
+	ticks.sort()
+	for tick in ticks:
+		var count: int = _non_current_activation_counts_by_tick[tick]
+		if count > budget:
+			_errors.append(label + " tick " + str(tick) + " activated " + str(count) + " non-current cells, budget " + str(budget))
+
+
 func _require_event_keys_include_cells(label: String, observed_keys: PackedStringArray, expected_cells: Array[Vector2i]) -> void:
 	var missing: PackedStringArray = PackedStringArray()
 	for cell in expected_cells:
@@ -224,12 +328,15 @@ func _finish(streamer: Node) -> void:
 		EventBus.world_tile_unprefetched.disconnect(_on_world_tile_unprefetched)
 	if streamer != null:
 		streamer.call("reset")
+	_streamer = null
 
 	if _errors.is_empty():
 		var result: Dictionary = {
 			"worker_count": _worker_count,
 			"activation_order": _all_activated_keys,
 			"activation_ticks": _activation_ticks,
+			"activation_events": _activation_events,
+			"non_current_activation_counts_by_tick": _non_current_activation_counts_by_tick,
 			"prefetch_order": _all_prefetched_keys,
 			"prefetch_ticks": _prefetch_ticks,
 		}
@@ -307,6 +414,57 @@ func _cell_less(left: Vector2i, right: Vector2i) -> bool:
 	if left.x == right.x:
 		return left.y < right.y
 	return left.x < right.x
+
+
+func _activation_order_for_cells(origin_cell: Vector2i, cells: Array[Vector2i]) -> Array[Vector2i]:
+	var ordered_cells: Array[Vector2i] = []
+	if cells.has(origin_cell):
+		ordered_cells.append(origin_cell)
+	var remaining_cells: Array[Vector2i] = []
+	for cell in cells:
+		if cell != origin_cell:
+			remaining_cells.append(cell)
+	_fixture_sort_origin_cell = origin_cell
+	remaining_cells.sort_custom(Callable(self, "_cell_distance_less"))
+	for cell in remaining_cells:
+		ordered_cells.append(cell)
+	return ordered_cells
+
+
+func _cell_distance_less(left: Vector2i, right: Vector2i) -> bool:
+	var left_distance: int = maxi(absi(left.x - _fixture_sort_origin_cell.x), absi(left.y - _fixture_sort_origin_cell.y))
+	var right_distance: int = maxi(absi(right.x - _fixture_sort_origin_cell.x), absi(right.y - _fixture_sort_origin_cell.y))
+	if left_distance == right_distance:
+		return _cell_less(left, right)
+	return left_distance < right_distance
+
+
+func _activation_convergence_timeout_ticks(cell_count: int, includes_current_cell: bool) -> int:
+	var non_current_cell_count: int = cell_count
+	if includes_current_cell:
+		non_current_cell_count = maxi(cell_count - 1, 0)
+	var budgeted_ticks: int = _ceil_div(non_current_cell_count, _activation_budget())
+	return maxi(budgeted_ticks + ACTIVE_SET_CONVERGENCE_MARGIN_TICKS, 1)
+
+
+func _ceil_div(numerator: int, denominator: int) -> int:
+	var safe_denominator: int = maxi(denominator, 1)
+	if numerator <= 0:
+		return 0
+	return int((numerator + safe_denominator - 1) / safe_denominator)
+
+
+func _activation_budget() -> int:
+	return maxi(GameConfig.stream_collision_activations_per_tick, 1)
+
+
+func _current_streamer_cell() -> Vector2i:
+	if _streamer == null:
+		return Vector2i.ZERO
+	var current_value: Variant = _streamer.call("current_cell")
+	if current_value is Vector2i:
+		return current_value
+	return Vector2i.ZERO
 
 
 func _cells_to_string(cells: Array[Vector2i]) -> String:

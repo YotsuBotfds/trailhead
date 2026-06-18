@@ -20,6 +20,10 @@ var _stream_generation: int = 0
 var _stream_tick: int = 0
 var _worker_count: int = DEFAULT_WORKER_COUNT
 var _forced_unready_ticks_by_cell: Dictionary[Vector2i, int] = {}
+var _withheld_cells_previous_tick: Dictionary[Vector2i, bool] = {}
+var _withheld_cells_current_tick: Dictionary[Vector2i, bool] = {}
+var _sort_origin_cell: Vector2i = Vector2i.ZERO
+var _cell_distance_less_callable: Callable = Callable()
 
 var _ready_flags: Dictionary[Vector2i, bool] = {}
 var _heightmap_data_by_cell: Dictionary[Vector2i, Dictionary] = {}
@@ -41,6 +45,7 @@ var _result_queue: Array[Variant] = []
 
 
 func _ready() -> void:
+	_cell_distance_less_callable = Callable(self, "_cell_distance_less")
 	set_physics_process(false)
 
 
@@ -146,6 +151,9 @@ func reset() -> void:
 	_queued_builds.clear()
 	_cancelled_builds.clear()
 	_forced_unready_ticks_by_cell.clear()
+	_withheld_cells_previous_tick.clear()
+	_withheld_cells_current_tick.clear()
+	_sort_origin_cell = Vector2i.ZERO
 	_clear_worker_queues()
 
 
@@ -198,6 +206,7 @@ func _physics_process(_delta: float) -> void:
 	if _region_id.is_empty():
 		return
 	_stream_tick += 1
+	_begin_withhold_tracking_tick()
 
 	var sampled_world_position: Vector3 = _sample_world_position()
 	_current_cell = _cell_for_world_position(sampled_world_position)
@@ -245,10 +254,31 @@ func _process_loads(cells: Array[Vector2i]) -> void:
 			missing_cells.append(cell)
 	if not missing_cells.is_empty():
 		return
+	var checked_cells: Dictionary[Vector2i, bool] = {}
+	if cells.has(_current_cell):
+		checked_cells[_current_cell] = true
+		if not _should_withhold_activation_for_tests(_current_cell):
+			_activate_cell(_current_cell)
+
+	var remaining_cells: Array[Vector2i] = []
 	for cell in cells:
+		if cell == _current_cell:
+			continue
+		remaining_cells.append(cell)
+	_sort_cells_by_distance_from_current(remaining_cells)
+
+	var budget_remaining: int = maxi(GameConfig.stream_collision_activations_per_tick, 1)
+	for cell in remaining_cells:
+		if budget_remaining <= 0:
+			break
+		checked_cells[cell] = true
 		if _should_withhold_activation_for_tests(cell):
 			continue
 		_activate_cell(cell)
+		budget_remaining -= 1
+
+	if budget_remaining <= 0:
+		_activate_just_cleared_withheld_cells(remaining_cells, checked_cells)
 
 
 func _activate_cell(cell: Vector2i) -> void:
@@ -455,6 +485,25 @@ func _drain_worker_results() -> void:
 		EventBus.world_tile_prefetched.emit(cell)
 
 
+func _begin_withhold_tracking_tick() -> void:
+	_withheld_cells_previous_tick.clear()
+	for cell in _withheld_cells_current_tick.keys():
+		_withheld_cells_previous_tick[cell] = true
+	_withheld_cells_current_tick.clear()
+
+
+func _activate_just_cleared_withheld_cells(cells: Array[Vector2i], checked_cells: Dictionary[Vector2i, bool]) -> void:
+	for cell in cells:
+		if checked_cells.has(cell):
+			continue
+		if not _withheld_cells_previous_tick.has(cell):
+			continue
+		checked_cells[cell] = true
+		if _should_withhold_activation_for_tests(cell):
+			continue
+		_activate_cell(cell)
+
+
 func _build_result_less(left: Dictionary, right: Dictionary) -> bool:
 	var left_cell: Vector2i = left["cell"] as Vector2i
 	var right_cell: Vector2i = right["cell"] as Vector2i
@@ -640,6 +689,7 @@ func _should_withhold_activation_for_tests(cell: Vector2i) -> bool:
 		_forced_unready_ticks_by_cell.erase(cell)
 		return false
 	_forced_unready_ticks_by_cell[cell] = remaining_ticks - 1
+	_withheld_cells_current_tick[cell] = true
 	return true
 
 
@@ -685,10 +735,23 @@ func _sort_cells(cells: Array[Vector2i]) -> void:
 	cells.sort_custom(Callable(self, "_cell_less"))
 
 
+func _sort_cells_by_distance_from_current(cells: Array[Vector2i]) -> void:
+	_sort_origin_cell = _current_cell
+	cells.sort_custom(_cell_distance_less_callable)
+
+
 func _cell_less(left: Vector2i, right: Vector2i) -> bool:
 	if left.x == right.x:
 		return left.y < right.y
 	return left.x < right.x
+
+
+func _cell_distance_less(left: Vector2i, right: Vector2i) -> bool:
+	var left_distance: int = maxi(absi(left.x - _sort_origin_cell.x), absi(left.y - _sort_origin_cell.y))
+	var right_distance: int = maxi(absi(right.x - _sort_origin_cell.x), absi(right.y - _sort_origin_cell.y))
+	if left_distance == right_distance:
+		return _cell_less(left, right)
+	return left_distance < right_distance
 
 
 func _sorted_body_cells() -> Array[Vector2i]:
