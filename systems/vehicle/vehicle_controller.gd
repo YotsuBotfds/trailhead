@@ -4,11 +4,11 @@ extends Node3D
 const VehicleStateScript: GDScript = preload("res://systems/vehicle/vehicle_state.gd")
 
 
-func apply_input(_input: VehicleInput) -> void:
+func apply_input(_input: RefCounted) -> void:
 	push_error("VehicleController.apply_input not implemented")
 
 
-func get_state() -> VehicleState:
+func get_state() -> RefCounted:
 	push_error("VehicleController.get_state not implemented")
 	return VehicleStateScript.new()
 

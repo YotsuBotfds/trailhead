@@ -45,7 +45,7 @@ const ZION_FOG_SKY_AFFECT: float = 0.34
 const ZION_VOLUMETRIC_FOG_SKY_AFFECT: float = 0.24
 const ZION_NIGHT_FOG_SKY_AFFECT: float = 0.18
 const ZION_REGION_ID: String = "cedar_hollow_zion"
-const ZION_SPAWN_ID: StringName = &"stream_west"
+const ZION_SPAWN_ID: StringName = &"demo_canyon_junction"
 const WORLD_REGION_ID_META: StringName = &"trailhead_world_region_id"
 const GAMEPAD_DEVICE_ANY: int = -1
 
@@ -297,8 +297,8 @@ func _setup_terrain_tracks(terrain_root: Node3D) -> void:
 func _spawn_vehicle() -> void:
 	_vehicle = VehicleScene.instantiate()
 	add_child(_vehicle)
-	_vehicle.call("reset_to", CedarRoute.call("spawn_transform", ZION_SPAWN_ID))
 	_configure_streaming_collision()
+	_vehicle.call("reset_to", CedarRoute.call("spawn_transform", ZION_SPAWN_ID))
 	var visual_builder: RefCounted = ProceduralBuggyVisualScript.new()
 	visual_builder.call("attach", _vehicle)
 	_collect_visual_wheels()

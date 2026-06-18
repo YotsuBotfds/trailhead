@@ -5,12 +5,12 @@ const RaycastVehicleInputScript: GDScript = preload("res://systems/vehicle/vehic
 const RaycastVehicleStateScript: GDScript = preload("res://systems/vehicle/vehicle_state.gd")
 const VehicleContaminationStateScript: GDScript = preload("res://systems/vehicle/vehicle_contamination_state.gd")
 const STREAMING_COLLISION_RELEASE_RAY_UP_MARGIN_M: float = 2.0
-const STREAMING_COLLISION_RELEASE_RAY_DOWN_LENGTH_M: float = 8.0
+const STREAMING_COLLISION_RELEASE_RAY_DOWN_LENGTH_M: float = 512.0
 
 var _body: RigidBody3D = null
 var _wheel_rays: Array[RayCast3D] = []
-var _pending_input: VehicleInput = RaycastVehicleInputScript.new()
-var _state: VehicleState = RaycastVehicleStateScript.new()
+var _pending_input: RefCounted = RaycastVehicleInputScript.new()
+var _state: RefCounted = RaycastVehicleStateScript.new()
 var _was_flipped: bool = false
 var _current_surface_id: StringName = &""
 var _surface_friction: float = 0.0
@@ -48,7 +48,7 @@ func _ready() -> void:
 	GameManager.register_vehicle(self)
 
 
-func apply_input(input: VehicleInput) -> void:
+func apply_input(input: RefCounted) -> void:
 	_pending_input.throttle = clampf(input.throttle, -1.0, 1.0)
 	_pending_input.steer = clampf(input.steer, -1.0, 1.0)
 	_pending_input.brake = clampf(input.brake, 0.0, 1.0)
@@ -56,7 +56,7 @@ func apply_input(input: VehicleInput) -> void:
 	_pending_input.self_right = input.self_right
 
 
-func get_state() -> VehicleState:
+func get_state() -> RefCounted:
 	_update_state()
 	return _state
 
@@ -574,9 +574,13 @@ func _reset_streaming_collision_freeze(spawn: Transform3D) -> void:
 	_streaming_collision_last_release_stream_tick = -1
 	_streaming_collision_last_release_activation_tick = -1
 	_streaming_collision_snap_count = 0
-	_body.freeze = false
-	_body.sleeping = false
-	PhysicsServer3D.body_set_state(_body.get_rid(), PhysicsServer3D.BODY_STATE_SLEEPING, false)
+	if _streaming_collision_guard_enabled():
+		_streaming_collision_freeze_active = true
+		_apply_streaming_collision_body_state(true)
+	else:
+		_body.freeze = false
+		_body.sleeping = false
+		PhysicsServer3D.body_set_state(_body.get_rid(), PhysicsServer3D.BODY_STATE_SLEEPING, false)
 
 
 func _place_streaming_collision_hold_on_confirmed_ground() -> bool:
@@ -594,8 +598,20 @@ func _place_streaming_collision_hold_on_confirmed_ground() -> bool:
 	var hit_position: Vector3 = hit["position"] as Vector3
 	position.y = hit_position.y + _streaming_collision_spawn_clearance()
 	_streaming_collision_hold_transform.origin = position
+	_apply_streaming_collision_body_state(true)
+	if not _streaming_collision_hold_has_wheel_contact():
+		return false
 	_streaming_collision_snap_count += 1
 	return true
+
+
+func _streaming_collision_hold_has_wheel_contact() -> bool:
+	for ray in _wheel_rays:
+		ray.force_update_transform()
+		ray.force_raycast_update()
+		if ray.is_colliding():
+			return true
+	return false
 
 
 func _streaming_collision_terrain_collision_mask() -> int:
@@ -754,7 +770,7 @@ func _update_contamination(contact_count: int, mud_residue_sum: float, dust_resi
 		target_mud = mud_residue_sum / float(contact_count)
 		target_dust = dust_residue_sum / float(contact_count)
 		target_wetness = wetness_residue_sum / float(contact_count)
-	var contamination: VehicleContaminationState = _vehicle_contamination()
+	var contamination: RefCounted = _vehicle_contamination()
 	contamination.mud = _residue_step(contamination.mud, target_mud)
 	contamination.dust = _residue_step(contamination.dust, target_dust)
 	contamination.wetness = _residue_step(contamination.wetness, target_wetness)
@@ -770,8 +786,8 @@ func _residue_step(current: float, target: float) -> float:
 	return clampf(current + signf(delta) * step, 0.0, 1.0)
 
 
-func _vehicle_contamination() -> VehicleContaminationState:
-	var contamination: VehicleContaminationState = _state.contamination
+func _vehicle_contamination() -> RefCounted:
+	var contamination: RefCounted = _state.contamination
 	if contamination == null:
 		contamination = VehicleContaminationStateScript.new()
 		_state.contamination = contamination
