@@ -327,6 +327,17 @@ var grass_wind_speed: float = 0.65
 var buggy_clearcoat_enabled: bool = true
 var buggy_clearcoat: float = 0.70
 var buggy_clearcoat_roughness: float = 0.40
+# --- Buggy detail polish (W6-VEHICLE): subtle material upgrade so the chassis
+# body + roll cage don't read flat under golden-hour light. Keeps the existing
+# palette (albedo) intact; the clearcoat layer above remains in charge of gloss.
+# Edge wear would need a shader/texture (out of scope); these StandardMaterial3D
+# levers (metallic flake in the paint, rim light, cage metalness) are the cheap
+# headless-safe path to "not flat".
+var buggy_body_metallic: float = 0.18
+var buggy_body_rim_enabled: bool = true
+var buggy_body_rim_energy: float = 0.35
+var buggy_cage_metallic: float = 0.65
+var buggy_cage_roughness: float = 0.42
 var brake_light_energy: float = 1.8
 # --- Headlight tunables (Q46): promoted from procedural_buggy_visual.gd local
 # consts so the golden-hour cones are live-tunable. Range tightened from 6.0 m
