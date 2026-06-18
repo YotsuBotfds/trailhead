@@ -51,6 +51,10 @@ uniform vec4 zion_kayenta_color : source_color = vec4(0.38, 0.10, 0.06, 1.0);  /
 uniform float zion_kayenta_height_start = 1200.0;
 uniform float zion_kayenta_height_end = 1250.0;
 uniform float zion_kayenta_strength = 0.55;
+// Upper-wall bleach: pale buff cream tint driven by world height (Great White Throne reads near-white).
+uniform vec4 zion_bleach_color : source_color = vec4(0.91, 0.84, 0.72, 1.0);  // pale buff cream
+uniform float zion_bleach_height_start = 1550.0;   // lower edge of the bleached upper walls
+uniform float zion_bleach_strength = 0.55;
 
 varying vec2 world_xz;
 varying float world_y;
@@ -169,6 +173,8 @@ void fragment() {
 		vec3 macro_albedo = texture(macro_albedo_texture, macro_uv).rgb;
 		ALBEDO = clamp(mix(ALBEDO, ALBEDO * (macro_albedo * 2.0), macro_albedo_strength), vec3(0.0), vec3(1.0));
 	}
+	float bleach_mask = smoothstep(zion_bleach_height_start, zion_bleach_height_start + 200.0, world_y) * cliff_mask;
+	ALBEDO = mix(ALBEDO, zion_bleach_color.rgb, bleach_mask * zion_bleach_strength);
 	ROUGHNESS = terrain_roughness;
 	SPECULAR = terrain_specular;
 }
