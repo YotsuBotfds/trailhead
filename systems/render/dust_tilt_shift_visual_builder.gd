@@ -9,8 +9,8 @@ const TiltShiftShader: Shader = preload("res://systems/render/tilt_shift.gdshade
 const DUST_FIXED_SEED: int = 424242
 const DUST_LIFETIME: float = 9.0
 const DUST_PREPROCESS: float = 9.0
-const DUST_SCALE: float = 0.006
-const DUST_ALPHA: float = 0.30
+const DUST_SCALE: float = 0.0078
+const DUST_ALPHA: float = 0.38
 
 
 static func build(parent: Node3D, chase_camera: Camera3D, orbit_camera: Camera3D, fpv_camera: Camera3D) -> Node3D:

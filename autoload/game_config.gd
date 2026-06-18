@@ -252,6 +252,42 @@ var surface_burst_speed_threshold: float = 2.0
 var surface_burst_lifetime: float = 0.45
 var landing_squash_amount: float = 0.10
 var landing_squash_recover_speed: float = 8.0
+# --- W3-DUST: continuous wheel dust + spray feel polish (render-only).
+# Per-wheel continuous GPUParticles3D emitter driven off sim state (no wall-clock).
+# amount_ratio is computed each tick from SPEED (between threshold..full) times a
+# per-surface INTENSITY (sand strong, pavement faint, water=spray), then tinted by
+# a per-surface COLOR. Hard-accel / slide / landing add a decaying KICK boost that
+# also re-fires the existing surface burst for a bigger pop. All values live-tunable.
+var wheel_dust_enabled: bool = true
+var wheel_dust_particles_per_wheel: int = 8
+var wheel_dust_speed_threshold: float = 0.6
+var wheel_dust_speed_full: float = 4.5
+var wheel_dust_lifetime: float = 0.55
+var wheel_dust_emission_radius: float = 0.045
+var wheel_dust_kick_boost: float = 0.9
+var wheel_dust_kick_decay: float = 6.0
+var wheel_dust_accel_delta_threshold: float = 0.18
+var wheel_dust_slide_lateral_threshold: float = 1.2
+var wheel_dust_intensity_sand_wash: float = 1.0
+var wheel_dust_intensity_loose_rock: float = 0.85
+var wheel_dust_intensity_packed_dirt: float = 0.70
+var wheel_dust_intensity_packed_gravel: float = 0.55
+var wheel_dust_intensity_tall_grass: float = 0.30
+var wheel_dust_intensity_slickrock_dry: float = 0.15
+var wheel_dust_intensity_wood_plank: float = 0.10
+var wheel_dust_intensity_paved_road: float = 0.08
+var wheel_dust_intensity_wet_stone: float = 0.70
+var wheel_dust_intensity_mud: float = 0.65
+var wheel_dust_color_sand_wash: Color = Color(0.82, 0.68, 0.46, 0.42)
+var wheel_dust_color_loose_rock: Color = Color(0.62, 0.58, 0.52, 0.42)
+var wheel_dust_color_packed_dirt: Color = Color(0.66, 0.55, 0.36, 0.42)
+var wheel_dust_color_packed_gravel: Color = Color(0.58, 0.55, 0.50, 0.42)
+var wheel_dust_color_tall_grass: Color = Color(0.55, 0.60, 0.32, 0.42)
+var wheel_dust_color_slickrock_dry: Color = Color(0.78, 0.55, 0.36, 0.42)
+var wheel_dust_color_wood_plank: Color = Color(0.55, 0.40, 0.26, 0.42)
+var wheel_dust_color_paved_road: Color = Color(0.50, 0.50, 0.52, 0.42)
+var wheel_dust_color_wet_stone: Color = Color(0.72, 0.84, 0.88, 0.46)
+var wheel_dust_color_mud: Color = Color(0.30, 0.20, 0.12, 0.50)
 var grass_backlight_enabled: bool = true
 var grass_backlight_color: Color = Color(1.0, 0.62, 0.30)
 var grass_backlight_energy: float = 0.32
