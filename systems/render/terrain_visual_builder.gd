@@ -75,14 +75,19 @@ const REGION_FOLIAGE_LOD1_COLOR: Color = Color(0.28, 0.34, 0.16, 0.86)
 const FOLIAGE_SPECIES_GRASS: StringName = &"grass"
 const FOLIAGE_SPECIES_YUCCA: StringName = &"yucca"
 const FOLIAGE_SPECIES_JUNIPER: StringName = &"juniper"
-const FOLIAGE_SPECIES_LIST: Array[StringName] = [FOLIAGE_SPECIES_GRASS, FOLIAGE_SPECIES_YUCCA, FOLIAGE_SPECIES_JUNIPER]
+const FOLIAGE_SPECIES_BOULDER: StringName = &"boulder"
+const FOLIAGE_SPECIES_LIST: Array[StringName] = [FOLIAGE_SPECIES_GRASS, FOLIAGE_SPECIES_YUCCA, FOLIAGE_SPECIES_JUNIPER, FOLIAGE_SPECIES_BOULDER]
 const FOLIAGE_SPECIES_GRASS_COLOR: Color = Color(0.58, 0.66, 0.38, 0.92)
 const FOLIAGE_SPECIES_YUCCA_COLOR: Color = Color(0.557, 0.608, 0.471, 0.95)
 const FOLIAGE_SPECIES_JUNIPER_COLOR: Color = Color(0.165, 0.259, 0.157, 0.97)
+const FOLIAGE_SPECIES_BOULDER_COLOR: Color = Color(0.69, 0.47, 0.31, 1.0)
 const FOLIAGE_YUCCA_LOD0_SCALE: Vector3 = Vector3(0.95, 0.86, 0.95)
 const FOLIAGE_YUCCA_LOD1_SCALE: Vector3 = Vector3(0.78, 0.72, 0.78)
 const FOLIAGE_JUNIPER_LOD0_SCALE: Vector3 = Vector3(1.75, 1.92, 1.75)
 const FOLIAGE_JUNIPER_LOD1_SCALE: Vector3 = Vector3(1.45, 1.62, 1.45)
+const FOLIAGE_BOULDER_LOD0_SCALE: Vector3 = Vector3(1.0, 1.0, 1.0)
+const FOLIAGE_BOULDER_LOD1_SCALE: Vector3 = Vector3(0.82, 0.82, 0.82)
+const FOLIAGE_BOULDER_GROUND_SINK_M: float = 0.045
 const FOLIAGE_DENSITY_PACKED_DIRT: float = 1.0
 const FOLIAGE_DENSITY_TALL_GRASS: float = 0.62
 const FOLIAGE_DENSITY_LOOSE_ROCK: float = 0.18
@@ -1341,28 +1346,34 @@ static func _build_region_foliage_cell_data_with_audit(tile_data_by_cell: Dictio
 		var world_x: float = cell_rect.position.x + unit_x * cell_rect.size.x
 		var world_z: float = cell_rect.position.y + unit_z * cell_rect.size.y
 		var surface_id_value: int = _surface_id_value_at_region_xz(tile_data_by_cell, world_x, world_z)
-		var density: float = _foliage_density_for_surface_value(surface_id_value)
-		if density <= 0.0:
-			continue
-		var species_id: StringName = _foliage_species_for_surface_value(surface_id_value)
+		var species_id: StringName = _foliage_species_for_candidate(surface_id_value, foliage_cell, lod_index, attempt)
 		if species_id == &"":
+			continue
+		var density: float = _foliage_density_for_surface_species(surface_id_value, species_id)
+		if density <= 0.0:
 			continue
 		var keep_value: float = _region_foliage_unit(foliage_cell, lod_index, attempt, 3)
 		if keep_value > density:
 			continue
 		var terrain_normal: Vector3 = _normal_at_region_xz(tile_data_by_cell, world_x, world_z)
 		_record_foliage_slope_candidate(audit)
-		if terrain_normal.y < FOLIAGE_MAX_SLOPE_NORMAL_Y:
+		if terrain_normal.y < FOLIAGE_MAX_SLOPE_NORMAL_Y and not _foliage_species_allows_steep_slope(species_id):
 			_record_foliage_slope_rejection(audit)
 			continue
 		var height: float = _height_at_region_xz(tile_data_by_cell, world_x, world_z)
 		var yaw: float = deg_to_rad(_region_foliage_unit(foliage_cell, lod_index, attempt, 4) * 360.0)
 		var width_scale: float = 0.82 + _region_foliage_unit(foliage_cell, lod_index, attempt, 5) * 0.42
 		var height_scale: float = 0.78 + _region_foliage_unit(foliage_cell, lod_index, attempt, 6) * 0.54
+		if species_id == FOLIAGE_SPECIES_BOULDER:
+			width_scale = 0.46 + _region_foliage_unit(foliage_cell, lod_index, attempt, 5) * 1.18
+			height_scale = 0.34 + _region_foliage_unit(foliage_cell, lod_index, attempt, 6) * 0.68
 		var base_scale: Vector3 = _foliage_base_scale_for_lod_species(lod_index, species_id)
 		var basis: Basis = Basis(Vector3.UP, yaw).scaled(Vector3(base_scale.x * width_scale, base_scale.y * height_scale, base_scale.z * width_scale))
 		var species_data: FoliageSpeciesCellData = _foliage_species_data_from_list(species_data_list, species_id)
-		species_data.transforms.append(Transform3D(basis, Vector3(world_x, height + REGION_FOLIAGE_Y_OFFSET, world_z)))
+		var y_offset: float = REGION_FOLIAGE_Y_OFFSET
+		if species_id == FOLIAGE_SPECIES_BOULDER:
+			y_offset = -FOLIAGE_BOULDER_GROUND_SINK_M
+		species_data.transforms.append(Transform3D(basis, Vector3(world_x, height + y_offset, world_z)))
 		_record_foliage_acceptance(audit, terrain_normal.y)
 		_record_foliage_species_acceptance(audit, species_id)
 		var color_warmth: float = _region_foliage_unit(foliage_cell, lod_index, attempt, 7)
@@ -1491,6 +1502,8 @@ static func _region_foliage_mesh_for_lod_species(lod_index: int, species_id: Str
 		mesh = _region_yucca_mesh("region_foliage_yucca_lod" + str(safe_lod_index) + "_mesh", safe_lod_index)
 	elif species_id == FOLIAGE_SPECIES_JUNIPER:
 		mesh = _region_juniper_mesh("region_foliage_juniper_lod" + str(safe_lod_index) + "_mesh", safe_lod_index)
+	elif species_id == FOLIAGE_SPECIES_BOULDER:
+		mesh = _region_boulder_mesh("region_foliage_boulder_lod" + str(safe_lod_index) + "_mesh", safe_lod_index)
 	else:
 		mesh = _region_foliage_mesh("region_foliage_grass_lod" + str(safe_lod_index) + "_mesh")
 	_foliage_mesh_cache[cache_key] = mesh
@@ -1506,6 +1519,10 @@ static func _region_foliage_material_for_lod_species(lod_index: int, species_id:
 	var cache_key: String = String(species_id) + "_lod" + str(safe_lod_index)
 	if _foliage_material_cache.has(cache_key):
 		return _foliage_material_cache[cache_key]
+	if species_id == FOLIAGE_SPECIES_BOULDER:
+		var boulder_material: Material = _region_boulder_material("region_foliage_boulder_lod" + str(safe_lod_index) + "_material")
+		_foliage_material_cache[cache_key] = boulder_material
+		return boulder_material
 	var material_color: Color = _foliage_color_for_species(species_id)
 	if safe_lod_index > 0:
 		material_color = material_color.lerp(Color(0.30, 0.32, 0.24, material_color.a), 0.22)
@@ -1661,6 +1678,82 @@ static func _region_juniper_mesh(mesh_name: String, lod_index: int) -> ArrayMesh
 	return mesh
 
 
+static func _region_boulder_mesh(mesh_name: String, lod_index: int) -> ArrayMesh:
+	var mesh: ArrayMesh = ArrayMesh.new()
+	mesh.resource_name = mesh_name
+	var vertices: PackedVector3Array = PackedVector3Array()
+	var normals: PackedVector3Array = PackedVector3Array()
+	var uvs: PackedVector2Array = PackedVector2Array()
+	var indices: PackedInt32Array = PackedInt32Array()
+	var points: Array[Vector3] = [
+		Vector3(0.0, 0.62, 0.0),
+		Vector3(0.0, -0.20, 0.0),
+		Vector3(-0.58, 0.06, 0.0),
+		Vector3(0.64, 0.02, 0.0),
+		Vector3(0.0, 0.10, -0.48),
+		Vector3(0.0, 0.04, 0.56),
+		Vector3(-0.32, 0.28, -0.34),
+		Vector3(0.36, 0.24, -0.28),
+		Vector3(0.30, 0.22, 0.38),
+		Vector3(-0.36, 0.25, 0.32),
+	]
+	var faces: Array[PackedInt32Array] = [
+		PackedInt32Array([0, 6, 7]),
+		PackedInt32Array([0, 7, 8]),
+		PackedInt32Array([0, 8, 9]),
+		PackedInt32Array([0, 9, 6]),
+		PackedInt32Array([6, 4, 7]),
+		PackedInt32Array([7, 4, 3]),
+		PackedInt32Array([7, 3, 8]),
+		PackedInt32Array([8, 3, 5]),
+		PackedInt32Array([8, 5, 9]),
+		PackedInt32Array([9, 5, 2]),
+		PackedInt32Array([9, 2, 6]),
+		PackedInt32Array([6, 2, 4]),
+		PackedInt32Array([1, 7, 4]),
+		PackedInt32Array([1, 3, 7]),
+		PackedInt32Array([1, 8, 3]),
+		PackedInt32Array([1, 5, 8]),
+		PackedInt32Array([1, 9, 5]),
+		PackedInt32Array([1, 2, 9]),
+		PackedInt32Array([1, 6, 2]),
+		PackedInt32Array([1, 4, 6]),
+	]
+	var face_limit: int = faces.size()
+	if lod_index > 0:
+		face_limit = 12
+	for face_index in range(face_limit):
+		var face: PackedInt32Array = faces[face_index]
+		_append_boulder_triangle(vertices, normals, uvs, indices, points[face[0]], points[face[1]], points[face[2]])
+	var arrays: Array = []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = vertices
+	arrays[Mesh.ARRAY_NORMAL] = normals
+	arrays[Mesh.ARRAY_TEX_UV] = uvs
+	arrays[Mesh.ARRAY_INDEX] = indices
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	return mesh
+
+
+static func _append_boulder_triangle(vertices: PackedVector3Array, normals: PackedVector3Array, uvs: PackedVector2Array, indices: PackedInt32Array, a: Vector3, b: Vector3, c: Vector3) -> void:
+	var normal: Vector3 = (b - a).cross(c - a).normalized()
+	if normal.length() <= 0.0:
+		normal = Vector3.UP
+	var vertex_start: int = vertices.size()
+	vertices.append(a)
+	vertices.append(b)
+	vertices.append(c)
+	normals.append(normal)
+	normals.append(normal)
+	normals.append(normal)
+	uvs.append(Vector2.ZERO)
+	uvs.append(Vector2.RIGHT)
+	uvs.append(Vector2.UP)
+	indices.append(vertex_start)
+	indices.append(vertex_start + 1)
+	indices.append(vertex_start + 2)
+
+
 static func _region_foliage_material(material_name: String, color: Color, blade_height_reference: float) -> ShaderMaterial:
 	var material: ShaderMaterial = ShaderMaterial.new()
 	material.resource_name = material_name
@@ -1673,6 +1766,15 @@ static func _region_foliage_material(material_name: String, color: Color, blade_
 	material.set_shader_parameter("wind_time_factor", 0.018)
 	material.set_shader_parameter("backlight_color", Color(0.95, 0.74, 0.42, 1.0))
 	material.set_shader_parameter("backlight_energy", 0.20)
+	return material
+
+
+static func _region_boulder_material(material_name: String) -> StandardMaterial3D:
+	var material: StandardMaterial3D = StandardMaterial3D.new()
+	material.resource_name = material_name
+	material.albedo_color = FOLIAGE_SPECIES_BOULDER_COLOR
+	material.roughness = 0.92
+	material.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
 	return material
 
 
@@ -1769,6 +1871,7 @@ static func _new_region_foliage_tile_audit(cell: Vector2i) -> Dictionary[String,
 		"grass_instance_count": 0,
 		"yucca_instance_count": 0,
 		"juniper_instance_count": 0,
+		"boulder_instance_count": 0,
 		"min_accepted_normal_y": 1.0,
 	}
 
@@ -1842,9 +1945,17 @@ static func _record_foliage_species_acceptance(audit: Dictionary[String, Variant
 
 
 static func _foliage_density_for_surface_value(surface_id_value: int) -> float:
+	return _foliage_density_for_surface_species(surface_id_value, _foliage_species_for_surface_value(surface_id_value))
+
+
+static func _foliage_density_for_surface_species(surface_id_value: int, species_id: StringName) -> float:
 	if not bool(TerrainSurfacePaletteResource.call("has_surface_id_value", surface_id_value)):
 		return 0.0
 	var surface_id: StringName = _surface_id_for_value(surface_id_value)
+	if species_id == FOLIAGE_SPECIES_BOULDER and surface_id == &"packed_gravel":
+		return GameConfig.boulder_density_packed_gravel
+	if species_id == FOLIAGE_SPECIES_BOULDER and surface_id == &"loose_rock":
+		return GameConfig.boulder_density_loose_rock
 	if surface_id == &"packed_dirt":
 		return FOLIAGE_DENSITY_PACKED_DIRT
 	if surface_id == &"tall_grass":
@@ -1860,6 +1971,8 @@ static func _foliage_species_for_surface_value(surface_id_value: int) -> StringN
 	if not bool(TerrainSurfacePaletteResource.call("has_surface_id_value", surface_id_value)):
 		return &""
 	var surface_id: StringName = _surface_id_for_value(surface_id_value)
+	if surface_id == &"packed_gravel":
+		return FOLIAGE_SPECIES_BOULDER
 	if surface_id == &"packed_dirt":
 		return FOLIAGE_SPECIES_JUNIPER
 	if surface_id == &"tall_grass":
@@ -1867,6 +1980,21 @@ static func _foliage_species_for_surface_value(surface_id_value: int) -> StringN
 	if surface_id == &"loose_rock":
 		return FOLIAGE_SPECIES_YUCCA
 	return &""
+
+
+static func _foliage_species_for_candidate(surface_id_value: int, foliage_cell: Vector2i, lod_index: int, attempt: int) -> StringName:
+	if not bool(TerrainSurfacePaletteResource.call("has_surface_id_value", surface_id_value)):
+		return &""
+	var surface_id: StringName = _surface_id_for_value(surface_id_value)
+	if surface_id == &"packed_gravel":
+		return FOLIAGE_SPECIES_BOULDER
+	if surface_id == &"loose_rock" and _region_foliage_unit(foliage_cell, lod_index, attempt, 12) <= GameConfig.boulder_loose_rock_candidate_share:
+		return FOLIAGE_SPECIES_BOULDER
+	return _foliage_species_for_surface_value(surface_id_value)
+
+
+static func _foliage_species_allows_steep_slope(species_id: StringName) -> bool:
+	return species_id == FOLIAGE_SPECIES_BOULDER
 
 
 static func _foliage_species_data(cell_data: FoliageCellData, species_id: StringName) -> FoliageSpeciesCellData:
@@ -1901,6 +2029,8 @@ static func _foliage_color_for_species(species_id: StringName) -> Color:
 		return FOLIAGE_SPECIES_YUCCA_COLOR
 	if species_id == FOLIAGE_SPECIES_JUNIPER:
 		return FOLIAGE_SPECIES_JUNIPER_COLOR
+	if species_id == FOLIAGE_SPECIES_BOULDER:
+		return FOLIAGE_SPECIES_BOULDER_COLOR
 	return FOLIAGE_SPECIES_GRASS_COLOR
 
 
@@ -1911,6 +2041,10 @@ static func _foliage_instance_color(species_id: StringName, color_warmth: float)
 
 
 static func _foliage_base_scale_for_lod_species(lod_index: int, species_id: StringName) -> Vector3:
+	if species_id == FOLIAGE_SPECIES_BOULDER:
+		if lod_index > 0:
+			return FOLIAGE_BOULDER_LOD1_SCALE
+		return FOLIAGE_BOULDER_LOD0_SCALE
 	if species_id == FOLIAGE_SPECIES_YUCCA:
 		if lod_index > 0:
 			return FOLIAGE_YUCCA_LOD1_SCALE

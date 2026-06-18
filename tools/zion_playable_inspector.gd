@@ -418,6 +418,7 @@ func _require_zion_foliage_placement_audits() -> void:
 	if talus_ok:
 		_require_foliage_dominant_surface(talus_audit, "talus foliage audit", 4)
 		_require_foliage_species_present(talus_audit, "talus foliage audit", "yucca")
+		_require_foliage_species_present(talus_audit, "talus foliage audit", "boulder")
 	if not woodland_ok or not talus_ok:
 		return
 
