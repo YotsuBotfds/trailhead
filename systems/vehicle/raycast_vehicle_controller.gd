@@ -526,7 +526,8 @@ func _expire_streaming_collision_freeze() -> void:
 	var forward: Vector3 = _horizontal_forward(anchor.basis)
 	var fallback: Transform3D = _upright_transform(anchor.origin, forward)
 	fallback.origin.y += GameConfig.recover_lift
-	_streaming_collision_hold_transform = fallback
+	if not _prepare_streaming_collision_expiry_fallback(fallback):
+		return
 	_streaming_collision_freeze_expired_count += 1
 	_release_streaming_collision_freeze()
 	_last_stable_forward = forward
@@ -535,6 +536,21 @@ func _expire_streaming_collision_freeze() -> void:
 	_recovery_stuck = false
 	EventBus.vehicle_streaming_freeze_expired.emit(from_position, fallback.origin, frozen_ticks)
 	_update_state()
+
+
+func _prepare_streaming_collision_expiry_fallback(fallback: Transform3D) -> bool:
+	if _tile_streamer == null:
+		return false
+	if not bool(_tile_streamer.call("is_collision_ready_at", fallback.origin)):
+		return false
+	if not bool(_tile_streamer.call("is_collision_settled_at", fallback.origin)):
+		return false
+	var previous_hold_transform: Transform3D = _streaming_collision_hold_transform
+	_streaming_collision_hold_transform = fallback
+	if not _place_streaming_collision_hold_on_confirmed_ground():
+		_streaming_collision_hold_transform = previous_hold_transform
+		return false
+	return true
 
 
 func _release_streaming_collision_freeze() -> void:
