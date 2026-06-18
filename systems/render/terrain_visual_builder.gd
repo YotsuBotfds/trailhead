@@ -12,6 +12,7 @@ const GENERATED_SURFACE_TEXTURE_DIR: String = "res://assets/textures/surface_vis
 const TEXTURE_SOURCE_PATH_META: StringName = &"trailhead_source_path"
 
 static var _terrain_material_cache: Dictionary[StringName, StandardMaterial3D] = {}
+static var _surface_index_material_cache: Dictionary[String, ShaderMaterial] = {}
 static var _foliage_mesh_cache: Dictionary[int, Mesh] = {}
 static var _foliage_material_cache: Dictionary[int, Material] = {}
 static var _surface_index_albedo_array_cache: Texture2DArray = null
@@ -63,6 +64,7 @@ const REGION_FOLIAGE_Y_OFFSET: float = 0.035
 const REGION_FOLIAGE_CULL_MARGIN: float = 0.08
 const REGION_FOLIAGE_LOD0_SCALE: Vector3 = Vector3(0.16, 0.42, 0.16)
 const REGION_FOLIAGE_LOD1_SCALE: Vector3 = Vector3(0.42, 0.58, 0.42)
+const REGION_FOLIAGE_HEIGHT_SCALE_MAX: float = 1.32
 const REGION_FOLIAGE_LOD0_COLOR: Color = Color(0.24, 0.38, 0.14, 0.92)
 const REGION_FOLIAGE_LOD1_COLOR: Color = Color(0.28, 0.34, 0.16, 0.86)
 const WET_DIFFUSE_MULTIPLIER: float = 0.2
@@ -162,6 +164,7 @@ class FoliageCellData:
 class RegionFoliageTileData:
 	var ok: bool = false
 	var cell: Vector2i = Vector2i.ZERO
+	var position: Vector3 = Vector3.ZERO
 	var cells: Array[FoliageCellData] = []
 	var message: String = ""
 
@@ -308,6 +311,10 @@ static func build_region_foliage_tile_data(region_id: String, cell: Vector2i) ->
 	var tile_data_by_cell: Dictionary[Vector2i, RegionTileData] = {cell: tile_data}
 	var tile_min_x: float = float(cell.x) * tile_data.tile_size_m
 	var tile_min_z: float = float(cell.y) * tile_data.tile_size_m
+	var tile_origin_xz: Vector2 = _tile_origin_xz(tile_data)
+	var tile_custom_aabb: AABB = _tile_foliage_custom_aabb(tile_data)
+	var lod0_tile_data: FoliageCellData = _build_region_foliage_tile_lod_data(tile_data, tile_custom_aabb, 0)
+	var lod1_tile_data: FoliageCellData = _build_region_foliage_tile_lod_data(tile_data, tile_custom_aabb, 1)
 	var cell_count_x: int = int(ceil(tile_data.tile_size_m / REGION_FOLIAGE_CELL_SIZE_M))
 	var cell_count_z: int = int(ceil(tile_data.tile_size_m / REGION_FOLIAGE_CELL_SIZE_M))
 	for cell_z in range(cell_count_z):
@@ -323,11 +330,14 @@ static func build_region_foliage_tile_data(region_id: String, cell: Vector2i) ->
 			var foliage_cell: Vector2i = Vector2i(cell.x * 1000 + cell_x, cell.y * 1000 + cell_z)
 			var lod0_data: FoliageCellData = _build_region_foliage_cell_data(tile_data_by_cell, cell_rect, foliage_cell, 0, REGION_FOLIAGE_LOD0_BASE_COUNT)
 			if lod0_data != null:
-				foliage_tile_data.cells.append(lod0_data)
+				_append_foliage_cell_data_to_tile_lod(lod0_tile_data, lod0_data, tile_origin_xz)
 			var lod1_data: FoliageCellData = _build_region_foliage_cell_data(tile_data_by_cell, cell_rect, foliage_cell, 1, REGION_FOLIAGE_LOD1_BASE_COUNT)
 			if lod1_data != null:
-				foliage_tile_data.cells.append(lod1_data)
+				_append_foliage_cell_data_to_tile_lod(lod1_tile_data, lod1_data, tile_origin_xz)
 
+	foliage_tile_data.position = Vector3(tile_origin_xz.x, 0.0, tile_origin_xz.y)
+	foliage_tile_data.cells.append(lod0_tile_data)
+	foliage_tile_data.cells.append(lod1_tile_data)
 	foliage_tile_data.ok = true
 	return foliage_tile_data
 
@@ -337,11 +347,42 @@ static func region_foliage_tile_from_data(parent: Node3D, foliage_tile_data: Reg
 		return null
 	var tile_root: Node3D = Node3D.new()
 	tile_root.name = "foliage_tile_" + str(foliage_tile_data.cell.x) + "_" + str(foliage_tile_data.cell.y)
+	tile_root.position = foliage_tile_data.position
 	tile_root.set_meta(TILE_INDEX_META, foliage_tile_data.cell)
 	for cell_data in foliage_tile_data.cells:
 		_add_foliage_cell_from_data(tile_root, cell_data)
 	parent.add_child(tile_root)
 	return tile_root
+
+
+static func _build_region_foliage_tile_lod_data(tile_data: RegionTileData, tile_custom_aabb: AABB, lod_index: int) -> FoliageCellData:
+	var tile_lod_data: FoliageCellData = FoliageCellData.new()
+	var safe_lod_index: int = _region_foliage_lod_index(lod_index)
+	var tile_radius: float = _tile_visibility_radius(tile_data)
+	tile_lod_data.lod_index = safe_lod_index
+	tile_lod_data.node_name = "foliage_tile_" + str(tile_data.cell.x) + "_" + str(tile_data.cell.y) + "_lod" + str(safe_lod_index)
+	tile_lod_data.position = Vector3.ZERO
+	tile_lod_data.custom_aabb = tile_custom_aabb
+	tile_lod_data.visibility_radius = tile_radius
+	tile_lod_data.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	if safe_lod_index == 0:
+		tile_lod_data.visibility_range_end = _foliage_lod0_visibility_range_end(tile_radius)
+	else:
+		tile_lod_data.visibility_range_begin = _foliage_lod1_visibility_range_begin(tile_radius)
+		tile_lod_data.visibility_range_end = _foliage_lod1_visibility_range_end(tile_radius)
+	return tile_lod_data
+
+
+static func _append_foliage_cell_data_to_tile_lod(tile_lod_data: FoliageCellData, cell_data: FoliageCellData, tile_origin_xz: Vector2) -> void:
+	var cell_offset_x: float = cell_data.position.x - tile_origin_xz.x
+	var cell_offset_z: float = cell_data.position.z - tile_origin_xz.y
+	for i in range(cell_data.transforms.size()):
+		var transform: Transform3D = cell_data.transforms[i]
+		transform.origin.x += cell_offset_x
+		transform.origin.z += cell_offset_z
+		tile_lod_data.transforms.append(transform)
+		tile_lod_data.colors.append(cell_data.colors[i])
+		tile_lod_data.custom_data.append(cell_data.custom_data[i])
 
 
 static func visual_tile_node_name(tile_index: Vector2i, tile_path: String, tile_array_index: int) -> String:
@@ -768,6 +809,23 @@ static func _tile_visibility_radius(tile_data: RegionTileData) -> float:
 	return Vector2(tile_data.tile_size_m, tile_data.tile_size_m).length() * 0.5
 
 
+static func _tile_foliage_custom_aabb(tile_data: RegionTileData) -> AABB:
+	var min_height: float = 0.0
+	var max_height: float = 0.0
+	if tile_data.heights.size() > 0:
+		min_height = tile_data.heights[0]
+		max_height = min_height
+		for height_index in range(1, tile_data.heights.size()):
+			var height: float = tile_data.heights[height_index]
+			min_height = minf(min_height, height)
+			max_height = maxf(max_height, height)
+	var max_blade_height: float = REGION_FOLIAGE_LOD1_SCALE.y * REGION_FOLIAGE_HEIGHT_SCALE_MAX
+	return AABB(
+		Vector3(tile_data.tile_size_m * -0.5, min_height + REGION_FOLIAGE_Y_OFFSET, tile_data.tile_size_m * -0.5),
+		Vector3(tile_data.tile_size_m, maxf(max_height - min_height, 0.0) + max_blade_height + 0.1, tile_data.tile_size_m)
+	)
+
+
 static func _tile_normal(tile_data: RegionTileData, col: int, row: int) -> Vector3:
 	var left_col: int = mini(maxi(col - 1, 0), tile_data.width - 1)
 	var right_col: int = mini(maxi(col + 1, 0), tile_data.width - 1)
@@ -808,6 +866,9 @@ static func _sorted_surface_values(buckets: Dictionary[int, MeshBucket]) -> Arra
 
 
 static func _surface_index_material(surface_data: MeshSurfaceData) -> ShaderMaterial:
+	var cache_key: String = _surface_index_material_cache_key(surface_data)
+	if _surface_index_material_cache.has(cache_key):
+		return _surface_index_material_cache[cache_key]
 	var material: ShaderMaterial = ShaderMaterial.new()
 	material.resource_name = TERRAIN_INDEX_MATERIAL_NAME
 	material.shader = TerrainSurfaceIndexShader
@@ -824,7 +885,18 @@ static func _surface_index_material(surface_data: MeshSurfaceData) -> ShaderMate
 	material.set_shader_parameter(TERRAIN_SPECULAR_UNIFORM, 0.18)
 	_apply_zion_surface_index_tuning(material)
 	_apply_surface_index_palette(material)
+	_surface_index_material_cache[cache_key] = material
 	return material
+
+
+static func _surface_index_material_cache_key(surface_data: MeshSurfaceData) -> String:
+	return (
+		surface_data.surface_id_path
+		+ "|origin="
+		+ str(surface_data.control_origin_xz)
+		+ "|size="
+		+ str(surface_data.control_size_xz)
+	)
 
 
 static func _surface_index_warmup_material() -> ShaderMaterial:
