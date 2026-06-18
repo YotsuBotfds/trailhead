@@ -12,6 +12,7 @@ const MAX_SILENT_MEAN_ABS: float = 0.0001
 const MIN_MUD_TO_GRASS_TIRE_RATIO: float = 1.8
 const MAX_QUIET_LAYER_PEAK_ABS: float = 0.09
 const MIN_WATER_PAN_BALANCE: float = 0.08
+const MIN_WATER_REVERB_PAN_RETENTION: float = 0.6
 const AMBIENT_BUS_TEST_DB: float = -12.0
 const MAX_AMBIENT_BUS_DUCK_RATIO: float = 0.35
 const REVERB_TEST_WET: float = 0.8
@@ -80,6 +81,11 @@ func _preview_with_mix_overrides(speed: float, vehicle_position: Vector3, surfac
 	return _audio_rig.call("preview_audio_output_stats_with_mix_overrides", speed, vehicle_position, surface_id, FRAME_COUNT, master_volume_db, ambient_volume_db, reverb_wet)
 
 
+func _preview_reverb_off(speed: float, vehicle_position: Vector3, surface_id: StringName) -> Dictionary:
+	# Shipped mix bus gains, reverb forced off — isolates the dry/direct spatial pan.
+	return _preview_with_mix_overrides(speed, vehicle_position, surface_id, GameConfig.audio_bus_master_volume_db, GameConfig.audio_bus_ambient_volume_db, 0.0)
+
+
 func _require_quiet_peak_targets(stats: Dictionary) -> void:
 	for layer_name in ["motor", "tire", "ambient", "water", "plank"]:
 		var max_abs: float = _max_abs(stats, layer_name)
@@ -128,16 +134,35 @@ func _require_engine_and_surface_controls(vehicle_position: Vector3) -> void:
 
 
 func _require_water_spatial_pan() -> void:
+	# Spatial panning is a property of the dry/direct signal path. Canyon reverb is a
+	# deliberately diffuse field that cross-feeds L/R, so it lowers the aggregate balance
+	# of the full mix without moving where the creek localizes. Assert the pan logic on the
+	# dry signal (reverb forced off), then separately guard that the shipped reverb level
+	# still preserves most of that directional balance.
 	var right_source_position: Vector3 = GameConfig.audio_water_center + Vector3(-GameConfig.audio_water_audible_radius * 0.5, 0.0, 0.0)
 	var left_source_position: Vector3 = GameConfig.audio_water_center + Vector3(GameConfig.audio_water_audible_radius * 0.5, 0.0, 0.0)
-	var right_stats: Dictionary = _preview(MOVING_SPEED, right_source_position, &"packed_dirt")
-	var left_stats: Dictionary = _preview(MOVING_SPEED, left_source_position, &"packed_dirt")
-	var right_balance: float = _pan_balance(right_stats, "water")
-	var left_balance: float = _pan_balance(left_stats, "water")
-	if right_balance < MIN_WATER_PAN_BALANCE:
-		_errors.append("water audio should pan right when creek source is right of vehicle; balance " + str(right_balance))
-	if left_balance > -MIN_WATER_PAN_BALANCE:
-		_errors.append("water audio should pan left when creek source is left of vehicle; balance " + str(left_balance))
+	var right_dry: float = _pan_balance(_preview_reverb_off(MOVING_SPEED, right_source_position, &"packed_dirt"), "water")
+	var left_dry: float = _pan_balance(_preview_reverb_off(MOVING_SPEED, left_source_position, &"packed_dirt"), "water")
+	if right_dry < MIN_WATER_PAN_BALANCE:
+		_errors.append("water audio should pan right when creek source is right of vehicle; dry balance " + str(right_dry))
+	if left_dry > -MIN_WATER_PAN_BALANCE:
+		_errors.append("water audio should pan left when creek source is left of vehicle; dry balance " + str(left_dry))
+	var right_mix: float = _pan_balance(_preview(MOVING_SPEED, right_source_position, &"packed_dirt"), "water")
+	var left_mix: float = _pan_balance(_preview(MOVING_SPEED, left_source_position, &"packed_dirt"), "water")
+	_require_reverb_preserves_pan(right_dry, right_mix, "right")
+	_require_reverb_preserves_pan(left_dry, left_mix, "left")
+
+
+func _require_reverb_preserves_pan(dry_balance: float, mix_balance: float, side: String) -> void:
+	if absf(dry_balance) <= 0.0:
+		_errors.append("water dry pan balance should be nonzero before reverb retention check (" + side + ")")
+		return
+	if signf(mix_balance) != signf(dry_balance):
+		_errors.append("canyon reverb should keep water " + side + " pan direction; dry " + str(dry_balance) + " shipped-mix " + str(mix_balance))
+		return
+	var retention: float = mix_balance / dry_balance
+	if retention < MIN_WATER_REVERB_PAN_RETENTION:
+		_errors.append("canyon reverb collapses water " + side + " pan; retention " + str(retention) + " below " + str(MIN_WATER_REVERB_PAN_RETENTION))
 
 
 func _require_layer_signal(stats: Dictionary, layer_name: String, min_mean_abs: float) -> void:
