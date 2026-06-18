@@ -38,6 +38,19 @@ const CHASSIS_DROP_NODE_NAMES: Array[StringName] = [
 const TAIL_LIGHT_NODE_NAME: StringName = &"tail_lights"
 const TAIL_LIGHT_MATERIAL_META: StringName = &"trailhead_tail_light_material"
 const TAIL_LIGHT_EMISSION_COLOR: Color = Color(1.0, 0.07, 0.05)
+const HEADLIGHT_NODE_NAME: StringName = &"headlights"
+const HEADLIGHT_MATERIAL_META: StringName = &"trailhead_headlight_material"
+const HEADLIGHT_SPOT_LEFT_NAME: StringName = &"headlight_spot_left"
+const HEADLIGHT_SPOT_RIGHT_NAME: StringName = &"headlight_spot_right"
+const HEADLIGHT_EMISSION_COLOR: Color = Color(1.0, 0.949, 0.847)
+const HEADLIGHT_EMISSION_ENERGY: float = 1.6
+const HEADLIGHT_LIGHT_COLOR: Color = Color(1.0, 0.949, 0.847)
+const HEADLIGHT_LIGHT_ENERGY: float = 3.0
+const HEADLIGHT_SPOT_RANGE: float = 6.0
+const HEADLIGHT_SPOT_ANGLE_DEG: float = 35.0
+const HEADLIGHT_PITCH_DEG: float = 12.0
+const HEADLIGHT_LEFT_LOCAL: Vector3 = Vector3(-0.038, 0.030, -0.204)
+const HEADLIGHT_RIGHT_LOCAL: Vector3 = Vector3(0.038, 0.030, -0.204)
 
 
 func attach(vehicle: Node) -> void:
@@ -83,6 +96,8 @@ static func _apply_vehicle_render_tuning(node: Node) -> void:
 		_apply_clearcoat(mesh_instance)
 		if mesh_instance.name == TAIL_LIGHT_NODE_NAME:
 			_apply_tail_light_emission(mesh_instance)
+		elif mesh_instance.name == HEADLIGHT_NODE_NAME:
+			_apply_headlight_emission_and_lights(mesh_instance)
 	for child in node.get_children():
 		_apply_vehicle_render_tuning(child)
 
@@ -137,3 +152,59 @@ static func get_tail_light_material(visual_root: Node) -> StandardMaterial3D:
 	if node == null or not node.has_meta(TAIL_LIGHT_MATERIAL_META):
 		return null
 	return node.get_meta(TAIL_LIGHT_MATERIAL_META) as StandardMaterial3D
+
+
+static func _apply_headlight_emission_and_lights(mesh_instance: MeshInstance3D) -> void:
+	var mesh: Mesh = mesh_instance.mesh
+	if mesh == null or mesh.get_surface_count() == 0:
+		return
+	var base_material: StandardMaterial3D = mesh.surface_get_material(0) as StandardMaterial3D
+	if base_material == null:
+		return
+	var tuned_material: StandardMaterial3D = base_material.duplicate() as StandardMaterial3D
+	if tuned_material == null:
+		return
+	tuned_material.emission_enabled = true
+	tuned_material.emission = HEADLIGHT_EMISSION_COLOR
+	tuned_material.emission_energy_multiplier = HEADLIGHT_EMISSION_ENERGY
+	mesh.surface_set_material(0, tuned_material)
+	mesh_instance.set_meta(HEADLIGHT_MATERIAL_META, tuned_material)
+	_attach_headlight_spot(mesh_instance, HEADLIGHT_SPOT_LEFT_NAME, HEADLIGHT_LEFT_LOCAL)
+	_attach_headlight_spot(mesh_instance, HEADLIGHT_SPOT_RIGHT_NAME, HEADLIGHT_RIGHT_LOCAL)
+
+
+static func _attach_headlight_spot(parent: Node3D, spot_name: StringName, local_position: Vector3) -> void:
+	var spot: SpotLight3D = SpotLight3D.new()
+	spot.name = spot_name
+	spot.position = local_position
+	spot.rotation = Vector3(deg_to_rad(-HEADLIGHT_PITCH_DEG), 0.0, 0.0)
+	spot.light_color = HEADLIGHT_LIGHT_COLOR
+	spot.light_energy = HEADLIGHT_LIGHT_ENERGY
+	spot.spot_range = HEADLIGHT_SPOT_RANGE
+	spot.spot_angle = HEADLIGHT_SPOT_ANGLE_DEG
+	spot.shadow_enabled = false
+	parent.add_child(spot)
+
+
+static func get_headlight_material(visual_root: Node) -> StandardMaterial3D:
+	if visual_root == null:
+		return null
+	var node: Node = visual_root.get_node_or_null(String(HEADLIGHT_NODE_NAME))
+	if node == null or not node.has_meta(HEADLIGHT_MATERIAL_META):
+		return null
+	return node.get_meta(HEADLIGHT_MATERIAL_META) as StandardMaterial3D
+
+
+static func get_headlight_lights(visual_root: Node) -> Array[SpotLight3D]:
+	var lights: Array[SpotLight3D] = []
+	if visual_root == null:
+		return lights
+	var node: Node = visual_root.get_node_or_null(String(HEADLIGHT_NODE_NAME))
+	if node == null:
+		return lights
+	var spot_names: Array[StringName] = [HEADLIGHT_SPOT_LEFT_NAME, HEADLIGHT_SPOT_RIGHT_NAME]
+	for spot_name in spot_names:
+		var spot: SpotLight3D = node.get_node_or_null(String(spot_name)) as SpotLight3D
+		if spot != null:
+			lights.append(spot)
+	return lights
