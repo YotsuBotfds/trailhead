@@ -104,6 +104,7 @@ func _inspect_vehicle_visuals(host: Node, vehicle: Node) -> void:
 		_errors.append("flat vehicle VisualRoot should include chassis, roll cage, and wheel meshes")
 	_require_vehicle_steering_visuals(host, visual_root)
 	_require_vehicle_residue_visuals(host, vehicle, visual_root)
+	_require_vehicle_headlights(visual_root)
 
 
 func _require_vehicle_chassis_drop(visual_root: Node) -> void:
@@ -117,6 +118,51 @@ func _require_vehicle_chassis_drop(visual_root: Node) -> void:
 	var visual_gap: float = body.position.y - wheel_socket.position.y
 	if visual_gap > GameConfig.vehicle_visual_chassis_wheel_socket_max_gap:
 		_errors.append("flat vehicle visual chassis-to-wheel socket gap expected <= " + str(GameConfig.vehicle_visual_chassis_wheel_socket_max_gap) + ", got " + str(visual_gap))
+
+
+func _require_vehicle_headlights(visual_root: Node) -> void:
+	var headlight_node: Node = _require_node(visual_root, "headlights")
+	if headlight_node == null:
+		return
+	var material: StandardMaterial3D = ProceduralBuggyVisual.get_headlight_material(visual_root)
+	if material == null:
+		_errors.append("headlight material getter should return the tuned emissive material")
+		return
+	if not material.emission_enabled:
+		_errors.append("headlight material should have emission enabled")
+	var emission_color: Color = material.emission
+	var expected_emission: Color = ProceduralBuggyVisual.HEADLIGHT_EMISSION_COLOR
+	if absf(emission_color.r - expected_emission.r) > FLOAT_EPSILON or absf(emission_color.g - expected_emission.g) > FLOAT_EPSILON or absf(emission_color.b - expected_emission.b) > FLOAT_EPSILON:
+		_errors.append("headlight emission expected warm white " + str(expected_emission) + ", got " + str(emission_color))
+	if material.emission_energy_multiplier <= 0.0:
+		_errors.append("headlight material should default ON with emission energy > 0")
+	var left_spot: SpotLight3D = _require_node(headlight_node, "headlight_spot_left") as SpotLight3D
+	var right_spot: SpotLight3D = _require_node(headlight_node, "headlight_spot_right") as SpotLight3D
+	if left_spot == null or right_spot == null:
+		return
+	var getter_lights: Array[SpotLight3D] = ProceduralBuggyVisual.get_headlight_lights(visual_root)
+	if getter_lights.size() < 2:
+		_errors.append("headlight lights getter should expose both spot lights, got " + str(getter_lights.size()))
+	var headlight_spots: Array[SpotLight3D] = []
+	headlight_spots.append(left_spot)
+	headlight_spots.append(right_spot)
+	for spot in headlight_spots:
+		if spot.shadow_enabled:
+			_errors.append(String(spot.name) + " should have shadows disabled for perf")
+		if spot.light_energy <= 0.0:
+			_errors.append(String(spot.name) + " should have positive light energy")
+		if spot.spot_range <= 0.0:
+			_errors.append(String(spot.name) + " should have positive spot range")
+		if not spot.visible:
+			_errors.append(String(spot.name) + " should default visible (ON)")
+		if absf(spot.rotation.y) > FLOAT_EPSILON:
+			_errors.append(String(spot.name) + " should aim straight forward (no yaw)")
+		if spot.rotation.x >= 0.0:
+			_errors.append(String(spot.name) + " should pitch forward and slightly down")
+		if spot.position.z >= 0.0:
+			_errors.append(String(spot.name) + " should sit at the front of the buggy (local z < 0)")
+	_require_node_position(headlight_node, "headlight_spot_left", ProceduralBuggyVisual.HEADLIGHT_LEFT_LOCAL, FLOAT_EPSILON)
+	_require_node_position(headlight_node, "headlight_spot_right", ProceduralBuggyVisual.HEADLIGHT_RIGHT_LOCAL, FLOAT_EPSILON)
 
 
 func _require_vehicle_steering_visuals(host: Node, visual_root: Node) -> void:
