@@ -46,6 +46,8 @@ func next_input(state: RefCounted) -> RefCounted:
 		_fill_suspension_drop(input)
 	elif scenario_id == "resting_ride_height":
 		_fill_resting_ride_height(input)
+	elif scenario_id == "stream_spawn_no_fall":
+		_fill_stream_spawn_no_fall(input)
 	elif scenario_id == "roll_stability":
 		_fill_roll_stability(input)
 	elif scenario_id == "real_terrain_flat_segment":
@@ -177,6 +179,12 @@ func _fill_suspension_drop(input: RefCounted) -> void:
 func _fill_resting_ride_height(input: RefCounted) -> void:
 	if _tick >= GameConfig.resting_ride_height_probe_ticks:
 		input.set("brake", GameConfig.scripted_stop_brake)
+		_done = true
+
+
+func _fill_stream_spawn_no_fall(input: RefCounted) -> void:
+	input.set("brake", GameConfig.scripted_stop_brake)
+	if _tick >= GameConfig.stream_spawn_no_fall_probe_ticks:
 		_done = true
 
 

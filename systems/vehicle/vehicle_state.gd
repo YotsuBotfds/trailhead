@@ -14,7 +14,7 @@ var wheel_contact: Array[bool] = [false, false, false, false]
 var wheel_surface: Array[StringName] = [&"", &"", &"", &""]
 var wheel_hit_point: Array[Vector3] = [Vector3.ZERO, Vector3.ZERO, Vector3.ZERO, Vector3.ZERO]
 var contact_normal: Vector3 = Vector3.UP
-var contamination: VehicleContaminationState = VehicleContaminationStateScript.new()
+var contamination: RefCounted = VehicleContaminationStateScript.new()
 
 
 func speed() -> float:

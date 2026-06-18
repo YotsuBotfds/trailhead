@@ -409,10 +409,7 @@ func _configure_streaming_route(route_key: String) -> bool:
 		_finish_runner_error("Invalid route " + _scene_id + ": " + _join_packed_strings(route_errors, "; "))
 		return false
 	var segment_arg: String = String(_args.get("segment", _args.get("route-segment", "")))
-	if segment_arg == "":
-		_finish_runner_error("Streaming route requires --segment=<index-or-id>")
-		return false
-	if not _select_route_segment(segment_arg):
+	if segment_arg != "" and not _select_route_segment(segment_arg):
 		return false
 	return true
 
@@ -1630,11 +1627,11 @@ func _finish(passed: bool) -> void:
 		reached_target = target_delta.length() <= _target_radius
 	var target_predicate_passed: bool = reached_target if _requires_target() else true
 	var scenario_predicate_passed: bool = _scenario_predicate_passed()
-	var surface_event_observed: bool = _surface_event_count > 0
+	var surface_event_observed: bool = _surface_event_count > 0 or _scenario_id == "stream_spawn_no_fall"
 	var target_landmark_event_observed: bool = _target_landmark_event_observed()
 	var event_bus_contract_passed: bool = _event_bus_contract_passed()
 	var self_right_heading_preserved: bool = _self_right_heading_preserved()
-	var never_stuck_predicate_passed: bool = _never_stuck or _recovered_to_trail_event_count > 0 or _scenario_id == "standstill_yaw_rate" or _scenario_id == "hill_hold" or _scenario_id == "lateral_slide" or _scenario_id == "suspension_drop" or _scenario_id == "resting_ride_height"
+	var never_stuck_predicate_passed: bool = _never_stuck or _recovered_to_trail_event_count > 0 or _scenario_id == "standstill_yaw_rate" or _scenario_id == "hill_hold" or _scenario_id == "lateral_slide" or _scenario_id == "suspension_drop" or _scenario_id == "resting_ride_height" or _scenario_id == "stream_spawn_no_fall"
 	var expected_activation_ticks: Dictionary = _expected_activation_ticks_result()
 	var expected_activation_ticks_matched: bool = bool(expected_activation_ticks.get("matched", true))
 	var predicates: Dictionary = {
@@ -1962,6 +1959,8 @@ func _scenario_predicate_passed() -> bool:
 			and _max_flipped_ticks_seen == 0
 	if _scenario_id == "resting_ride_height":
 		return _resting_ride_height_predicate_passed()
+	if _scenario_id == "stream_spawn_no_fall":
+		return _stream_spawn_no_fall_predicate_passed()
 	if _scenario_id == "roll_stability":
 		return _max_initial_forward_displacement >= GameConfig.roll_stability_min_forward_distance and _contact_normal_sample_ticks >= GameConfig.roll_stability_min_contact_ticks and _max_contact_normal_tilt_deg >= GameConfig.roll_stability_min_contact_normal_tilt_deg and _max_abs_roll_deg <= GameConfig.roll_stability_max_abs_roll_deg and _max_flipped_ticks_seen == 0
 	if _scenario_id == "real_terrain_flat_segment":
@@ -2072,6 +2071,16 @@ func _resting_ride_height_predicate_passed() -> bool:
 		and _resting_ride_height_all_contact_ticks == _resting_ride_height_sample_ticks \
 		and _resting_ride_height_min_y >= GameConfig.resting_ride_height_min_y \
 		and _resting_ride_height_max_y <= GameConfig.resting_ride_height_max_y \
+		and _max_flipped_ticks_seen == 0
+
+
+func _stream_spawn_no_fall_predicate_passed() -> bool:
+	return _streaming_collision_frozen_sample_ticks >= GameConfig.streaming_collision_freeze_max_ticks \
+		and _streaming_collision_freeze_max_descent_from_initial <= 0.001 \
+		and _streaming_freeze_expired_event_count == 0 \
+		and _vehicle_streaming_collision_freeze_expired_count() == 0 \
+		and _vehicle_streaming_collision_release_max_downward_speed_mps() <= 0.001 \
+		and _max_descent_from_initial <= 0.12 \
 		and _max_flipped_ticks_seen == 0
 
 
