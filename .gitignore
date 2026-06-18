@@ -10,3 +10,6 @@ assets/generated/
 .cache/
 data/regions/**/surface_id.png.import
 data/terrain/*surface_id.png.import
+
+# Orchestration run logs (large, scratch)
+planning/blast-logs/*.log
