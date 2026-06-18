@@ -3,6 +3,18 @@ extends RefCounted
 
 const MOOD_DUSK: int = 0
 const MOOD_DAWN: int = 1
+const DUSK_HERO_SUN_ROTATION_DEGREES: Vector3 = Vector3(-16.0, -62.0, 0.0)
+const DUSK_HERO_SUN_ENERGY: float = 2.50
+const DUSK_HERO_SUN_COLOR: Color = Color(1.0, 0.72, 0.38)
+const DUSK_HERO_AMBIENT_COLOR: Color = Color(0.39, 0.44, 0.52)
+const DUSK_HERO_AMBIENT_ENERGY: float = 0.32
+const DUSK_HERO_FOG_LIGHT_COLOR: Color = Color(0.86, 0.68, 0.50)
+const DUSK_HERO_VOLUMETRIC_FOG_ALBEDO: Color = Color(0.92, 0.74, 0.54)
+const DUSK_GLOW_INTENSITY: float = 0.18
+const DUSK_GLOW_STRENGTH: float = 0.32
+const DAWN_GLOW_INTENSITY: float = 0.10
+const DAWN_GLOW_STRENGTH: float = 0.20
+const GLOW_BLOOM: float = 0.06
 const DUSK_HEIGHT_FOG_DENSITY: float = 0.018
 const DAWN_HEIGHT_FOG_DENSITY: float = 0.026
 const VOLUMETRIC_FOG_DENSITY_FLOOR: float = 0.006
@@ -17,13 +29,15 @@ const CAMERA_ATTRIBUTES_OWNER_META: StringName = &"atmosphere_camera_attributes_
 
 static func apply_mood(world_environment: WorldEnvironment, sun: DirectionalLight3D, mood: int) -> void:
 	if sun != null:
+		_apply_mood_sun(sun, mood)
 		_apply_sun_atmosphere(sun)
 	if world_environment == null or world_environment.environment == null:
 		return
 	_apply_viewport_antialiasing(world_environment.get_viewport())
 	var environment: Environment = world_environment.environment
+	_apply_mood_environment(environment, mood)
 	_apply_height_fog(environment, mood)
-	_apply_volumetric_fog(environment)
+	_apply_volumetric_fog(environment, mood)
 	_apply_golden_hour_glow(environment, mood)
 	_apply_color_grade(environment)
 	_apply_screen_space_grounding(environment)
@@ -36,6 +50,17 @@ static func configure_render_support(root: Node, vehicle: Node, chase_camera: Ca
 	_apply_camera_attributes(orbit_camera)
 	_apply_camera_attributes(fpv_camera)
 	_attach_contact_fill_light(vehicle)
+
+
+static func _apply_mood_sun(sun: DirectionalLight3D, mood: int) -> void:
+	if mood == MOOD_DAWN:
+		sun.rotation_degrees = GameConfig.dawn_sun_rotation_degrees
+		sun.light_energy = GameConfig.dawn_sun_energy
+		sun.light_color = GameConfig.dawn_sun_color
+		return
+	sun.rotation_degrees = DUSK_HERO_SUN_ROTATION_DEGREES
+	sun.light_energy = DUSK_HERO_SUN_ENERGY
+	sun.light_color = DUSK_HERO_SUN_COLOR
 
 
 static func _apply_sun_atmosphere(sun: DirectionalLight3D) -> void:
@@ -62,6 +87,17 @@ static func _directional_shadow_mode(mode: int) -> int:
 			return DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
 
 
+static func _apply_mood_environment(environment: Environment, mood: int) -> void:
+	if mood == MOOD_DAWN:
+		environment.ambient_light_color = GameConfig.dawn_ambient_color
+		environment.ambient_light_energy = GameConfig.dawn_ambient_energy
+		environment.fog_light_color = GameConfig.dawn_fog_light_color
+		return
+	environment.ambient_light_color = DUSK_HERO_AMBIENT_COLOR
+	environment.ambient_light_energy = DUSK_HERO_AMBIENT_ENERGY
+	environment.fog_light_color = DUSK_HERO_FOG_LIGHT_COLOR
+
+
 static func _apply_height_fog(environment: Environment, mood: int) -> void:
 	var fallback_density: float = DUSK_HEIGHT_FOG_DENSITY
 	if mood == MOOD_DAWN:
@@ -74,11 +110,11 @@ static func _apply_height_fog(environment: Environment, mood: int) -> void:
 	environment.fog_sky_affect = 0.72
 
 
-static func _apply_volumetric_fog(environment: Environment) -> void:
+static func _apply_volumetric_fog(environment: Environment, mood: int) -> void:
 	environment.volumetric_fog_enabled = GameConfig.atmosphere_volumetric_fog_enabled
 	environment.volumetric_fog_density = _positive_float_or(GameConfig.atmosphere_volumetric_fog_density, VOLUMETRIC_FOG_DENSITY_FLOOR)
 	environment.volumetric_fog_length = VOLUMETRIC_FOG_LENGTH
-	environment.volumetric_fog_albedo = GameConfig.dusk_fog_light_color
+	environment.volumetric_fog_albedo = DUSK_HERO_VOLUMETRIC_FOG_ALBEDO if mood == MOOD_DUSK else GameConfig.dawn_fog_light_color
 	environment.volumetric_fog_emission = Color(0.18, 0.14, 0.09)
 	environment.volumetric_fog_emission_energy = 0.08
 	environment.volumetric_fog_anisotropy = 0.32
@@ -90,9 +126,9 @@ static func _apply_volumetric_fog(environment: Environment) -> void:
 static func _apply_golden_hour_glow(environment: Environment, mood: int) -> void:
 	environment.glow_enabled = true
 	environment.glow_normalized = true
-	environment.glow_intensity = 0.18 if mood == MOOD_DUSK else 0.10
-	environment.glow_strength = 0.32 if mood == MOOD_DUSK else 0.20
-	environment.glow_bloom = 0.06
+	environment.glow_intensity = DUSK_GLOW_INTENSITY if mood == MOOD_DUSK else DAWN_GLOW_INTENSITY
+	environment.glow_strength = DUSK_GLOW_STRENGTH if mood == MOOD_DUSK else DAWN_GLOW_STRENGTH
+	environment.glow_bloom = GLOW_BLOOM
 
 
 static func _apply_color_grade(environment: Environment) -> void:

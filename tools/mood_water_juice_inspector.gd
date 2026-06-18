@@ -1,7 +1,9 @@
 extends Node
 
 const CedarHollowPlayableScene: PackedScene = preload("res://scenes/cedar_hollow_playable.tscn")
+const AtmosphereVisualBuilderScript: GDScript = preload("res://systems/render/atmosphere_visual_builder.gd")
 const FLOAT_EPSILON: float = 0.001
+const COLOR_TOLERANCE: float = 0.02
 const WATER_SHADER_PATH: String = "res://systems/render/water_visual.gdshader"
 const ZION_REGION_ID: String = "cedar_hollow_zion"
 const WORLD_REGION_ID_META: StringName = &"trailhead_world_region_id"
@@ -60,6 +62,9 @@ func _inspect_atmosphere(world_environment: WorldEnvironment, sun: DirectionalLi
 		_errors.append("atmosphere should configure height fog density")
 	if environment.fog_aerial_perspective <= 0.0:
 		_errors.append("atmosphere should configure aerial perspective")
+	_require_color_close("dusk ambient color", environment.ambient_light_color, AtmosphereVisualBuilderScript.DUSK_HERO_AMBIENT_COLOR, COLOR_TOLERANCE)
+	_require_float_close("dusk ambient energy", environment.ambient_light_energy, AtmosphereVisualBuilderScript.DUSK_HERO_AMBIENT_ENERGY, FLOAT_EPSILON)
+	_require_color_close("dusk fog light color", environment.fog_light_color, AtmosphereVisualBuilderScript.DUSK_HERO_FOG_LIGHT_COLOR, COLOR_TOLERANCE)
 	if not environment.volumetric_fog_enabled:
 		_errors.append("atmosphere should enable volumetric fog")
 	if environment.volumetric_fog_density <= 0.0:
@@ -102,6 +107,10 @@ func _inspect_atmosphere(world_environment: WorldEnvironment, sun: DirectionalLi
 		return
 	if not sun.shadow_enabled:
 		_errors.append("GoldenHourSun should cast long shadows")
+	if sun.rotation_degrees.distance_to(AtmosphereVisualBuilderScript.DUSK_HERO_SUN_ROTATION_DEGREES) > FLOAT_EPSILON:
+		_errors.append("GoldenHourSun dusk rotation expected " + str(AtmosphereVisualBuilderScript.DUSK_HERO_SUN_ROTATION_DEGREES) + ", got " + str(sun.rotation_degrees))
+	_require_float_close("GoldenHourSun dusk energy", sun.light_energy, AtmosphereVisualBuilderScript.DUSK_HERO_SUN_ENERGY, FLOAT_EPSILON)
+	_require_color_close("GoldenHourSun dusk color", sun.light_color, AtmosphereVisualBuilderScript.DUSK_HERO_SUN_COLOR, COLOR_TOLERANCE)
 	if absf(sun.light_angular_distance - maxf(GameConfig.atmosphere_pcss_sun_angular_distance, 0.0)) > FLOAT_EPSILON:
 		_errors.append("GoldenHourSun angular distance should follow GameConfig")
 	if absf(sun.directional_shadow_max_distance - maxf(GameConfig.atmosphere_pcss_shadow_max_distance, 0.1)) > FLOAT_EPSILON:
@@ -116,6 +125,16 @@ func _inspect_atmosphere(world_environment: WorldEnvironment, sun: DirectionalLi
 		_errors.append("GoldenHourSun directional shadow mode should follow GameConfig")
 	if sun.directional_shadow_blend_splits:
 		_errors.append("GoldenHourSun should not blend shadow splits")
+
+
+func _require_float_close(label: String, actual: float, expected: float, tolerance: float) -> void:
+	if absf(actual - expected) > tolerance:
+		_errors.append(label + " expected " + str(expected) + ", got " + str(actual))
+
+
+func _require_color_close(label: String, actual: Color, expected: Color, tolerance: float) -> void:
+	if absf(actual.r - expected.r) > tolerance or absf(actual.g - expected.g) > tolerance or absf(actual.b - expected.b) > tolerance or absf(actual.a - expected.a) > tolerance:
+		_errors.append(label + " expected " + str(expected) + ", got " + str(actual))
 
 
 func _expected_directional_shadow_mode() -> int:
