@@ -78,6 +78,7 @@ var _fpv_up_current: Vector3 = Vector3.UP
 var _landmark_hint_hud: CanvasLayer = null
 var _speed_hud: CanvasLayer = null
 var _controls_hint_hud: CanvasLayer = null
+var _title_card_hud: CanvasLayer = null
 var _world_environment: WorldEnvironment = null
 var _sun: DirectionalLight3D = null
 var _mood: int = MOOD_DUSK
@@ -399,6 +400,10 @@ func _setup_hud() -> void:
 	_speed_hud.visible = GameConfig.speed_hud_enabled
 	add_child(_speed_hud)
 	_speed_hud.call("configure", _vehicle)
+	if GameConfig.title_card_enabled:
+		_title_card_hud = TitleCardHud.new() as CanvasLayer
+		_title_card_hud.name = "TitleCardHud"
+		add_child(_title_card_hud)
 	_controls_hint_hud = ControlsHintHudScript.new() as CanvasLayer
 	_controls_hint_hud.name = "ControlsHintHud"
 	_controls_hint_hud.visible = GameConfig.controls_hint_hud_enabled
@@ -516,6 +521,8 @@ func cycle_camera_mode() -> void:
 func _update_hud_input() -> void:
 	if _drive_started and _speed_hud != null:
 		_speed_hud.call("set_drive_active", true)
+	if _drive_started and _title_card_hud != null:
+		_title_card_hud.call("dismiss")
 	if _landmark_hint_hud == null or not Input.is_action_just_pressed("map_toggle"):
 		return
 	toggle_landmark_hint_hud()
@@ -620,17 +627,17 @@ func _apply_zion_vista_mood(environment: Environment, sky_material: Material) ->
 	physical_sky_material.use_debanding = true
 	if _mood == MOOD_DAWN:
 		environment.fog_density = ZION_DAWN_FOG_DENSITY
-		physical_sky_material.rayleigh_color = Color(0.38, 0.58, 0.72, 1.0)
-		physical_sky_material.mie_color = Color(0.92, 0.82, 0.64, 1.0)
-		physical_sky_material.ground_color = Color(0.46, 0.37, 0.28, 1.0)
-		physical_sky_material.turbidity = 5.2
+		physical_sky_material.rayleigh_color = GameConfig.dawn_sky_top_color
+		physical_sky_material.mie_color = GameConfig.dawn_sky_horizon_color
+		physical_sky_material.ground_color = GameConfig.dawn_sky_ground_color
+		physical_sky_material.turbidity = GameConfig.dawn_sky_turbidity
 		physical_sky_material.energy_multiplier = 1.15
 	else:
 		environment.fog_density = ZION_DUSK_FOG_DENSITY
-		physical_sky_material.rayleigh_color = Color(0.42, 0.50, 0.64, 1.0)
-		physical_sky_material.mie_color = Color(0.98, 0.62, 0.36, 1.0)
-		physical_sky_material.ground_color = Color(0.42, 0.28, 0.18, 1.0)
-		physical_sky_material.turbidity = 4.6
+		physical_sky_material.rayleigh_color = GameConfig.dusk_sky_top_color
+		physical_sky_material.mie_color = GameConfig.dusk_sky_horizon_color
+		physical_sky_material.ground_color = GameConfig.dusk_sky_ground_color
+		physical_sky_material.turbidity = GameConfig.dusk_sky_turbidity
 		physical_sky_material.energy_multiplier = 1.22
 
 
@@ -808,3 +815,93 @@ func _smoothed_fpv_follow_position(vehicle_position: Vector3, delta: float) -> V
 		var vertical_alpha: float = clampf(GameConfig.cam_vertical_follow_softness * delta, 0.0, 1.0)
 		_fpv_vehicle_y_current = lerpf(_fpv_vehicle_y_current, vehicle_position.y, vertical_alpha)
 	return Vector3(vehicle_position.x, _fpv_vehicle_y_current, vehicle_position.z)
+
+
+class TitleCardHud:
+	extends CanvasLayer
+
+	const LAYER: int = 13
+
+	var _panel: Control = null
+
+
+	func _ready() -> void:
+		layer = LAYER
+		_panel = _TitleCardPanel.new()
+		_panel.name = "TitleCardPanel"
+		_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_panel.set_anchors_preset(Control.PRESET_FULL_RECT)
+		add_child(_panel)
+
+
+	func dismiss() -> void:
+		if _panel != null:
+			_panel.dismiss()
+
+
+	class _TitleCardPanel:
+		extends Control
+
+		const TITLE_TEXT: String = "Cedar Hollow"
+		const SUBTITLE_TEXT: String = "LOWER ZION CANYON"
+		const TITLE_FONT_SIZE: int = 46
+		const SUBTITLE_FONT_SIZE: int = 15
+		const TITLE_SUBTITLE_GAP: float = 12.0
+		const TITLE_COLOR: Color = Color(0.96, 0.66, 0.32, 0.96)
+		const SUBTITLE_COLOR: Color = Color(0.93, 0.78, 0.50, 0.82)
+		const SHADOW_COLOR: Color = Color(0.08, 0.05, 0.03, 0.52)
+		const SHADOW_OFFSET: Vector2 = Vector2(0.0, 2.0)
+
+		var _elapsed: float = 0.0
+		var _alpha: float = 1.0
+		var _fading: bool = false
+
+
+		func dismiss() -> void:
+			_fading = true
+
+
+		func _process(delta: float) -> void:
+			if _alpha <= 0.0:
+				visible = false
+				return
+			if not _fading:
+				_elapsed += delta
+				if _elapsed >= GameConfig.title_card_display_seconds:
+					_fading = true
+			if _fading:
+				_alpha = maxf(_alpha - delta / maxf(GameConfig.title_card_fade_seconds, 0.001), 0.0)
+			queue_redraw()
+
+
+		func _draw() -> void:
+			if _alpha <= 0.0:
+				return
+			var font: Font = get_theme_default_font()
+			var title_size: Vector2 = font.get_string_size(TITLE_TEXT, HORIZONTAL_ALIGNMENT_CENTER, 0.0, TITLE_FONT_SIZE)
+			var subtitle_size: Vector2 = font.get_string_size(SUBTITLE_TEXT, HORIZONTAL_ALIGNMENT_CENTER, 0.0, SUBTITLE_FONT_SIZE)
+			var block_height: float = title_size.y + TITLE_SUBTITLE_GAP + subtitle_size.y
+			var center: Vector2 = size * 0.5
+			var title_pos: Vector2 = Vector2(center.x, center.y - block_height * 0.5)
+			var subtitle_pos: Vector2 = Vector2(center.x, title_pos.y + title_size.y + TITLE_SUBTITLE_GAP)
+			_draw_centered_string(font, TITLE_TEXT, title_pos + SHADOW_OFFSET, TITLE_FONT_SIZE, _with_alpha(SHADOW_COLOR))
+			_draw_centered_string(font, SUBTITLE_TEXT, subtitle_pos + SHADOW_OFFSET, SUBTITLE_FONT_SIZE, _with_alpha(SHADOW_COLOR))
+			_draw_centered_string(font, TITLE_TEXT, title_pos, TITLE_FONT_SIZE, _with_alpha(TITLE_COLOR))
+			_draw_centered_string(font, SUBTITLE_TEXT, subtitle_pos, SUBTITLE_FONT_SIZE, _with_alpha(SUBTITLE_COLOR))
+
+
+		func _draw_centered_string(font: Font, text: String, baseline_pos: Vector2, font_size: int, color: Color) -> void:
+			var text_size: Vector2 = font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, 0.0, font_size)
+			draw_string(
+				font,
+				Vector2(baseline_pos.x - text_size.x * 0.5, baseline_pos.y),
+				text,
+				HORIZONTAL_ALIGNMENT_LEFT,
+				0.0,
+				font_size,
+				color
+			)
+
+
+		func _with_alpha(color: Color) -> Color:
+			return Color(color.r, color.g, color.b, color.a * clampf(_alpha, 0.0, 1.0))
