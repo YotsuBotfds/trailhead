@@ -11,6 +11,14 @@ const SPAWN_POSITION: Vector3 = Vector3(1150.0, 1197.56, 800.0)
 const SPAWN_YAW_DEGREES: float = -90.0
 const EXPECTED_ACTIVE_VISUAL_CELLS: int = 25
 const EXPECTED_CENTER_CELL: Vector2i = Vector2i(11, 8)
+const FOLIAGE_STEEP_AUDIT_CELL: Vector2i = Vector2i(22, 51)
+const FOLIAGE_WOODLAND_AUDIT_CELL: Vector2i = Vector2i(0, 20)
+const FOLIAGE_TALUS_AUDIT_CELL: Vector2i = Vector2i(20, 17)
+const FOLIAGE_DOMINANT_SURFACE_MIN_SHARE: float = 0.95
+const FOLIAGE_SLOPE_EPSILON: float = 0.0001
+const FOLIAGE_MIN_WOODLAND_INSTANCES: int = 150
+const FOLIAGE_MAX_TALUS_INSTANCES: int = 120
+const FOLIAGE_MIN_WOODLAND_TO_TALUS_RATIO: float = 1.5
 const WAIT_FRAMES: int = 1800
 const POSITION_TOLERANCE_M: float = 0.45
 const YAW_TOLERANCE_DEGREES: float = 1.0
@@ -56,6 +64,7 @@ func _inspect() -> void:
 	_require_tile_streamer_active_set()
 	_require_visual_streamer_state(streamer)
 	_require_center_tile_inside_chase_camera_range(streamer)
+	_require_zion_foliage_placement_audits()
 	_finish()
 
 
@@ -330,6 +339,69 @@ func _require_center_tile_inside_chase_camera_range(streamer: Node) -> void:
 	var center_distance: float = camera.global_position.distance_to(global_aabb.get_center())
 	if center_distance > camera.far:
 		_errors.append("Zion center visual tile is beyond ChaseCamera far plane: distance=" + str(center_distance) + " far=" + str(camera.far))
+
+
+func _require_zion_foliage_placement_audits() -> void:
+	var steep_audit: Dictionary[String, Variant] = TerrainVisualBuilderScript.build_region_foliage_tile_audit(ZION_REGION_ID, FOLIAGE_STEEP_AUDIT_CELL)
+	if _require_foliage_audit_ok(steep_audit, "steep foliage audit"):
+		var steep_instance_count: int = int(steep_audit.get("instance_count", 0))
+		if steep_instance_count <= 0:
+			_errors.append("steep foliage audit should still place nonzero accepted instances")
+		var slope_rejected_count: int = int(steep_audit.get("slope_rejected_count", 0))
+		if slope_rejected_count <= 0:
+			_errors.append("steep foliage audit should reject at least one candidate by slope")
+		var slope_violation_count: int = int(steep_audit.get("slope_violation_count", 0))
+		if slope_violation_count != 0:
+			_errors.append("steep foliage audit placed " + str(slope_violation_count) + " instances below the slope normal gate")
+		var min_accepted_normal_y: float = float(steep_audit.get("min_accepted_normal_y", 1.0))
+		if min_accepted_normal_y + FOLIAGE_SLOPE_EPSILON < TerrainVisualBuilderScript.FOLIAGE_MAX_SLOPE_NORMAL_Y:
+			_errors.append(
+				"steep foliage audit min accepted normal.y expected >= "
+				+ str(TerrainVisualBuilderScript.FOLIAGE_MAX_SLOPE_NORMAL_Y)
+				+ ", got "
+				+ str(min_accepted_normal_y)
+			)
+
+	var woodland_audit: Dictionary[String, Variant] = TerrainVisualBuilderScript.build_region_foliage_tile_audit(ZION_REGION_ID, FOLIAGE_WOODLAND_AUDIT_CELL)
+	var talus_audit: Dictionary[String, Variant] = TerrainVisualBuilderScript.build_region_foliage_tile_audit(ZION_REGION_ID, FOLIAGE_TALUS_AUDIT_CELL)
+	var woodland_ok: bool = _require_foliage_audit_ok(woodland_audit, "woodland foliage audit")
+	var talus_ok: bool = _require_foliage_audit_ok(talus_audit, "talus foliage audit")
+	if woodland_ok:
+		_require_foliage_dominant_surface(woodland_audit, "woodland foliage audit", 3)
+	if talus_ok:
+		_require_foliage_dominant_surface(talus_audit, "talus foliage audit", 4)
+	if not woodland_ok or not talus_ok:
+		return
+
+	var woodland_instance_count: int = int(woodland_audit.get("instance_count", 0))
+	var talus_instance_count: int = int(talus_audit.get("instance_count", 0))
+	if woodland_instance_count < FOLIAGE_MIN_WOODLAND_INSTANCES:
+		_errors.append("woodland foliage audit expected dense class-3 placement, got " + str(woodland_instance_count))
+	if talus_instance_count > FOLIAGE_MAX_TALUS_INSTANCES:
+		_errors.append("talus foliage audit expected sparse class-4 placement, got " + str(talus_instance_count))
+	if float(woodland_instance_count) <= float(talus_instance_count) * FOLIAGE_MIN_WOODLAND_TO_TALUS_RATIO:
+		_errors.append(
+			"woodland foliage audit should be materially denser than talus: woodland="
+			+ str(woodland_instance_count)
+			+ " talus="
+			+ str(talus_instance_count)
+		)
+
+
+func _require_foliage_audit_ok(audit: Dictionary[String, Variant], label: String) -> bool:
+	if bool(audit.get("ok", false)):
+		return true
+	_errors.append(label + " failed: " + String(audit.get("message", "")))
+	return false
+
+
+func _require_foliage_dominant_surface(audit: Dictionary[String, Variant], label: String, expected_surface_id_value: int) -> void:
+	var observed_surface_id_value: int = int(audit.get("dominant_surface_id_value", 0))
+	if observed_surface_id_value != expected_surface_id_value:
+		_errors.append(label + " expected dominant surface " + str(expected_surface_id_value) + ", got " + str(observed_surface_id_value))
+	var observed_share: float = float(audit.get("dominant_surface_share", 0.0))
+	if observed_share < FOLIAGE_DOMINANT_SURFACE_MIN_SHARE:
+		_errors.append(label + " dominant surface share expected >= " + str(FOLIAGE_DOMINANT_SURFACE_MIN_SHARE) + ", got " + str(observed_share))
 
 
 func _tile_streamer_active_cells() -> Array[Vector2i]:
