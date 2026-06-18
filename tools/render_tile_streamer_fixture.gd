@@ -57,12 +57,14 @@ func _inspect() -> void:
 	var first_index_count: int = 0
 	var first_bounds: AABB = AABB()
 	var first_materials_by_name: Dictionary[String, StandardMaterial3D] = {}
+	var first_surface_index_material: ShaderMaterial = null
 	if first_tile != null and first_tile.mesh != null:
 		first_surface_count = first_tile.mesh.get_surface_count()
 		first_vertex_count = _mesh_vertex_count(first_tile.mesh)
 		first_index_count = _mesh_index_count(first_tile.mesh)
 		first_bounds = first_tile.mesh.get_aabb()
 		first_materials_by_name = _surface_materials_by_name(first_tile)
+		first_surface_index_material = _surface_index_material_for_tile(first_tile)
 
 	EventBus.world_tile_activated.emit(FIRST_CELL)
 	_require_cell_count("duplicate activation", 1)
@@ -104,6 +106,7 @@ func _inspect() -> void:
 	var rebuilt_tile: MeshInstance3D = _require_visual_tile(FIRST_CELL)
 	_require_rebuilt_tile(first_surface_count, first_vertex_count, first_index_count, first_bounds, rebuilt_tile)
 	_require_cached_materials_reused(first_materials_by_name, rebuilt_tile)
+	_require_cached_surface_index_material_reused(first_surface_index_material, rebuilt_tile)
 
 	EventBus.world_tile_evicted.emit(FIRST_CELL)
 	EventBus.world_tile_unprefetched.emit(FIRST_CELL)
@@ -295,6 +298,13 @@ func _require_visual_tile(cell: Vector2i) -> MeshInstance3D:
 			var albedo_array: Texture2DArray = material.get_shader_parameter(TerrainVisualBuilderScript.ALBEDO_ARRAY_UNIFORM) as Texture2DArray
 			if albedo_array == null:
 				_errors.append("streamed visual cell material missing albedo Texture2DArray: " + String(mesh_instance.name))
+			var surface_texture: Texture2D = material.get_shader_parameter(TerrainVisualBuilderScript.SURFACE_ID_TEXTURE_UNIFORM) as Texture2D
+			if surface_texture == null:
+				_errors.append("streamed visual cell material missing surface ID texture: " + String(mesh_instance.name))
+			var expected_control_origin: Vector2 = Vector2(float(cell.x) * GameConfig.STREAM_TILE_SIZE_M, float(cell.y) * GameConfig.STREAM_TILE_SIZE_M)
+			var expected_control_size: Vector2 = Vector2(GameConfig.STREAM_TILE_SIZE_M, GameConfig.STREAM_TILE_SIZE_M)
+			_require_shader_vector2(material, TerrainVisualBuilderScript.CONTROL_ORIGIN_XZ_UNIFORM, expected_control_origin, "streamed visual cell material", String(mesh_instance.name))
+			_require_shader_vector2(material, TerrainVisualBuilderScript.CONTROL_SIZE_XZ_UNIFORM, expected_control_size, "streamed visual cell material", String(mesh_instance.name))
 			_require_shader_color(material, TerrainVisualBuilderScript.ZION_SANDSTONE_COLOR_UNIFORM, "streamed visual cell material", String(mesh_instance.name))
 			_require_shader_color(material, TerrainVisualBuilderScript.ZION_SAND_COLOR_UNIFORM, "streamed visual cell material", String(mesh_instance.name))
 			_require_shader_float(material, TerrainVisualBuilderScript.ZION_STRATA_STRENGTH_UNIFORM, "streamed visual cell material", String(mesh_instance.name))
@@ -311,8 +321,10 @@ func _require_foliage_tile(cell: Vector2i) -> Node3D:
 		_errors.append("foliage cell should be a Node3D: " + str(cell))
 		return null
 	var multimesh_count: int = 0
+	var foliage_instance_count: int = 0
 	var meshes_by_lod: Dictionary[String, Mesh] = {}
 	var materials_by_lod: Dictionary[String, Material] = {}
+	var lod_counts: Dictionary[String, int] = {}
 	for child in foliage_tile.get_children():
 		var multimesh_instance: MultiMeshInstance3D = child as MultiMeshInstance3D
 		if multimesh_instance == null:
@@ -322,6 +334,7 @@ func _require_foliage_tile(cell: Vector2i) -> Node3D:
 			_errors.append("foliage child missing LOD metadata: " + String(child.name))
 			continue
 		var region_lod: String = String(multimesh_instance.get_meta(TerrainVisualBuilderScript.REGION_LOD_META))
+		lod_counts[region_lod] = int(lod_counts.get(region_lod, 0)) + 1
 		if multimesh_instance.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF:
 			_errors.append("foliage child should not cast shadows: " + String(child.name))
 		var material: Material = multimesh_instance.material_override
@@ -337,18 +350,29 @@ func _require_foliage_tile(cell: Vector2i) -> Node3D:
 			_errors.append("foliage child missing visibility radius metadata: " + String(child.name))
 		if multimesh_instance.multimesh == null:
 			_errors.append("foliage child missing MultiMesh: " + String(child.name))
-		elif not multimesh_instance.multimesh.use_custom_data:
-			_errors.append("foliage child should enable MultiMesh custom data for wind: " + String(child.name))
-		elif multimesh_instance.multimesh.custom_aabb.size == Vector3.ZERO:
-			_errors.append("foliage child missing custom_aabb: " + String(child.name))
-		elif multimesh_instance.multimesh.mesh == null:
-			_errors.append("foliage child missing shared mesh: " + String(child.name))
-		elif meshes_by_lod.has(region_lod) and meshes_by_lod[region_lod] != multimesh_instance.multimesh.mesh:
-			_errors.append("foliage children should share mesh for " + region_lod)
-		elif not meshes_by_lod.has(region_lod):
-			meshes_by_lod[region_lod] = multimesh_instance.multimesh.mesh
-	if multimesh_count <= 0:
-		_errors.append("foliage cell should contain MultiMeshInstance3D children: " + str(cell))
+		else:
+			var multimesh: MultiMesh = multimesh_instance.multimesh
+			foliage_instance_count += multimesh.instance_count
+			if not multimesh.use_custom_data:
+				_errors.append("foliage child should enable MultiMesh custom data for wind: " + String(child.name))
+			elif multimesh.custom_aabb.size == Vector3.ZERO:
+				_errors.append("foliage child missing custom_aabb: " + String(child.name))
+			elif multimesh.custom_aabb.size.x < GameConfig.STREAM_TILE_SIZE_M - FLOAT_EPSILON or multimesh.custom_aabb.size.z < GameConfig.STREAM_TILE_SIZE_M - FLOAT_EPSILON:
+				_errors.append("foliage child custom_aabb should span the stream tile: " + String(child.name))
+			elif multimesh.mesh == null:
+				_errors.append("foliage child missing shared mesh: " + String(child.name))
+			elif meshes_by_lod.has(region_lod) and meshes_by_lod[region_lod] != multimesh.mesh:
+				_errors.append("foliage children should share mesh for " + region_lod)
+			elif not meshes_by_lod.has(region_lod):
+				meshes_by_lod[region_lod] = multimesh.mesh
+	if multimesh_count != 2:
+		_errors.append("foliage cell should contain exactly two MultiMeshInstance3D LOD children: " + str(cell) + ", got " + str(multimesh_count))
+	if int(lod_counts.get("foliage_lod0", 0)) != 1:
+		_errors.append("foliage cell should contain one foliage_lod0 child: " + str(cell))
+	if int(lod_counts.get("foliage_lod1", 0)) != 1:
+		_errors.append("foliage cell should contain one foliage_lod1 child: " + str(cell))
+	if foliage_instance_count <= 0:
+		_errors.append("foliage cell should contain nonzero MultiMesh instances: " + str(cell))
 	return foliage_tile
 
 
@@ -369,6 +393,16 @@ func _require_shader_float(material: ShaderMaterial, parameter_name: StringName,
 	var value: Variant = material.get_shader_parameter(parameter_name)
 	if not (value is float):
 		_errors.append(label + " " + node_name + " missing float shader parameter " + String(parameter_name))
+
+
+func _require_shader_vector2(material: ShaderMaterial, parameter_name: StringName, expected: Vector2, label: String, node_name: String) -> void:
+	var value: Variant = material.get_shader_parameter(parameter_name)
+	if not (value is Vector2):
+		_errors.append(label + " " + node_name + " missing Vector2 shader parameter " + String(parameter_name))
+		return
+	var observed: Vector2 = Vector2(value)
+	if observed.distance_to(expected) > FLOAT_EPSILON:
+		_errors.append(label + " " + node_name + " " + String(parameter_name) + " expected " + str(expected) + ", got " + str(observed))
 
 
 func _require_no_visual_cell(cell: Vector2i) -> void:
@@ -431,6 +465,22 @@ func _require_cached_materials_reused(expected_materials_by_name: Dictionary[Str
 		var observed_material: StandardMaterial3D = observed_materials_by_name[material_name]
 		if observed_material != expected_material:
 			_errors.append("rebuilt tile material " + material_name + " should reuse the cached StandardMaterial3D")
+
+
+func _require_cached_surface_index_material_reused(expected_material: ShaderMaterial, tile: MeshInstance3D) -> void:
+	if expected_material == null or tile == null:
+		return
+	var observed_material: ShaderMaterial = _surface_index_material_for_tile(tile)
+	if observed_material == null:
+		_errors.append("rebuilt tile missing cached surface-index ShaderMaterial")
+	elif observed_material != expected_material:
+		_errors.append("rebuilt tile should reuse the cached surface-index ShaderMaterial")
+
+
+func _surface_index_material_for_tile(tile: MeshInstance3D) -> ShaderMaterial:
+	if tile == null or tile.mesh == null or tile.mesh.get_surface_count() <= 0:
+		return null
+	return tile.mesh.surface_get_material(0) as ShaderMaterial
 
 
 func _surface_materials_by_name(tile: MeshInstance3D) -> Dictionary[String, StandardMaterial3D]:
