@@ -105,6 +105,7 @@ func _inspect_vehicle_visuals(host: Node, vehicle: Node) -> void:
 	_require_vehicle_steering_visuals(host, visual_root)
 	_require_vehicle_residue_visuals(host, vehicle, visual_root)
 	_require_vehicle_headlights(visual_root)
+	_require_vehicle_roof_kayak(visual_root)
 
 
 func _require_vehicle_chassis_drop(visual_root: Node) -> void:
@@ -131,11 +132,13 @@ func _require_vehicle_headlights(visual_root: Node) -> void:
 	if not material.emission_enabled:
 		_errors.append("headlight material should have emission enabled")
 	var emission_color: Color = material.emission
-	var expected_emission: Color = ProceduralBuggyVisual.HEADLIGHT_EMISSION_COLOR
+	var expected_emission: Color = GameConfig.headlight_emission_color
 	if absf(emission_color.r - expected_emission.r) > FLOAT_EPSILON or absf(emission_color.g - expected_emission.g) > FLOAT_EPSILON or absf(emission_color.b - expected_emission.b) > FLOAT_EPSILON:
 		_errors.append("headlight emission expected warm white " + str(expected_emission) + ", got " + str(emission_color))
 	if material.emission_energy_multiplier <= 0.0:
 		_errors.append("headlight material should default ON with emission energy > 0")
+	if absf(material.emission_energy_multiplier - GameConfig.headlight_emission_energy) > FLOAT_EPSILON:
+		_errors.append("headlight emission energy expected GameConfig " + str(GameConfig.headlight_emission_energy) + ", got " + str(material.emission_energy_multiplier))
 	var left_spot: SpotLight3D = _require_node(headlight_node, "headlight_spot_left") as SpotLight3D
 	var right_spot: SpotLight3D = _require_node(headlight_node, "headlight_spot_right") as SpotLight3D
 	if left_spot == null or right_spot == null:
@@ -161,8 +164,42 @@ func _require_vehicle_headlights(visual_root: Node) -> void:
 			_errors.append(String(spot.name) + " should pitch forward and slightly down")
 		if spot.position.z >= 0.0:
 			_errors.append(String(spot.name) + " should sit at the front of the buggy (local z < 0)")
+		if absf(spot.light_energy - GameConfig.headlight_light_energy) > FLOAT_EPSILON:
+			_errors.append(String(spot.name) + " light energy expected GameConfig " + str(GameConfig.headlight_light_energy) + ", got " + str(spot.light_energy))
+		if absf(spot.spot_range - GameConfig.headlight_spot_range) > FLOAT_EPSILON:
+			_errors.append(String(spot.name) + " spot range expected GameConfig " + str(GameConfig.headlight_spot_range) + ", got " + str(spot.spot_range))
+		if absf(spot.spot_angle - GameConfig.headlight_spot_angle_deg) > FLOAT_EPSILON:
+			_errors.append(String(spot.name) + " spot angle expected GameConfig " + str(GameConfig.headlight_spot_angle_deg) + ", got " + str(spot.spot_angle))
+		if absf(spot.rotation.x - deg_to_rad(-GameConfig.headlight_pitch_deg)) > FLOAT_EPSILON:
+			_errors.append(String(spot.name) + " pitch expected GameConfig " + str(GameConfig.headlight_pitch_deg) + " deg down, got " + str(rad_to_deg(-spot.rotation.x)))
 	_require_node_position(headlight_node, "headlight_spot_left", ProceduralBuggyVisual.HEADLIGHT_LEFT_LOCAL, FLOAT_EPSILON)
 	_require_node_position(headlight_node, "headlight_spot_right", ProceduralBuggyVisual.HEADLIGHT_RIGHT_LOCAL, FLOAT_EPSILON)
+
+
+func _require_vehicle_roof_kayak(visual_root: Node) -> void:
+	var kayak: MeshInstance3D = _require_node(visual_root, "roof_kayak") as MeshInstance3D
+	if kayak == null:
+		return
+	if kayak.mesh == null:
+		_errors.append("roof_kayak should carry a procedural hull mesh")
+		return
+	var surface_count: int = kayak.mesh.get_surface_count()
+	if surface_count != 1:
+		_errors.append("roof_kayak should be a single cheap mesh, got " + str(surface_count) + " surfaces")
+	var drop_offset: Vector3 = Vector3(0.0, GameConfig.vehicle_visual_chassis_drop, 0.0)
+	_require_node_position(visual_root, "roof_kayak", ProceduralBuggyVisual.KAYAK_BASE_POSITION - drop_offset, FLOAT_EPSILON)
+	var material: StandardMaterial3D = ProceduralBuggyVisual.get_kayak_material(visual_root)
+	if material == null:
+		_errors.append("kayak material getter should return the tuned hull material")
+		return
+	var hull_color: Color = material.albedo_color
+	var body_color: Color = Color(0.93, 0.18, 0.07)
+	var max_channel_delta: float = maxf(maxf(absf(hull_color.r - body_color.r), absf(hull_color.g - body_color.g)), absf(hull_color.b - body_color.b))
+	if max_channel_delta < 0.20:
+		_errors.append("roof_kayak hull color should contrast with the red-orange body, got " + str(hull_color))
+	var saturation: float = maxf(hull_color.r, maxf(hull_color.g, hull_color.b)) - minf(hull_color.r, minf(hull_color.g, hull_color.b))
+	if saturation < 0.15:
+		_errors.append("roof_kayak hull color should read as a saturated adventure-rig accent, got " + str(hull_color))
 
 
 func _require_vehicle_steering_visuals(host: Node, visual_root: Node) -> void:

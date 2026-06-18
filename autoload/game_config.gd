@@ -263,6 +263,17 @@ var buggy_clearcoat_enabled: bool = true
 var buggy_clearcoat: float = 0.70
 var buggy_clearcoat_roughness: float = 0.40
 var brake_light_energy: float = 1.8
+# --- Headlight tunables (Q46): promoted from procedural_buggy_visual.gd local
+# consts so the golden-hour cones are live-tunable. Range tightened from 6.0 m
+# to 4.0 m for a 1:10 RC-scale read (searchlight -> car-length throw). Default
+# ON; the L-key toggle is deferred (needs the host).
+var headlight_emission_color: Color = Color(1.0, 0.949, 0.847)
+var headlight_emission_energy: float = 1.6
+var headlight_light_color: Color = Color(1.0, 0.949, 0.847)
+var headlight_light_energy: float = 3.0
+var headlight_spot_range: float = 4.0
+var headlight_spot_angle_deg: float = 35.0
+var headlight_pitch_deg: float = 12.0
 var terrain_pom_enabled: bool = true
 var terrain_pom_depth_scale: float = 0.028
 var terrain_pom_min_layers: int = 4
