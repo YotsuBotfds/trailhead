@@ -39,7 +39,7 @@ const ZION_FOG_AERIAL_PERSPECTIVE: float = 0.10
 const ZION_FOG_SKY_AFFECT: float = 0.34
 const ZION_VOLUMETRIC_FOG_SKY_AFFECT: float = 0.24
 const ZION_REGION_ID: String = "cedar_hollow_zion"
-const ZION_SPAWN_ID: StringName = &"demo_canyon_junction"
+const ZION_SPAWN_ID: StringName = &"stream_west"
 const WORLD_REGION_ID_META: StringName = &"trailhead_world_region_id"
 const GAMEPAD_DEVICE_ANY: int = -1
 
