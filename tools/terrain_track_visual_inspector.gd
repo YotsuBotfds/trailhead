@@ -15,6 +15,7 @@ const FLOAT_EPSILON: float = 0.001
 const STAMP_COLOR_MATCH_EPSILON: float = 0.003
 const STAMP_COLOR_SEPARATION_EPSILON: float = 0.04
 const MIN_STAMP_FOOTPRINT_PIXELS: float = 1.0
+const STREAM_WAIT_FRAMES: int = 180
 
 var _scene_root: Node = null
 var _errors: PackedStringArray = PackedStringArray()
@@ -32,8 +33,12 @@ func _inspect() -> void:
 		_errors.append("failed to instantiate Cedar Hollow playable scene")
 		_finish()
 		return
+	if _is_streamed_zion_host():
+		await _wait_for_streamed_zion_tracks()
 	var painter: Node = _scene_root.get_node_or_null("CedarHollow/TerrainTrackVisualPainter")
 	var terrain_root: Node = _scene_root.get_node_or_null("CedarHollow/TerrainVisuals")
+	if terrain_root == null:
+		terrain_root = _scene_root.get_node_or_null("CedarHollow/TerrainVisualStreamer/TerrainVisuals/TerrainDetailTiles")
 	if terrain_root == null:
 		terrain_root = _scene_root.get_node_or_null("CedarHollow/TerrainVisualStreamer/TerrainVisuals")
 	if painter == null:
@@ -101,11 +106,12 @@ func _inspect_painter_stamp_response(painter: Node) -> void:
 	_inspect_surface_response_palette(painter)
 	var before_count: int = int(painter.call("debug_stamp_count"))
 	var state: RefCounted = VehicleStateScript.new()
+	var stamp_origin: Vector3 = _stamp_origin_for_painter(painter)
 	var first_hit_points: Array[Vector3] = [
-		Vector3(0.0, 0.0, -4.0),
-		Vector3(0.18, 0.0, -4.0),
-		Vector3(0.36, 0.0, -4.0),
-		Vector3(0.54, 0.0, -4.0)
+		stamp_origin,
+		stamp_origin + Vector3(0.18, 0.0, 0.0),
+		stamp_origin + Vector3(0.36, 0.0, 0.0),
+		stamp_origin + Vector3(0.54, 0.0, 0.0)
 	]
 	var wheel_surfaces: Array[StringName] = [&"sand_wash", &"packed_dirt", &"wet_stone", &"wood_plank"]
 	state.set("wheel_hit_point", first_hit_points)
@@ -118,11 +124,12 @@ func _inspect_painter_stamp_response(painter: Node) -> void:
 	var after_repeat_count: int = int(painter.call("debug_stamp_count"))
 	if after_repeat_count != after_first_count:
 		_errors.append("track painter should not restamp unchanged wheel hit points")
+	var movement_distance: float = maxf(GameConfig.terrain_track_stamp_radius * 2.0, 0.25)
 	var moved_hit_points: Array[Vector3] = [
-		Vector3(0.0, 0.0, -4.0 - GameConfig.terrain_track_stamp_radius),
-		Vector3(0.18, 0.0, -4.0 - GameConfig.terrain_track_stamp_radius),
-		Vector3(0.36, 0.0, -4.0 - GameConfig.terrain_track_stamp_radius),
-		Vector3(0.54, 0.0, -4.0 - GameConfig.terrain_track_stamp_radius)
+		stamp_origin + Vector3(0.0, 0.0, -movement_distance),
+		stamp_origin + Vector3(0.18, 0.0, -movement_distance),
+		stamp_origin + Vector3(0.36, 0.0, -movement_distance),
+		stamp_origin + Vector3(0.54, 0.0, -movement_distance)
 	]
 	var moved_wheel_surfaces: Array[StringName] = [&"mud", &"packed_dirt", &"wet_stone", &"sand_wash"]
 	state.set("wheel_hit_point", moved_hit_points)
@@ -141,6 +148,13 @@ func _inspect_painter_stamp_response(painter: Node) -> void:
 			pixels_per_meter = _actual_pixels_per_meter(painter, viewport)
 		_require_stamp_color(stamp_root, _stamp_color_for(painter, &"sand_wash"), "sand_wash")
 		_inspect_stamp_materials(stamp_root, pixels_per_meter)
+
+
+func _stamp_origin_for_painter(painter: Node) -> Vector3:
+	var bounds_min: Vector2 = painter.call("render_bounds_min")
+	var bounds_max: Vector2 = painter.call("render_bounds_max")
+	var center: Vector2 = (bounds_min + bounds_max) * 0.5
+	return Vector3(center.x, 0.0, center.y)
 
 
 func _inspect_surface_response_palette(painter: Node) -> void:
@@ -226,6 +240,11 @@ func _inspect_stamp_materials(stamp_root: Node, pixels_per_meter: float) -> void
 
 
 func _inspect_terrain_track_materials(terrain_root: Node, painter: Node) -> void:
+	if _is_streamed_zion_host():
+		var streamed_material_count: int = _streamed_track_material_count()
+		if streamed_material_count <= 0:
+			_errors.append("streamed Zion detail tiles should expose terrain track RT materials")
+		return
 	var track_texture: Texture2D = painter.call("track_texture") as Texture2D
 	var expected_bounds_min: Vector2 = painter.call("render_bounds_min")
 	var expected_bounds_max: Vector2 = painter.call("render_bounds_max")
@@ -238,7 +257,7 @@ func _inspect_terrain_material_node(parent: Node, track_texture: Texture2D, expe
 	var count: int = 0
 	var mesh_instance: MeshInstance3D = parent as MeshInstance3D
 	if mesh_instance != null:
-		if absf(mesh_instance.visibility_range_end - GameConfig.vis_range_terrain) > FLOAT_EPSILON:
+		if not _is_streamed_zion_host() and absf(mesh_instance.visibility_range_end - GameConfig.vis_range_terrain) > FLOAT_EPSILON:
 			_errors.append(String(mesh_instance.name) + " visibility_range_end should use GameConfig.vis_range_terrain")
 		count += _inspect_terrain_mesh_materials(mesh_instance, track_texture, expected_bounds_min, expected_bounds_max)
 	for child in parent.get_children():
@@ -301,6 +320,49 @@ func _is_streamed_zion_host() -> bool:
 	if world == null or not world.has_meta(WORLD_REGION_ID_META):
 		return false
 	return String(world.get_meta(WORLD_REGION_ID_META)) == ZION_REGION_ID
+
+
+func _wait_for_streamed_zion_tracks() -> void:
+	var streamer: Node = _scene_root.get_node_or_null("CedarHollow/TerrainVisualStreamer")
+	if streamer == null:
+		return
+	for _frame in range(STREAM_WAIT_FRAMES):
+		if int(streamer.call("visual_cell_count")) > 0 and _streamed_track_material_count() > 0:
+			return
+		await get_tree().process_frame
+		await get_tree().physics_frame
+
+
+func _streamed_track_material_count() -> int:
+	var painter: Node = _scene_root.get_node_or_null("CedarHollow/TerrainTrackVisualPainter")
+	var terrain_root: Node = _scene_root.get_node_or_null("CedarHollow/TerrainVisualStreamer/TerrainVisuals/TerrainDetailTiles")
+	if painter == null or terrain_root == null:
+		return 0
+	var track_texture: Texture2D = painter.call("track_texture") as Texture2D
+	if track_texture == null:
+		return 0
+	return _count_track_materials(terrain_root, track_texture)
+
+
+func _count_track_materials(parent: Node, track_texture: Texture2D) -> int:
+	var count: int = 0
+	var mesh_instance: MeshInstance3D = parent as MeshInstance3D
+	if mesh_instance != null:
+		var mesh: Mesh = mesh_instance.mesh
+		if mesh != null:
+			for surface_index in range(mesh.get_surface_count()):
+				var material: Material = mesh_instance.get_surface_override_material(surface_index)
+				if material == null:
+					continue
+				var overlay: ShaderMaterial = material.next_pass as ShaderMaterial
+				if overlay == null:
+					continue
+				var overlay_texture: Texture2D = overlay.get_shader_parameter(TRACK_RT_UNIFORM) as Texture2D
+				if overlay_texture == track_texture:
+					count += 1
+	for child in parent.get_children():
+		count += _count_track_materials(child, track_texture)
+	return count
 
 
 func _count_collision_objects(parent: Node) -> int:

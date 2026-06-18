@@ -1857,10 +1857,14 @@ static func _apply_track_texture_to_mesh(mesh_instance: MeshInstance3D, track_te
 	if mesh == null:
 		return
 	for surface_index in range(mesh.get_surface_count()):
-		var material: StandardMaterial3D = mesh_instance.get_surface_override_material(surface_index) as StandardMaterial3D
+		var material: Material = mesh_instance.get_surface_override_material(surface_index)
+		if material == null:
+			material = mesh.surface_get_material(surface_index)
 		if material == null:
 			continue
-		material = material.duplicate() as StandardMaterial3D
+		if _material_has_track_texture(material, track_texture):
+			continue
+		material = material.duplicate() as Material
 		if material == null:
 			continue
 		material.next_pass = _track_overlay_material(material.resource_name, track_texture, bounds_min, bounds_max)
@@ -1877,6 +1881,14 @@ static func _track_overlay_material(material_name: String, track_texture: Textur
 	material.set_shader_parameter(TRACK_DARKENING_UNIFORM, clampf(GameConfig.terrain_track_stamp_strength, 0.0, 1.0))
 	material.set_shader_parameter(RUT_DARKENING_UNIFORM, clampf(GameConfig.terrain_track_stamp_strength * RUT_DARKENING_SCALE, 0.0, 1.0))
 	return material
+
+
+static func _material_has_track_texture(material: Material, track_texture: Texture2D) -> bool:
+	var overlay: ShaderMaterial = material.next_pass as ShaderMaterial
+	if overlay == null:
+		return false
+	var overlay_texture: Texture2D = overlay.get_shader_parameter(TRACK_RT_UNIFORM) as Texture2D
+	return overlay_texture == track_texture
 
 
 static func _load_texture(path: String) -> Texture2D:
