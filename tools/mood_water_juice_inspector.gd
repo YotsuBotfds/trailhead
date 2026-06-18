@@ -186,6 +186,11 @@ func _inspect_mood_toggle(world_environment: WorldEnvironment) -> void:
 	if not environment.volumetric_fog_enabled:
 		_errors.append("dawn mood should keep volumetric fog")
 	_scene_root.call("toggle_mood")
+	_require_night_sky_environment(environment)
+	_require_color_close("night ambient color", environment.ambient_light_color, AtmosphereVisualBuilderScript.NIGHT_AMBIENT_COLOR, COLOR_TOLERANCE)
+	_require_float_close("night ambient energy", environment.ambient_light_energy, AtmosphereVisualBuilderScript.NIGHT_AMBIENT_ENERGY, FLOAT_EPSILON)
+	_require_color_close("night fog light color", environment.fog_light_color, AtmosphereVisualBuilderScript.NIGHT_FOG_LIGHT_COLOR, COLOR_TOLERANCE)
+	_scene_root.call("toggle_mood")
 	_require_physical_sky_environment(environment, "dusk restore")
 
 
@@ -198,6 +203,17 @@ func _require_physical_sky_environment(environment: Environment, label: String) 
 		_errors.append(label + " mood should assign a Sky resource")
 	elif not (environment.sky.sky_material is PhysicalSkyMaterial):
 		_errors.append(label + " mood should use PhysicalSkyMaterial")
+
+
+func _require_night_sky_environment(environment: Environment) -> void:
+	if environment.background_mode != Environment.BG_SKY:
+		_errors.append("night mood should use sky background mode")
+	if environment.ambient_light_source != Environment.AMBIENT_SOURCE_BG:
+		_errors.append("night mood should use sky ambient source")
+	if environment.sky == null:
+		_errors.append("night mood should assign a Sky resource")
+	elif not (environment.sky.sky_material is ShaderMaterial):
+		_errors.append("night mood should use ShaderMaterial star sky")
 
 
 func _inspect_dust_and_tilt_shift() -> void:
