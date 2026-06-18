@@ -178,6 +178,9 @@ var _stream_force_unready_cell: Vector2i = Vector2i.ZERO
 var _stream_force_unready_trigger_x: float = 0.0
 var _stream_force_unready_ticks: int = 0
 var _stream_force_unready_applied: bool = false
+var _streaming_collision_frozen_sample_ticks: int = 0
+var _streaming_collision_freeze_max_descent_from_initial: float = 0.0
+var _streaming_collision_freeze_max_flat_displacement_from_initial: float = 0.0
 
 
 func _ready() -> void:
@@ -1412,6 +1415,7 @@ func _record(state: RefCounted, input: RefCounted) -> void:
 	var control_right_displacement: float = (state_position - _initial_position).dot(_initial_control_right)
 	var descent_from_initial: float = _initial_position.y - state_position.y
 	var flat_displacement_from_initial: float = Vector2(state_position.x - _initial_position.x, state_position.z - _initial_position.z).length()
+	var streaming_collision_frozen: bool = _vehicle_streaming_collision_frozen()
 	if _has_previous_recorded_position:
 		_max_position_delta_m = maxf(_max_position_delta_m, state_position.distance_to(_previous_recorded_position))
 	_previous_recorded_position = state_position
@@ -1444,6 +1448,7 @@ func _record(state: RefCounted, input: RefCounted) -> void:
 		"vehicle_contamination": vehicle_contamination,
 		"on_ground": bool(state.get("on_ground")),
 		"is_flipped": bool(state.get("is_flipped")),
+		"streaming_collision_frozen": streaming_collision_frozen,
 		"input": {
 			"throttle": input_throttle,
 			"steer": float(input.get("steer")),
@@ -1471,6 +1476,10 @@ func _record(state: RefCounted, input: RefCounted) -> void:
 	_max_reverse_distance = maxf(_max_reverse_distance, -initial_forward_displacement)
 	_max_flat_displacement_from_initial = maxf(_max_flat_displacement_from_initial, flat_displacement_from_initial)
 	_final_flat_displacement_from_initial = flat_displacement_from_initial
+	if streaming_collision_frozen:
+		_streaming_collision_frozen_sample_ticks += 1
+		_streaming_collision_freeze_max_descent_from_initial = maxf(_streaming_collision_freeze_max_descent_from_initial, descent_from_initial)
+		_streaming_collision_freeze_max_flat_displacement_from_initial = maxf(_streaming_collision_freeze_max_flat_displacement_from_initial, flat_displacement_from_initial)
 	_min_control_right_displacement = minf(_min_control_right_displacement, control_right_displacement)
 	_max_control_right_displacement = maxf(_max_control_right_displacement, control_right_displacement)
 	_final_control_right_displacement = control_right_displacement
@@ -1762,6 +1771,9 @@ func _finish(passed: bool) -> void:
 			"streaming_enabled": _streaming_enabled,
 			"streaming_region_id": _streaming_region_id,
 			"stream_force_unready_applied": _stream_force_unready_applied,
+			"streaming_collision_frozen_sample_ticks": _streaming_collision_frozen_sample_ticks,
+			"streaming_collision_freeze_max_descent_from_initial": _streaming_collision_freeze_max_descent_from_initial,
+			"streaming_collision_freeze_max_flat_displacement_from_initial": _streaming_collision_freeze_max_flat_displacement_from_initial,
 			"streaming_collision_freeze_ticks": _vehicle_streaming_collision_freeze_ticks(),
 			"streaming_collision_max_consecutive_freeze_ticks": _vehicle_streaming_collision_max_consecutive_freeze_ticks(),
 			"streaming_collision_freeze_expired_count": _vehicle_streaming_collision_freeze_expired_count(),
@@ -2340,6 +2352,14 @@ func _vehicle_streaming_collision_freeze_expired_count() -> int:
 	if not _vehicle.has_method("streaming_collision_freeze_expired_count"):
 		return 0
 	return int(_vehicle.call("streaming_collision_freeze_expired_count"))
+
+
+func _vehicle_streaming_collision_frozen() -> bool:
+	if _vehicle == null:
+		return false
+	if not _vehicle.has_method("is_streaming_collision_frozen"):
+		return false
+	return bool(_vehicle.call("is_streaming_collision_frozen"))
 
 
 func _vehicle_streaming_collision_release_count() -> int:
