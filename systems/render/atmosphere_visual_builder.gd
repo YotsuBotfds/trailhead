@@ -94,7 +94,7 @@ static func _apply_sun_atmosphere(sun: DirectionalLight3D) -> void:
 	sun.directional_shadow_blend_splits = GameConfig.atmosphere_directional_shadow_blend_splits
 	sun.shadow_blur = maxf(GameConfig.atmosphere_pcss_shadow_blur, 0.0)
 	sun.shadow_opacity = clampf(GameConfig.atmosphere_pcss_shadow_opacity, 0.0, 1.0)
-	sun.light_volumetric_fog_energy = 0.82
+	sun.light_volumetric_fog_energy = GameConfig.atmosphere_sun_volumetric_fog_energy
 
 
 static func _directional_shadow_mode(mode: int) -> int:
@@ -159,7 +159,7 @@ static func _apply_volumetric_fog(environment: Environment, mood: int) -> void:
 		environment.volumetric_fog_albedo = DUSK_HERO_VOLUMETRIC_FOG_ALBEDO
 		environment.volumetric_fog_emission = Color(0.20, 0.13, 0.07)
 		environment.volumetric_fog_emission_energy = 0.10
-	environment.volumetric_fog_anisotropy = 0.32
+	environment.volumetric_fog_anisotropy = GameConfig.atmosphere_volumetric_fog_anisotropy
 	environment.volumetric_fog_ambient_inject = 0.28
 	environment.volumetric_fog_sky_affect = VOLUMETRIC_FOG_SKY_AFFECT
 	environment.volumetric_fog_temporal_reprojection_enabled = true
@@ -168,6 +168,7 @@ static func _apply_volumetric_fog(environment: Environment, mood: int) -> void:
 static func _apply_golden_hour_glow(environment: Environment, mood: int) -> void:
 	environment.glow_enabled = true
 	environment.glow_normalized = true
+	environment.glow_bloom = GLOW_BLOOM
 	if mood == MOOD_NIGHT:
 		environment.glow_intensity = NIGHT_GLOW_INTENSITY
 		environment.glow_strength = NIGHT_GLOW_STRENGTH
@@ -177,7 +178,9 @@ static func _apply_golden_hour_glow(environment: Environment, mood: int) -> void
 	else:
 		environment.glow_intensity = DUSK_GLOW_INTENSITY
 		environment.glow_strength = DUSK_GLOW_STRENGTH
-	environment.glow_bloom = GLOW_BLOOM
+		environment.glow_hdr_threshold = GameConfig.atmosphere_glow_hdr_threshold
+		environment.glow_hdr_scale = GameConfig.atmosphere_glow_hdr_scale
+		environment.glow_bloom = GameConfig.atmosphere_glow_bloom_dusk
 
 
 static func _apply_color_grade(environment: Environment) -> void:
