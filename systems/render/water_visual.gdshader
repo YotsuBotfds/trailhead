@@ -19,12 +19,19 @@ uniform int ssr_max_steps : hint_range(0, 32) = 16;
 uniform float ssr_step_size : hint_range(0.005, 0.2) = 0.035;
 uniform float ssr_thickness : hint_range(0.005, 0.3) = 0.08;
 uniform float water_roughness : hint_range(0.0, 1.0) = 0.18;
+uniform vec4 bed_tint_color : source_color = vec4(0.84, 0.78, 0.60, 1.0);
+uniform float bed_tint_strength : hint_range(0.0, 1.0) = 0.35;
+uniform float shallow_alpha : hint_range(0.0, 1.0) = 0.38;
+uniform float downstream_flow_speed : hint_range(0.0, 0.5) = 0.06;
+uniform vec4 foam_color : source_color = vec4(0.86, 0.90, 0.84, 1.0);
+uniform float wetline_strength : hint_range(0.0, 1.0) = 0.20;
 
 const int SSR_STEP_LIMIT = 32;
 const float SSR_EDGE_FADE = 0.065;
 const float FOAM_NORMAL_SAMPLE_RADIUS = 0.08;
 
 varying vec2 world_xz;
+varying vec2 downstream_dir;
 
 float hash12(vec2 position) {
 	return fract(sin(dot(position, vec2(127.1, 311.7))) * 43758.5453123);
@@ -115,7 +122,11 @@ vec3 screen_space_reflection(
 
 void vertex() {
 	world_xz = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xz;
-	VERTEX.y += sin((world_xz.x + TIME * flow_speed) * 18.0) * wave_amplitude;
+	vec2 flow_xz = MODEL_MATRIX[0].xz;
+	float flow_len = length(flow_xz);
+	downstream_dir = flow_len > 0.00001 ? flow_xz / flow_len : vec2(1.0, 0.0);
+	float downstream_pos = dot(world_xz, downstream_dir);
+	VERTEX.y += sin((downstream_pos + TIME * flow_speed) * 18.0) * wave_amplitude;
 }
 
 void fragment() {
@@ -126,8 +137,9 @@ void fragment() {
 	float depth_delta = max(scene_depth - fragment_depth, 0.0);
 	float depth_mix = clamp(depth_delta / depth_fade_distance, 0.0, 1.0);
 	float foam = 1.0 - smoothstep(0.0, foam_edge_width, depth_delta);
-	float ripple = sin((world_xz.x * 11.0) + (world_xz.y * 7.0) + TIME * flow_speed * 9.0) * 0.5 + 0.5;
-	vec2 foam_uv = world_xz * foam_normal_scale;
+	float downstream_pos = dot(world_xz, downstream_dir);
+	float ripple = sin(downstream_pos * 11.0 - TIME * flow_speed * 9.0) * 0.5 + 0.5;
+	vec2 foam_uv = world_xz * foam_normal_scale - downstream_dir * TIME * downstream_flow_speed;
 	vec2 foam_gradient = foam_noise_gradient(foam_uv, TIME * foam_normal_flow_speed);
 	float foam_normal_weight = mix(0.35, 1.0, foam);
 	vec3 tangent_normal = normalize(vec3(-foam_gradient.x, -foam_gradient.y, 1.0));
@@ -136,7 +148,12 @@ void fragment() {
 	NORMAL_MAP_DEPTH = foam_normal_strength * foam_normal_weight;
 	NORMAL = normal_view;
 	vec3 water_color = mix(shallow_color.rgb, deep_color.rgb, depth_mix);
-	water_color = mix(water_color, vec3(0.86, 0.92, 0.86), foam * (0.45 + ripple * 0.25));
+	float bed_visibility = pow(1.0 - depth_mix, 1.5);
+	water_color = mix(water_color, bed_tint_color.rgb, bed_visibility * bed_tint_strength);
+	water_color = mix(water_color, foam_color.rgb, foam * (0.45 + ripple * 0.25));
+	float wetline_inside = smoothstep(foam_edge_width, foam_edge_width * 2.0, depth_delta);
+	float wetline_deep = 1.0 - smoothstep(foam_edge_width * 2.0, foam_edge_width * 6.0, depth_delta);
+	water_color *= mix(1.0, 0.82, wetline_inside * wetline_deep * wetline_strength);
 	if (ssr_enabled && ssr_intensity > 0.0 && ssr_max_steps > 0) {
 		float reflection_weight = 0.0;
 		vec3 reflection_color = screen_space_reflection(
@@ -149,7 +166,8 @@ void fragment() {
 		water_color = mix(water_color, reflection_color, reflection_weight * ssr_intensity);
 	}
 	ALBEDO = water_color;
-	ALPHA = water_alpha;
+	float base_alpha = mix(shallow_alpha, water_alpha, depth_mix);
+	ALPHA = clamp(base_alpha + foam * 0.25, 0.0, 1.0);
 	ROUGHNESS = water_roughness;
 	SPECULAR = 0.55;
 }
