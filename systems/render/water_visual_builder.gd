@@ -4,6 +4,12 @@ extends RefCounted
 const WaterShader: Shader = preload("res://systems/render/water_visual.gdshader")
 const ROOT_NAME: String = "WaterVisuals"
 const WATER_SURFACE_GROUP: String = "render_water_surface"
+const BED_TINT_COLOR: Color = Color(0.84, 0.78, 0.60)
+const BED_TINT_STRENGTH: float = 0.35
+const SHALLOW_ALPHA: float = 0.38
+const DOWNSTREAM_FLOW_SPEED: float = 0.06
+const FOAM_COLOR: Color = Color(0.86, 0.90, 0.84)
+const WETLINE_STRENGTH: float = 0.20
 
 
 static func build_cedar_hollow(parent: Node3D) -> Node3D:
@@ -61,4 +67,10 @@ static func _water_material(resource_name: String) -> ShaderMaterial:
 	material.set_shader_parameter("ssr_step_size", GameConfig.water_ssr_step_size)
 	material.set_shader_parameter("ssr_thickness", GameConfig.water_ssr_thickness)
 	material.set_shader_parameter("water_roughness", GameConfig.water_roughness)
+	material.set_shader_parameter("bed_tint_color", BED_TINT_COLOR)
+	material.set_shader_parameter("bed_tint_strength", BED_TINT_STRENGTH)
+	material.set_shader_parameter("shallow_alpha", SHALLOW_ALPHA)
+	material.set_shader_parameter("downstream_flow_speed", DOWNSTREAM_FLOW_SPEED)
+	material.set_shader_parameter("foam_color", FOAM_COLOR)
+	material.set_shader_parameter("wetline_strength", WETLINE_STRENGTH)
 	return material
