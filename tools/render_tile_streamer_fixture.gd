@@ -81,8 +81,11 @@ func _inspect() -> void:
 	_require_foliage_tile(SECOND_CELL)
 
 	EventBus.world_tile_evicted.emit(FIRST_CELL)
-	_require_cell_count("first eviction", 1)
-	_require_foliage_cell_count("first foliage eviction", 1)
+	# FIX-4: visual/foliage free is now deferred across frames (player-invisible,
+	# HLOD covers the far tile), so wait for the budgeted drain instead of asserting
+	# the free synchronously. The remaining checks below then hold once drained.
+	await _wait_for_cell_count("first eviction", 1)
+	await _wait_for_foliage_cell_count("first foliage eviction", 1)
 	_require_stream_hlod(true)
 	_require_cells("first eviction cells", [SECOND_CELL])
 	_require_no_visual_cell(FIRST_CELL)

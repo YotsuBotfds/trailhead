@@ -32,6 +32,7 @@ const DIRECTIONAL_SHADOW_PARALLEL_4_SPLITS: int = 2
 var render_frame_cap_enabled: bool = true
 var render_max_fps: int = 60
 var render_visual_tile_commits_per_frame: int = 1
+var render_visual_tile_frees_per_frame: int = 2
 var render_dynamic_resolution_enabled: bool = true
 var render_dynamic_resolution_min_scale: float = 0.85
 var render_dynamic_resolution_max_scale: float = 1.0
