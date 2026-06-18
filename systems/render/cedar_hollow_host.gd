@@ -41,6 +41,7 @@ const ZION_VOLUMETRIC_FOG_SKY_AFFECT: float = 0.24
 const ZION_REGION_ID: String = "cedar_hollow_zion"
 const ZION_SPAWN_ID: StringName = &"stream_west"
 const WORLD_REGION_ID_META: StringName = &"trailhead_world_region_id"
+const GAMEPAD_DEVICE_ANY: int = -1
 
 var _world: Node3D = null
 var _vehicle: Node = null
@@ -131,6 +132,7 @@ func _ensure_default_input_map() -> void:
 	_ensure_action(&"logbook_open", [KEY_TAB])
 	_ensure_action(&"frequency_input", [KEY_P])
 	_ensure_action(&"photograph", [KEY_F])
+	_ensure_joypad_bindings()
 
 
 func _ensure_action(action_name: StringName, keycodes: Array[int]) -> void:
@@ -143,6 +145,69 @@ func _ensure_action(action_name: StringName, keycodes: Array[int]) -> void:
 		var event: InputEventKey = InputEventKey.new()
 		event.physical_keycode = keycode
 		InputMap.action_add_event(action_string, event)
+
+
+func _ensure_joypad_bindings() -> void:
+	# Standard Xbox-style gamepad map. Additive + idempotent: never removes
+	# existing keyboard events and never duplicates a joypad event already present,
+	# so this is safe to call whether or not project.godot already binds gamepads.
+	# Triggers (analog 0..1): RIGHT = throttle, LEFT = brake + reverse. LEFT mirrors
+	# keyboard S -- the read in _update_vehicle_input() treats LT as brake when
+	# throttle is applied and as reverse when stopped, so one trigger covers both.
+	_ensure_action_axis(&"throttle", JOY_AXIS_TRIGGER_RIGHT, 1.0)
+	_ensure_action_axis(&"brake", JOY_AXIS_TRIGGER_LEFT, 1.0)
+	_ensure_action_axis(&"reverse", JOY_AXIS_TRIGGER_LEFT, 1.0)
+	# Left stick X (analog -1..+1). Binding each half to its own steer action lets
+	# the existing strength(steer_left) - strength(steer_right) read yield a smooth
+	# analog -1..+1 steer with no host read-logic change.
+	_ensure_action_axis(&"steer_left", JOY_AXIS_LEFT_X, -1.0)
+	_ensure_action_axis(&"steer_right", JOY_AXIS_LEFT_X, 1.0)
+	# Digital face/shoulder buttons.
+	_ensure_action_button(&"ebrake", JOY_BUTTON_A)
+	_ensure_action_button(&"self_right", JOY_BUTTON_Y)
+	_ensure_action_button(&"cam_toggle", JOY_BUTTON_RIGHT_SHOULDER)
+	_ensure_action_button(&"map_toggle", JOY_BUTTON_BACK)
+
+
+func _ensure_action_axis(action_name: StringName, axis: int, axis_value: float) -> void:
+	var action_string: String = String(action_name)
+	if not InputMap.has_action(action_string):
+		InputMap.add_action(action_string, 0.2)
+	if _has_joypad_motion(action_string, axis, axis_value):
+		return
+	var event: InputEventJoypadMotion = InputEventJoypadMotion.new()
+	event.device = GAMEPAD_DEVICE_ANY
+	event.axis = axis
+	event.axis_value = axis_value
+	InputMap.action_add_event(action_string, event)
+
+
+func _ensure_action_button(action_name: StringName, button_index: int) -> void:
+	var action_string: String = String(action_name)
+	if not InputMap.has_action(action_string):
+		InputMap.add_action(action_string, 0.2)
+	if _has_joypad_button(action_string, button_index):
+		return
+	var event: InputEventJoypadButton = InputEventJoypadButton.new()
+	event.device = GAMEPAD_DEVICE_ANY
+	event.button_index = button_index
+	InputMap.action_add_event(action_string, event)
+
+
+func _has_joypad_motion(action_string: String, axis: int, axis_value: float) -> bool:
+	for event in InputMap.action_get_events(action_string):
+		var motion: InputEventJoypadMotion = event as InputEventJoypadMotion
+		if motion != null and motion.axis == axis and is_equal_approx(motion.axis_value, axis_value):
+			return true
+	return false
+
+
+func _has_joypad_button(action_string: String, button_index: int) -> bool:
+	for event in InputMap.action_get_events(action_string):
+		var button: InputEventJoypadButton = event as InputEventJoypadButton
+		if button != null and button.button_index == button_index:
+			return true
+	return false
 
 
 func _setup_surface_map() -> void:
