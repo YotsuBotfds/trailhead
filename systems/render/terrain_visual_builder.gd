@@ -1374,7 +1374,7 @@ static func _build_region_foliage_cell_data_with_audit(tile_data_by_cell: Dictio
 		if species_id == FOLIAGE_SPECIES_BOULDER:
 			y_offset = -FOLIAGE_BOULDER_GROUND_SINK_M
 		species_data.transforms.append(Transform3D(basis, Vector3(world_x, height + y_offset, world_z)))
-		_record_foliage_acceptance(audit, terrain_normal.y)
+		_record_foliage_acceptance(audit, terrain_normal.y, species_id)
 		_record_foliage_species_acceptance(audit, species_id)
 		var color_warmth: float = _region_foliage_unit(foliage_cell, lod_index, attempt, 7)
 		species_data.colors.append(_foliage_instance_color(species_id, color_warmth))
@@ -1926,10 +1926,14 @@ static func _record_foliage_slope_rejection(audit: Dictionary[String, Variant]) 
 	audit["slope_rejected_count"] = int(audit.get("slope_rejected_count", 0)) + 1
 
 
-static func _record_foliage_acceptance(audit: Dictionary[String, Variant], normal_y: float) -> void:
+static func _record_foliage_acceptance(audit: Dictionary[String, Variant], normal_y: float, species_id: StringName) -> void:
 	if audit.is_empty():
 		return
 	audit["instance_count"] = int(audit.get("instance_count", 0)) + 1
+	# Steep-slope-allowed species (boulders rest on talus) bypass the foliage slope gate by
+	# design, so they must not register as slope violations nor drag down min_accepted_normal_y.
+	if _foliage_species_allows_steep_slope(species_id):
+		return
 	var min_accepted_normal_y: float = float(audit.get("min_accepted_normal_y", 1.0))
 	if normal_y < min_accepted_normal_y:
 		audit["min_accepted_normal_y"] = normal_y
