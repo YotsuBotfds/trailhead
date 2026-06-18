@@ -24,6 +24,8 @@ var _frame_rows: PackedStringArray = PackedStringArray()
 var _dt_samples_ms: Array[float] = []
 var _fps_samples: Array[float] = []
 var _draw_call_samples: Array[float] = []
+var _gpu_samples_ms: Array[float] = []
+var _video_mem_samples_mb: Array[float] = []
 var _hitch_count: int = 0
 var _crossing_hitch_count: int = 0
 var _crossing_count: int = 0
@@ -71,7 +73,7 @@ func _run() -> void:
 	if not _errors.is_empty():
 		await _finish()
 		return
-	_frame_rows.append("frame,dt_ms,fps,process_ms,physics_process_ms,draw_calls,primitives,objects,video_mem_mb,static_mem_mb,current_cell,active_cells,ready_cells,stream_tick,crossing_flag,hitch_flag,hitch_at_crossing")
+	_frame_rows.append("frame,dt_ms,fps,process_ms,physics_process_ms,draw_calls,primitives,objects,video_mem_mb,static_mem_mb,current_cell,active_cells,ready_cells,stream_tick,crossing_flag,hitch_flag,hitch_at_crossing,gpu_ms")
 	await _drive_and_sample()
 	_release_input()
 	await _write_reports()
@@ -143,6 +145,7 @@ func _sample_frame(dt: float) -> void:
 	var physics_ms: float = float(Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS)) * 1000.0
 	var video_mem_mb: float = float(Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED)) / (1024.0 * 1024.0)
 	var static_mem_mb: float = float(Performance.get_monitor(Performance.MEMORY_STATIC)) / (1024.0 * 1024.0)
+	var gpu_ms: float = float(Performance.get_monitor(Performance.RENDER_GPU_FRAME_TIME)) * 1000.0
 	var active_count: int = _active_cell_count(streamer)
 	var ready_count: int = _ready_cell_count(streamer)
 	var stream_tick: int = _stream_tick(streamer)
@@ -156,7 +159,9 @@ func _sample_frame(dt: float) -> void:
 	_dt_samples_ms.append(dt_ms)
 	_fps_samples.append(fps)
 	_draw_call_samples.append(float(draw_calls))
-	_frame_rows.append("%d,%.3f,%.3f,%.3f,%.3f,%d,%d,%d,%.3f,%.3f,%s,%d,%d,%d,%d,%d,%d" % [
+	_gpu_samples_ms.append(gpu_ms)
+	_video_mem_samples_mb.append(video_mem_mb)
+	_frame_rows.append("%d,%.3f,%.3f,%.3f,%.3f,%d,%d,%d,%.3f,%.3f,%s,%d,%d,%d,%d,%d,%d,%.3f" % [
 		_frame_index,
 		dt_ms,
 		fps,
@@ -174,6 +179,7 @@ func _sample_frame(dt: float) -> void:
 		1 if crossing_flag else 0,
 		1 if hitch_flag else 0,
 		1 if hitch_at_crossing else 0,
+		gpu_ms,
 	])
 
 
@@ -223,6 +229,11 @@ func _summary_text() -> String:
 	var min_fps: float = _min_value(_fps_samples)
 	var avg_draw_calls: float = _average(_draw_call_samples)
 	var max_draw_calls: float = _max_value(_draw_call_samples)
+	var avg_gpu: float = _average(_gpu_samples_ms)
+	var p95_gpu: float = _percentile(_gpu_samples_ms, 0.95)
+	var max_gpu: float = _max_value(_gpu_samples_ms)
+	var avg_vram: float = _average(_video_mem_samples_mb)
+	var max_vram: float = _max_value(_video_mem_samples_mb)
 	var hitch_crossing_pct: float = 0.0
 	if _hitch_count > 0:
 		hitch_crossing_pct = float(_crossing_hitch_count) / float(_hitch_count) * 100.0
@@ -233,6 +244,8 @@ func _summary_text() -> String:
 		"fps avg=%.3f min=%.3f" % [avg_fps, min_fps],
 		"hitches count=%d at_crossing=%d at_crossing_pct=%.1f threshold_ms=%.3f median_multiplier=%.1f crossing_window_frames=%d" % [_hitch_count, _crossing_hitch_count, hitch_crossing_pct, _hitch_threshold_ms, HITCH_MEDIAN_MULTIPLIER, CROSSING_WINDOW_FRAMES],
 		"draw_calls avg=%.1f max=%.0f" % [avg_draw_calls, max_draw_calls],
+		"gpu_ms avg=%.3f p95=%.3f max=%.3f" % [avg_gpu, p95_gpu, max_gpu],
+		"video_mem_mb avg=%.1f max=%.1f" % [avg_vram, max_vram],
 		"csv=" + _run_dir.path_join("frames.csv"),
 	]))
 
