@@ -11,10 +11,12 @@ const ZION_REGION_ID: String = "cedar_hollow_zion"
 const WORLD_REGION_ID_META: StringName = &"trailhead_world_region_id"
 const EXPECTED_ACTIVE_VISUAL_CELLS: int = 25
 const FOLIAGE_STEEP_AUDIT_CELL: Vector2i = Vector2i(22, 51)
+const FOLIAGE_STREAM_WEST_AUDIT_CELL: Vector2i = Vector2i(11, 8)
 const FOLIAGE_WOODLAND_AUDIT_CELL: Vector2i = Vector2i(0, 20)
 const FOLIAGE_TALUS_AUDIT_CELL: Vector2i = Vector2i(20, 17)
 const FOLIAGE_DOMINANT_SURFACE_MIN_SHARE: float = 0.95
 const FOLIAGE_SLOPE_EPSILON: float = 0.0001
+const FOLIAGE_MIN_STREAM_WEST_SCRUB_INSTANCES: int = 32
 const FOLIAGE_MIN_WOODLAND_INSTANCES: int = 150
 const FOLIAGE_MAX_TALUS_INSTANCES: int = 120
 const FOLIAGE_MIN_WOODLAND_TO_TALUS_RATIO: float = 1.5
@@ -415,6 +417,14 @@ func _require_zion_foliage_placement_audits() -> void:
 				+ ", got "
 				+ str(min_accepted_normal_y)
 			)
+
+	var stream_west_audit: Dictionary[String, Variant] = TerrainVisualBuilderScript.build_region_foliage_tile_audit(ZION_REGION_ID, FOLIAGE_STREAM_WEST_AUDIT_CELL)
+	if _require_foliage_audit_ok(stream_west_audit, "stream west foliage audit"):
+		_require_foliage_dominant_surface(stream_west_audit, "stream west foliage audit", 6)
+		_require_foliage_species_present(stream_west_audit, "stream west foliage audit", "grass")
+		var stream_west_grass_count: int = int(stream_west_audit.get("grass_instance_count", 0))
+		if stream_west_grass_count < FOLIAGE_MIN_STREAM_WEST_SCRUB_INSTANCES:
+			_errors.append("stream west foliage audit expected scrub on the drivable corridor, got " + str(stream_west_grass_count))
 
 	var woodland_audit: Dictionary[String, Variant] = TerrainVisualBuilderScript.build_region_foliage_tile_audit(ZION_REGION_ID, FOLIAGE_WOODLAND_AUDIT_CELL)
 	var talus_audit: Dictionary[String, Variant] = TerrainVisualBuilderScript.build_region_foliage_tile_audit(ZION_REGION_ID, FOLIAGE_TALUS_AUDIT_CELL)
