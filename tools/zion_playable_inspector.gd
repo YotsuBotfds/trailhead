@@ -7,10 +7,10 @@ const SurfaceMapScript: GDScript = preload("res://systems/world/surface_map.gd")
 const WATER_SHADER_PATH: String = "res://systems/render/water_visual.gdshader"
 const ZION_REGION_ID: String = "cedar_hollow_zion"
 const WORLD_REGION_ID_META: StringName = &"trailhead_world_region_id"
-const SPAWN_POSITION: Vector3 = Vector3(1150.0, 1197.56, 800.0)
-const SPAWN_YAW_DEGREES: float = -90.0
+const SPAWN_POSITION: Vector3 = Vector3(1550.0, 1315.017031, 550.0)
+const SPAWN_YAW_DEGREES: float = -74.801192
 const EXPECTED_ACTIVE_VISUAL_CELLS: int = 25
-const EXPECTED_CENTER_CELL: Vector2i = Vector2i(11, 8)
+const EXPECTED_CENTER_CELL: Vector2i = Vector2i(15, 5)
 const WAIT_FRAMES: int = 1800
 const POSITION_TOLERANCE_M: float = 0.45
 const YAW_TOLERANCE_DEGREES: float = 1.0
@@ -365,7 +365,7 @@ func _finish() -> void:
 		_cleanup()
 		get_tree().quit(1)
 		return
-	print("ok: Zion playable streams terrain and foliage around stream_west")
+	print("ok: Zion playable streams terrain and foliage around stream_wall_vista")
 	_cleanup()
 	get_tree().quit(0)
 
