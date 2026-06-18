@@ -61,12 +61,17 @@ const REGION_FOLIAGE_INSTANCE_MULTIPLIER: int = 389
 const REGION_FOLIAGE_LOD_MULTIPLIER: int = 521
 const REGION_FOLIAGE_SALT_MULTIPLIER: int = 61
 const REGION_FOLIAGE_Y_OFFSET: float = 0.035
+const FOLIAGE_MAX_SLOPE_NORMAL_Y: float = 0.819
 const REGION_FOLIAGE_CULL_MARGIN: float = 0.08
 const REGION_FOLIAGE_LOD0_SCALE: Vector3 = Vector3(0.16, 0.42, 0.16)
 const REGION_FOLIAGE_LOD1_SCALE: Vector3 = Vector3(0.42, 0.58, 0.42)
 const REGION_FOLIAGE_HEIGHT_SCALE_MAX: float = 1.32
 const REGION_FOLIAGE_LOD0_COLOR: Color = Color(0.24, 0.38, 0.14, 0.92)
 const REGION_FOLIAGE_LOD1_COLOR: Color = Color(0.28, 0.34, 0.16, 0.86)
+const FOLIAGE_DENSITY_PACKED_DIRT: float = 1.0
+const FOLIAGE_DENSITY_TALL_GRASS: float = 0.62
+const FOLIAGE_DENSITY_LOOSE_ROCK: float = 0.18
+const FOLIAGE_DENSITY_MUD: float = 0.30
 const WET_DIFFUSE_MULTIPLIER: float = 0.2
 const WET_ROUGHNESS: float = 0.12
 const WET_CLEARCOAT: float = 0.58
@@ -300,13 +305,31 @@ static func region_visual_tile_from_data(parent: Node3D, visual_tile_data: Regio
 
 
 static func build_region_foliage_tile_data(region_id: String, cell: Vector2i) -> RegionFoliageTileData:
+	var audit: Dictionary[String, Variant] = {}
+	return _build_region_foliage_tile_data(region_id, cell, audit)
+
+
+static func build_region_foliage_tile_audit(region_id: String, cell: Vector2i) -> Dictionary[String, Variant]:
+	var audit: Dictionary[String, Variant] = _new_region_foliage_tile_audit(cell)
+	var foliage_tile_data: RegionFoliageTileData = _build_region_foliage_tile_data(region_id, cell, audit)
+	audit["ok"] = foliage_tile_data != null and foliage_tile_data.ok
+	if foliage_tile_data != null:
+		audit["message"] = foliage_tile_data.message
+	return audit
+
+
+static func _build_region_foliage_tile_data(region_id: String, cell: Vector2i, audit: Dictionary[String, Variant]) -> RegionFoliageTileData:
 	var foliage_tile_data: RegionFoliageTileData = RegionFoliageTileData.new()
 	foliage_tile_data.cell = cell
 
 	var tile_data: RegionTileData = _load_region_tile(region_id, cell)
 	if tile_data == null:
 		foliage_tile_data.message = "foliage tile failed to load: " + region_id + " " + str(cell)
+		if not audit.is_empty():
+			audit["message"] = foliage_tile_data.message
 		return foliage_tile_data
+	if not audit.is_empty():
+		_add_region_foliage_surface_audit(audit, tile_data)
 
 	var tile_data_by_cell: Dictionary[Vector2i, RegionTileData] = {cell: tile_data}
 	var tile_min_x: float = float(cell.x) * tile_data.tile_size_m
@@ -328,10 +351,10 @@ static func build_region_foliage_tile_data(region_id: String, cell: Vector2i) ->
 				Vector2(maxf(cell_max_x - cell_min_x, 0.0), maxf(cell_max_z - cell_min_z, 0.0))
 			)
 			var foliage_cell: Vector2i = Vector2i(cell.x * 1000 + cell_x, cell.y * 1000 + cell_z)
-			var lod0_data: FoliageCellData = _build_region_foliage_cell_data(tile_data_by_cell, cell_rect, foliage_cell, 0, REGION_FOLIAGE_LOD0_BASE_COUNT)
+			var lod0_data: FoliageCellData = _build_region_foliage_cell_data_with_audit(tile_data_by_cell, cell_rect, foliage_cell, 0, REGION_FOLIAGE_LOD0_BASE_COUNT, audit)
 			if lod0_data != null:
 				_append_foliage_cell_data_to_tile_lod(lod0_tile_data, lod0_data, tile_origin_xz)
-			var lod1_data: FoliageCellData = _build_region_foliage_cell_data(tile_data_by_cell, cell_rect, foliage_cell, 1, REGION_FOLIAGE_LOD1_BASE_COUNT)
+			var lod1_data: FoliageCellData = _build_region_foliage_cell_data_with_audit(tile_data_by_cell, cell_rect, foliage_cell, 1, REGION_FOLIAGE_LOD1_BASE_COUNT, audit)
 			if lod1_data != null:
 				_append_foliage_cell_data_to_tile_lod(lod1_tile_data, lod1_data, tile_origin_xz)
 
@@ -339,6 +362,9 @@ static func build_region_foliage_tile_data(region_id: String, cell: Vector2i) ->
 	foliage_tile_data.cells.append(lod0_tile_data)
 	foliage_tile_data.cells.append(lod1_tile_data)
 	foliage_tile_data.ok = true
+	if not audit.is_empty():
+		audit["ok"] = true
+		audit["message"] = foliage_tile_data.message
 	return foliage_tile_data
 
 
@@ -1212,6 +1238,11 @@ static func _add_region_foliage_cell(parent: Node3D, tile_data_by_cell: Dictiona
 
 
 static func _build_region_foliage_cell_data(tile_data_by_cell: Dictionary[Vector2i, RegionTileData], cell_rect: Rect2, foliage_cell: Vector2i, lod_index: int, base_count: int) -> FoliageCellData:
+	var audit: Dictionary[String, Variant] = {}
+	return _build_region_foliage_cell_data_with_audit(tile_data_by_cell, cell_rect, foliage_cell, lod_index, base_count, audit)
+
+
+static func _build_region_foliage_cell_data_with_audit(tile_data_by_cell: Dictionary[Vector2i, RegionTileData], cell_rect: Rect2, foliage_cell: Vector2i, lod_index: int, base_count: int, audit: Dictionary[String, Variant]) -> FoliageCellData:
 	if cell_rect.size.x <= 0.0 or cell_rect.size.y <= 0.0:
 		return null
 	var transforms: Array[Transform3D] = []
@@ -1232,6 +1263,11 @@ static func _build_region_foliage_cell_data(tile_data_by_cell: Dictionary[Vector
 		var keep_value: float = _region_foliage_unit(foliage_cell, lod_index, attempt, 3)
 		if keep_value > density:
 			continue
+		var terrain_normal: Vector3 = _normal_at_region_xz(tile_data_by_cell, world_x, world_z)
+		_record_foliage_slope_candidate(audit)
+		if terrain_normal.y < FOLIAGE_MAX_SLOPE_NORMAL_Y:
+			_record_foliage_slope_rejection(audit)
+			continue
 		var height: float = _height_at_region_xz(tile_data_by_cell, world_x, world_z)
 		var yaw: float = deg_to_rad(_region_foliage_unit(foliage_cell, lod_index, attempt, 4) * 360.0)
 		var width_scale: float = 0.82 + _region_foliage_unit(foliage_cell, lod_index, attempt, 5) * 0.42
@@ -1241,6 +1277,7 @@ static func _build_region_foliage_cell_data(tile_data_by_cell: Dictionary[Vector
 			base_scale = REGION_FOLIAGE_LOD1_SCALE
 		var basis: Basis = Basis(Vector3.UP, yaw).scaled(Vector3(base_scale.x * width_scale, base_scale.y * height_scale, base_scale.z * width_scale))
 		transforms.append(Transform3D(basis, Vector3(world_x, height + REGION_FOLIAGE_Y_OFFSET, world_z)))
+		_record_foliage_acceptance(audit, terrain_normal.y)
 		var color_warmth: float = _region_foliage_unit(foliage_cell, lod_index, attempt, 7)
 		colors.append(Color(0.84 + color_warmth * 0.22, 0.92 + color_warmth * 0.14, 0.72 + color_warmth * 0.12, 1.0))
 		var wind_weight: float = 0.45 + _region_foliage_unit(foliage_cell, lod_index, attempt, 8) * 0.55
@@ -1451,6 +1488,17 @@ static func _height_at_region_xz(tile_data_by_cell: Dictionary[Vector2i, RegionT
 	return _height_value_at(tile_data, col, row)
 
 
+static func _normal_at_region_xz(tile_data_by_cell: Dictionary[Vector2i, RegionTileData], world_x: float, world_z: float) -> Vector3:
+	var tile_data: RegionTileData = _tile_data_for_region_xz(tile_data_by_cell, world_x, world_z)
+	if tile_data == null:
+		return Vector3.UP
+	var local_x: float = clampf(world_x - float(tile_data.cell.x) * tile_data.tile_size_m, 0.0, tile_data.tile_size_m)
+	var local_z: float = clampf(world_z - float(tile_data.cell.y) * tile_data.tile_size_m, 0.0, tile_data.tile_size_m)
+	var col: int = int(floor(local_x / tile_data.tile_size_m * float(tile_data.width - 1) + 0.5))
+	var row: int = int(floor(local_z / tile_data.tile_size_m * float(tile_data.depth - 1) + 0.5))
+	return _tile_normal(tile_data, col, row)
+
+
 static func _surface_id_value_at_region_xz(tile_data_by_cell: Dictionary[Vector2i, RegionTileData], world_x: float, world_z: float) -> int:
 	var tile_data: RegionTileData = _tile_data_for_region_xz(tile_data_by_cell, world_x, world_z)
 	if tile_data == null or tile_data.surface_image == null:
@@ -1470,14 +1518,98 @@ static func _tile_data_for_region_xz(tile_data_by_cell: Dictionary[Vector2i, Reg
 	return null
 
 
+static func _new_region_foliage_tile_audit(cell: Vector2i) -> Dictionary[String, Variant]:
+	return {
+		"ok": false,
+		"cell": cell,
+		"message": "",
+		"surface_pixel_count": 0,
+		"dominant_surface_id_value": 0,
+		"dominant_surface_share": 0.0,
+		"surface_id_3_share": 0.0,
+		"surface_id_4_share": 0.0,
+		"surface_id_5_share": 0.0,
+		"slope_checked_count": 0,
+		"slope_rejected_count": 0,
+		"slope_violation_count": 0,
+		"instance_count": 0,
+		"min_accepted_normal_y": 1.0,
+	}
+
+
+static func _add_region_foliage_surface_audit(audit: Dictionary[String, Variant], tile_data: RegionTileData) -> void:
+	var surface_counts: Dictionary[int, int] = _surface_counts_for_tile(tile_data)
+	var total_pixel_count: int = 0
+	var dominant_surface_id_value: int = 0
+	var dominant_surface_count: int = 0
+	for surface_id_value in surface_counts.keys():
+		var surface_count: int = surface_counts[surface_id_value]
+		total_pixel_count += surface_count
+		if surface_count > dominant_surface_count:
+			dominant_surface_id_value = surface_id_value
+			dominant_surface_count = surface_count
+	audit["surface_pixel_count"] = total_pixel_count
+	if total_pixel_count <= 0:
+		return
+	audit["dominant_surface_id_value"] = dominant_surface_id_value
+	audit["dominant_surface_share"] = float(dominant_surface_count) / float(total_pixel_count)
+	audit["surface_id_3_share"] = _surface_count_share(surface_counts, total_pixel_count, 3)
+	audit["surface_id_4_share"] = _surface_count_share(surface_counts, total_pixel_count, 4)
+	audit["surface_id_5_share"] = _surface_count_share(surface_counts, total_pixel_count, 5)
+
+
+static func _surface_counts_for_tile(tile_data: RegionTileData) -> Dictionary[int, int]:
+	var surface_counts: Dictionary[int, int] = {}
+	if tile_data.surface_image == null or tile_data.surface_image.is_empty():
+		return surface_counts
+	for row in range(tile_data.surface_image.get_height()):
+		for col in range(tile_data.surface_image.get_width()):
+			var surface_id_value: int = _surface_id_value_at(tile_data, col, row)
+			surface_counts[surface_id_value] = int(surface_counts.get(surface_id_value, 0)) + 1
+	return surface_counts
+
+
+static func _surface_count_share(surface_counts: Dictionary[int, int], total_pixel_count: int, surface_id_value: int) -> float:
+	if total_pixel_count <= 0:
+		return 0.0
+	return float(int(surface_counts.get(surface_id_value, 0))) / float(total_pixel_count)
+
+
+static func _record_foliage_slope_candidate(audit: Dictionary[String, Variant]) -> void:
+	if audit.is_empty():
+		return
+	audit["slope_checked_count"] = int(audit.get("slope_checked_count", 0)) + 1
+
+
+static func _record_foliage_slope_rejection(audit: Dictionary[String, Variant]) -> void:
+	if audit.is_empty():
+		return
+	audit["slope_rejected_count"] = int(audit.get("slope_rejected_count", 0)) + 1
+
+
+static func _record_foliage_acceptance(audit: Dictionary[String, Variant], normal_y: float) -> void:
+	if audit.is_empty():
+		return
+	audit["instance_count"] = int(audit.get("instance_count", 0)) + 1
+	var min_accepted_normal_y: float = float(audit.get("min_accepted_normal_y", 1.0))
+	if normal_y < min_accepted_normal_y:
+		audit["min_accepted_normal_y"] = normal_y
+	if normal_y < FOLIAGE_MAX_SLOPE_NORMAL_Y:
+		audit["slope_violation_count"] = int(audit.get("slope_violation_count", 0)) + 1
+
+
 static func _foliage_density_for_surface_value(surface_id_value: int) -> float:
+	if not bool(TerrainSurfacePaletteResource.call("has_surface_id_value", surface_id_value)):
+		return 0.0
 	var surface_id: StringName = _surface_id_for_value(surface_id_value)
-	if surface_id == &"packed_dirt" or surface_id == &"tall_grass":
-		return 1.0
+	if surface_id == &"packed_dirt":
+		return FOLIAGE_DENSITY_PACKED_DIRT
+	if surface_id == &"tall_grass":
+		return FOLIAGE_DENSITY_TALL_GRASS
 	if surface_id == &"loose_rock":
-		return 0.55
+		return FOLIAGE_DENSITY_LOOSE_ROCK
 	if surface_id == &"mud":
-		return 0.36
+		return FOLIAGE_DENSITY_MUD
 	return 0.0
 
 
