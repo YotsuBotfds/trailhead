@@ -22,6 +22,7 @@ const CedarAudioRigScript: GDScript = preload("res://systems/render/cedar_audio_
 const LandmarkHintHudScript: GDScript = preload("res://systems/render/landmark_hint_hud.gd")
 const SpeedHudScript: GDScript = preload("res://systems/render/speed_hud.gd")
 const ControlsHintHudScript: GDScript = preload("res://systems/render/controls_hint_hud.gd")
+const DebugOverlayHudScript: GDScript = preload("res://systems/render/debug_overlay_hud.gd")
 const PhotographSystemScript: GDScript = preload("res://systems/render/photograph_system.gd")
 const RecoverableObjectRenderScript: GDScript = preload("res://systems/render/recoverable_object_render.gd")
 const GoldenLineTrackerScript: GDScript = preload("res://systems/sim/golden_line_tracker.gd")
@@ -86,6 +87,7 @@ var _fpv_up_current: Vector3 = Vector3.UP
 var _landmark_hint_hud: CanvasLayer = null
 var _speed_hud: CanvasLayer = null
 var _controls_hint_hud: CanvasLayer = null
+var _debug_overlay_hud: CanvasLayer = null
 var _title_card_hud: CanvasLayer = null
 var _world_environment: WorldEnvironment = null
 var _sun: DirectionalLight3D = null
@@ -166,6 +168,7 @@ func _ensure_default_input_map() -> void:
 	_ensure_action(&"photograph", [KEY_F])
 	_ensure_action(&"photo_mode", [KEY_V])
 	_ensure_action(&"cinematic_tour", [KEY_T])
+	_ensure_action(&"debug_overlay", [KEY_F3])
 	_ensure_joypad_bindings()
 
 
@@ -424,6 +427,11 @@ func _setup_hud() -> void:
 	_controls_hint_hud.name = "ControlsHintHud"
 	_controls_hint_hud.visible = GameConfig.controls_hint_hud_enabled
 	add_child(_controls_hint_hud)
+	_debug_overlay_hud = DebugOverlayHudScript.new() as CanvasLayer
+	_debug_overlay_hud.name = "DebugOverlayHud"
+	_debug_overlay_hud.visible = GameConfig.debug_overlay_enabled_by_default
+	add_child(_debug_overlay_hud)
+	_debug_overlay_hud.call("configure", self)
 
 
 func _sample_golden_line() -> void:
@@ -627,6 +635,8 @@ func _update_hud_input() -> void:
 		_speed_hud.call("set_drive_active", true)
 	if _drive_started and _title_card_hud != null:
 		_title_card_hud.call("dismiss")
+	if _debug_overlay_hud != null and Input.is_action_just_pressed("debug_overlay"):
+		toggle_debug_overlay_hud()
 	if _landmark_hint_hud == null or not Input.is_action_just_pressed("map_toggle"):
 		return
 	toggle_landmark_hint_hud()
@@ -636,6 +646,12 @@ func toggle_landmark_hint_hud() -> void:
 	if _landmark_hint_hud == null:
 		return
 	_landmark_hint_hud.visible = not _landmark_hint_hud.visible
+
+
+func toggle_debug_overlay_hud() -> void:
+	if _debug_overlay_hud == null:
+		return
+	_debug_overlay_hud.visible = not _debug_overlay_hud.visible
 
 
 func _update_frequency_input() -> void:

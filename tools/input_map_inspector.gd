@@ -12,7 +12,8 @@ const REQUIRED_ACTIONS: Dictionary[StringName, Variant] = {
 	&"map_toggle": [KEY_M],
 	&"mood_toggle": [KEY_N],
 	&"logbook_open": [KEY_TAB],
-	&"photograph": [KEY_F]
+	&"photograph": [KEY_F],
+	&"debug_overlay": [KEY_F3]
 }
 
 var _errors: PackedStringArray = PackedStringArray()

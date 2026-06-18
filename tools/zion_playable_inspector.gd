@@ -292,6 +292,14 @@ func _require_hud_overlays() -> void:
 			_errors.append("ControlsHintHud should spawn its draw panel after setup")
 		if GameConfig.controls_hint_hud_enabled and not controls_hint.visible:
 			_errors.append("ControlsHintHud should be visible when controls_hint_hud_enabled is true")
+	var debug_overlay: Node = _require_node(_scene_root, "DebugOverlayHud")
+	if debug_overlay != null:
+		if not (debug_overlay is CanvasLayer):
+			_errors.append("DebugOverlayHud should be a CanvasLayer")
+		if debug_overlay.get_node_or_null("DebugOverlayPanel") == null:
+			_errors.append("DebugOverlayHud should spawn its draw panel after setup")
+		if debug_overlay.visible:
+			_errors.append("DebugOverlayHud should default off")
 
 
 func _require_vista_camera_far() -> void:
