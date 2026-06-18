@@ -13,6 +13,7 @@ const ScatterVisualBuilderScript: GDScript = preload("res://systems/render/scatt
 const GroundDetailVisualBuilderScript: GDScript = preload("res://systems/render/ground_detail_visual_builder.gd")
 const BoundaryVisualBuilderScript: GDScript = preload("res://systems/render/boundary_visual_builder.gd")
 const DustTiltShiftVisualBuilderScript: GDScript = preload("res://systems/render/dust_tilt_shift_visual_builder.gd")
+const AtmosphereVisualBuilderScript: GDScript = preload("res://systems/render/atmosphere_visual_builder.gd")
 const SURFACE_DIR_PATH: String = "res://data/surfaces"
 const EXPECTED_BOARDWALK_SEGMENTS: int = FeatureVisualBuilderScript.BOARDWALK_SEGMENT_COUNT
 const EXPECTED_STEPPING_STONES: int = FeatureVisualBuilderScript.STEPPING_STONE_COUNT
@@ -91,9 +92,9 @@ const GRADE_SATURATION_MIN: float = 1.20
 const GRADE_SATURATION_MAX: float = 1.35
 const GRADE_CONTRAST_MIN: float = 1.08
 const GRADE_CONTRAST_MAX: float = 1.20
-const DUSK_GLOW_INTENSITY: float = 0.18
-const DUSK_GLOW_STRENGTH: float = 0.32
-const DUSK_GLOW_BLOOM: float = 0.06
+const DUSK_GLOW_INTENSITY: float = AtmosphereVisualBuilderScript.DUSK_GLOW_INTENSITY
+const DUSK_GLOW_STRENGTH: float = AtmosphereVisualBuilderScript.DUSK_GLOW_STRENGTH
+const DUSK_GLOW_BLOOM: float = AtmosphereVisualBuilderScript.GLOW_BLOOM
 const DUSK_SUN_VOLUMETRIC_FOG_ENERGY: float = 0.82
 const VOLUMETRIC_FOG_DENSITY_FLOOR: float = 0.006
 const LABEL_MIN_CONTRAST_RATIO: float = 7.0
@@ -1327,18 +1328,18 @@ func _inspect_default_environment(world_environment: WorldEnvironment) -> void:
 		environment,
 		"dusk",
 		GameConfig.dusk_background_color,
-		GameConfig.dusk_ambient_color,
-		GameConfig.dusk_ambient_energy,
+		AtmosphereVisualBuilderScript.DUSK_HERO_AMBIENT_COLOR,
+		AtmosphereVisualBuilderScript.DUSK_HERO_AMBIENT_ENERGY,
 		CedarHollowHostScript.ZION_DUSK_FOG_DENSITY,
-		GameConfig.dusk_fog_light_color
+		AtmosphereVisualBuilderScript.DUSK_HERO_FOG_LIGHT_COLOR
 	)
 
 
 func _inspect_default_sun(sun: DirectionalLight3D) -> void:
-	if sun.light_color != GameConfig.dusk_sun_color:
-		_errors.append("GoldenHourSun should start in dusk color")
-	if absf(sun.light_energy - GameConfig.dusk_sun_energy) > FLOAT_EPSILON:
-		_errors.append("GoldenHourSun should start in dusk energy")
+	_require_color_close("GoldenHourSun default dusk color", sun.light_color, AtmosphereVisualBuilderScript.DUSK_HERO_SUN_COLOR, LIGHTING_BAR_COLOR_TOLERANCE)
+	_require_float_close("GoldenHourSun default dusk energy", sun.light_energy, AtmosphereVisualBuilderScript.DUSK_HERO_SUN_ENERGY, LIGHTING_BAR_TOLERANCE)
+	if sun.rotation_degrees.distance_to(AtmosphereVisualBuilderScript.DUSK_HERO_SUN_ROTATION_DEGREES) > LIGHTING_BAR_TOLERANCE:
+		_errors.append("GoldenHourSun default dusk rotation expected " + str(AtmosphereVisualBuilderScript.DUSK_HERO_SUN_ROTATION_DEGREES) + ", got " + str(sun.rotation_degrees))
 	if sun.directional_shadow_mode != _expected_directional_shadow_mode():
 		_errors.append("GoldenHourSun directional shadow mode should follow GameConfig")
 	if sun.directional_shadow_blend_splits:
@@ -1729,11 +1730,10 @@ func _require_lighting_bar_sun(sun: DirectionalLight3D, context: String) -> void
 	if not sun.shadow_enabled:
 		_errors.append(context + " GoldenHourSun should enable shadows")
 	_require_float_in_range(context + " GoldenHourSun dusk energy", sun.light_energy, DUSK_SUN_ENERGY_MIN, DUSK_SUN_ENERGY_MAX)
-	_require_float_close(context + " GoldenHourSun dusk energy", sun.light_energy, GameConfig.dusk_sun_energy, LIGHTING_BAR_TOLERANCE)
-	if sun.light_color != GameConfig.dusk_sun_color:
-		_errors.append(context + " GoldenHourSun dusk color should follow GameConfig")
-	if sun.rotation_degrees.distance_to(GameConfig.dusk_sun_rotation_degrees) > LIGHTING_BAR_TOLERANCE:
-		_errors.append(context + " GoldenHourSun dusk rotation expected " + str(GameConfig.dusk_sun_rotation_degrees) + ", got " + str(sun.rotation_degrees))
+	_require_float_close(context + " GoldenHourSun dusk energy", sun.light_energy, AtmosphereVisualBuilderScript.DUSK_HERO_SUN_ENERGY, LIGHTING_BAR_TOLERANCE)
+	_require_color_close(context + " GoldenHourSun dusk color", sun.light_color, AtmosphereVisualBuilderScript.DUSK_HERO_SUN_COLOR, LIGHTING_BAR_COLOR_TOLERANCE)
+	if sun.rotation_degrees.distance_to(AtmosphereVisualBuilderScript.DUSK_HERO_SUN_ROTATION_DEGREES) > LIGHTING_BAR_TOLERANCE:
+		_errors.append(context + " GoldenHourSun dusk rotation expected " + str(AtmosphereVisualBuilderScript.DUSK_HERO_SUN_ROTATION_DEGREES) + ", got " + str(sun.rotation_degrees))
 	_require_float_close(context + " GoldenHourSun angular distance", sun.light_angular_distance, GameConfig.atmosphere_pcss_sun_angular_distance, LIGHTING_BAR_TOLERANCE)
 	_require_float_close(context + " GoldenHourSun shadow blur", sun.shadow_blur, GameConfig.atmosphere_pcss_shadow_blur, LIGHTING_BAR_TOLERANCE)
 	_require_float_close(context + " GoldenHourSun shadow opacity", sun.shadow_opacity, GameConfig.atmosphere_pcss_shadow_opacity, LIGHTING_BAR_TOLERANCE)
@@ -2291,6 +2291,7 @@ func _require_environment_mood(environment: Environment, mood_name: String, back
 		_errors.append("GoldenHourEnvironment " + mood_name + " should use PhysicalSkyMaterial")
 	if not environment.fog_enabled:
 		_errors.append("GoldenHourEnvironment " + mood_name + " should enable fog")
+	_require_color_close("GoldenHourEnvironment " + mood_name + " ambient color", environment.ambient_light_color, ambient_color, LIGHTING_BAR_COLOR_TOLERANCE)
 	if absf(environment.ambient_light_energy - ambient_energy) > FLOAT_EPSILON:
 		_errors.append("GoldenHourEnvironment " + mood_name + " ambient energy expected " + str(ambient_energy) + ", got " + str(environment.ambient_light_energy))
 	if absf(environment.fog_density - fog_density) > FLOAT_EPSILON:
