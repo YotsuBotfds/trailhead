@@ -1531,6 +1531,10 @@ static func _add_foliage_species_cell_from_data(parent: Node3D, cell_data: Folia
 	if multimesh == null:
 		return
 	multimesh.mesh = mesh
+	# CRITICAL: assigning MultiMesh.mesh when instance_count>0 re-initializes (zeros) the buffer in
+	# Godot 4.x — without re-applying it here, every instance snaps to world-origin (below terrain) and
+	# the foliage/boulders render invisibly. Re-apply the packed buffer AFTER the mesh assignment.
+	multimesh.buffer = species_data.packed_buffer
 	instance.multimesh = multimesh
 	parent.add_child(instance)
 
