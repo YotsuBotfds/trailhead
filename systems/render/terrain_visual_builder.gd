@@ -13,8 +13,8 @@ const TEXTURE_SOURCE_PATH_META: StringName = &"trailhead_source_path"
 
 static var _terrain_material_cache: Dictionary[StringName, StandardMaterial3D] = {}
 static var _surface_index_material_cache: Dictionary[String, ShaderMaterial] = {}
-static var _foliage_mesh_cache: Dictionary[String, Mesh] = {}
-static var _foliage_material_cache: Dictionary[String, Material] = {}
+static var _foliage_mesh_cache: Dictionary[int, Mesh] = {}
+static var _foliage_material_cache: Dictionary[int, Material] = {}
 static var _surface_index_albedo_array_cache: Texture2DArray = null
 static var _surface_index_macro_albedo_cache: Texture2D = null
 
@@ -72,17 +72,6 @@ const REGION_FOLIAGE_LOD1_SCALE: Vector3 = Vector3(0.42, 0.58, 0.42)
 const REGION_FOLIAGE_HEIGHT_SCALE_MAX: float = 1.32
 const REGION_FOLIAGE_LOD0_COLOR: Color = Color(0.24, 0.38, 0.14, 0.92)
 const REGION_FOLIAGE_LOD1_COLOR: Color = Color(0.28, 0.34, 0.16, 0.86)
-const FOLIAGE_SPECIES_GRASS: StringName = &"grass"
-const FOLIAGE_SPECIES_YUCCA: StringName = &"yucca"
-const FOLIAGE_SPECIES_JUNIPER: StringName = &"juniper"
-const FOLIAGE_SPECIES_LIST: Array[StringName] = [FOLIAGE_SPECIES_GRASS, FOLIAGE_SPECIES_YUCCA, FOLIAGE_SPECIES_JUNIPER]
-const FOLIAGE_SPECIES_GRASS_COLOR: Color = Color(0.58, 0.66, 0.38, 0.92)
-const FOLIAGE_SPECIES_YUCCA_COLOR: Color = Color(0.557, 0.608, 0.471, 0.95)
-const FOLIAGE_SPECIES_JUNIPER_COLOR: Color = Color(0.165, 0.259, 0.157, 0.97)
-const FOLIAGE_YUCCA_LOD0_SCALE: Vector3 = Vector3(0.95, 0.86, 0.95)
-const FOLIAGE_YUCCA_LOD1_SCALE: Vector3 = Vector3(0.78, 0.72, 0.78)
-const FOLIAGE_JUNIPER_LOD0_SCALE: Vector3 = Vector3(1.75, 1.92, 1.75)
-const FOLIAGE_JUNIPER_LOD1_SCALE: Vector3 = Vector3(1.45, 1.62, 1.45)
 const FOLIAGE_DENSITY_PACKED_DIRT: float = 1.0
 const FOLIAGE_DENSITY_TALL_GRASS: float = 0.62
 const FOLIAGE_DENSITY_LOOSE_ROCK: float = 0.18
@@ -199,11 +188,6 @@ class FoliageCellData:
 	var visibility_range_end: float = 0.0
 	var visibility_radius: float = 0.0
 	var cast_shadow: int = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	var species: Array[FoliageSpeciesCellData] = []
-
-
-class FoliageSpeciesCellData:
-	var species_id: StringName = &""
 	var transforms: Array[Transform3D] = []
 	var colors: Array[Color] = []
 	var custom_data: Array[Color] = []
@@ -448,15 +432,13 @@ static func _build_region_foliage_tile_lod_data(tile_data: RegionTileData, tile_
 static func _append_foliage_cell_data_to_tile_lod(tile_lod_data: FoliageCellData, cell_data: FoliageCellData, tile_origin_xz: Vector2) -> void:
 	var cell_offset_x: float = cell_data.position.x - tile_origin_xz.x
 	var cell_offset_z: float = cell_data.position.z - tile_origin_xz.y
-	for source_species_data in cell_data.species:
-		var target_species_data: FoliageSpeciesCellData = _foliage_species_data(tile_lod_data, source_species_data.species_id)
-		for i in range(source_species_data.transforms.size()):
-			var transform: Transform3D = source_species_data.transforms[i]
-			transform.origin.x += cell_offset_x
-			transform.origin.z += cell_offset_z
-			target_species_data.transforms.append(transform)
-			target_species_data.colors.append(source_species_data.colors[i])
-			target_species_data.custom_data.append(source_species_data.custom_data[i])
+	for i in range(cell_data.transforms.size()):
+		var transform: Transform3D = cell_data.transforms[i]
+		transform.origin.x += cell_offset_x
+		transform.origin.z += cell_offset_z
+		tile_lod_data.transforms.append(transform)
+		tile_lod_data.colors.append(cell_data.colors[i])
+		tile_lod_data.custom_data.append(cell_data.custom_data[i])
 
 
 static func visual_tile_node_name(tile_index: Vector2i, tile_path: String, tile_array_index: int) -> String:
@@ -531,17 +513,13 @@ static func _add_terrain_pipeline_warmup(parent: Node3D) -> int:
 
 
 static func _add_foliage_pipeline_warmup(parent: Node3D) -> int:
-	var warmup_count: int = 0
-	for species_id in FOLIAGE_SPECIES_LIST:
-		var lod0_mesh: Mesh = _region_foliage_mesh_for_lod_species(0, species_id)
-		var lod0_material: Material = _region_foliage_material_for_lod_species(0, species_id)
-		_add_foliage_pipeline_warmup_instance(parent, REGION_PIPELINE_WARMUP_FOLIAGE_LOD0_NAME + "_" + String(species_id), lod0_mesh, lod0_material)
-		warmup_count += 1
-		var lod1_mesh: Mesh = _region_foliage_mesh_for_lod_species(1, species_id)
-		var lod1_material: Material = _region_foliage_material_for_lod_species(1, species_id)
-		_add_foliage_pipeline_warmup_instance(parent, REGION_PIPELINE_WARMUP_FOLIAGE_LOD1_NAME + "_" + String(species_id), lod1_mesh, lod1_material)
-		warmup_count += 1
-	return warmup_count
+	var lod0_mesh: Mesh = _region_foliage_mesh_for_lod(0)
+	var lod0_material: Material = _region_foliage_material_for_lod(0)
+	_add_foliage_pipeline_warmup_instance(parent, REGION_PIPELINE_WARMUP_FOLIAGE_LOD0_NAME, lod0_mesh, lod0_material)
+	var lod1_mesh: Mesh = _region_foliage_mesh_for_lod(1)
+	var lod1_material: Material = _region_foliage_material_for_lod(1)
+	_add_foliage_pipeline_warmup_instance(parent, REGION_PIPELINE_WARMUP_FOLIAGE_LOD1_NAME, lod1_mesh, lod1_material)
+	return 2
 
 
 static func _add_foliage_pipeline_warmup_instance(parent: Node3D, instance_name: String, mesh: Mesh, material: Material) -> void:
@@ -897,7 +875,7 @@ static func _tile_foliage_custom_aabb(tile_data: RegionTileData) -> AABB:
 			var height: float = tile_data.heights[height_index]
 			min_height = minf(min_height, height)
 			max_height = maxf(max_height, height)
-	var max_blade_height: float = FOLIAGE_JUNIPER_LOD0_SCALE.y * REGION_FOLIAGE_HEIGHT_SCALE_MAX
+	var max_blade_height: float = REGION_FOLIAGE_LOD1_SCALE.y * REGION_FOLIAGE_HEIGHT_SCALE_MAX
 	return AABB(
 		Vector3(tile_data.tile_size_m * -0.5, min_height + REGION_FOLIAGE_Y_OFFSET, tile_data.tile_size_m * -0.5),
 		Vector3(tile_data.tile_size_m, maxf(max_height - min_height, 0.0) + max_blade_height + 0.1, tile_data.tile_size_m)
@@ -1290,6 +1268,10 @@ static func _add_region_foliage(parent: Node3D, manifest: Dictionary, tile_data_
 		return root
 
 	var tile_data_by_cell: Dictionary[Vector2i, RegionTileData] = _tile_data_by_cell(tile_data_list)
+	var lod0_mesh: Mesh = _region_foliage_mesh_for_lod(0)
+	var lod1_mesh: Mesh = _region_foliage_mesh_for_lod(1)
+	var lod0_material: Material = _region_foliage_material_for_lod(0)
+	var lod1_material: Material = _region_foliage_material_for_lod(1)
 	var cell_count_x: int = int(ceil(bounds.size.x / REGION_FOLIAGE_CELL_SIZE_M))
 	var cell_count_z: int = int(ceil(bounds.size.y / REGION_FOLIAGE_CELL_SIZE_M))
 	for cell_z in range(cell_count_z):
@@ -1303,16 +1285,16 @@ static func _add_region_foliage(parent: Node3D, manifest: Dictionary, tile_data_
 				Vector2(maxf(cell_max_x - cell_min_x, 0.0), maxf(cell_max_z - cell_min_z, 0.0))
 			)
 			var foliage_cell: Vector2i = Vector2i(cell_x, cell_z)
-			_add_region_foliage_cell(root, tile_data_by_cell, cell_rect, foliage_cell, 0, REGION_FOLIAGE_LOD0_BASE_COUNT)
-			_add_region_foliage_cell(root, tile_data_by_cell, cell_rect, foliage_cell, 1, REGION_FOLIAGE_LOD1_BASE_COUNT)
+			_add_region_foliage_cell(root, tile_data_by_cell, cell_rect, foliage_cell, 0, lod0_mesh, lod0_material, REGION_FOLIAGE_LOD0_BASE_COUNT)
+			_add_region_foliage_cell(root, tile_data_by_cell, cell_rect, foliage_cell, 1, lod1_mesh, lod1_material, REGION_FOLIAGE_LOD1_BASE_COUNT)
 	return root
 
 
-static func _add_region_foliage_cell(parent: Node3D, tile_data_by_cell: Dictionary[Vector2i, RegionTileData], cell_rect: Rect2, foliage_cell: Vector2i, lod_index: int, base_count: int) -> void:
+static func _add_region_foliage_cell(parent: Node3D, tile_data_by_cell: Dictionary[Vector2i, RegionTileData], cell_rect: Rect2, foliage_cell: Vector2i, lod_index: int, mesh: Mesh, material: Material, base_count: int) -> void:
 	var cell_data: FoliageCellData = _build_region_foliage_cell_data(tile_data_by_cell, cell_rect, foliage_cell, lod_index, base_count)
 	if cell_data == null:
 		return
-	_add_foliage_cell_from_data(parent, cell_data)
+	_add_foliage_cell_from_data(parent, cell_data, mesh, material)
 
 
 static func _build_region_foliage_cell_data(tile_data_by_cell: Dictionary[Vector2i, RegionTileData], cell_rect: Rect2, foliage_cell: Vector2i, lod_index: int, base_count: int) -> FoliageCellData:
@@ -1323,10 +1305,12 @@ static func _build_region_foliage_cell_data(tile_data_by_cell: Dictionary[Vector
 static func _build_region_foliage_cell_data_with_audit(tile_data_by_cell: Dictionary[Vector2i, RegionTileData], cell_rect: Rect2, foliage_cell: Vector2i, lod_index: int, base_count: int, audit: Dictionary[String, Variant]) -> FoliageCellData:
 	if cell_rect.size.x <= 0.0 or cell_rect.size.y <= 0.0:
 		return null
-	var species_data_list: Array[FoliageSpeciesCellData] = []
+	var transforms: Array[Transform3D] = []
+	var colors: Array[Color] = []
+	var custom_data: Array[Color] = []
 	var max_attempts: int = maxi(base_count * 3, base_count)
 	for attempt in range(max_attempts):
-		if _foliage_species_total_count(species_data_list) >= base_count:
+		if transforms.size() >= base_count:
 			break
 		var unit_x: float = _region_foliage_unit(foliage_cell, lod_index, attempt, 1)
 		var unit_z: float = _region_foliage_unit(foliage_cell, lod_index, attempt, 2)
@@ -1335,9 +1319,6 @@ static func _build_region_foliage_cell_data_with_audit(tile_data_by_cell: Dictio
 		var surface_id_value: int = _surface_id_value_at_region_xz(tile_data_by_cell, world_x, world_z)
 		var density: float = _foliage_density_for_surface_value(surface_id_value)
 		if density <= 0.0:
-			continue
-		var species_id: StringName = _foliage_species_for_surface_value(surface_id_value)
-		if species_id == &"":
 			continue
 		var keep_value: float = _region_foliage_unit(foliage_cell, lod_index, attempt, 3)
 		if keep_value > density:
@@ -1351,21 +1332,21 @@ static func _build_region_foliage_cell_data_with_audit(tile_data_by_cell: Dictio
 		var yaw: float = deg_to_rad(_region_foliage_unit(foliage_cell, lod_index, attempt, 4) * 360.0)
 		var width_scale: float = 0.82 + _region_foliage_unit(foliage_cell, lod_index, attempt, 5) * 0.42
 		var height_scale: float = 0.78 + _region_foliage_unit(foliage_cell, lod_index, attempt, 6) * 0.54
-		var base_scale: Vector3 = _foliage_base_scale_for_lod_species(lod_index, species_id)
+		var base_scale: Vector3 = REGION_FOLIAGE_LOD0_SCALE
+		if lod_index > 0:
+			base_scale = REGION_FOLIAGE_LOD1_SCALE
 		var basis: Basis = Basis(Vector3.UP, yaw).scaled(Vector3(base_scale.x * width_scale, base_scale.y * height_scale, base_scale.z * width_scale))
-		var species_data: FoliageSpeciesCellData = _foliage_species_data_from_list(species_data_list, species_id)
-		species_data.transforms.append(Transform3D(basis, Vector3(world_x, height + REGION_FOLIAGE_Y_OFFSET, world_z)))
+		transforms.append(Transform3D(basis, Vector3(world_x, height + REGION_FOLIAGE_Y_OFFSET, world_z)))
 		_record_foliage_acceptance(audit, terrain_normal.y)
-		_record_foliage_species_acceptance(audit, species_id)
 		var color_warmth: float = _region_foliage_unit(foliage_cell, lod_index, attempt, 7)
-		species_data.colors.append(_foliage_instance_color(species_id, color_warmth))
+		colors.append(Color(0.84 + color_warmth * 0.22, 0.92 + color_warmth * 0.14, 0.72 + color_warmth * 0.12, 1.0))
 		var wind_weight: float = 0.45 + _region_foliage_unit(foliage_cell, lod_index, attempt, 8) * 0.55
 		var wind_phase: float = _region_foliage_unit(foliage_cell, lod_index, attempt, 9)
 		var wind_flutter: float = _region_foliage_unit(foliage_cell, lod_index, attempt, 10)
 		var tip_shift: float = _region_foliage_unit(foliage_cell, lod_index, attempt, 11)
-		species_data.custom_data.append(Color(wind_weight, wind_phase, wind_flutter, tip_shift))
+		custom_data.append(Color(wind_weight, wind_phase, wind_flutter, tip_shift))
 
-	if _foliage_species_total_count(species_data_list) <= 0:
+	if transforms.is_empty():
 		return null
 
 	var foliage_origin_xz: Vector2 = cell_rect.position + cell_rect.size * 0.5
@@ -1376,10 +1357,12 @@ static func _build_region_foliage_cell_data_with_audit(tile_data_by_cell: Dictio
 	cell_data.position = Vector3(foliage_origin_xz.x, 0.0, foliage_origin_xz.y)
 	cell_data.custom_aabb = AABB(
 		Vector3(cell_rect.size.x * -0.5, 0.0, cell_rect.size.y * -0.5),
-		Vector3(cell_rect.size.x, FOLIAGE_JUNIPER_LOD0_SCALE.y * REGION_FOLIAGE_HEIGHT_SCALE_MAX + REGION_FOLIAGE_Y_OFFSET + 0.1, cell_rect.size.y)
+		Vector3(cell_rect.size.x, REGION_FOLIAGE_LOD1_SCALE.y + REGION_FOLIAGE_Y_OFFSET + 0.1, cell_rect.size.y)
 	)
 	cell_data.visibility_radius = foliage_cell_radius
-	cell_data.species = species_data_list
+	cell_data.transforms = transforms
+	cell_data.colors = colors
+	cell_data.custom_data = custom_data
 	if lod_index == 0:
 		cell_data.visibility_range_end = _foliage_lod0_visibility_range_end(foliage_cell_radius)
 		cell_data.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -1387,28 +1370,22 @@ static func _build_region_foliage_cell_data_with_audit(tile_data_by_cell: Dictio
 		cell_data.visibility_range_begin = _foliage_lod1_visibility_range_begin(foliage_cell_radius)
 		cell_data.visibility_range_end = _foliage_lod1_visibility_range_end(foliage_cell_radius)
 		cell_data.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	for species_data in cell_data.species:
-		for i in range(species_data.transforms.size()):
-			var transform: Transform3D = species_data.transforms[i]
-			transform.origin.x -= foliage_origin_xz.x
-			transform.origin.z -= foliage_origin_xz.y
-			species_data.transforms[i] = transform
+	for i in range(cell_data.transforms.size()):
+		var transform: Transform3D = cell_data.transforms[i]
+		transform.origin.x -= foliage_origin_xz.x
+		transform.origin.z -= foliage_origin_xz.y
+		cell_data.transforms[i] = transform
 	_pack_foliage_cell_buffer(cell_data)
 	return cell_data
 
 
 static func _pack_foliage_cell_buffer(cell_data: FoliageCellData) -> void:
-	for species_data in cell_data.species:
-		_pack_foliage_species_buffer(species_data)
-
-
-static func _pack_foliage_species_buffer(species_data: FoliageSpeciesCellData) -> void:
-	var instance_count: int = species_data.transforms.size()
+	var instance_count: int = cell_data.transforms.size()
 	var buffer: PackedFloat32Array = PackedFloat32Array()
 	buffer.resize(instance_count * FOLIAGE_MULTIMESH_FLOATS_PER_INSTANCE)
 	var write_index: int = 0
 	for i in range(instance_count):
-		var transform: Transform3D = species_data.transforms[i]
+		var transform: Transform3D = cell_data.transforms[i]
 		buffer[write_index] = transform.basis.x.x
 		buffer[write_index + 1] = transform.basis.x.y
 		buffer[write_index + 2] = transform.basis.x.z
@@ -1421,33 +1398,28 @@ static func _pack_foliage_species_buffer(species_data: FoliageSpeciesCellData) -
 		buffer[write_index + 9] = transform.origin.x
 		buffer[write_index + 10] = transform.origin.y
 		buffer[write_index + 11] = transform.origin.z
-		var color: Color = species_data.colors[i]
+		var color: Color = cell_data.colors[i]
 		buffer[write_index + 12] = color.r
 		buffer[write_index + 13] = color.g
 		buffer[write_index + 14] = color.b
 		buffer[write_index + 15] = color.a
-		var custom: Color = species_data.custom_data[i]
+		var custom: Color = cell_data.custom_data[i]
 		buffer[write_index + 16] = custom.r
 		buffer[write_index + 17] = custom.g
 		buffer[write_index + 18] = custom.b
 		buffer[write_index + 19] = custom.a
 		write_index += FOLIAGE_MULTIMESH_FLOATS_PER_INSTANCE
-	species_data.packed_buffer = buffer
+	cell_data.packed_buffer = buffer
 
 
-static func _add_foliage_cell_from_data(parent: Node3D, cell_data: FoliageCellData) -> void:
-	for species_data in cell_data.species:
-		_add_foliage_species_cell_from_data(parent, cell_data, species_data)
-
-
-static func _add_foliage_species_cell_from_data(parent: Node3D, cell_data: FoliageCellData, species_data: FoliageSpeciesCellData) -> void:
-	if species_data.transforms.is_empty():
-		return
+static func _add_foliage_cell_from_data(parent: Node3D, cell_data: FoliageCellData, mesh: Mesh = null, material: Material = null) -> void:
 	var instance: MultiMeshInstance3D = MultiMeshInstance3D.new()
-	instance.name = cell_data.node_name + "_" + String(species_data.species_id)
+	instance.name = cell_data.node_name
 	instance.position = cell_data.position
-	var mesh: Mesh = _region_foliage_mesh_for_lod_species(cell_data.lod_index, species_data.species_id)
-	var material: Material = _region_foliage_material_for_lod_species(cell_data.lod_index, species_data.species_id)
+	if mesh == null:
+		mesh = _region_foliage_mesh_for_lod(cell_data.lod_index)
+	if material == null:
+		material = _region_foliage_material_for_lod(cell_data.lod_index)
 	instance.material_override = material
 	instance.extra_cull_margin = REGION_FOLIAGE_CULL_MARGIN
 	instance.visibility_range_begin = cell_data.visibility_range_begin
@@ -1455,7 +1427,6 @@ static func _add_foliage_species_cell_from_data(parent: Node3D, cell_data: Folia
 	instance.cast_shadow = cell_data.cast_shadow
 	instance.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
 	instance.set_meta(REGION_LOD_META, "foliage_lod" + str(cell_data.lod_index))
-	instance.set_meta(&"trailhead_foliage_species", species_data.species_id)
 	instance.set_meta(VISIBILITY_RADIUS_META, cell_data.visibility_radius)
 	var multimesh: MultiMesh = MultiMesh.new()
 	multimesh.transform_format = MultiMesh.TRANSFORM_3D
@@ -1463,47 +1434,33 @@ static func _add_foliage_species_cell_from_data(parent: Node3D, cell_data: Folia
 	multimesh.use_custom_data = true
 	multimesh.mesh = mesh
 	multimesh.custom_aabb = cell_data.custom_aabb
-	multimesh.instance_count = species_data.transforms.size()
-	multimesh.buffer = species_data.packed_buffer
+	multimesh.instance_count = cell_data.transforms.size()
+	multimesh.buffer = cell_data.packed_buffer
 	instance.multimesh = multimesh
 	parent.add_child(instance)
 
 
 static func _region_foliage_mesh_for_lod(lod_index: int) -> Mesh:
-	return _region_foliage_mesh_for_lod_species(lod_index, FOLIAGE_SPECIES_GRASS)
-
-
-static func _region_foliage_mesh_for_lod_species(lod_index: int, species_id: StringName) -> Mesh:
 	var safe_lod_index: int = _region_foliage_lod_index(lod_index)
-	var cache_key: String = String(species_id) + "_lod" + str(safe_lod_index)
-	if _foliage_mesh_cache.has(cache_key):
-		return _foliage_mesh_cache[cache_key]
-	var mesh: Mesh = null
-	if species_id == FOLIAGE_SPECIES_YUCCA:
-		mesh = _region_yucca_mesh("region_foliage_yucca_lod" + str(safe_lod_index) + "_mesh", safe_lod_index)
-	elif species_id == FOLIAGE_SPECIES_JUNIPER:
-		mesh = _region_juniper_mesh("region_foliage_juniper_lod" + str(safe_lod_index) + "_mesh", safe_lod_index)
-	else:
-		mesh = _region_foliage_mesh("region_foliage_grass_lod" + str(safe_lod_index) + "_mesh")
-	_foliage_mesh_cache[cache_key] = mesh
+	if _foliage_mesh_cache.has(safe_lod_index):
+		return _foliage_mesh_cache[safe_lod_index]
+	var mesh: Mesh = _region_foliage_mesh("region_foliage_lod" + str(safe_lod_index) + "_mesh")
+	_foliage_mesh_cache[safe_lod_index] = mesh
 	return mesh
 
 
 static func _region_foliage_material_for_lod(lod_index: int) -> Material:
-	return _region_foliage_material_for_lod_species(lod_index, FOLIAGE_SPECIES_GRASS)
-
-
-static func _region_foliage_material_for_lod_species(lod_index: int, species_id: StringName) -> Material:
 	var safe_lod_index: int = _region_foliage_lod_index(lod_index)
-	var cache_key: String = String(species_id) + "_lod" + str(safe_lod_index)
-	if _foliage_material_cache.has(cache_key):
-		return _foliage_material_cache[cache_key]
-	var material_color: Color = _foliage_color_for_species(species_id)
+	if _foliage_material_cache.has(safe_lod_index):
+		return _foliage_material_cache[safe_lod_index]
+	var material_color: Color = REGION_FOLIAGE_LOD0_COLOR
 	if safe_lod_index > 0:
-		material_color = material_color.lerp(Color(0.30, 0.32, 0.24, material_color.a), 0.22)
-	var blade_height_reference: float = _foliage_base_scale_for_lod_species(safe_lod_index, species_id).y
-	var material: Material = _region_foliage_material("region_foliage_" + String(species_id) + "_lod" + str(safe_lod_index) + "_material", material_color, blade_height_reference)
-	_foliage_material_cache[cache_key] = material
+		material_color = REGION_FOLIAGE_LOD1_COLOR
+	var blade_height_reference: float = REGION_FOLIAGE_LOD0_SCALE.y
+	if safe_lod_index > 0:
+		blade_height_reference = REGION_FOLIAGE_LOD1_SCALE.y
+	var material: Material = _region_foliage_material("region_foliage_lod" + str(safe_lod_index) + "_material", material_color, blade_height_reference)
+	_foliage_material_cache[safe_lod_index] = material
 	return material
 
 
@@ -1552,97 +1509,6 @@ static func _region_foliage_mesh(mesh_name: String) -> ArrayMesh:
 	indices.append(5)
 	indices.append(6)
 	indices.append(7)
-	var arrays: Array = []
-	arrays.resize(Mesh.ARRAY_MAX)
-	arrays[Mesh.ARRAY_VERTEX] = vertices
-	arrays[Mesh.ARRAY_NORMAL] = normals
-	arrays[Mesh.ARRAY_TEX_UV] = uvs
-	arrays[Mesh.ARRAY_INDEX] = indices
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-	return mesh
-
-
-static func _region_yucca_mesh(mesh_name: String, lod_index: int) -> ArrayMesh:
-	var mesh: ArrayMesh = ArrayMesh.new()
-	mesh.resource_name = mesh_name
-	var vertices: PackedVector3Array = PackedVector3Array()
-	var normals: PackedVector3Array = PackedVector3Array()
-	var uvs: PackedVector2Array = PackedVector2Array()
-	var indices: PackedInt32Array = PackedInt32Array()
-	var blade_count: int = 10
-	if lod_index > 0:
-		blade_count = 6
-	for blade_index in range(blade_count):
-		var yaw: float = TAU * float(blade_index) / float(blade_count)
-		var direction: Vector3 = Vector3(cos(yaw), 0.0, sin(yaw))
-		var side: Vector3 = Vector3(-direction.z, 0.0, direction.x)
-		var lift: float = 0.40 + 0.18 * float(blade_index % 3)
-		var length: float = 0.62 + 0.16 * float(blade_index % 4) / 3.0
-		var base_center: Vector3 = direction * 0.08
-		var tip: Vector3 = direction * length + Vector3(0.0, lift, 0.0)
-		var half_width: float = 0.035
-		var vertex_start: int = vertices.size()
-		vertices.append(base_center - side * half_width)
-		vertices.append(base_center + side * half_width)
-		vertices.append(tip)
-		var normal: Vector3 = (side.cross(tip - base_center)).normalized()
-		if normal.y < 0.0:
-			normal = -normal
-		normals.append(normal)
-		normals.append(normal)
-		normals.append(normal)
-		uvs.append(Vector2(0.0, 1.0))
-		uvs.append(Vector2(1.0, 1.0))
-		uvs.append(Vector2(0.5, 0.0))
-		indices.append(vertex_start)
-		indices.append(vertex_start + 2)
-		indices.append(vertex_start + 1)
-	var arrays: Array = []
-	arrays.resize(Mesh.ARRAY_MAX)
-	arrays[Mesh.ARRAY_VERTEX] = vertices
-	arrays[Mesh.ARRAY_NORMAL] = normals
-	arrays[Mesh.ARRAY_TEX_UV] = uvs
-	arrays[Mesh.ARRAY_INDEX] = indices
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-	return mesh
-
-
-static func _region_juniper_mesh(mesh_name: String, lod_index: int) -> ArrayMesh:
-	var mesh: ArrayMesh = ArrayMesh.new()
-	mesh.resource_name = mesh_name
-	var vertices: PackedVector3Array = PackedVector3Array()
-	var normals: PackedVector3Array = PackedVector3Array()
-	var uvs: PackedVector2Array = PackedVector2Array()
-	var indices: PackedInt32Array = PackedInt32Array()
-	var plane_count: int = 5
-	if lod_index > 0:
-		plane_count = 3
-	for plane_index in range(plane_count):
-		var yaw: float = TAU * float(plane_index) / float(plane_count)
-		var direction: Vector3 = Vector3(cos(yaw), 0.0, sin(yaw))
-		var side: Vector3 = Vector3(-direction.z, 0.0, direction.x)
-		var center: Vector3 = Vector3(0.0, 0.62 + 0.08 * float(plane_index % 2), 0.0)
-		var half_width: float = 0.42 - 0.035 * float(plane_index % 2)
-		var height: float = 0.70 + 0.08 * float(plane_index % 3)
-		var vertex_start: int = vertices.size()
-		vertices.append(center - side * half_width + Vector3(0.0, -height * 0.48, 0.0))
-		vertices.append(center + side * half_width + Vector3(0.0, -height * 0.48, 0.0))
-		vertices.append(center - side * half_width * 0.78 + Vector3(0.0, height * 0.52, 0.0))
-		vertices.append(center + side * half_width * 0.78 + Vector3(0.0, height * 0.52, 0.0))
-		normals.append(direction)
-		normals.append(direction)
-		normals.append(direction)
-		normals.append(direction)
-		uvs.append(Vector2(0.0, 1.0))
-		uvs.append(Vector2(1.0, 1.0))
-		uvs.append(Vector2(0.0, 0.0))
-		uvs.append(Vector2(1.0, 0.0))
-		indices.append(vertex_start)
-		indices.append(vertex_start + 2)
-		indices.append(vertex_start + 1)
-		indices.append(vertex_start + 1)
-		indices.append(vertex_start + 2)
-		indices.append(vertex_start + 3)
 	var arrays: Array = []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = vertices
@@ -1758,9 +1624,6 @@ static func _new_region_foliage_tile_audit(cell: Vector2i) -> Dictionary[String,
 		"slope_rejected_count": 0,
 		"slope_violation_count": 0,
 		"instance_count": 0,
-		"grass_instance_count": 0,
-		"yucca_instance_count": 0,
-		"juniper_instance_count": 0,
 		"min_accepted_normal_y": 1.0,
 	}
 
@@ -1826,13 +1689,6 @@ static func _record_foliage_acceptance(audit: Dictionary[String, Variant], norma
 		audit["slope_violation_count"] = int(audit.get("slope_violation_count", 0)) + 1
 
 
-static func _record_foliage_species_acceptance(audit: Dictionary[String, Variant], species_id: StringName) -> void:
-	if audit.is_empty():
-		return
-	var key: String = String(species_id) + "_instance_count"
-	audit[key] = int(audit.get(key, 0)) + 1
-
-
 static func _foliage_density_for_surface_value(surface_id_value: int) -> float:
 	if not bool(TerrainSurfacePaletteResource.call("has_surface_id_value", surface_id_value)):
 		return 0.0
@@ -1846,74 +1702,6 @@ static func _foliage_density_for_surface_value(surface_id_value: int) -> float:
 	if surface_id == &"mud":
 		return FOLIAGE_DENSITY_MUD
 	return 0.0
-
-
-static func _foliage_species_for_surface_value(surface_id_value: int) -> StringName:
-	if not bool(TerrainSurfacePaletteResource.call("has_surface_id_value", surface_id_value)):
-		return &""
-	var surface_id: StringName = _surface_id_for_value(surface_id_value)
-	if surface_id == &"packed_dirt":
-		return FOLIAGE_SPECIES_JUNIPER
-	if surface_id == &"tall_grass":
-		return FOLIAGE_SPECIES_GRASS
-	if surface_id == &"loose_rock":
-		return FOLIAGE_SPECIES_YUCCA
-	return &""
-
-
-static func _foliage_species_data(cell_data: FoliageCellData, species_id: StringName) -> FoliageSpeciesCellData:
-	for species_data in cell_data.species:
-		if species_data.species_id == species_id:
-			return species_data
-	var new_species_data: FoliageSpeciesCellData = FoliageSpeciesCellData.new()
-	new_species_data.species_id = species_id
-	cell_data.species.append(new_species_data)
-	return new_species_data
-
-
-static func _foliage_species_data_from_list(species_data_list: Array[FoliageSpeciesCellData], species_id: StringName) -> FoliageSpeciesCellData:
-	for species_data in species_data_list:
-		if species_data.species_id == species_id:
-			return species_data
-	var new_species_data: FoliageSpeciesCellData = FoliageSpeciesCellData.new()
-	new_species_data.species_id = species_id
-	species_data_list.append(new_species_data)
-	return new_species_data
-
-
-static func _foliage_species_total_count(species_data_list: Array[FoliageSpeciesCellData]) -> int:
-	var total_count: int = 0
-	for species_data in species_data_list:
-		total_count += species_data.transforms.size()
-	return total_count
-
-
-static func _foliage_color_for_species(species_id: StringName) -> Color:
-	if species_id == FOLIAGE_SPECIES_YUCCA:
-		return FOLIAGE_SPECIES_YUCCA_COLOR
-	if species_id == FOLIAGE_SPECIES_JUNIPER:
-		return FOLIAGE_SPECIES_JUNIPER_COLOR
-	return FOLIAGE_SPECIES_GRASS_COLOR
-
-
-static func _foliage_instance_color(species_id: StringName, color_warmth: float) -> Color:
-	var base_color: Color = _foliage_color_for_species(species_id)
-	var warm_color: Color = Color(minf(base_color.r * 1.16, 1.0), minf(base_color.g * 1.10, 1.0), minf(base_color.b * 1.06, 1.0), 1.0)
-	return base_color.lerp(warm_color, color_warmth)
-
-
-static func _foliage_base_scale_for_lod_species(lod_index: int, species_id: StringName) -> Vector3:
-	if species_id == FOLIAGE_SPECIES_YUCCA:
-		if lod_index > 0:
-			return FOLIAGE_YUCCA_LOD1_SCALE
-		return FOLIAGE_YUCCA_LOD0_SCALE
-	if species_id == FOLIAGE_SPECIES_JUNIPER:
-		if lod_index > 0:
-			return FOLIAGE_JUNIPER_LOD1_SCALE
-		return FOLIAGE_JUNIPER_LOD0_SCALE
-	if lod_index > 0:
-		return REGION_FOLIAGE_LOD1_SCALE
-	return REGION_FOLIAGE_LOD0_SCALE
 
 
 static func _region_foliage_unit(cell: Vector2i, lod_index: int, instance_index: int, salt: int) -> float:
