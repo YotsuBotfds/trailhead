@@ -301,9 +301,9 @@ var tilt_shift_gradient_softness: float = 0.35
 var cam_shake_max_offset: float = 0.018
 var cam_shake_decay: float = 8.0
 var cam_shake_landing_speed_threshold: float = 2.0
-var surface_burst_max_particles: int = 18
+var surface_burst_max_particles: int = 50
 var surface_burst_speed_threshold: float = 2.0
-var surface_burst_lifetime: float = 0.45
+var surface_burst_lifetime: float = 0.80
 var landing_squash_amount: float = 0.10
 var landing_squash_recover_speed: float = 8.0
 # --- W3-DUST: continuous wheel dust + spray feel polish (render-only).
@@ -313,12 +313,12 @@ var landing_squash_recover_speed: float = 8.0
 # a per-surface COLOR. Hard-accel / slide / landing add a decaying KICK boost that
 # also re-fires the existing surface burst for a bigger pop. All values live-tunable.
 var wheel_dust_enabled: bool = true
-var wheel_dust_particles_per_wheel: int = 8
+var wheel_dust_particles_per_wheel: int = 20
 var wheel_dust_speed_threshold: float = 0.6
 var wheel_dust_speed_full: float = 4.5
-var wheel_dust_lifetime: float = 0.55
+var wheel_dust_lifetime: float = 0.85
 var wheel_dust_emission_radius: float = 0.045
-var wheel_dust_kick_boost: float = 0.9
+var wheel_dust_kick_boost: float = 1.6
 var wheel_dust_kick_decay: float = 6.0
 var wheel_dust_accel_delta_threshold: float = 0.18
 var wheel_dust_slide_lateral_threshold: float = 1.2
@@ -388,8 +388,8 @@ var terrain_track_painter_window_meters: float = 256.0
 var terrain_track_painter_max_resolution: int = 2048
 var terrain_track_update_interval_ticks: int = 2
 var terrain_track_stamp_radius: float = 0.065
-var terrain_track_stamp_strength: float = 0.42
-var terrain_track_decay_per_second: float = 0.018
+var terrain_track_stamp_strength: float = 0.72
+var terrain_track_decay_per_second: float = 0.008
 var terrain_track_surface_mud_strength: float = 1.0
 var terrain_track_surface_dust_strength: float = 0.62
 var terrain_track_surface_sand_strength: float = 0.90
@@ -448,7 +448,7 @@ var vis_range_scatter: float = 18.0
 var vis_range_props: float = 22.0
 var vis_range_vehicle: float = 24.0
 var vis_range_water: float = 50.0
-var vis_range_tracks: float = 18.0
+var vis_range_tracks: float = 28.0
 var vis_range_dust: float = 18.0
 
 var stuck_window_ticks: int = 360
