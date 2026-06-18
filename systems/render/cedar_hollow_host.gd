@@ -54,6 +54,9 @@ var _vehicle_visual_root: Node = null
 var _vehicle_residue_visual: RefCounted = VehicleResidueVisualScript.new()
 var _wheel_spin: float = 0.0
 var _camera_mode: int = CAMERA_MODE_CHASE
+var _photo_mode_active: bool = false
+var _photo_mode_previous_speed_hud_visible: bool = false
+var _photo_mode_previous_controls_hint_visible: bool = false
 var _chase_camera_rig: RefCounted = ChaseCameraRigScript.new()
 var _chase_camera_initialized: bool = false
 var _chase_look_target_current: Vector3 = Vector3.ZERO
@@ -107,6 +110,7 @@ func _physics_process(delta: float) -> void:
 	if _vehicle == null:
 		return
 	_update_vehicle_input()
+	_update_photo_mode_input()
 	_update_camera_input()
 	_update_hud_input()
 	_update_frequency_input()
@@ -132,6 +136,7 @@ func _ensure_default_input_map() -> void:
 	_ensure_action(&"logbook_open", [KEY_TAB])
 	_ensure_action(&"frequency_input", [KEY_P])
 	_ensure_action(&"photograph", [KEY_F])
+	_ensure_action(&"photo_mode", [KEY_V])
 	_ensure_joypad_bindings()
 
 
@@ -420,6 +425,53 @@ func _update_vehicle_input() -> void:
 		_drive_started = true
 
 
+func _update_photo_mode_input() -> void:
+	if not Input.is_action_just_pressed("photo_mode"):
+		return
+	toggle_photo_mode()
+
+
+func toggle_photo_mode() -> void:
+	if _photo_mode_active:
+		_exit_photo_mode()
+	else:
+		_enter_photo_mode()
+
+
+func _enter_photo_mode() -> void:
+	if _photo_mode_active:
+		return
+	_photo_mode_active = true
+	_photo_mode_previous_speed_hud_visible = _speed_hud.visible if _speed_hud != null else false
+	_photo_mode_previous_controls_hint_visible = _controls_hint_hud.visible if _controls_hint_hud != null else false
+	_camera_mode = CAMERA_MODE_FPV
+	_set_photo_mode_hud_visible(false)
+	_update_camera(GameConfig.FIXED_DT)
+
+
+func _exit_photo_mode() -> void:
+	if not _photo_mode_active:
+		return
+	_photo_mode_active = false
+	_camera_mode = CAMERA_MODE_CHASE
+	_restore_photo_mode_hud()
+	_update_camera(GameConfig.FIXED_DT)
+
+
+func _set_photo_mode_hud_visible(hud_visible: bool) -> void:
+	if _speed_hud != null:
+		_speed_hud.visible = hud_visible
+	if _controls_hint_hud != null:
+		_controls_hint_hud.visible = hud_visible
+
+
+func _restore_photo_mode_hud() -> void:
+	if _speed_hud != null:
+		_speed_hud.visible = _photo_mode_previous_speed_hud_visible
+	if _controls_hint_hud != null:
+		_controls_hint_hud.visible = _photo_mode_previous_controls_hint_visible
+
+
 func _update_camera_input() -> void:
 	if not Input.is_action_just_pressed("cam_toggle"):
 		return
@@ -427,6 +479,9 @@ func _update_camera_input() -> void:
 
 
 func cycle_camera_mode() -> void:
+	if _photo_mode_active:
+		_exit_photo_mode()
+		return
 	if _camera_mode == CAMERA_MODE_CHASE:
 		_camera_mode = CAMERA_MODE_ORBIT
 		_update_camera(GameConfig.FIXED_DT)
@@ -562,7 +617,7 @@ func _collect_visual_wheels() -> void:
 func _update_visual_wheels(delta: float) -> void:
 	var state: RefCounted = _vehicle.call("get_state")
 	_update_vehicle_residue_visual(state)
-	var tail_material: StandardMaterial3D = ProceduralBuggyVisual.get_tail_light_material(_vehicle_visual_root)
+	var tail_material: StandardMaterial3D = ProceduralBuggyVisualScript.get_tail_light_material(_vehicle_visual_root)
 	if tail_material != null:
 		var braking: float = float(_vehicle_input.get("brake"))
 		var ebrake: bool = bool(_vehicle_input.get("ebrake"))
