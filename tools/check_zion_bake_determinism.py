@@ -61,6 +61,9 @@ PROVENANCE_HASHES: dict[str, str] = {
     "data/terrain/cedar_hollow_zion_surface_id.png": (
         "8f6d89991da0fde23f8593c0605406ec8c0c6b2ef02fc598289e61cb7901e88d"
     ),
+    "data/terrain/cedar_hollow_zion_macro_albedo.png": (
+        "6d88cf053ac68604eac7033c3095d6952991445783ba92bbb1538806e3de2eb5"
+    ),
     "data/bake_inputs/zion_nlcd_remapped.tif": (
         "aa95cab15aded363c94311448a477c5caaa0ec9a2d493e8d8bd585e1d9211a3b"
     ),

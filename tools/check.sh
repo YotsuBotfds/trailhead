@@ -50,5 +50,6 @@ check "collision tile integrity" python3 tools/check_collision_tile_integrity.py
 check "Zion collision tile integrity" python3 tools/check_collision_tile_integrity.py data/regions/cedar_hollow_zion
 check "Godot binary SHA pin" tools/check_godot_binary_sha.sh
 check "Zion surface-ID PNG" python3 tools/check_surface_id_png.py data/terrain/cedar_hollow_zion_surface_id.png --require-grayscale --min-ids 4 --expected-ids 1,2,3,4,5,6 --forbid-zero
+check "Zion macro-albedo PNG" python3 tools/check_zion_macro_albedo_png.py data/terrain/cedar_hollow_zion_macro_albedo.png --expected-width 256 --expected-height 265 --require-color-type 2
 
 exit "$status"
