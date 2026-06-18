@@ -258,6 +258,7 @@ var grass_wind_speed: float = 0.65
 var buggy_clearcoat_enabled: bool = true
 var buggy_clearcoat: float = 0.70
 var buggy_clearcoat_roughness: float = 0.40
+var brake_light_energy: float = 1.8
 var terrain_pom_enabled: bool = true
 var terrain_pom_depth_scale: float = 0.028
 var terrain_pom_min_layers: int = 4

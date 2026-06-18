@@ -35,6 +35,9 @@ const CHASSIS_DROP_NODE_NAMES: Array[StringName] = [
 	&"body_vents",
 	&"antenna"
 ]
+const TAIL_LIGHT_NODE_NAME: StringName = &"tail_lights"
+const TAIL_LIGHT_MATERIAL_META: StringName = &"trailhead_tail_light_material"
+const TAIL_LIGHT_EMISSION_COLOR: Color = Color(1.0, 0.07, 0.05)
 
 
 func attach(vehicle: Node) -> void:
@@ -78,6 +81,8 @@ static func _apply_vehicle_render_tuning(node: Node) -> void:
 	var mesh_instance: MeshInstance3D = node as MeshInstance3D
 	if mesh_instance != null:
 		_apply_clearcoat(mesh_instance)
+		if mesh_instance.name == TAIL_LIGHT_NODE_NAME:
+			_apply_tail_light_emission(mesh_instance)
 	for child in node.get_children():
 		_apply_vehicle_render_tuning(child)
 
@@ -106,3 +111,29 @@ static func _is_clearcoat_body_material(material_name: String) -> bool:
 		if material_name.contains(token):
 			return true
 	return false
+
+
+static func _apply_tail_light_emission(mesh_instance: MeshInstance3D) -> void:
+	var mesh: Mesh = mesh_instance.mesh
+	if mesh == null or mesh.get_surface_count() == 0:
+		return
+	var base_material: StandardMaterial3D = mesh.surface_get_material(0) as StandardMaterial3D
+	if base_material == null:
+		return
+	var tuned_material: StandardMaterial3D = base_material.duplicate() as StandardMaterial3D
+	if tuned_material == null:
+		return
+	tuned_material.emission_enabled = true
+	tuned_material.emission = TAIL_LIGHT_EMISSION_COLOR
+	tuned_material.emission_energy_multiplier = 0.0
+	mesh.surface_set_material(0, tuned_material)
+	mesh_instance.set_meta(TAIL_LIGHT_MATERIAL_META, tuned_material)
+
+
+static func get_tail_light_material(visual_root: Node) -> StandardMaterial3D:
+	if visual_root == null:
+		return null
+	var node: Node = visual_root.get_node_or_null(String(TAIL_LIGHT_NODE_NAME))
+	if node == null or not node.has_meta(TAIL_LIGHT_MATERIAL_META):
+		return null
+	return node.get_meta(TAIL_LIGHT_MATERIAL_META) as StandardMaterial3D
