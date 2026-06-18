@@ -41,6 +41,9 @@ uniform float zion_strata_strength = 0.48;
 uniform vec4 zion_strata_light_color : source_color = vec4(0.86, 0.62, 0.38, 1.0);  // lighter band tone (Navajo cross-bedding)
 uniform vec2 zion_strata_dip = vec2(0.15, 0.15);                                    // xz phase per meter (diagonal cross-bedding dip)
 uniform float zion_detile_strength = 0.18;
+uniform vec4 zion_floor_dark_color : source_color = vec4(0.54, 0.32, 0.18, 1.0);
+uniform float zion_floor_scatter_strength = 0.28;
+uniform float zion_floor_detile_strength = 0.24;
 uniform vec4 zion_varnish_color : source_color = vec4(0.13, 0.08, 0.06, 1.0);  // warm charcoal
 uniform float zion_varnish_strength = 0.5;
 uniform float zion_varnish_wall_threshold = 0.30;   // local_normal_y below this = near-vertical face
@@ -253,6 +256,10 @@ void fragment() {
 	float detile = detile_a * 0.5 + detile_b * 0.5;
 	vec3 zion_albedo = ALBEDO;
 	zion_albedo = mix(zion_albedo, zion_sand_color.rgb, low_flat_mask * 0.68);
+	float floor_scatter = hash21_smooth(world_xz * 0.042 + vec2(3.1, 8.7));
+	zion_albedo = mix(zion_albedo, zion_floor_dark_color.rgb, low_flat_mask * floor_scatter * zion_floor_scatter_strength);
+	float detile_floor = hash21_smooth(world_xz * 0.018 + vec2(5.2, 9.7)) * 2.0 - 1.0;
+	zion_albedo *= 1.0 + detile_floor * low_flat_mask * zion_floor_detile_strength;
 	zion_albedo = mix(zion_albedo, zion_sandstone_color.rgb, cliff_mask * 0.74);
 	zion_albedo = mix(zion_albedo, zion_kayenta_color.rgb, kayenta_mask * zion_kayenta_strength);
 	float strata_tone = strata_wave * 0.5 + 0.5;

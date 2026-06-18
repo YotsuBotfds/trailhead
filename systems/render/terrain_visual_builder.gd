@@ -130,6 +130,9 @@ const ZION_STRATA_STRENGTH_UNIFORM: StringName = &"zion_strata_strength"
 const ZION_STRATA_LIGHT_COLOR_UNIFORM: StringName = &"zion_strata_light_color"
 const ZION_STRATA_DIP_UNIFORM: StringName = &"zion_strata_dip"
 const ZION_DETILE_STRENGTH_UNIFORM: StringName = &"zion_detile_strength"
+const ZION_FLOOR_DARK_COLOR_UNIFORM: StringName = &"zion_floor_dark_color"
+const ZION_FLOOR_SCATTER_STRENGTH_UNIFORM: StringName = &"zion_floor_scatter_strength"
+const ZION_FLOOR_DETILE_STRENGTH_UNIFORM: StringName = &"zion_floor_detile_strength"
 const ZION_VARNISH_COLOR_UNIFORM: StringName = &"zion_varnish_color"
 const ZION_VARNISH_STRENGTH_UNIFORM: StringName = &"zion_varnish_strength"
 const ZION_VARNISH_WALL_THRESHOLD_UNIFORM: StringName = &"zion_varnish_wall_threshold"
@@ -1031,6 +1034,9 @@ static func _apply_zion_surface_index_tuning(material: ShaderMaterial) -> void:
 	material.set_shader_parameter(ZION_STRATA_LIGHT_COLOR_UNIFORM, Color(0.86, 0.62, 0.38, 1.0))
 	material.set_shader_parameter(ZION_STRATA_DIP_UNIFORM, Vector2(0.15, 0.15))
 	material.set_shader_parameter(ZION_DETILE_STRENGTH_UNIFORM, 0.18)
+	material.set_shader_parameter(ZION_FLOOR_DARK_COLOR_UNIFORM, Color(0.54, 0.32, 0.18, 1.0))
+	material.set_shader_parameter(ZION_FLOOR_SCATTER_STRENGTH_UNIFORM, 0.28)
+	material.set_shader_parameter(ZION_FLOOR_DETILE_STRENGTH_UNIFORM, 0.24)
 	material.set_shader_parameter(ZION_VARNISH_COLOR_UNIFORM, Color(0.13, 0.08, 0.06, 1.0))
 	material.set_shader_parameter(ZION_VARNISH_STRENGTH_UNIFORM, 0.5)
 	material.set_shader_parameter(ZION_VARNISH_WALL_THRESHOLD_UNIFORM, 0.30)
