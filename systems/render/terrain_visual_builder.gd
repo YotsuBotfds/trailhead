@@ -195,6 +195,7 @@ class RegionVisualTileData:
 	var node_name: String = ""
 	var position: Vector3 = Vector3.ZERO
 	var mesh_data: RegionMeshData = null
+	var mesh: ArrayMesh = null
 	var visibility_range_end: float = 0.0
 	var visibility_radius: float = 0.0
 	var heightmap_path: String = ""
@@ -220,6 +221,7 @@ class FoliageSpeciesCellData:
 	var colors: Array[Color] = []
 	var custom_data: Array[Color] = []
 	var packed_buffer: PackedFloat32Array = PackedFloat32Array()
+	var multimesh: MultiMesh = null
 
 
 class RegionFoliageTileData:
@@ -331,23 +333,26 @@ static func build_region_visual_tile_data(region_id: String, cell: Vector2i) -> 
 	visual_tile_data.node_name = region_detail_tile_node_name(region_id, tile_data.cell)
 	visual_tile_data.position = Vector3(tile_origin_xz.x, 0.0, tile_origin_xz.y)
 	visual_tile_data.mesh_data = build_region_surface_index_mesh_data(tile_data, REGION_DETAIL_SAMPLE_STEP, tile_data.key + "_terrain_detail_mesh", tile_origin_xz)
+	if visual_tile_data.mesh_data != null and visual_tile_data.mesh_data.surfaces.size() > 0:
+		visual_tile_data.mesh = region_mesh_from_data(visual_tile_data.mesh_data, false)
 	visual_tile_data.visibility_range_end = _detail_visibility_range_end(tile_data)
 	visual_tile_data.visibility_radius = _tile_visibility_radius(tile_data)
 	visual_tile_data.heightmap_path = tile_data.heightmap_path
 	visual_tile_data.surface_id_path = tile_data.surface_id_path
-	visual_tile_data.ok = visual_tile_data.mesh_data != null and visual_tile_data.mesh_data.surfaces.size() > 0
+	visual_tile_data.ok = visual_tile_data.mesh_data != null and visual_tile_data.mesh != null and visual_tile_data.mesh_data.surfaces.size() > 0
 	if not visual_tile_data.ok:
 		visual_tile_data.message = "visual tile mesh had no surfaces: " + region_id + " " + str(cell)
 	return visual_tile_data
 
 
 static func region_visual_tile_from_data(parent: Node3D, visual_tile_data: RegionVisualTileData, _hlod_instance: MeshInstance3D) -> MeshInstance3D:
-	if visual_tile_data == null or not visual_tile_data.ok or visual_tile_data.mesh_data == null:
+	if visual_tile_data == null or not visual_tile_data.ok or visual_tile_data.mesh_data == null or visual_tile_data.mesh == null:
 		return null
 	var instance: MeshInstance3D = MeshInstance3D.new()
 	instance.name = visual_tile_data.node_name
 	instance.position = visual_tile_data.position
-	instance.mesh = region_mesh_from_data(visual_tile_data.mesh_data)
+	apply_region_mesh_materials(visual_tile_data.mesh, visual_tile_data.mesh_data)
+	instance.mesh = visual_tile_data.mesh
 	instance.visibility_range_end = visual_tile_data.visibility_range_end
 	instance.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
 	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -417,6 +422,8 @@ static func _build_region_foliage_tile_data(region_id: String, cell: Vector2i, a
 	foliage_tile_data.position = Vector3(tile_origin_xz.x, 0.0, tile_origin_xz.y)
 	_pack_foliage_cell_buffer(lod0_tile_data)
 	_pack_foliage_cell_buffer(lod1_tile_data)
+	_build_foliage_cell_multimeshes(lod0_tile_data)
+	_build_foliage_cell_multimeshes(lod1_tile_data)
 	foliage_tile_data.cells.append(lod0_tile_data)
 	foliage_tile_data.cells.append(lod1_tile_data)
 	foliage_tile_data.ok = true
@@ -776,7 +783,7 @@ static func build_region_surface_index_mesh_data(tile_data: RegionTileData, samp
 	return mesh_data
 
 
-static func region_mesh_from_data(mesh_data: RegionMeshData) -> ArrayMesh:
+static func region_mesh_from_data(mesh_data: RegionMeshData, assign_materials: bool = true) -> ArrayMesh:
 	var mesh: ArrayMesh = ArrayMesh.new()
 	mesh.resource_name = mesh_data.resource_name
 	for surface_data in mesh_data.surfaces:
@@ -787,11 +794,21 @@ static func region_mesh_from_data(mesh_data: RegionMeshData) -> ArrayMesh:
 		arrays[Mesh.ARRAY_TEX_UV] = surface_data.uvs
 		arrays[Mesh.ARRAY_INDEX] = surface_data.indices
 		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-		if surface_data.use_surface_index_material:
-			mesh.surface_set_material(mesh.get_surface_count() - 1, _surface_index_material(surface_data))
-		else:
-			mesh.surface_set_material(mesh.get_surface_count() - 1, _material_for_surface_value(surface_data.surface_id_value))
+	if assign_materials:
+		apply_region_mesh_materials(mesh, mesh_data)
 	return mesh
+
+
+static func apply_region_mesh_materials(mesh: ArrayMesh, mesh_data: RegionMeshData) -> void:
+	if mesh == null or mesh_data == null:
+		return
+	var surface_count: int = mini(mesh.get_surface_count(), mesh_data.surfaces.size())
+	for surface_index in range(surface_count):
+		var surface_data: MeshSurfaceData = mesh_data.surfaces[surface_index]
+		if surface_data.use_surface_index_material:
+			mesh.surface_set_material(surface_index, _surface_index_material(surface_data))
+		else:
+			mesh.surface_set_material(surface_index, _material_for_surface_value(surface_data.surface_id_value))
 
 
 static func _append_tile_quads(tile_data: RegionTileData, sample_step: int, buckets: Dictionary[int, MeshBucket], local_origin_xz: Vector2) -> void:
@@ -1435,6 +1452,24 @@ static func _pack_foliage_cell_buffer(cell_data: FoliageCellData) -> void:
 		_pack_foliage_species_buffer(species_data)
 
 
+static func _build_foliage_cell_multimeshes(cell_data: FoliageCellData) -> void:
+	for species_data in cell_data.species:
+		species_data.multimesh = _build_foliage_species_multimesh(cell_data, species_data)
+
+
+static func _build_foliage_species_multimesh(cell_data: FoliageCellData, species_data: FoliageSpeciesCellData) -> MultiMesh:
+	if species_data.transforms.is_empty():
+		return null
+	var multimesh: MultiMesh = MultiMesh.new()
+	multimesh.transform_format = MultiMesh.TRANSFORM_3D
+	multimesh.use_colors = true
+	multimesh.use_custom_data = true
+	multimesh.custom_aabb = cell_data.custom_aabb
+	multimesh.instance_count = species_data.transforms.size()
+	multimesh.buffer = species_data.packed_buffer
+	return multimesh
+
+
 static func _pack_foliage_species_buffer(species_data: FoliageSpeciesCellData) -> void:
 	var instance_count: int = species_data.transforms.size()
 	var buffer: PackedFloat32Array = PackedFloat32Array()
@@ -1490,14 +1525,12 @@ static func _add_foliage_species_cell_from_data(parent: Node3D, cell_data: Folia
 	instance.set_meta(REGION_LOD_META, "foliage_lod" + str(cell_data.lod_index))
 	instance.set_meta(&"trailhead_foliage_species", species_data.species_id)
 	instance.set_meta(VISIBILITY_RADIUS_META, cell_data.visibility_radius)
-	var multimesh: MultiMesh = MultiMesh.new()
-	multimesh.transform_format = MultiMesh.TRANSFORM_3D
-	multimesh.use_colors = true
-	multimesh.use_custom_data = true
+	var multimesh: MultiMesh = species_data.multimesh
+	if multimesh == null:
+		multimesh = _build_foliage_species_multimesh(cell_data, species_data)
+	if multimesh == null:
+		return
 	multimesh.mesh = mesh
-	multimesh.custom_aabb = cell_data.custom_aabb
-	multimesh.instance_count = species_data.transforms.size()
-	multimesh.buffer = species_data.packed_buffer
 	instance.multimesh = multimesh
 	parent.add_child(instance)
 
