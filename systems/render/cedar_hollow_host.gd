@@ -430,6 +430,7 @@ func _apply_mood() -> void:
 	var sky: Sky = environment.sky
 	if sky == null or not (sky.sky_material is PhysicalSkyMaterial):
 		sky = Sky.new()
+		sky.radiance_size = Sky.RADIANCE_SIZE_512
 		sky.sky_material = PhysicalSkyMaterial.new()
 	var sky_material: PhysicalSkyMaterial = sky.sky_material as PhysicalSkyMaterial
 	environment.sky = sky
@@ -454,6 +455,7 @@ func _apply_zion_vista_mood(environment: Environment, sky_material: PhysicalSkyM
 	environment.fog_aerial_perspective = ZION_FOG_AERIAL_PERSPECTIVE
 	environment.fog_sky_affect = ZION_FOG_SKY_AFFECT
 	environment.volumetric_fog_sky_affect = ZION_VOLUMETRIC_FOG_SKY_AFFECT
+	sky_material.use_debanding = true
 	if _mood == MOOD_DAWN:
 		environment.fog_density = ZION_DAWN_FOG_DENSITY
 		sky_material.rayleigh_color = Color(0.38, 0.58, 0.72, 1.0)
