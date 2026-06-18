@@ -54,6 +54,7 @@ var _vehicle_input: RefCounted = VehicleInputScript.new()
 var _camera: Camera3D = null
 var _orbit_camera: Camera3D = null
 var _fpv_camera: Camera3D = null
+var _cinematic_camera: Camera3D = null
 var _wheel_sockets: Array[Node3D] = []
 var _vehicle_visual_root: Node = null
 var _vehicle_residue_visual: RefCounted = VehicleResidueVisualScript.new()
@@ -62,6 +63,13 @@ var _camera_mode: int = CAMERA_MODE_CHASE
 var _photo_mode_active: bool = false
 var _photo_mode_previous_speed_hud_visible: bool = false
 var _photo_mode_previous_controls_hint_visible: bool = false
+var _cinematic_tour_active: bool = false
+var _cinematic_tour_elapsed: float = 0.0
+var _cinematic_tour_previous_camera_mode: int = CAMERA_MODE_CHASE
+var _cinematic_tour_previous_landmark_hud_visible: bool = false
+var _cinematic_tour_previous_speed_hud_visible: bool = false
+var _cinematic_tour_previous_controls_hint_visible: bool = false
+var _cinematic_tour_previous_title_hud_visible: bool = false
 var _chase_camera_rig: RefCounted = ChaseCameraRigScript.new()
 var _chase_camera_initialized: bool = false
 var _chase_look_target_current: Vector3 = Vector3.ZERO
@@ -123,6 +131,7 @@ func _physics_process(delta: float) -> void:
 	if _vehicle == null:
 		return
 	_update_vehicle_input()
+	_update_cinematic_tour_input()
 	_update_photo_mode_input()
 	_update_camera_input()
 	_update_hud_input()
@@ -156,6 +165,7 @@ func _ensure_default_input_map() -> void:
 	_ensure_action(&"frequency_input", [KEY_P])
 	_ensure_action(&"photograph", [KEY_F])
 	_ensure_action(&"photo_mode", [KEY_V])
+	_ensure_action(&"cinematic_tour", [KEY_T])
 	_ensure_joypad_bindings()
 
 
@@ -368,6 +378,12 @@ func _setup_camera() -> void:
 	_fpv_camera.fov = GameConfig.fpv_cam_fov
 	_fpv_camera.far = GameConfig.fpv_cam_far
 	add_child(_fpv_camera)
+	_cinematic_camera = Camera3D.new()
+	_cinematic_camera.name = "CinematicTourCamera"
+	_cinematic_camera.current = false
+	_cinematic_camera.fov = GameConfig.cinematic_tour_fov
+	_cinematic_camera.far = GameConfig.cinematic_tour_far
+	add_child(_cinematic_camera)
 	DustTiltShiftVisualBuilderScript.build(self, _camera, _orbit_camera, _fpv_camera)
 	_orbit_yaw_degrees = GameConfig.orbit_cam_start_yaw_deg
 	_update_camera(GameConfig.FIXED_DT)
@@ -445,11 +461,97 @@ func _update_vehicle_input() -> void:
 	_vehicle_input.set("steer", clampf(steer, -1.0, 1.0))
 	_vehicle_input.set("ebrake", Input.is_action_pressed("ebrake"))
 	_vehicle_input.set("self_right", Input.is_action_just_pressed("self_right"))
-	if absf(throttle) > 0.0 or brake > 0.0 or absf(steer) > 0.0 or Input.is_action_pressed("ebrake"):
+	if _has_drive_input_active(throttle, brake, steer):
 		_drive_started = true
+		if _cinematic_tour_active:
+			_exit_cinematic_tour()
+
+
+func _update_cinematic_tour_input() -> void:
+	if not Input.is_action_just_pressed("cinematic_tour"):
+		return
+	if _read_has_drive_input_active():
+		if _cinematic_tour_active:
+			_exit_cinematic_tour()
+		return
+	toggle_cinematic_tour()
+
+
+func _read_has_drive_input_active() -> bool:
+	var forward_throttle: float = Input.get_action_strength("throttle")
+	var reverse_throttle: float = Input.get_action_strength("reverse")
+	var brake_action: float = Input.get_action_strength("brake")
+	var throttle: float = forward_throttle - reverse_throttle
+	var steer: float = Input.get_action_strength("steer_left") - Input.get_action_strength("steer_right")
+	var brake: float = 0.0
+	if forward_throttle > 0.0 or reverse_throttle <= 0.0:
+		brake = brake_action
+	return _has_drive_input_active(throttle, brake, steer)
+
+
+func _has_drive_input_active(throttle: float, brake: float, steer: float) -> bool:
+	return absf(throttle) > 0.0 or brake > 0.0 or absf(steer) > 0.0 or Input.is_action_pressed("ebrake")
+
+
+func toggle_cinematic_tour() -> void:
+	if _cinematic_tour_active:
+		_exit_cinematic_tour()
+	else:
+		_enter_cinematic_tour()
+
+
+func _enter_cinematic_tour() -> void:
+	if _cinematic_tour_active or _cinematic_camera == null:
+		return
+	if _photo_mode_active:
+		_exit_photo_mode()
+	_cinematic_tour_active = true
+	_cinematic_tour_elapsed = 0.0
+	_cinematic_tour_previous_camera_mode = _camera_mode
+	_cinematic_tour_previous_landmark_hud_visible = _landmark_hint_hud.visible if _landmark_hint_hud != null else false
+	_cinematic_tour_previous_speed_hud_visible = _speed_hud.visible if _speed_hud != null else false
+	_cinematic_tour_previous_controls_hint_visible = _controls_hint_hud.visible if _controls_hint_hud != null else false
+	_cinematic_tour_previous_title_hud_visible = _title_card_hud.visible if _title_card_hud != null else false
+	_set_cinematic_tour_hud_visible(false)
+	_update_cinematic_camera(0.0)
+
+
+func _exit_cinematic_tour() -> void:
+	if not _cinematic_tour_active:
+		return
+	_cinematic_tour_active = false
+	_camera_mode = _cinematic_tour_previous_camera_mode
+	_restore_cinematic_tour_hud()
+	if _cinematic_camera != null:
+		_cinematic_camera.current = false
+	_update_camera(GameConfig.FIXED_DT)
+
+
+func _set_cinematic_tour_hud_visible(hud_visible: bool) -> void:
+	if _landmark_hint_hud != null:
+		_landmark_hint_hud.visible = hud_visible
+	if _speed_hud != null:
+		_speed_hud.visible = hud_visible
+	if _controls_hint_hud != null:
+		_controls_hint_hud.visible = hud_visible
+	if _title_card_hud != null:
+		_title_card_hud.visible = hud_visible
+
+
+func _restore_cinematic_tour_hud() -> void:
+	if _landmark_hint_hud != null:
+		_landmark_hint_hud.visible = _cinematic_tour_previous_landmark_hud_visible
+	if _speed_hud != null:
+		_speed_hud.visible = _cinematic_tour_previous_speed_hud_visible
+	if _controls_hint_hud != null:
+		_controls_hint_hud.visible = _cinematic_tour_previous_controls_hint_visible
+	if _title_card_hud != null:
+		_title_card_hud.visible = _cinematic_tour_previous_title_hud_visible
 
 
 func _update_photo_mode_input() -> void:
+	if _cinematic_tour_active:
+		return
 	if not Input.is_action_just_pressed("photo_mode"):
 		return
 	toggle_photo_mode()
@@ -497,6 +599,8 @@ func _restore_photo_mode_hud() -> void:
 
 
 func _update_camera_input() -> void:
+	if _cinematic_tour_active:
+		return
 	if not Input.is_action_just_pressed("cam_toggle"):
 		return
 	cycle_camera_mode()
@@ -729,10 +833,65 @@ func _wheel_mesh_for_socket(socket: Node3D) -> Node3D:
 func _update_camera(delta: float) -> void:
 	if _vehicle == null:
 		return
+	if _cinematic_tour_active:
+		_update_cinematic_camera(delta)
+		return
 	var state: RefCounted = _vehicle.call("get_state")
 	_update_chase_camera(delta, state)
 	_update_orbit_camera(delta, state)
 	_update_fpv_camera(delta, state)
+
+
+func _update_cinematic_camera(delta: float) -> void:
+	if _cinematic_camera == null:
+		return
+	var position_count: int = GameConfig.cinematic_tour_positions.size()
+	var look_count: int = GameConfig.cinematic_tour_look_targets.size()
+	if position_count < 2 or look_count != position_count:
+		push_error("Cinematic tour requires matching position/look target arrays with at least two points")
+		_exit_cinematic_tour()
+		return
+	if _camera != null:
+		_camera.current = false
+	if _orbit_camera != null:
+		_orbit_camera.current = false
+	if _fpv_camera != null:
+		_fpv_camera.current = false
+	_cinematic_tour_elapsed += delta
+	var duration: float = maxf(GameConfig.cinematic_tour_duration_seconds, 0.001)
+	var loop_progress: float = fposmod(_cinematic_tour_elapsed, duration) / duration
+	var scaled_progress: float = loop_progress * float(position_count)
+	var segment_index: int = int(floorf(scaled_progress)) % position_count
+	var segment_t: float = scaled_progress - floorf(scaled_progress)
+	var eased_t: float = _cinematic_ease(segment_t)
+	var position: Vector3 = _cinematic_catmull(GameConfig.cinematic_tour_positions, segment_index, eased_t)
+	var look_target: Vector3 = _cinematic_catmull(GameConfig.cinematic_tour_look_targets, segment_index, eased_t)
+	_cinematic_camera.global_position = position
+	_cinematic_camera.look_at(look_target, Vector3.UP)
+	_cinematic_camera.fov = GameConfig.cinematic_tour_fov
+	_cinematic_camera.far = GameConfig.cinematic_tour_far
+	_cinematic_camera.current = true
+
+
+func _cinematic_catmull(points: Array[Vector3], index: int, t: float) -> Vector3:
+	var count: int = points.size()
+	var p0: Vector3 = points[wrapi(index - 1, 0, count)]
+	var p1: Vector3 = points[wrapi(index, 0, count)]
+	var p2: Vector3 = points[wrapi(index + 1, 0, count)]
+	var p3: Vector3 = points[wrapi(index + 2, 0, count)]
+	var t2: float = t * t
+	var t3: float = t2 * t
+	return (
+		p1 * 2.0
+		+ (p2 - p0) * t
+		+ (p0 * 2.0 - p1 * 5.0 + p2 * 4.0 - p3) * t2
+		+ (-p0 + p1 * 3.0 - p2 * 3.0 + p3) * t3
+	) * 0.5
+
+
+func _cinematic_ease(t: float) -> float:
+	var clamped_t: float = clampf(t, 0.0, 1.0)
+	return clamped_t * clamped_t * (3.0 - 2.0 * clamped_t)
 
 
 func _update_chase_camera(delta: float, state: RefCounted) -> void:

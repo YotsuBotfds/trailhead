@@ -179,6 +179,23 @@ var fpv_cam_fov: float = 72.0
 var cam_far: float = 2000.0
 var orbit_cam_far: float = 2000.0
 var fpv_cam_far: float = 2000.0
+var cinematic_tour_duration_seconds: float = 42.0
+var cinematic_tour_fov: float = 58.0
+var cinematic_tour_far: float = 5000.0
+var cinematic_tour_positions: Array[Vector3] = [
+	Vector3(1548.0, 1226.0, 1548.0),
+	Vector3(1518.0, 1232.0, 1488.0),
+	Vector3(1438.0, 1228.0, 1320.0),
+	Vector3(1306.0, 1220.0, 1028.0),
+	Vector3(1168.0, 1217.0, 818.0)
+]
+var cinematic_tour_look_targets: Array[Vector3] = [
+	Vector3(1505.0, 1255.0, 1450.0),
+	Vector3(1410.0, 1268.0, 1390.0),
+	Vector3(1515.0, 1278.0, 1210.0),
+	Vector3(1200.0, 1252.0, 930.0),
+	Vector3(1285.0, 1265.0, 900.0)
+]
 var minimap_size: float = 132.0
 var minimap_margin: float = 16.0
 var minimap_inner_padding: float = 12.0
