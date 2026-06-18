@@ -3,9 +3,14 @@ render_mode diffuse_lambert, specular_schlick_ggx;
 
 uniform sampler2D surface_id_texture : filter_nearest, repeat_disable;
 uniform sampler2DArray albedo_array : source_color, filter_linear_mipmap, repeat_enable;
+uniform sampler2D macro_albedo_texture : source_color, filter_linear, repeat_disable;
 uniform vec2 control_origin_xz = vec2(0.0, 0.0);
 uniform vec2 control_size_xz = vec2(100.0, 100.0);
+uniform vec2 macro_albedo_origin_xz = vec2(0.0, 0.0);
+uniform vec2 macro_albedo_size_xz = vec2(5500.0, 5700.0);
 uniform bool use_albedo_array = false;
+uniform bool use_macro_albedo = false;
+uniform float macro_albedo_strength = 0.18;
 uniform vec4 surface_color_0 : source_color = vec4(0.50, 0.47, 0.38, 1.0);
 uniform vec4 surface_color_1 : source_color = vec4(0.86, 0.86, 0.82, 1.0);
 uniform vec4 surface_color_2 : source_color = vec4(0.92, 0.84, 0.72, 1.0);
@@ -159,6 +164,11 @@ void fragment() {
 	varnish_streak *= mix(0.55, 1.0, strata_wave * 0.5 + 0.5);
 	float varnish_amount = varnish_wall_mask * varnish_height_mask * varnish_streak * zion_varnish_strength;
 	ALBEDO = mix(ALBEDO, zion_varnish_color.rgb, clamp(varnish_amount, 0.0, 1.0));
+	if (use_macro_albedo) {
+		vec2 macro_uv = clamp((world_xz - macro_albedo_origin_xz) / macro_albedo_size_xz, vec2(0.0), vec2(1.0));
+		vec3 macro_albedo = texture(macro_albedo_texture, macro_uv).rgb;
+		ALBEDO = clamp(mix(ALBEDO, ALBEDO * (macro_albedo * 2.0), macro_albedo_strength), vec3(0.0), vec3(1.0));
+	}
 	ROUGHNESS = terrain_roughness;
 	SPECULAR = terrain_specular;
 }
