@@ -45,6 +45,7 @@ const ZION_FOG_AERIAL_PERSPECTIVE: float = 0.10
 const ZION_FOG_SKY_AFFECT: float = 0.34
 const ZION_VOLUMETRIC_FOG_SKY_AFFECT: float = 0.24
 const ZION_NIGHT_FOG_SKY_AFFECT: float = 0.18
+const ZION_SHADOW_ATLAS_SIZE: int = 8192
 const ZION_REGION_ID: String = "cedar_hollow_zion"
 const ZION_SPAWN_ID: StringName = &"demo_canyon_junction"
 const WORLD_REGION_ID_META: StringName = &"trailhead_world_region_id"
@@ -770,13 +771,16 @@ func _apply_mood() -> void:
 		environment.fog_light_color = GameConfig.dusk_fog_light_color
 	AtmosphereVisualBuilderScript.apply_mood(_world_environment, _sun, _mood)
 	_apply_zion_vista_mood(environment, sky_material)
+	var shadow_viewport: Viewport = get_viewport()
+	if shadow_viewport != null:
+		shadow_viewport.positional_shadow_atlas_size = ZION_SHADOW_ATLAS_SIZE
 
 
 func _ensure_mood_sky(environment: Environment) -> Material:
 	var sky: Sky = environment.sky
 	if sky == null:
 		sky = Sky.new()
-		sky.radiance_size = Sky.RADIANCE_SIZE_512
+	sky.radiance_size = Sky.RADIANCE_SIZE_2048
 	if _mood == MOOD_NIGHT:
 		if not (sky.sky_material is ShaderMaterial):
 			var shader_material: ShaderMaterial = ShaderMaterial.new()
