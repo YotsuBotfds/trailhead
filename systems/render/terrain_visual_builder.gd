@@ -102,7 +102,30 @@ const FOLIAGE_NEON_TAME_BACKLIGHT_ENERGY: float = 0.10
 const FOLIAGE_TREE_REAL_MESH_SCALE: Vector3 = Vector3.ONE
 const FOLIAGE_BOULDER_LOD0_SCALE: Vector3 = Vector3(1.0, 1.0, 1.0)
 const FOLIAGE_BOULDER_LOD1_SCALE: Vector3 = Vector3(0.82, 0.82, 0.82)
-const FOLIAGE_BOULDER_GROUND_SINK_M: float = 0.045
+# Boulder/talus enrichment (Zion art-direction bible §1.1, §2.3): real lower Zion carpets
+# cliff bases + steep slopes in rock (talus aprons, scattered Navajo boulders, rubble in
+# washes) while the dry desert benches stay sparse class-4. Per-instance size runs from
+# small rubble through large boulders; each settles at its own attitude and embeds into the
+# ground so it sits IN the dirt, not on top. All deterministic (hash by cell+index+salt).
+const FOLIAGE_BOULDER_WIDTH_MIN: float = 0.34
+const FOLIAGE_BOULDER_WIDTH_MAX: float = 2.15
+const FOLIAGE_BOULDER_HEIGHT_MIN: float = 0.28
+const FOLIAGE_BOULDER_HEIGHT_MAX: float = 1.36
+const FOLIAGE_BOULDER_TILT_MAX_DEG: float = 16.0
+const FOLIAGE_BOULDER_GROUND_SINK_MIN_M: float = 0.05
+const FOLIAGE_BOULDER_GROUND_SINK_MAX_M: float = 0.15
+# Steep-slope talus density boost. Flat ground (normal.y >= FOLIAGE_MAX_SLOPE_NORMAL_Y)
+# keeps baseline sparse scatter; steeper ground (cliff bases / talus aprons) ramps up to
+# FOLIAGE_BOULDER_TALUS_DENSITY_BOOST so rock piles where the slopes are. Capped so a near-
+# vertical wall never forces keep-probability above 1.0.
+const FOLIAGE_BOULDER_TALUS_DENSITY_BOOST: float = 3.2
+const FOLIAGE_BOULDER_DENSITY_CAP: float = 0.55
+# normal.y floor at which the talus density boost saturates (~70 degrees); below this a
+# near-vertical wall holds at the boost ceiling instead of stacking further.
+const FOLIAGE_BOULDER_TALUS_STEEP_NORMAL_Y: float = 0.34
+# Salts 14-15 stay disjoint from candidate slots 1-13 and grass-clump salts 20-28.
+const FOLIAGE_BOULDER_TILT_AXIS_SALT: int = 14
+const FOLIAGE_BOULDER_TILT_SALT: int = 15
 const FOLIAGE_DENSITY_PACKED_DIRT: float = 0.30
 const FOLIAGE_DENSITY_TALL_GRASS: float = 0.62
 const FOLIAGE_DENSITY_LOOSE_ROCK: float = 0.18
@@ -1749,6 +1772,14 @@ static func _build_region_foliage_cell_data_with_audit(tile_data_by_cell: Dictio
 		var density: float = _foliage_density_for_surface_species(surface_id_value, species_id)
 		if density <= 0.0:
 			continue
+		# Talus enrichment: boost boulder keep-probability on steep ground (cliff bases /
+		# aprons) so rock clusters where real Zion piles it; flat benches stay sparse.
+		# Deterministic — driven only by the candidate terrain normal, never Time/randi.
+		# For boulders place == world (no grass-clump relocate), so this normal matches the
+		# post-keep slope sample below.
+		if species_id == FOLIAGE_SPECIES_BOULDER:
+			var boulder_candidate_normal_y: float = _normal_at_region_xz(tile_data_by_cell, world_x, world_z).y
+			density = minf(density * _boulder_slope_density_multiplier(boulder_candidate_normal_y), FOLIAGE_BOULDER_DENSITY_CAP)
 		var keep_value: float = _region_foliage_unit(foliage_cell, lod_index, attempt, 3)
 		if keep_value > density:
 			continue
@@ -1779,18 +1810,20 @@ static func _build_region_foliage_cell_data_with_audit(tile_data_by_cell: Dictio
 			width_scale = 0.92 + _region_foliage_unit(foliage_cell, lod_index, attempt, 5) * 0.18
 			height_scale = 0.94 + _region_foliage_unit(foliage_cell, lod_index, attempt, 6) * 0.18
 		elif species_id == FOLIAGE_SPECIES_BOULDER:
-			width_scale = 0.46 + _region_foliage_unit(foliage_cell, lod_index, attempt, 5) * 1.18
-			height_scale = 0.34 + _region_foliage_unit(foliage_cell, lod_index, attempt, 6) * 0.68
+			width_scale = lerpf(FOLIAGE_BOULDER_WIDTH_MIN, FOLIAGE_BOULDER_WIDTH_MAX, _region_foliage_unit(foliage_cell, lod_index, attempt, 5))
+			height_scale = lerpf(FOLIAGE_BOULDER_HEIGHT_MIN, FOLIAGE_BOULDER_HEIGHT_MAX, _region_foliage_unit(foliage_cell, lod_index, attempt, 6))
 		var base_scale: Vector3 = _foliage_base_scale_for_lod_species(lod_index, species_id)
 		var basis: Basis
 		if is_grass_clump:
 			basis = _grass_clump_basis(base_scale, width_scale, height_scale, foliage_cell, lod_index, attempt, yaw)
+		elif species_id == FOLIAGE_SPECIES_BOULDER:
+			basis = _boulder_instance_basis(base_scale, width_scale, height_scale, foliage_cell, lod_index, attempt, yaw)
 		else:
 			basis = Basis(Vector3.UP, yaw).scaled(Vector3(base_scale.x * width_scale, base_scale.y * height_scale, base_scale.z * width_scale))
 		var species_data: FoliageSpeciesCellData = _foliage_species_data_from_list(species_data_list, species_id)
 		var y_offset: float = REGION_FOLIAGE_Y_OFFSET
 		if species_id == FOLIAGE_SPECIES_BOULDER:
-			y_offset = -FOLIAGE_BOULDER_GROUND_SINK_M
+			y_offset = -lerpf(FOLIAGE_BOULDER_GROUND_SINK_MIN_M, FOLIAGE_BOULDER_GROUND_SINK_MAX_M, _region_foliage_unit(foliage_cell, lod_index, attempt, 5))
 		species_data.transforms.append(Transform3D(basis, Vector3(place_x, height + y_offset, place_z)))
 		_record_foliage_acceptance(audit, terrain_normal.y, species_id)
 		_record_foliage_species_acceptance(audit, species_id)
@@ -2377,6 +2410,31 @@ static func _record_foliage_species_acceptance(audit: Dictionary[String, Variant
 		return
 	var key: String = String(species_id) + "_instance_count"
 	audit[key] = int(audit.get(key, 0)) + 1
+
+
+static func _boulder_slope_density_multiplier(normal_y: float) -> float:
+	# Flat ground (normal.y at/above the foliage slope gate) keeps the baseline boulder
+	# keep-probability; steeper ground (lower normal.y -- cliff bases / talus aprons) ramps
+	# it up to FOLIAGE_BOULDER_TALUS_DENSITY_BOOST so rock piles where real Zion piles it,
+	# saturating below FOLIAGE_BOULDER_TALUS_STEEP_NORMAL_Y. Pure function of the terrain
+	# normal -- deterministic, no Time/randi.
+	var flat_y: float = FOLIAGE_MAX_SLOPE_NORMAL_Y
+	if normal_y >= flat_y:
+		return 1.0
+	var steep_t: float = clampf((flat_y - normal_y) / maxf(flat_y - FOLIAGE_BOULDER_TALUS_STEEP_NORMAL_Y, 0.0001), 0.0, 1.0)
+	return lerpf(1.0, FOLIAGE_BOULDER_TALUS_DENSITY_BOOST, steep_t)
+
+
+static func _boulder_instance_basis(base_scale: Vector3, width_scale: float, height_scale: float, foliage_cell: Vector2i, lod_index: int, attempt: int, yaw: float) -> Basis:
+	# Full-yaw boulder plus a deterministic per-instance lean (axis azimuth from
+	# FOLIAGE_BOULDER_TILT_AXIS_SALT, magnitude bounded by FOLIAGE_BOULDER_TILT_MAX_DEG via
+	# FOLIAGE_BOULDER_TILT_SALT) so each rock settles at its own attitude instead of sitting
+	# perfectly plumb -- real talus tumbles. Then non-uniform width/height scale.
+	var tilt_axis_yaw: float = _region_foliage_unit(foliage_cell, lod_index, attempt, FOLIAGE_BOULDER_TILT_AXIS_SALT) * TAU
+	var tilt_amount: float = deg_to_rad(lerpf(-FOLIAGE_BOULDER_TILT_MAX_DEG, FOLIAGE_BOULDER_TILT_MAX_DEG, _region_foliage_unit(foliage_cell, lod_index, attempt, FOLIAGE_BOULDER_TILT_SALT)))
+	var tilt_axis: Vector3 = Vector3(cos(tilt_axis_yaw), 0.0, sin(tilt_axis_yaw))
+	var basis: Basis = Basis(Vector3.UP, yaw) * Basis(tilt_axis, tilt_amount)
+	return basis.scaled(Vector3(base_scale.x * width_scale, base_scale.y * height_scale, base_scale.z * width_scale))
 
 
 static func _foliage_density_for_surface_value(surface_id_value: int) -> float:
