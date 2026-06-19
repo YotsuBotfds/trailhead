@@ -138,6 +138,7 @@ var _track_applied_cells: Dictionary[Vector2i, bool] = {}
 
 func _ready() -> void:
 	RenderRuntimeConfigScript.apply_to(self)
+	_apply_render_quality()
 	_ensure_default_input_map()
 	_setup_surface_map()
 	_setup_world()
@@ -157,6 +158,30 @@ func _ready() -> void:
 	_setup_frequency_input_panel()
 	if GameConfig.cinematic_auto_open:
 		_enter_cinematic_tour()
+
+
+func _apply_render_quality() -> void:
+	# Render-only 3D scaling + temporal AA (GLM perf-opt). Pushes the
+	# GameConfig-driven mode/scale/TAA to the game viewport once in _ready().
+	# NOTE: project.godot's rendering/scaling_3d/mode=2 is NOT inherited by the
+	# runtime viewport (it reads as mode=0/bilinear), so this explicit apply is
+	# what actually selects the scaler. Default is FSR1 (spatial): on Apple
+	# Silicon FSR2's temporal pass costs ~5-6 ms/frame at equal scale and falls
+	# below the 45 fps floor, while FSR1 ties bilinear for cost and sharpens the
+	# 0.85 upscale for free. Render-only: never touches sim/collision/determinism.
+	# Inert under the headless DisplayServer (no GPU), matching RenderRuntimeConfig's
+	# headless guard; headless inspectors read ProjectSettings + the atmosphere
+	# builder's use_taa, so they stay green. RenderDynamicResolutionController
+	# (installed just above via apply_to) rides on top and re-pins scaling_3d_scale
+	# to its min/max band each frame.
+	if DisplayServer.get_name() == &"headless":
+		return
+	var viewport: Viewport = get_viewport()
+	if viewport == null:
+		return
+	viewport.scaling_3d_mode = GameConfig.render_scaling_3d_mode
+	viewport.scaling_3d_scale = GameConfig.render_scaling_3d_scale
+	viewport.use_taa = GameConfig.render_use_taa
 
 
 func _exit_tree() -> void:

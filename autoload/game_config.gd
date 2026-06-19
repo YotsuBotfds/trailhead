@@ -28,6 +28,11 @@ const streaming_collision_freeze_max_ticks: int = 600
 const DIRECTIONAL_SHADOW_ORTHOGONAL: int = 0
 const DIRECTIONAL_SHADOW_PARALLEL_2_SPLITS: int = 1
 const DIRECTIONAL_SHADOW_PARALLEL_4_SPLITS: int = 2
+# 3D scaling modes mirror Viewport.Scaling3DMode exactly (Godot 4.6). Referenced
+# via the Viewport enum so a 4.x rename is a compile error, not a silent miss.
+const SCALING_3D_MODE_BILINEAR: int = Viewport.SCALING_3D_MODE_BILINEAR
+const SCALING_3D_MODE_FSR: int = Viewport.SCALING_3D_MODE_FSR
+const SCALING_3D_MODE_FSR2: int = Viewport.SCALING_3D_MODE_FSR2
 
 var render_frame_cap_enabled: bool = true
 var render_max_fps: int = 60
@@ -38,6 +43,23 @@ var stream_collision_prebuild_per_tick: int = 1
 var stream_collision_evictions_per_tick: int = 3
 var stream_spawn_no_fall_probe_ticks: int = 840
 var render_visual_tile_frees_per_frame: int = 2
+# --- Render quality baseline (GLM perf-opt): explicit, GameConfig-driven 3D
+# scaling + temporal AA. CedarHollowHost._apply_render_quality() pushes these to
+# the game viewport once in _ready(). DEFAULT IS FSR1 (spatial), NOT FSR2:
+# measured on Apple Silicon (Godot 4.6.1, Metal), FSR2's temporal pass costs
+# ~5-6 ms/frame vs bilinear at equal scale and falls below the 45 fps floor
+# under load, while FSR1 ties bilinear for cost yet sharpens the 0.85 upscale for
+# free (a net fidelity win). The scale (0.85) -- not the mode -- is what banks
+# the ~28% pixel-savings; it was already live via the dynamic-resolution band.
+# render_scaling_3d_scale is the BASELINE; RenderDynamicResolutionController
+# re-pins scaling_3d_scale to its min/max band every frame, so to move the
+# steady-state scale also set render_dynamic_resolution_min_scale/_max_scale.
+# Flip render_scaling_3d_mode to SCALING_3D_MODE_FSR2 for max fidelity when GPU
+# budget allows; use_taa stays true (FSR2 needs its velocity buffer; headless
+# visual inspectors assert it).
+var render_scaling_3d_mode: int = SCALING_3D_MODE_FSR
+var render_scaling_3d_scale: float = 0.85
+var render_use_taa: bool = true
 var render_dynamic_resolution_enabled: bool = true
 var render_dynamic_resolution_min_scale: float = 0.85
 var render_dynamic_resolution_max_scale: float = 0.85
