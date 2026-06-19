@@ -89,6 +89,11 @@ const DRIVER_VISOR_LOCAL_OFFSET: Vector3 = Vector3(0.0, 0.0015, -0.0095)
 const DRIVER_VISOR_COLOR: Color = Color(0.06, 0.08, 0.12)
 const CAGE_NAME_PREFIX: String = "cage_"
 const RC_DETAIL_MATERIAL_META: StringName = &"trailhead_rc_detail_material"
+# GLM-fidelity (ungrounding pass): the StandardMaterial3D fresnel rim is unlit
+# edge energy, so on the bright saturated orange albedo it reads as a self-lit
+# underglow once bloom picks it up. Cap it below the W6 author value so the body
+# stays lit-only-by-sun. Albedo (owner palette) is still untouched.
+const BUGGY_BODY_RIM_GROUNDED_CAP: float = 0.15
 
 
 func attach(vehicle: Node) -> void:
@@ -167,7 +172,16 @@ static func _apply_clearcoat(mesh_instance: MeshInstance3D) -> void:
 		# is left untouched so the owner-tuned body color survives.
 		tuned_material.metallic = clampf(GameConfig.buggy_body_metallic, 0.0, 1.0)
 		tuned_material.rim_enabled = GameConfig.buggy_body_rim_enabled
-		tuned_material.rim = clampf(GameConfig.buggy_body_rim_energy, 0.0, 1.0)
+		# GLM-fidelity: cap the fresnel rim so it doesn't read as a self-lit underglow
+		# on the bright orange paint (see BUGGY_BODY_RIM_GROUNDED_CAP).
+		tuned_material.rim = minf(clampf(GameConfig.buggy_body_rim_energy, 0.0, 1.0), BUGGY_BODY_RIM_GROUNDED_CAP)
+		# GLM-fidelity: guarantee the body paint is never self-lit. The source GLB
+		# materials carry no emission, but pin it off here so a future import/path
+		# cannot silently make the orange paint glow. Intended emissives (headlights,
+		# tail lights) are wired on their own mesh names in dedicated paths and are
+		# NOT body clearcoat panels, so they are unaffected.
+		tuned_material.emission_enabled = false
+		tuned_material.emission_energy_multiplier = 0.0
 		mesh.surface_set_material(surface_index, tuned_material)
 
 
