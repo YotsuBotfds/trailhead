@@ -7,6 +7,8 @@ const SurfaceVisualCatalogResource: Resource = preload("res://data/surface_visua
 const TerrainTrackOverlayShader: Shader = preload("res://systems/render/terrain_track_overlay.gdshader")
 const TerrainSurfaceIndexShader: Shader = preload("res://systems/render/terrain_surface_index.gdshader")
 const GrassShader: Shader = preload("res://systems/render/grass_billboard.gdshader")
+const CottonwoodTreeScene: PackedScene = preload("res://assets/models/foliage/cottonwood.glb")
+const WillowTreeScene: PackedScene = preload("res://assets/models/foliage/willow.glb")
 const DETAIL_MASK_TEXTURE_PATH: String = "res://assets/textures/surface_visuals/generated/terrain_detail_mask.png"
 const GENERATED_SURFACE_TEXTURE_DIR: String = "res://assets/textures/surface_visuals/generated/"
 const TEXTURE_SOURCE_PATH_META: StringName = &"trailhead_source_path"
@@ -99,14 +101,11 @@ const FOLIAGE_YUCCA_LOD0_SCALE: Vector3 = Vector3(0.95, 0.86, 0.95)
 const FOLIAGE_YUCCA_LOD1_SCALE: Vector3 = Vector3(0.78, 0.72, 0.78)
 const FOLIAGE_JUNIPER_LOD0_SCALE: Vector3 = Vector3(1.75, 1.92, 1.75)
 const FOLIAGE_JUNIPER_LOD1_SCALE: Vector3 = Vector3(1.45, 1.62, 1.45)
-const FOLIAGE_WILLOW_LOD0_SCALE: Vector3 = Vector3(2.15, 2.55, 2.15)
-const FOLIAGE_WILLOW_LOD1_SCALE: Vector3 = Vector3(1.65, 2.05, 1.65)
-const FOLIAGE_COTTONWOOD_LOD0_SCALE: Vector3 = Vector3(4.4, 5.8, 4.4)
-const FOLIAGE_COTTONWOOD_LOD1_SCALE: Vector3 = Vector3(3.3, 4.4, 3.3)
+const FOLIAGE_TREE_REAL_MESH_SCALE: Vector3 = Vector3.ONE
 const FOLIAGE_BOULDER_LOD0_SCALE: Vector3 = Vector3(1.0, 1.0, 1.0)
 const FOLIAGE_BOULDER_LOD1_SCALE: Vector3 = Vector3(0.82, 0.82, 0.82)
 const FOLIAGE_BOULDER_GROUND_SINK_M: float = 0.045
-const FOLIAGE_DENSITY_PACKED_DIRT: float = 1.0
+const FOLIAGE_DENSITY_PACKED_DIRT: float = 0.30
 const FOLIAGE_DENSITY_TALL_GRASS: float = 0.62
 const FOLIAGE_DENSITY_LOOSE_ROCK: float = 0.18
 const FOLIAGE_DENSITY_MUD: float = 0.30
@@ -758,7 +757,8 @@ static func _add_foliage_pipeline_warmup_instance(parent: Node3D, instance_name:
 	var instance: MultiMeshInstance3D = MultiMeshInstance3D.new()
 	instance.name = instance_name
 	instance.multimesh = multimesh
-	instance.material_override = material
+	if material != null:
+		instance.material_override = material
 	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	parent.add_child(instance)
 
@@ -1662,7 +1662,10 @@ static func _build_region_foliage_cell_data_with_audit(tile_data_by_cell: Dictio
 		var yaw: float = deg_to_rad(_region_foliage_unit(foliage_cell, lod_index, attempt, 4) * 360.0)
 		var width_scale: float = 0.82 + _region_foliage_unit(foliage_cell, lod_index, attempt, 5) * 0.42
 		var height_scale: float = 0.78 + _region_foliage_unit(foliage_cell, lod_index, attempt, 6) * 0.54
-		if species_id == FOLIAGE_SPECIES_BOULDER:
+		if _foliage_species_uses_source_material(species_id):
+			width_scale = 0.92 + _region_foliage_unit(foliage_cell, lod_index, attempt, 5) * 0.18
+			height_scale = 0.94 + _region_foliage_unit(foliage_cell, lod_index, attempt, 6) * 0.18
+		elif species_id == FOLIAGE_SPECIES_BOULDER:
 			width_scale = 0.46 + _region_foliage_unit(foliage_cell, lod_index, attempt, 5) * 1.18
 			height_scale = 0.34 + _region_foliage_unit(foliage_cell, lod_index, attempt, 6) * 0.68
 		var base_scale: Vector3 = _foliage_base_scale_for_lod_species(lod_index, species_id)
@@ -1790,7 +1793,8 @@ static func _add_foliage_species_cell_from_data(parent: Node3D, cell_data: Folia
 	instance.name = cell_data.node_name + "_" + String(species_data.species_id)
 	instance.position = cell_data.position
 	var material: Material = _region_foliage_material_for_lod_species(cell_data.lod_index, species_data.species_id)
-	instance.material_override = material
+	if material != null:
+		instance.material_override = material
 	instance.extra_cull_margin = REGION_FOLIAGE_CULL_MARGIN
 	instance.visibility_range_begin = cell_data.visibility_range_begin
 	instance.visibility_range_end = cell_data.visibility_range_end
@@ -1842,6 +1846,8 @@ static func _region_foliage_material_for_lod(lod_index: int) -> Material:
 
 static func _region_foliage_material_for_lod_species(lod_index: int, species_id: StringName) -> Material:
 	var safe_lod_index: int = _region_foliage_lod_index(lod_index)
+	if _foliage_species_uses_source_material(species_id):
+		return null
 	var cache_key: String = String(species_id) + "_lod" + str(safe_lod_index)
 	if _foliage_material_cache.has(cache_key):
 		return _foliage_material_cache[cache_key]
@@ -2004,91 +2010,35 @@ static func _region_juniper_mesh(mesh_name: String, lod_index: int) -> ArrayMesh
 	return mesh
 
 
-static func _region_willow_mesh(mesh_name: String, lod_index: int) -> ArrayMesh:
-	var mesh: ArrayMesh = ArrayMesh.new()
-	mesh.resource_name = mesh_name
-	var vertices: PackedVector3Array = PackedVector3Array()
-	var normals: PackedVector3Array = PackedVector3Array()
-	var uvs: PackedVector2Array = PackedVector2Array()
-	var indices: PackedInt32Array = PackedInt32Array()
-	var plane_count: int = 3
-	if lod_index > 0:
-		plane_count = 2
-	for plane_index in range(plane_count):
-		var yaw: float = TAU * float(plane_index) / float(plane_count)
-		_append_tapered_billboard_plane(vertices, normals, uvs, indices, yaw, 0.0, 0.52, 1.0, 0.20, 0.36, 0.16)
-	var arrays: Array = []
-	arrays.resize(Mesh.ARRAY_MAX)
-	arrays[Mesh.ARRAY_VERTEX] = vertices
-	arrays[Mesh.ARRAY_NORMAL] = normals
-	arrays[Mesh.ARRAY_TEX_UV] = uvs
-	arrays[Mesh.ARRAY_INDEX] = indices
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+static func _region_willow_mesh(mesh_name: String, _lod_index: int) -> Mesh:
+	return _extract_first_mesh(WillowTreeScene, mesh_name)
+
+
+static func _region_cottonwood_mesh(mesh_name: String, _lod_index: int) -> Mesh:
+	return _extract_first_mesh(CottonwoodTreeScene, mesh_name)
+
+
+static func _extract_first_mesh(scene: PackedScene, node_name: String) -> Mesh:
+	var root: Node = scene.instantiate()
+	if root == null:
+		push_error("TerrainVisualBuilder: failed to instantiate " + node_name)
+		return null
+	var mesh: Mesh = _find_first_mesh(root)
+	root.free()
+	if mesh == null:
+		push_error("TerrainVisualBuilder: failed to extract mesh from " + node_name)
 	return mesh
 
 
-static func _region_cottonwood_mesh(mesh_name: String, lod_index: int) -> ArrayMesh:
-	var mesh: ArrayMesh = ArrayMesh.new()
-	mesh.resource_name = mesh_name
-	var vertices: PackedVector3Array = PackedVector3Array()
-	var normals: PackedVector3Array = PackedVector3Array()
-	var uvs: PackedVector2Array = PackedVector2Array()
-	var indices: PackedInt32Array = PackedInt32Array()
-	var plane_count: int = 4
-	for plane_index in range(plane_count):
-		var yaw: float = TAU * float(plane_index) / float(plane_count)
-		_append_tapered_billboard_plane(vertices, normals, uvs, indices, yaw, 0.06, 0.54, 1.0, 0.28, 0.53, 0.30)
-	var arrays: Array = []
-	arrays.resize(Mesh.ARRAY_MAX)
-	arrays[Mesh.ARRAY_VERTEX] = vertices
-	arrays[Mesh.ARRAY_NORMAL] = normals
-	arrays[Mesh.ARRAY_TEX_UV] = uvs
-	arrays[Mesh.ARRAY_INDEX] = indices
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-	return mesh
-
-
-static func _append_tapered_billboard_plane(
-		vertices: PackedVector3Array,
-		normals: PackedVector3Array,
-		uvs: PackedVector2Array,
-		indices: PackedInt32Array,
-		yaw: float,
-		bottom_y: float,
-		mid_y: float,
-		top_y: float,
-		bottom_half_width: float,
-		mid_half_width: float,
-		top_half_width: float) -> void:
-	var direction: Vector3 = Vector3(cos(yaw), 0.0, sin(yaw))
-	var side: Vector3 = Vector3(-direction.z, 0.0, direction.x)
-	var vertex_start: int = vertices.size()
-	vertices.append(side * -bottom_half_width + Vector3(0.0, bottom_y, 0.0))
-	vertices.append(side * bottom_half_width + Vector3(0.0, bottom_y, 0.0))
-	vertices.append(side * -mid_half_width + Vector3(0.0, mid_y, 0.0))
-	vertices.append(side * mid_half_width + Vector3(0.0, mid_y, 0.0))
-	vertices.append(side * -top_half_width + Vector3(0.0, top_y, 0.0))
-	vertices.append(side * top_half_width + Vector3(0.0, top_y, 0.0))
-	for _i in range(6):
-		normals.append(direction)
-	uvs.append(Vector2(0.0, 1.0))
-	uvs.append(Vector2(1.0, 1.0))
-	uvs.append(Vector2(0.0, 0.45))
-	uvs.append(Vector2(1.0, 0.45))
-	uvs.append(Vector2(0.0, 0.0))
-	uvs.append(Vector2(1.0, 0.0))
-	indices.append(vertex_start)
-	indices.append(vertex_start + 2)
-	indices.append(vertex_start + 1)
-	indices.append(vertex_start + 1)
-	indices.append(vertex_start + 2)
-	indices.append(vertex_start + 3)
-	indices.append(vertex_start + 2)
-	indices.append(vertex_start + 4)
-	indices.append(vertex_start + 3)
-	indices.append(vertex_start + 3)
-	indices.append(vertex_start + 4)
-	indices.append(vertex_start + 5)
+static func _find_first_mesh(parent: Node) -> Mesh:
+	var mesh_instance: MeshInstance3D = parent as MeshInstance3D
+	if mesh_instance != null and mesh_instance.mesh != null:
+		return mesh_instance.mesh
+	for child in parent.get_children():
+		var child_mesh: Mesh = _find_first_mesh(child)
+		if child_mesh != null:
+			return child_mesh
+	return null
 
 
 static func _region_boulder_mesh(mesh_name: String, lod_index: int) -> ArrayMesh:
@@ -2456,6 +2406,10 @@ static func _foliage_species_allows_steep_slope(species_id: StringName) -> bool:
 	return species_id == FOLIAGE_SPECIES_BOULDER
 
 
+static func _foliage_species_uses_source_material(species_id: StringName) -> bool:
+	return species_id == FOLIAGE_SPECIES_WILLOW or species_id == FOLIAGE_SPECIES_COTTONWOOD
+
+
 static func _riparian_species_for_candidate(foliage_cell: Vector2i, lod_index: int, attempt: int, world_x: float, world_z: float) -> StringName:
 	var river_distance_m: float = _distance_to_zion_river_xz(Vector2(world_x, world_z))
 	if river_distance_m > RIPARIAN_GRASS_OUTER_M:
@@ -2561,27 +2515,26 @@ static func _foliage_base_scale_for_lod_species(lod_index: int, species_id: Stri
 		if lod_index > 0:
 			return FOLIAGE_JUNIPER_LOD1_SCALE
 		return FOLIAGE_JUNIPER_LOD0_SCALE
-	if species_id == FOLIAGE_SPECIES_WILLOW:
-		if lod_index > 0:
-			return FOLIAGE_WILLOW_LOD1_SCALE
-		return FOLIAGE_WILLOW_LOD0_SCALE
-	if species_id == FOLIAGE_SPECIES_COTTONWOOD:
-		if lod_index > 0:
-			return FOLIAGE_COTTONWOOD_LOD1_SCALE
-		return FOLIAGE_COTTONWOOD_LOD0_SCALE
+	if _foliage_species_uses_source_material(species_id):
+		return FOLIAGE_TREE_REAL_MESH_SCALE
 	if lod_index > 0:
 		return GameConfig.foliage_grass_scrub_lod1_scale
 	return GameConfig.foliage_grass_scrub_lod0_scale
 
 
 static func _foliage_max_lod0_height() -> float:
-	var max_height: float = GameConfig.foliage_grass_scrub_lod0_scale.y
-	max_height = maxf(max_height, FOLIAGE_YUCCA_LOD0_SCALE.y)
-	max_height = maxf(max_height, FOLIAGE_JUNIPER_LOD0_SCALE.y)
-	max_height = maxf(max_height, FOLIAGE_WILLOW_LOD0_SCALE.y)
-	max_height = maxf(max_height, FOLIAGE_COTTONWOOD_LOD0_SCALE.y)
-	max_height = maxf(max_height, FOLIAGE_BOULDER_LOD0_SCALE.y)
+	var max_height: float = 0.0
+	for species_id in FOLIAGE_SPECIES_LIST:
+		max_height = maxf(max_height, _foliage_lod0_height_for_species(species_id))
 	return max_height * REGION_FOLIAGE_HEIGHT_SCALE_MAX
+
+
+static func _foliage_lod0_height_for_species(species_id: StringName) -> float:
+	var mesh: Mesh = _region_foliage_mesh_for_lod_species(0, species_id)
+	var mesh_height: float = 1.0
+	if mesh != null:
+		mesh_height = maxf(mesh.get_aabb().size.y, 0.0)
+	return mesh_height * _foliage_base_scale_for_lod_species(0, species_id).y
 
 
 static func _region_foliage_unit(cell: Vector2i, lod_index: int, instance_index: int, salt: int) -> float:
