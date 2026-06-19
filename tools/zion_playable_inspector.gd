@@ -157,6 +157,11 @@ func _require_pipeline_warmup(warmup_root: Node) -> void:
 			_errors.append("PipelineWarmup " + node_name + " missing mesh")
 		if warmup_instance.material_override == null:
 			_errors.append("PipelineWarmup " + node_name + " missing material")
+		elif _is_standard_material_warmup_label(node_name):
+			if not (warmup_instance.material_override is StandardMaterial3D):
+				_errors.append("PipelineWarmup " + node_name + " should use StandardMaterial3D")
+		elif not _is_grass_shader_material(warmup_instance.material_override):
+			_errors.append("PipelineWarmup " + node_name + " should use grass_billboard ShaderMaterial")
 
 
 func _require_int_meta(node: Node, meta_name: StringName, label: String) -> int:
@@ -164,6 +169,20 @@ func _require_int_meta(node: Node, meta_name: StringName, label: String) -> int:
 		_errors.append(label + " missing metadata: " + String(meta_name))
 		return 0
 	return int(node.get_meta(meta_name))
+
+
+func _is_standard_material_warmup_label(label: String) -> bool:
+	# Boulder (procedural StandardMaterial3D) and the four GLB foliage species
+	# (cottonwood/willow/juniper/yucca) warm a StandardMaterial3D; grass and
+	# riparian_grass warm the grass_billboard ShaderMaterial and fall through.
+	return label.find("_boulder") >= 0 or label.find("_cottonwood") >= 0 or label.find("_willow") >= 0 or label.find("_juniper") >= 0 or label.find("_yucca") >= 0
+
+
+func _is_grass_shader_material(material: Material) -> bool:
+	var shader_material: ShaderMaterial = material as ShaderMaterial
+	if shader_material == null or shader_material.shader == null:
+		return false
+	return shader_material.shader.resource_path == "res://systems/render/grass_billboard.gdshader"
 
 
 func _require_stream_hlod(hlod: MeshInstance3D) -> void:

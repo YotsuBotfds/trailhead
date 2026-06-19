@@ -261,6 +261,11 @@ func _require_warmup_multimesh(multimesh_instance: MultiMeshInstance3D, label: S
 		return
 	if multimesh_instance.material_override == null:
 		_errors.append(label + " missing material_override")
+	elif _is_standard_material_warmup_label(label):
+		if not (multimesh_instance.material_override is StandardMaterial3D):
+			_errors.append(label + " should use StandardMaterial3D")
+	elif not _is_grass_shader_material(multimesh_instance.material_override):
+		_errors.append(label + " should use grass_billboard ShaderMaterial")
 	if multimesh_instance.multimesh == null:
 		_errors.append(label + " missing MultiMesh")
 		return
@@ -416,7 +421,18 @@ func _require_foliage_tile(cell: Vector2i) -> Node3D:
 		if multimesh_instance.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF:
 			_errors.append("foliage child should not cast shadows: " + String(child.name))
 		var material: Material = multimesh_instance.material_override
-		if material == null:
+		if _is_source_material_foliage_child(multimesh_instance):
+			# GLB foliage (cottonwood/willow/juniper/yucca) intentionally renders with NO
+			# material_override at runtime: the StandardMaterial3D baked into the GLB mesh's
+			# first surface is what draws. Verify that surface material is in place instead of
+			# requiring an override.
+			if material != null:
+				_errors.append("GLB foliage child should render via mesh surface material, not override: " + String(child.name))
+			elif multimesh_instance.multimesh == null or multimesh_instance.multimesh.mesh == null or multimesh_instance.multimesh.mesh.get_surface_count() <= 0:
+				_errors.append("GLB foliage child missing mesh surface for material: " + String(child.name))
+			elif not (multimesh_instance.multimesh.mesh.surface_get_material(0) is StandardMaterial3D):
+				_errors.append("GLB foliage child mesh surface should use StandardMaterial3D: " + String(child.name))
+		elif material == null:
 			_errors.append("foliage child missing material_override: " + String(child.name))
 		elif _is_boulder_foliage_child(multimesh_instance):
 			if not (material is StandardMaterial3D):
@@ -547,10 +563,24 @@ func _is_grass_shader_material(material: Material) -> bool:
 	return shader_material.shader.resource_path == "res://systems/render/grass_billboard.gdshader"
 
 
+func _is_standard_material_warmup_label(label: String) -> bool:
+	# Boulder (procedural StandardMaterial3D) and the four GLB foliage species
+	# (cottonwood/willow/juniper/yucca) warm a StandardMaterial3D; grass and
+	# riparian_grass warm the grass_billboard ShaderMaterial and fall through.
+	return label.find("_boulder") >= 0 or label.find("_cottonwood") >= 0 or label.find("_willow") >= 0 or label.find("_juniper") >= 0 or label.find("_yucca") >= 0
+
+
 func _is_boulder_foliage_child(multimesh_instance: MultiMeshInstance3D) -> bool:
 	if not multimesh_instance.has_meta(&"trailhead_foliage_species"):
 		return false
 	return StringName(String(multimesh_instance.get_meta(&"trailhead_foliage_species"))) == &"boulder"
+
+
+func _is_source_material_foliage_child(multimesh_instance: MultiMeshInstance3D) -> bool:
+	if not multimesh_instance.has_meta(&"trailhead_foliage_species"):
+		return false
+	var species: StringName = StringName(String(multimesh_instance.get_meta(&"trailhead_foliage_species")))
+	return species == &"cottonwood" or species == &"willow" or species == &"juniper" or species == &"yucca"
 
 
 func _require_shader_color(material: ShaderMaterial, parameter_name: StringName, label: String, node_name: String) -> void:

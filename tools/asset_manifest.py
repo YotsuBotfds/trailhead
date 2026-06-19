@@ -65,6 +65,12 @@ GENERATED_ASSETS = {
         "pinecone.glb",
         "trail_blaze.glb",
     ],
+    "foliage": [
+        "cottonwood.glb",
+        "juniper.glb",
+        "willow.glb",
+        "yucca.glb",
+    ],
     "terrain": terrain_asset_filenames(),
     "vehicle": [
         "rc_buggy.glb",

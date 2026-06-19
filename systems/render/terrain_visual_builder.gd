@@ -731,14 +731,33 @@ static func _add_foliage_pipeline_warmup(parent: Node3D) -> int:
 	var warmup_count: int = 0
 	for species_id in FOLIAGE_SPECIES_LIST:
 		var lod0_mesh: Mesh = _region_foliage_mesh_for_lod_species(0, species_id)
-		var lod0_material: Material = _region_foliage_material_for_lod_species(0, species_id)
+		var lod0_material: Material = _region_foliage_warmup_material_for_lod_species(0, species_id)
 		_add_foliage_pipeline_warmup_instance(parent, REGION_PIPELINE_WARMUP_FOLIAGE_LOD0_NAME + "_" + String(species_id), lod0_mesh, lod0_material)
 		warmup_count += 1
 		var lod1_mesh: Mesh = _region_foliage_mesh_for_lod_species(1, species_id)
-		var lod1_material: Material = _region_foliage_material_for_lod_species(1, species_id)
+		var lod1_material: Material = _region_foliage_warmup_material_for_lod_species(1, species_id)
 		_add_foliage_pipeline_warmup_instance(parent, REGION_PIPELINE_WARMUP_FOLIAGE_LOD1_NAME + "_" + String(species_id), lod1_mesh, lod1_material)
 		warmup_count += 1
 	return warmup_count
+
+
+# Pipeline-warmup material mirror. Runtime GLB foliage (cottonwood/willow/juniper/yucca)
+# renders with NO material_override: the StandardMaterial3D baked into the GLB mesh's first
+# surface is the material whose PSO actually compiles the first time a tree of that species
+# streams in. _region_foliage_material_for_lod_species returns null for these species (so
+# runtime leaves material_override empty), which would leave the warmup with nothing concrete
+# to compile or verify. Here we lift that same surface material out and hand it to the warmup
+# instance as material_override. It is the identical material instance (same RID) the runtime
+# resolves, so the PSO cache entry is shared and the first streamed tree pays no compile hitch.
+static func _region_foliage_warmup_material_for_lod_species(lod_index: int, species_id: StringName) -> Material:
+	if _foliage_species_uses_source_material(species_id):
+		var source_mesh: Mesh = _region_foliage_mesh_for_lod_species(lod_index, species_id)
+		if source_mesh != null and source_mesh.get_surface_count() > 0:
+			var source_material: Material = source_mesh.surface_get_material(0)
+			if source_material != null:
+				return source_material
+		return null
+	return _region_foliage_material_for_lod_species(lod_index, species_id)
 
 
 static func _add_foliage_pipeline_warmup_instance(parent: Node3D, instance_name: String, mesh: Mesh, material: Material) -> void:
