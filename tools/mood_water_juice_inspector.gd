@@ -23,6 +23,11 @@ const VOLUMETRIC_FOG_VOLUME_DEPTH_SETTING_PATH: String = "rendering/environment/
 const EXPECTED_VOLUMETRIC_FOG_VOLUME_DEPTH: int = 32
 const VOLUMETRIC_FOG_USE_FILTER_SETTING_PATH: String = "rendering/environment/volumetric_fog/use_filter"
 const EXPECTED_VOLUMETRIC_FOG_USE_FILTER: int = 1
+const PEBBLE_MATERIAL_META: StringName = &"vehicle_juice_pebble_material"
+const VEHICLE_WHEEL_COUNT: int = 4
+const REAR_ROOSTER_COUNT: int = 2
+const PEBBLE_DRAW_MESH_MAX_EXTENT: float = 0.030
+const BARE_WHITE_CHANNEL: float = 0.92
 
 var _scene_root: Node = null
 var _errors: PackedStringArray = PackedStringArray()
@@ -354,6 +359,7 @@ func _inspect_vehicle_juice() -> void:
 	_require_surface_burst(juice_rig, "DustSurfaceBurst")
 	_require_surface_burst(juice_rig, "MudSurfaceBurst")
 	_require_surface_burst(juice_rig, "WaterSurfaceBurst")
+	_inspect_vehicle_debris_particles(juice_rig)
 	var chase_camera: Camera3D = _require_node(_scene_root, "ChaseCamera") as Camera3D
 	var visual_root: Node3D = _require_node(_scene_root, "Vehicle/PhysicsBody/VisualRoot") as Node3D
 	var base_scale: Vector3 = Vector3.ONE
@@ -383,6 +389,59 @@ func _require_surface_burst(parent: Node, path: String) -> void:
 		_errors.append(path + " should avoid particle randomness")
 	if burst.amount < DUST_MOTE_COUNT_FLOOR:
 		_errors.append(path + " should have particles")
+
+
+func _inspect_vehicle_debris_particles(juice_rig: Node) -> void:
+	for rear_slot in range(REAR_ROOSTER_COUNT):
+		var rooster_name: String = "RearRoosterDebris" + str(rear_slot)
+		var rooster: GPUParticles3D = _require_node(juice_rig, rooster_name) as GPUParticles3D
+		if rooster == null:
+			continue
+		if rooster.draw_passes != 2:
+			_errors.append(rooster_name + " should keep dust + pebble draw passes")
+		_require_pebble_draw_mesh(rooster, 1, rooster_name + " draw_pass_2")
+	for wheel_index in range(VEHICLE_WHEEL_COUNT):
+		var burst_name: String = "PebbleScatterBurst" + str(wheel_index)
+		var burst: GPUParticles3D = _require_node(juice_rig, burst_name) as GPUParticles3D
+		if burst == null:
+			continue
+		_require_pebble_draw_mesh(burst, 0, burst_name + " draw_pass_1")
+
+
+func _require_pebble_draw_mesh(particles: GPUParticles3D, pass_index: int, context: String) -> void:
+	var mesh: Mesh = particles.get_draw_pass_mesh(pass_index) as Mesh
+	if mesh == null:
+		_errors.append(context + " should have a pebble draw mesh")
+		return
+	if mesh is BoxMesh:
+		_errors.append(context + " should not use BoxMesh; box particles render as cube artifacts")
+	var aabb: AABB = mesh.get_aabb()
+	var max_extent: float = maxf(maxf(aabb.size.x, aabb.size.y), aabb.size.z)
+	if max_extent > PEBBLE_DRAW_MESH_MAX_EXTENT:
+		_errors.append(context + " pebble mesh is too large: " + str(max_extent))
+	var material: StandardMaterial3D = _particle_draw_material(mesh)
+	if material == null:
+		_errors.append(context + " should have a StandardMaterial3D")
+		return
+	if not bool(material.get_meta(PEBBLE_MATERIAL_META, false)):
+		_errors.append(context + " should use the tagged vehicle pebble material")
+	if material.albedo_color.r >= BARE_WHITE_CHANNEL and material.albedo_color.g >= BARE_WHITE_CHANNEL and material.albedo_color.b >= BARE_WHITE_CHANNEL:
+		_errors.append(context + " should not render with a bare white material")
+	if material.albedo_color.a < 1.0 - FLOAT_EPSILON:
+		_errors.append(context + " should render as solid dirt/pebble material, not translucent dust")
+
+
+func _particle_draw_material(mesh: Mesh) -> StandardMaterial3D:
+	if mesh == null:
+		return null
+	if mesh.get_surface_count() > 0:
+		var surface_material: StandardMaterial3D = mesh.surface_get_material(0) as StandardMaterial3D
+		if surface_material != null:
+			return surface_material
+	var primitive_mesh: PrimitiveMesh = mesh as PrimitiveMesh
+	if primitive_mesh != null:
+		return primitive_mesh.material as StandardMaterial3D
+	return null
 
 
 func _inspect_water_visuals() -> void:

@@ -34,6 +34,7 @@ const LANDING_RING_NAME_PREFIX: String = "LandingDustRing"
 const ROOSTER_FIXED_SEED: int = 7110
 const PEBBLE_FIXED_SEED: int = 7120
 const LANDING_RING_FIXED_SEED: int = 7130
+const PEBBLE_MATERIAL_META: StringName = &"vehicle_juice_pebble_material"
 const REAR_WHEEL_START_INDEX: int = 2
 const ROOSTER_HEIGHT_OFFSET: float = 0.055
 const ROOSTER_BILLBOARD_SCALE: float = 0.032
@@ -41,6 +42,11 @@ const ROOSTER_PEBBLE_SCALE: float = 0.018
 const ROOSTER_SPREAD_DEG: float = 16.0
 const ROOSTER_GRAVITY: float = -1.10
 const HARD_SURFACE_SMOKE_BLEND: float = 0.72
+const PEBBLE_BURST_PROCESS_SCALE_MIN: float = 0.38
+const PEBBLE_BURST_PROCESS_SCALE_MAX: float = 0.82
+const PEBBLE_COLOR_DARKEN: float = 0.72
+const PEBBLE_COLOR_MIN_CHANNEL: float = 0.14
+const PEBBLE_COLOR_MAX_CHANNEL: float = 0.68
 
 var _vehicle: Node = null
 var _camera: Camera3D = null
@@ -376,9 +382,7 @@ func _update_single_wheel_dust(
 				intensity *= maxf(GameConfig.wheel_rooster_smoke_surface_boost, 0.0)
 			target_ratio = clampf(speed_ratio * intensity * boost, 0.0, 1.0)
 	if active:
-		var material: ParticleProcessMaterial = emitter.process_material as ParticleProcessMaterial
-		if material != null:
-			material.color = tint
+		_apply_particle_tint(emitter, tint)
 		emitter.amount_ratio = target_ratio
 		if wheel_index < wheel_hit_points.size():
 			emitter.global_position = wheel_hit_points[wheel_index] + Vector3.UP * WHEEL_DUST_HEIGHT_OFFSET
@@ -442,9 +446,7 @@ func _update_rooster_debris(
 				emitter.global_position = wheel_hit_points[wheel_index] + Vector3.UP * ROOSTER_HEIGHT_OFFSET
 				emitter.global_basis = basis
 		if active:
-			var material: ParticleProcessMaterial = emitter.process_material as ParticleProcessMaterial
-			if material != null:
-				material.color = tint
+			_apply_particle_tint(emitter, tint)
 			emitter.amount_ratio = target_ratio
 			if not emitter.emitting:
 				emitter.emitting = true
@@ -501,7 +503,7 @@ func _wheel_dust_color(surface_id: StringName) -> Color:
 		return GameConfig.wheel_dust_color_wet_stone
 	if surface_id == &"mud":
 		return GameConfig.wheel_dust_color_mud
-	return Color.WHITE
+	return GameConfig.wheel_dust_color_packed_dirt
 
 
 func _make_wheel_dust_emitter(node_name: String, seed: int) -> GPUParticles3D:
@@ -618,7 +620,7 @@ func _rooster_process_material() -> ParticleProcessMaterial:
 	material.damping_max = 0.28
 	material.scale_min = ROOSTER_BILLBOARD_SCALE * 0.45
 	material.scale_max = ROOSTER_BILLBOARD_SCALE
-	material.color = Color.WHITE
+	material.color = GameConfig.wheel_dust_color_loose_rock
 	return material
 
 
@@ -667,24 +669,96 @@ func _pebble_burst_process_material() -> ParticleProcessMaterial:
 	material.angular_velocity_max = 360.0
 	material.damping_min = 0.02
 	material.damping_max = 0.10
-	material.scale_min = 0.55
-	material.scale_max = 1.15
-	material.color = Color.WHITE
+	material.scale_min = PEBBLE_BURST_PROCESS_SCALE_MIN
+	material.scale_max = PEBBLE_BURST_PROCESS_SCALE_MAX
+	material.color = _pebble_material_color(GameConfig.wheel_dust_color_loose_rock)
 	return material
 
 
-func _pebble_mesh(material_name: String, color: Color, scale: float) -> BoxMesh:
-	var mesh: BoxMesh = BoxMesh.new()
-	mesh.size = Vector3(scale, scale * 0.55, scale * 0.82)
+func _pebble_mesh(material_name: String, color: Color, scale: float) -> ArrayMesh:
+	var mesh: ArrayMesh = _faceted_pebble_mesh(material_name + "_mesh", Vector3(scale, scale * 0.48, scale * 0.76))
 	var material: StandardMaterial3D = StandardMaterial3D.new()
 	material.resource_name = material_name
-	material.albedo_color = color
-	material.roughness = 0.58
+	material.albedo_color = _pebble_material_color(color)
+	material.roughness = 0.92
 	material.metallic = 0.0
-	material.rim_enabled = true
-	material.rim = 0.38
-	mesh.material = material
+	material.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
+	material.set_meta(PEBBLE_MATERIAL_META, true)
+	if mesh.get_surface_count() > 0:
+		mesh.surface_set_material(0, material)
 	return mesh
+
+
+func _faceted_pebble_mesh(mesh_name: String, size: Vector3) -> ArrayMesh:
+	var sx: float = maxf(size.x, 0.001) * 0.5
+	var sy: float = maxf(size.y, 0.001) * 0.5
+	var sz: float = maxf(size.z, 0.001) * 0.5
+	var points: Array[Vector3] = [
+		Vector3(0.0, sy, 0.0),
+		Vector3(0.0, -sy * 0.70, 0.0),
+		Vector3(-sx, -sy * 0.04, -sz * 0.08),
+		Vector3(sx * 0.96, -sy * 0.02, sz * 0.04),
+		Vector3(-sx * 0.08, sy * 0.02, -sz),
+		Vector3(sx * 0.10, -sy * 0.02, sz * 0.94),
+		Vector3(-sx * 0.58, sy * 0.22, -sz * 0.58),
+		Vector3(sx * 0.56, sy * 0.18, -sz * 0.52),
+		Vector3(sx * 0.50, sy * 0.16, sz * 0.60),
+		Vector3(-sx * 0.62, sy * 0.14, sz * 0.54)
+	]
+	var faces: Array[PackedInt32Array] = [
+		PackedInt32Array([0, 6, 7]), PackedInt32Array([0, 7, 8]), PackedInt32Array([0, 8, 9]), PackedInt32Array([0, 9, 6]),
+		PackedInt32Array([6, 4, 7]), PackedInt32Array([7, 4, 3]), PackedInt32Array([7, 3, 8]), PackedInt32Array([8, 3, 5]),
+		PackedInt32Array([8, 5, 9]), PackedInt32Array([9, 5, 2]), PackedInt32Array([9, 2, 6]), PackedInt32Array([6, 2, 4]),
+		PackedInt32Array([1, 7, 4]), PackedInt32Array([1, 3, 7]), PackedInt32Array([1, 8, 3]), PackedInt32Array([1, 5, 8]),
+		PackedInt32Array([1, 9, 5]), PackedInt32Array([1, 2, 9]), PackedInt32Array([1, 6, 2]), PackedInt32Array([1, 4, 6])
+	]
+	var vertices: PackedVector3Array = PackedVector3Array()
+	var normals: PackedVector3Array = PackedVector3Array()
+	var uvs: PackedVector2Array = PackedVector2Array()
+	var indices: PackedInt32Array = PackedInt32Array()
+	for face in faces:
+		_append_pebble_triangle(vertices, normals, uvs, indices, points[face[0]], points[face[1]], points[face[2]])
+	var arrays: Array = []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = vertices
+	arrays[Mesh.ARRAY_NORMAL] = normals
+	arrays[Mesh.ARRAY_TEX_UV] = uvs
+	arrays[Mesh.ARRAY_INDEX] = indices
+	var mesh: ArrayMesh = ArrayMesh.new()
+	mesh.resource_name = mesh_name
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	return mesh
+
+
+func _append_pebble_triangle(vertices: PackedVector3Array, normals: PackedVector3Array, uvs: PackedVector2Array, indices: PackedInt32Array, a: Vector3, b: Vector3, c: Vector3) -> void:
+	var normal: Vector3 = (b - a).cross(c - a).normalized()
+	if normal.length() <= 0.0:
+		normal = Vector3.UP
+	var vertex_start: int = vertices.size()
+	vertices.append(a)
+	vertices.append(b)
+	vertices.append(c)
+	normals.append(normal)
+	normals.append(normal)
+	normals.append(normal)
+	uvs.append(Vector2.ZERO)
+	uvs.append(Vector2.RIGHT)
+	uvs.append(Vector2.UP)
+	indices.append(vertex_start)
+	indices.append(vertex_start + 1)
+	indices.append(vertex_start + 2)
+
+
+func _pebble_material_color(color: Color) -> Color:
+	var source: Color = color
+	if source.r >= 0.95 and source.g >= 0.95 and source.b >= 0.95:
+		source = GameConfig.wheel_dust_color_loose_rock
+	return Color(
+		clampf(source.r * PEBBLE_COLOR_DARKEN, PEBBLE_COLOR_MIN_CHANNEL, PEBBLE_COLOR_MAX_CHANNEL),
+		clampf(source.g * PEBBLE_COLOR_DARKEN, PEBBLE_COLOR_MIN_CHANNEL, PEBBLE_COLOR_MAX_CHANNEL),
+		clampf(source.b * PEBBLE_COLOR_DARKEN, PEBBLE_COLOR_MIN_CHANNEL, PEBBLE_COLOR_MAX_CHANNEL),
+		1.0
+	)
 
 
 func _make_landing_ring(node_name: String, seed: int) -> GPUParticles3D:
@@ -800,6 +874,22 @@ func _apply_particle_tint(particles: GPUParticles3D, tint: Color) -> void:
 		process_material.color = tint
 	for pass_index in range(particles.draw_passes):
 		var mesh: Mesh = particles.get_draw_pass_mesh(pass_index) as Mesh
-		if mesh != null and mesh.material is StandardMaterial3D:
-			var material: StandardMaterial3D = mesh.material as StandardMaterial3D
-			material.albedo_color = tint
+		var material: StandardMaterial3D = _particle_draw_material(mesh)
+		if material != null:
+			if bool(material.get_meta(PEBBLE_MATERIAL_META, false)):
+				material.albedo_color = _pebble_material_color(tint)
+			else:
+				material.albedo_color = tint
+
+
+func _particle_draw_material(mesh: Mesh) -> StandardMaterial3D:
+	if mesh == null:
+		return null
+	if mesh.get_surface_count() > 0:
+		var surface_material: StandardMaterial3D = mesh.surface_get_material(0) as StandardMaterial3D
+		if surface_material != null:
+			return surface_material
+	var primitive_mesh: PrimitiveMesh = mesh as PrimitiveMesh
+	if primitive_mesh != null:
+		return primitive_mesh.material as StandardMaterial3D
+	return null
