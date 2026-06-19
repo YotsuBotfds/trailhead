@@ -81,6 +81,9 @@ const FOLIAGE_SPECIES_GRASS_COLOR: Color = Color(0.58, 0.66, 0.38, 0.92)
 const FOLIAGE_SPECIES_YUCCA_COLOR: Color = Color(0.557, 0.608, 0.471, 0.95)
 const FOLIAGE_SPECIES_JUNIPER_COLOR: Color = Color(0.165, 0.259, 0.157, 0.97)
 const FOLIAGE_SPECIES_BOULDER_COLOR: Color = Color(0.69, 0.47, 0.31, 1.0)
+# Lane-D demo triage: keep Zion foliage lush without the graded rim/tips reading neon.
+const FOLIAGE_NEON_TAME_TIP_BOOST: Vector3 = Vector3(1.12, 1.08, 1.02)
+const FOLIAGE_NEON_TAME_BACKLIGHT_ENERGY: float = 0.10
 const FOLIAGE_YUCCA_LOD0_SCALE: Vector3 = Vector3(0.95, 0.86, 0.95)
 const FOLIAGE_YUCCA_LOD1_SCALE: Vector3 = Vector3(0.78, 0.72, 0.78)
 const FOLIAGE_JUNIPER_LOD0_SCALE: Vector3 = Vector3(1.75, 1.92, 1.75)
@@ -1869,13 +1872,21 @@ static func _region_foliage_material(material_name: String, color: Color, blade_
 	material.resource_name = material_name
 	material.shader = GrassShader
 	material.set_shader_parameter("blade_base_color", Color(color.r * 0.72, color.g * 0.72, color.b * 0.70, color.a))
-	material.set_shader_parameter("blade_tip_color", Color(minf(color.r * 1.28, 1.0), minf(color.g * 1.22, 1.0), minf(color.b * 1.16, 1.0), color.a))
+	material.set_shader_parameter(
+		"blade_tip_color",
+		Color(
+			minf(color.r * FOLIAGE_NEON_TAME_TIP_BOOST.x, 1.0),
+			minf(color.g * FOLIAGE_NEON_TAME_TIP_BOOST.y, 1.0),
+			minf(color.b * FOLIAGE_NEON_TAME_TIP_BOOST.z, 1.0),
+			color.a
+		)
+	)
 	material.set_shader_parameter("blade_height_reference", blade_height_reference)
 	material.set_shader_parameter("wind_strength", 0.035)
 	material.set_shader_parameter("wind_speed", 0.75)
 	material.set_shader_parameter("wind_time_factor", 0.018)
 	material.set_shader_parameter("backlight_color", Color(0.95, 0.74, 0.42, 1.0))
-	material.set_shader_parameter("backlight_energy", 0.20)
+	material.set_shader_parameter("backlight_energy", FOLIAGE_NEON_TAME_BACKLIGHT_ENERGY)
 	return material
 
 

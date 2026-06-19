@@ -1,7 +1,7 @@
 shader_type spatial;
 render_mode diffuse_lambert, specular_schlick_ggx;
 
-uniform sampler2D surface_id_texture : filter_nearest, repeat_disable;
+uniform sampler2D surface_id_texture : hint_default_black, filter_nearest, repeat_disable;
 uniform sampler2DArray albedo_array : source_color, filter_linear_mipmap, repeat_enable;
 uniform sampler2D macro_albedo_texture : source_color, filter_linear, repeat_disable;
 instance uniform vec2 control_origin_xz = vec2(0.0, 0.0);
