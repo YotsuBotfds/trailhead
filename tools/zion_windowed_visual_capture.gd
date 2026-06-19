@@ -18,6 +18,7 @@ const CAMERA_MODE_ORBIT: int = 1
 const MOOD_DUSK: int = 0
 const MOOD_DAWN: int = 1
 const EXPECTED_STREAMED_CELLS: int = 25
+const LABELED_OUT_DIR: String = "tests/out/zion_fidelity_wave"
 const EXPECTED_CAPTURE_NAMES: Array[String] = [
 	"zion_stream_west_dusk_chase",
 	"zion_stream_west_dusk_orbit",
@@ -27,11 +28,13 @@ const EXPECTED_CAPTURE_NAMES: Array[String] = [
 
 var _host: Node = null
 var _out_dir: String = DEFAULT_OUT_DIR
+var _capture_label: String = ""
 var _errors: PackedStringArray = PackedStringArray()
 var _capture_paths_written: PackedStringArray = PackedStringArray()
 var _capture_names_written: Array[String] = []
 var _capture_camera: Camera3D = null
 var _capture_camera_active: bool = false
+var _custom_out_dir: bool = false
 
 
 func _ready() -> void:
@@ -49,6 +52,11 @@ func _parse_args() -> void:
 		var text: String = String(arg)
 		if text.begins_with("--out-dir="):
 			_out_dir = text.trim_prefix("--out-dir=")
+			_custom_out_dir = true
+		elif text.begins_with("--label="):
+			_capture_label = text.trim_prefix("--label=")
+	if not _custom_out_dir and not _capture_label.is_empty():
+		_out_dir = LABELED_OUT_DIR
 
 
 func _prepare_output_dir() -> void:
@@ -62,7 +70,7 @@ func _prepare_output_dir() -> void:
 		_errors.append("failed to open Zion visual capture output dir: " + absolute_dir)
 		return
 	for capture_name in EXPECTED_CAPTURE_NAMES:
-		var file_name: String = capture_name + ".png"
+		var file_name: String = _capture_file_basename(capture_name) + ".png"
 		if dir.file_exists(file_name):
 			var remove_err: Error = dir.remove(file_name)
 			if remove_err != OK:
@@ -128,6 +136,17 @@ func _streaming_ready() -> bool:
 	if int(streamer.call("visual_cell_count")) != EXPECTED_STREAMED_CELLS:
 		return false
 	if int(streamer.call("foliage_cell_count")) != EXPECTED_STREAMED_CELLS:
+		return false
+	if int(streamer.call("pending_midlod_build_count")) != 0:
+		return false
+	if int(streamer.call("pending_midlod_commit_count")) != 0:
+		return false
+	if int(streamer.call("ready_midlod_cell_count")) != 0:
+		return false
+	var desired_midlod_count: int = int(streamer.call("desired_midlod_cell_count"))
+	if desired_midlod_count <= 0:
+		return false
+	if int(streamer.call("midlod_cell_count")) != desired_midlod_count:
 		return false
 	return true
 
@@ -331,6 +350,7 @@ func _verify_capture_set() -> void:
 	if dir == null:
 		_errors.append("failed to inspect Zion visual capture output dir: " + absolute_dir)
 		return
+	var expected_file_basenames: Array[String] = _expected_capture_file_basenames()
 	dir.list_dir_begin()
 	while true:
 		var file_name: String = dir.get_next()
@@ -341,7 +361,7 @@ func _verify_capture_set() -> void:
 		if file_name.get_extension().to_lower() != "png":
 			continue
 		var capture_name: String = file_name.get_basename()
-		if not EXPECTED_CAPTURE_NAMES.has(capture_name):
+		if not expected_file_basenames.has(capture_name):
 			_errors.append("unexpected Zion visual capture PNG in output dir: " + absolute_dir.path_join(file_name))
 	dir.list_dir_end()
 	_verify_capture_hashes_distinct()
@@ -371,10 +391,23 @@ func _absolute_out_dir() -> String:
 
 
 func _capture_file_path(capture_name: String) -> String:
-	var file_name: String = capture_name + ".png"
+	var file_name: String = _capture_file_basename(capture_name) + ".png"
 	if _out_dir.is_absolute_path():
 		return _out_dir.path_join(file_name)
 	return ("res://" + _out_dir).path_join(file_name)
+
+
+func _capture_file_basename(capture_name: String) -> String:
+	if _capture_label.is_empty():
+		return capture_name
+	return _capture_label + "_" + capture_name
+
+
+func _expected_capture_file_basenames() -> Array[String]:
+	var basenames: Array[String] = []
+	for capture_name in EXPECTED_CAPTURE_NAMES:
+		basenames.append(_capture_file_basename(capture_name))
+	return basenames
 
 
 func _image_has_variance(image: Image) -> bool:

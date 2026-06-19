@@ -9,6 +9,9 @@ const FLOAT_EPSILON: float = 0.001
 const WAIT_FRAMES: int = 180
 const EXPECTED_STREAM_HLOD_MAX_PRIMITIVES: int = 5000
 const EXPECTED_STREAM_MIDLOD_MIN_PRIMITIVES: int = 1000
+const PRESSURE_CENTER_CELL: Vector2i = Vector2i(5, 5)
+const PRESSURE_ACTIVE_RADIUS: int = 2
+const MIDLOD_DRAIN_SLACK_FRAMES: int = 8
 
 var _streamer: Node3D = null
 var _errors: PackedStringArray = PackedStringArray()
@@ -130,6 +133,9 @@ func _inspect() -> void:
 	_require_foliage_cell_count("post-unprefetch foliage activation", 2)
 	_require_visual_tile(FIRST_CELL)
 	_require_foliage_tile(FIRST_CELL)
+
+	await _exercise_midlod_commit_pressure()
+	await _exercise_midlod_failure_retry_after_free()
 
 	_streamer.call("reset_stream")
 	_require_cell_count("reset", 0)
@@ -443,6 +449,97 @@ func _require_foliage_tile(cell: Vector2i) -> Node3D:
 	return foliage_tile
 
 
+func _exercise_midlod_commit_pressure() -> void:
+	_configure_streamer_for_pressure_fixture()
+	var pressure_cells: Array[Vector2i] = _pressure_active_cells()
+	if pressure_cells.is_empty():
+		_errors.append("mid-LOD pressure fixture found no active cells")
+		return
+	for cell in pressure_cells:
+		EventBus.world_tile_activated.emit(cell)
+
+	var initial_pending_midlod: int = int(_streamer.call("pending_midlod_commit_count"))
+	var desired_midlod: int = int(_streamer.call("desired_midlod_cell_count"))
+	if desired_midlod <= 0:
+		_errors.append("mid-LOD pressure fixture expected desired mid-LOD cells")
+		return
+	if initial_pending_midlod <= 0:
+		_errors.append("mid-LOD pressure fixture expected queued mid-LOD commits")
+		return
+
+	var pressure_frames: int = 0
+	var completed_while_pressured: bool = false
+	var max_frames: int = initial_pending_midlod + MIDLOD_DRAIN_SLACK_FRAMES
+	for _frame_index in range(max_frames):
+		var had_pressure: bool = _has_visual_or_foliage_commit_pressure()
+		if had_pressure:
+			pressure_frames += 1
+		await get_tree().process_frame
+		if int(_streamer.call("pending_midlod_commit_count")) == 0 and int(_streamer.call("ready_midlod_cell_count")) == 0:
+			completed_while_pressured = _has_visual_or_foliage_commit_pressure()
+			break
+
+	if pressure_frames <= 0:
+		_errors.append("mid-LOD pressure fixture never observed visual/foliage pressure")
+	if not completed_while_pressured:
+		_errors.append("mid-LOD commits did not finish while visual/foliage pressure was still active")
+	if int(_streamer.call("pending_midlod_commit_count")) != 0:
+		_errors.append("mid-LOD commit queue should drain under visual/foliage pressure, pending=" + str(_streamer.call("pending_midlod_commit_count")) + " initial=" + str(initial_pending_midlod))
+	if int(_streamer.call("ready_midlod_cell_count")) != 0:
+		_errors.append("ready mid-LOD cache should drain under visual/foliage pressure, ready=" + str(_streamer.call("ready_midlod_cell_count")))
+	if int(_streamer.call("midlod_cell_count")) != desired_midlod:
+		_errors.append("mid-LOD pressure fixture expected " + str(desired_midlod) + " committed cells, got " + str(_streamer.call("midlod_cell_count")))
+
+
+func _exercise_midlod_failure_retry_after_free() -> void:
+	_configure_streamer_for_pressure_fixture()
+	EventBus.world_tile_activated.emit(PRESSURE_CENTER_CELL)
+	await _wait_for_midlod_cell_count("mid-LOD retry seed", 1)
+	var midlod_cells: Array[Vector2i] = _variant_to_cell_array(_streamer.call("active_midlod_cells"))
+	if midlod_cells.is_empty():
+		_errors.append("mid-LOD retry fixture could not find a committed mid-LOD cell")
+		return
+	var retry_cell: Vector2i = midlod_cells[0]
+	_streamer.call("mark_midlod_load_failure_for_tests", retry_cell, "simulated transient mid-LOD failure")
+	_streamer.call("_free_midlod_cell", retry_cell)
+	_streamer.call("_refresh_midlod_streaming")
+	if int(_streamer.call("pending_midlod_build_count")) <= 0 and not bool(_streamer.call("has_ready_midlod_cell", retry_cell)):
+		_errors.append("mid-LOD retry fixture expected a new build after free/re-entry: " + str(retry_cell))
+	await _wait_for_midlod_cell("mid-LOD retry after transient failure", retry_cell)
+
+
+func _configure_streamer_for_pressure_fixture() -> void:
+	_streamer.call("reset_stream")
+	_streamer.call("configure_region", REGION_ID)
+	_streamer.call("set_worker_count_for_tests", 0)
+
+
+func _pressure_active_cells() -> Array[Vector2i]:
+	var region_cells: Dictionary[Vector2i, bool] = _region_cell_lookup()
+	var cells: Array[Vector2i] = []
+	for y in range(PRESSURE_CENTER_CELL.y - PRESSURE_ACTIVE_RADIUS, PRESSURE_CENTER_CELL.y + PRESSURE_ACTIVE_RADIUS + 1):
+		for x in range(PRESSURE_CENTER_CELL.x - PRESSURE_ACTIVE_RADIUS, PRESSURE_CENTER_CELL.x + PRESSURE_ACTIVE_RADIUS + 1):
+			var cell: Vector2i = Vector2i(x, y)
+			if region_cells.has(cell):
+				cells.append(cell)
+	_sort_cells(cells)
+	return cells
+
+
+func _region_cell_lookup() -> Dictionary[Vector2i, bool]:
+	var lookup: Dictionary[Vector2i, bool] = {}
+	var cells: Array[Vector2i] = TerrainVisualBuilderScript.region_tile_cells(REGION_ID)
+	for cell in cells:
+		lookup[cell] = true
+	return lookup
+
+
+func _has_visual_or_foliage_commit_pressure() -> bool:
+	if int(_streamer.call("pending_visual_commit_count")) > 0:
+		return true
+	return int(_streamer.call("pending_foliage_subcommit_count")) > 0
+
+
 func _is_grass_shader_material(material: Material) -> bool:
 	var shader_material: ShaderMaterial = material as ShaderMaterial
 	if shader_material == null or shader_material.shader == null:
@@ -634,6 +731,14 @@ func _wait_for_midlod_cell_count(label: String, expected_minimum: int) -> void:
 			return
 		await get_tree().process_frame
 	_require_midlod_cell_count_at_least(label, expected_minimum)
+
+
+func _wait_for_midlod_cell(label: String, cell: Vector2i) -> void:
+	for _frame_index in range(WAIT_FRAMES):
+		if bool(_streamer.call("has_midlod_cell", cell)):
+			return
+		await get_tree().process_frame
+	_errors.append(label + " expected committed mid-LOD cell " + str(cell))
 
 
 func _wait_for_foliage_cell_count(label: String, expected_count: int) -> void:

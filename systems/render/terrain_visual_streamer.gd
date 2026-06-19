@@ -2,6 +2,7 @@ extends Node3D
 
 const TerrainVisualBuilderScript: GDScript = preload("res://systems/render/terrain_visual_builder.gd")
 const MAX_BUILD_WORKERS: int = 4
+const MIDLOD_COMMIT_BUDGET_PER_FRAME: int = 1
 
 
 class FoliageSubcommit:
@@ -157,11 +158,9 @@ func _process(_delta: float) -> void:
 		_process_build_queue_synchronously()
 	_drain_worker_results()
 	var committed_visual_tiles: int = _drain_commit_queue()
-	var had_foliage_subcommits: bool = not _foliage_subcommit_queue.is_empty()
 	if committed_visual_tiles <= 0:
 		_drain_foliage_subcommit_queue()
-	if committed_visual_tiles <= 0 and not had_foliage_subcommits:
-		_drain_midlod_commit_queue()
+	_drain_midlod_commit_queue()
 	_drain_pending_frees()
 
 
@@ -181,6 +180,14 @@ func midlod_cell_count() -> int:
 	return _midlod_tiles_by_cell.size()
 
 
+func active_midlod_cells() -> Array[Vector2i]:
+	return _sorted_cells(_midlod_tiles_by_cell.keys())
+
+
+func desired_midlod_cell_count() -> int:
+	return _desired_midlod_cells_by_cell.size()
+
+
 func ready_midlod_cell_count() -> int:
 	return _ready_midlod_data_by_cell.size()
 
@@ -195,6 +202,10 @@ func pending_visual_commit_count() -> int:
 
 func pending_midlod_commit_count() -> int:
 	return _midlod_commit_queue.size()
+
+
+func pending_midlod_build_count() -> int:
+	return _queued_midlod_builds.size()
 
 
 func pending_foliage_subcommit_count() -> int:
@@ -254,6 +265,10 @@ func load_failures() -> Dictionary[Vector2i, String]:
 	for cell in _sorted_cells(_midlod_load_failures_by_cell.keys()):
 		copy[cell] = _midlod_load_failures_by_cell[cell]
 	return copy
+
+
+func mark_midlod_load_failure_for_tests(cell: Vector2i, message: String) -> void:
+	_midlod_load_failures_by_cell[cell] = message
 
 
 func _ensure_event_connections() -> void:
@@ -626,7 +641,7 @@ func _drain_commit_queue() -> int:
 func _drain_midlod_commit_queue() -> int:
 	if _midlod_commit_queue.is_empty():
 		return 0
-	var commit_budget: int = maxi(GameConfig.render_visual_tile_commits_per_frame, 1)
+	var commit_budget: int = maxi(MIDLOD_COMMIT_BUDGET_PER_FRAME, 1)
 	_midlod_commit_queue.sort_custom(Callable(self, "_cell_less"))
 	var committed_count: int = 0
 	while committed_count < commit_budget and not _midlod_commit_queue.is_empty():
@@ -1007,6 +1022,7 @@ func _free_visual_cell(cell: Vector2i) -> void:
 func _free_midlod_cell(cell: Vector2i) -> void:
 	_remove_queued_midlod_commit(cell)
 	_ready_midlod_data_by_cell.erase(cell)
+	_midlod_load_failures_by_cell.erase(cell)
 	if not _midlod_tiles_by_cell.has(cell):
 		return
 	var midlod_tile: Node3D = _midlod_tiles_by_cell[cell]
