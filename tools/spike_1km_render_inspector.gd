@@ -13,6 +13,7 @@ const EXPECTED_FOLIAGE_LOD0_META: String = "foliage_lod0"
 const EXPECTED_FOLIAGE_LOD1_META: String = "foliage_lod1"
 const EXPECTED_FOLIAGE_LOD0_SHADOW_CASTING: int = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 const EXPECTED_FOLIAGE_LOD1_SHADOW_CASTING: int = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+const FOLIAGE_SPECIES_META: StringName = &"trailhead_foliage_species"
 
 var _scene_root: Node = null
 var _errors: PackedStringArray = PackedStringArray()
@@ -114,31 +115,51 @@ func _inspect_foliage_cells(foliage_root: Node) -> void:
 		var multimesh_instance: MultiMeshInstance3D = child as MultiMeshInstance3D
 		if multimesh_instance == null:
 			continue
+		var label: String = "FoliageCells/" + String(child.name)
 		if not multimesh_instance.has_meta(REGION_LOD_META):
-			_errors.append("FoliageCells/" + String(child.name) + " missing region LOD metadata")
+			_errors.append(label + " missing region LOD metadata")
 			continue
 		var region_lod: String = String(multimesh_instance.get_meta(REGION_LOD_META))
-		if multimesh_instance.visibility_range_fade_mode != GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED:
-			_errors.append("FoliageCells/" + String(child.name) + " visibility_range_fade_mode expected DISABLED, got " + str(multimesh_instance.visibility_range_fade_mode))
+		var lod_index: int = 1
 		if region_lod == EXPECTED_FOLIAGE_LOD0_META:
+			lod_index = 0
+		# Species drives the per-species fade reach/margin; grass is the fallback if the meta is
+		# somehow missing (the builder always sets it), so the range checks below still resolve.
+		var species_id: StringName = &""
+		if multimesh_instance.has_meta(FOLIAGE_SPECIES_META):
+			species_id = StringName(multimesh_instance.get_meta(FOLIAGE_SPECIES_META))
+		else:
+			_errors.append(label + " missing foliage species metadata")
+		var expected_fade_mode: int = TerrainVisualBuilderScript.foliage_visibility_range_fade_mode_for_lod(lod_index)
+		if multimesh_instance.visibility_range_fade_mode != expected_fade_mode:
+			_errors.append(label + " visibility_range_fade_mode expected " + str(expected_fade_mode) + ", got " + str(multimesh_instance.visibility_range_fade_mode))
+		var visibility_radius: float = _visibility_radius(multimesh_instance, label)
+		var expected_margin: float = TerrainVisualBuilderScript.foliage_visibility_range_fade_margin_for_species(species_id)
+		if absf(multimesh_instance.visibility_range_end_margin - expected_margin) > FLOAT_EPSILON:
+			_errors.append(label + " visibility_range_end_margin expected " + str(expected_margin) + ", got " + str(multimesh_instance.visibility_range_end_margin))
+		if lod_index == 0:
 			lod0_count += 1
 			if multimesh_instance.cast_shadow != EXPECTED_FOLIAGE_LOD0_SHADOW_CASTING:
-				_errors.append("FoliageCells/" + String(child.name) + " LOD0 cast_shadow expected OFF, got " + str(multimesh_instance.cast_shadow))
-			var lod0_radius: float = _visibility_radius(multimesh_instance, "FoliageCells/" + String(child.name))
-			var expected_lod0_end: float = _foliage_lod0_visibility_range_end(lod0_radius)
+				_errors.append(label + " LOD0 cast_shadow expected OFF, got " + str(multimesh_instance.cast_shadow))
+			if absf(multimesh_instance.visibility_range_begin) > FLOAT_EPSILON:
+				_errors.append(label + " LOD0 visibility_range_begin expected 0, got " + str(multimesh_instance.visibility_range_begin))
+			var expected_lod0_end: float = TerrainVisualBuilderScript.foliage_lod0_visibility_range_end_for_species(visibility_radius, species_id)
 			if absf(multimesh_instance.visibility_range_end - expected_lod0_end) > FLOAT_EPSILON:
-				_errors.append("FoliageCells/" + String(child.name) + " LOD0 visibility_range_end expected " + str(expected_lod0_end) + ", got " + str(multimesh_instance.visibility_range_end))
-		elif region_lod == EXPECTED_FOLIAGE_LOD1_META:
+				_errors.append(label + " LOD0 visibility_range_end expected " + str(expected_lod0_end) + ", got " + str(multimesh_instance.visibility_range_end))
+			if absf(multimesh_instance.visibility_range_begin_margin) > FLOAT_EPSILON:
+				_errors.append(label + " LOD0 visibility_range_begin_margin expected 0, got " + str(multimesh_instance.visibility_range_begin_margin))
+		else:
 			lod1_count += 1
 			if multimesh_instance.cast_shadow != EXPECTED_FOLIAGE_LOD1_SHADOW_CASTING:
-				_errors.append("FoliageCells/" + String(child.name) + " LOD1 cast_shadow expected OFF, got " + str(multimesh_instance.cast_shadow))
-			var lod1_radius: float = _visibility_radius(multimesh_instance, "FoliageCells/" + String(child.name))
-			var expected_lod1_begin: float = _foliage_lod1_visibility_range_begin(lod1_radius)
-			var expected_lod1_end: float = _foliage_lod1_visibility_range_end(lod1_radius)
+				_errors.append(label + " LOD1 cast_shadow expected OFF, got " + str(multimesh_instance.cast_shadow))
+			var expected_lod1_begin: float = TerrainVisualBuilderScript.foliage_lod1_visibility_range_begin_for_species(visibility_radius, species_id)
+			var expected_lod1_end: float = TerrainVisualBuilderScript.foliage_lod1_visibility_range_end_for_species(visibility_radius, species_id)
 			if absf(multimesh_instance.visibility_range_begin - expected_lod1_begin) > FLOAT_EPSILON:
-				_errors.append("FoliageCells/" + String(child.name) + " LOD1 visibility_range_begin expected " + str(expected_lod1_begin) + ", got " + str(multimesh_instance.visibility_range_begin))
+				_errors.append(label + " LOD1 visibility_range_begin expected " + str(expected_lod1_begin) + ", got " + str(multimesh_instance.visibility_range_begin))
 			if absf(multimesh_instance.visibility_range_end - expected_lod1_end) > FLOAT_EPSILON:
-				_errors.append("FoliageCells/" + String(child.name) + " LOD1 visibility_range_end expected " + str(expected_lod1_end) + ", got " + str(multimesh_instance.visibility_range_end))
+				_errors.append(label + " LOD1 visibility_range_end expected " + str(expected_lod1_end) + ", got " + str(multimesh_instance.visibility_range_end))
+			if absf(multimesh_instance.visibility_range_begin_margin - expected_margin) > FLOAT_EPSILON:
+				_errors.append(label + " LOD1 visibility_range_begin_margin expected " + str(expected_margin) + ", got " + str(multimesh_instance.visibility_range_begin_margin))
 	if lod0_count <= 0:
 		_errors.append("FoliageCells should contain foliage_lod0 cells")
 	if lod1_count <= 0:
@@ -269,18 +290,6 @@ func _visibility_radius(node: Node, label: String) -> float:
 
 func _detail_visibility_range_end(visibility_radius: float) -> float:
 	return maxf(maxf(GameConfig.cam_far, GameConfig.vis_range_terrain) + visibility_radius, 0.0)
-
-
-func _foliage_lod0_visibility_range_end(visibility_radius: float) -> float:
-	return maxf(GameConfig.vis_range_grass + visibility_radius, 0.0)
-
-
-func _foliage_lod1_visibility_range_begin(visibility_radius: float) -> float:
-	return _foliage_lod0_visibility_range_end(visibility_radius)
-
-
-func _foliage_lod1_visibility_range_end(visibility_radius: float) -> float:
-	return maxf(GameConfig.cam_far + visibility_radius, _foliage_lod1_visibility_range_begin(visibility_radius))
 
 
 func _require_mesh_surfaces(mesh_instance: MeshInstance3D, label: String) -> void:

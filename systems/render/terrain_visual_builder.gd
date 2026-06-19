@@ -107,6 +107,21 @@ const FOLIAGE_DENSITY_PACKED_DIRT: float = 0.30
 const FOLIAGE_DENSITY_TALL_GRASS: float = 0.62
 const FOLIAGE_DENSITY_LOOSE_ROCK: float = 0.18
 const FOLIAGE_DENSITY_MUD: float = 0.30
+# Distance-LOD fade for foliage. Every foliage MultiMeshInstance3D used to ship with
+# VISIBILITY_RANGE_FADE_DISABLED, so foliage popped hard at the streaming/visibility boundary.
+# Each species/LOD now self-fades (VISIBILITY_RANGE_FADE_SELF): LOD0 fades out over its end
+# margin at the LOD0->LOD1 handoff, and LOD1 fades in over its begin margin and out at the far
+# clip (LOD1's range end sits at cam_far, so distant foliage is removed by the camera far plane
+# instead of popping at its own end). DEPENDENCIES was ruled out: it requires visibility_parent
+# wiring (Node3D.visibility_parent, a fragile cross-node LOD hierarchy) and is Forward+ only.
+# Per species: trees (tall, sparse) reach farther and cross-fade slowly; grass (small, dense)
+# keeps the existing closer range with a quick fade so distant draw cost stays low; boulders
+# sit between. Bases are the LOD0 range before adding the cell radius; margins are the fade width.
+const FOLIAGE_VIS_RANGE_BASE_TREE: float = 360.0
+const FOLIAGE_VIS_RANGE_BASE_BOULDER: float = 240.0
+const FOLIAGE_FADE_MARGIN_GRASS: float = 14.0
+const FOLIAGE_FADE_MARGIN_TREE: float = 45.0
+const FOLIAGE_FADE_MARGIN_BOULDER: float = 22.0
 # Region-foliage grass/riparian_grass de-uniforming. The live band read as an even grid of
 # identical single crosses ("fence"). These gather accepted grass candidates around deterministic
 # clump centers (so instances form tussocks with bare ground between) and add non-uniform per-
@@ -700,6 +715,54 @@ static func _foliage_lod1_visibility_range_begin(cell_radius: float) -> float:
 
 static func _foliage_lod1_visibility_range_end(cell_radius: float) -> float:
 	return maxf(GameConfig.cam_far + cell_radius, _foliage_lod1_visibility_range_begin(cell_radius))
+
+
+# --- Foliage distance-LOD fade (per species / per LOD) ---
+# The cell-level helpers above (_foliage_lod0_visibility_range_end etc.) compute ONE shared range
+# per cell (the grass/default value) and feed the cell-data defaults. The per-species helpers
+# below override those at the MultiMeshInstance3D so each species gets its own fade reach: trees
+# stay visible farther and fade slowly, grass culls closer with a quick fade, boulders sit between.
+# They are public so tools/spike_1km_render_inspector.gd asserts the exact values the builder
+# writes (builder + inspector stay in sync, no drift).
+static func _foliage_vis_range_base_for_species(species_id: StringName) -> float:
+	if _foliage_species_uses_source_material(species_id):
+		return FOLIAGE_VIS_RANGE_BASE_TREE
+	if species_id == FOLIAGE_SPECIES_BOULDER:
+		return FOLIAGE_VIS_RANGE_BASE_BOULDER
+	return GameConfig.vis_range_grass
+
+
+static func foliage_lod0_visibility_range_end_for_species(cell_radius: float, species_id: StringName) -> float:
+	return maxf(_foliage_vis_range_base_for_species(species_id) + cell_radius, 0.0)
+
+
+static func foliage_lod1_visibility_range_begin_for_species(cell_radius: float, species_id: StringName) -> float:
+	# LOD1 begins exactly where LOD0 ends. This preserves the codebase's existing LOD1.begin ==
+	# LOD0.end invariant (the standard Godot manual-LOD recipe) so the SELF->SELF handoff reads as
+	# a gentle fade, not a hard swap.
+	return foliage_lod0_visibility_range_end_for_species(cell_radius, species_id)
+
+
+static func foliage_lod1_visibility_range_end_for_species(cell_radius: float, species_id: StringName) -> float:
+	# LOD1 runs out to the far clip (cam_far) so distant foliage is removed by the camera far plane
+	# (consistent with terrain/HLOD), not by a hard pop at its own range end.
+	return maxf(GameConfig.cam_far + cell_radius, foliage_lod1_visibility_range_begin_for_species(cell_radius, species_id))
+
+
+static func foliage_visibility_range_fade_mode_for_lod(lod_index: int) -> int:
+	# Both LODs self-fade. LOD0/LOD1 share the same mesh for grass and the GLB tree species, so the
+	# SELF->SELF handoff dissolves one scatter pattern into the other instead of winking a shape.
+	if lod_index <= 0:
+		return GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+	return GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+
+
+static func foliage_visibility_range_fade_margin_for_species(species_id: StringName) -> float:
+	if _foliage_species_uses_source_material(species_id):
+		return FOLIAGE_FADE_MARGIN_TREE
+	if species_id == FOLIAGE_SPECIES_BOULDER:
+		return FOLIAGE_FADE_MARGIN_BOULDER
+	return FOLIAGE_FADE_MARGIN_GRASS
 
 
 static func foliage_pipeline_warmup_node_names() -> PackedStringArray:
@@ -1853,10 +1916,24 @@ static func _add_foliage_species_cell_from_data(parent: Node3D, cell_data: Folia
 	if material != null:
 		instance.material_override = material
 	instance.extra_cull_margin = REGION_FOLIAGE_CULL_MARGIN
-	instance.visibility_range_begin = cell_data.visibility_range_begin
-	instance.visibility_range_end = cell_data.visibility_range_end
+	var species_id: StringName = species_data.species_id
+	var cell_radius: float = cell_data.visibility_radius
+	var fade_margin: float = foliage_visibility_range_fade_margin_for_species(species_id)
+	instance.visibility_range_fade_mode = foliage_visibility_range_fade_mode_for_lod(cell_data.lod_index)
+	if cell_data.lod_index <= 0:
+		# LOD0: visible up close, fades out over the end margin at the handoff into LOD1.
+		instance.visibility_range_begin = 0.0
+		instance.visibility_range_end = foliage_lod0_visibility_range_end_for_species(cell_radius, species_id)
+		instance.visibility_range_begin_margin = 0.0
+		instance.visibility_range_end_margin = fade_margin
+	else:
+		# LOD1: fades in over the begin margin, runs to the far clip (cam_far). LOD1.begin ==
+		# LOD0.end preserves the manual-LOD handoff invariant (see helper doc).
+		instance.visibility_range_begin = foliage_lod1_visibility_range_begin_for_species(cell_radius, species_id)
+		instance.visibility_range_end = foliage_lod1_visibility_range_end_for_species(cell_radius, species_id)
+		instance.visibility_range_begin_margin = fade_margin
+		instance.visibility_range_end_margin = fade_margin
 	instance.cast_shadow = cell_data.cast_shadow
-	instance.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
 	instance.set_meta(REGION_LOD_META, "foliage_lod" + str(cell_data.lod_index))
 	instance.set_meta(&"trailhead_foliage_species", species_data.species_id)
 	instance.set_meta(VISIBILITY_RADIUS_META, cell_data.visibility_radius)
