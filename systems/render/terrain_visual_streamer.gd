@@ -17,6 +17,20 @@ class FoliageSubcommit:
 # the pool to leave cores for main+render: ~ logical/4, clamped to [2, MAX].
 const DEFAULT_WORKER_COUNT: int = 2
 
+# L4 canyon-wall silhouette densification. The far stream HLOD is the whole-region
+# silhouette mesh the visual builder emits beyond REGION_STREAM_MIDLOD_RANGE_END_M,
+# built at REGION_STREAM_HLOD_SAMPLE_STEP (coarse ~20m quads) so 600m cliffs read as
+# rounded dunes. This streamer-local override rebuilds cliff chunks at a finer step
+# so distant walls keep a sheer silhouette. Region-gated to the real Zion corridor
+# (the synthetic spike_1km test region keeps the builder mesh, preserving its HLOD
+# primitive budget) and variance-gated so flat floor tiles keep the cheap coarse
+# mesh. Best-effort: any tile load/build failure leaves the builder's mesh in place.
+# Render-only — collision stays the committed HeightMapShape3D (D30/D35); the
+# builder file is not edited (foliage lanes own it).
+const STREAM_HLOD_DENSIFY_REGION_ID: String = "cedar_hollow_zion"
+const STREAM_HLOD_DENSIFY_MIN_HEIGHT_VARIANCE_M: float = 40.0
+const STREAM_HLOD_DENSIFY_SAMPLE_STEP: int = 5
+
 var _region_id: String = ""
 var _visual_root: Node3D = null
 var _detail_root: Node3D = null
@@ -86,6 +100,7 @@ func configure_region(new_region_id: String) -> void:
 		_load_failures_by_cell[Vector2i.ZERO] = "region stream roots missing"
 		_configured = false
 		return
+	_apply_stream_hlod_densification()
 	_hlod_dirty = true
 	_ensure_event_connections()
 	_start_workers()
@@ -732,6 +747,139 @@ func _update_hlod_visibility() -> void:
 		_hlod_instance.visible = has_active_cells
 	if _midlod_root != null:
 		_midlod_root.visible = has_active_cells
+
+
+func _apply_stream_hlod_densification() -> void:
+	if _region_id != STREAM_HLOD_DENSIFY_REGION_ID:
+		return
+	if _hlod_instance == null:
+		return
+	var chunks: Array[MeshInstance3D] = []
+	_collect_stream_hlod_chunks(_hlod_instance, chunks)
+	for chunk in chunks:
+		_densify_stream_hlod_chunk(chunk)
+
+
+func _collect_stream_hlod_chunks(parent: Node, chunks: Array[MeshInstance3D]) -> void:
+	var mesh_instance: MeshInstance3D = parent as MeshInstance3D
+	if mesh_instance != null and _is_stream_hlod_chunk(mesh_instance):
+		chunks.append(mesh_instance)
+	for child in parent.get_children():
+		_collect_stream_hlod_chunks(child, chunks)
+
+
+func _is_stream_hlod_chunk(chunk: MeshInstance3D) -> bool:
+	if chunk == null or not chunk.has_meta(TerrainVisualBuilderScript.REGION_LOD_META):
+		return false
+	return String(chunk.get_meta(TerrainVisualBuilderScript.REGION_LOD_META)) == "stream_hlod"
+
+
+func _densify_stream_hlod_chunk(chunk: MeshInstance3D) -> void:
+	if chunk == null or not chunk.has_meta(TerrainVisualBuilderScript.TILE_INDEX_META):
+		return
+	var cell: Vector2i = Vector2i(chunk.get_meta(TerrainVisualBuilderScript.TILE_INDEX_META))
+	var height_variance_m: float = _stream_hlod_tile_height_variance_m(cell)
+	if height_variance_m < STREAM_HLOD_DENSIFY_MIN_HEIGHT_VARIANCE_M:
+		return
+	var tile_data: Variant = _load_stream_hlod_densify_tile(cell)
+	if tile_data == null:
+		return
+	var tile_size_m: float = float(tile_data.tile_size_m)
+	var tile_origin_xz: Vector2 = Vector2((float(cell.x) + 0.5) * tile_size_m, (float(cell.y) + 0.5) * tile_size_m)
+	var mesh_data: Variant = TerrainVisualBuilderScript.build_region_surface_index_mesh_data(
+		tile_data,
+		STREAM_HLOD_DENSIFY_SAMPLE_STEP,
+		String(tile_data.key) + "_stream_terrain_hlod_densify_mesh",
+		tile_origin_xz
+	)
+	if mesh_data == null:
+		return
+	var mesh: ArrayMesh = TerrainVisualBuilderScript.region_mesh_from_data(mesh_data)
+	if mesh == null or mesh.get_surface_count() <= 0:
+		return
+	chunk.mesh = mesh
+	TerrainVisualBuilderScript.apply_region_mesh_instance_parameters(chunk, mesh_data)
+
+
+func _stream_hlod_tile_height_variance_m(cell: Vector2i) -> float:
+	var sidecar_path: String = _stream_hlod_tile_sidecar_path(cell)
+	var sidecar_text: String = FileAccess.get_file_as_string(sidecar_path)
+	if sidecar_text.is_empty():
+		return -1.0
+	var parsed: Variant = JSON.parse_string(sidecar_text)
+	if not (parsed is Dictionary):
+		return -1.0
+	var sidecar: Dictionary = parsed as Dictionary
+	var heightmap_info: Dictionary = sidecar.get("heightmap", {}) as Dictionary
+	if heightmap_info == null or not heightmap_info.has("min_y") or not heightmap_info.has("max_y"):
+		return -1.0
+	return float(heightmap_info["max_y"]) - float(heightmap_info["min_y"])
+
+
+func _load_stream_hlod_densify_tile(cell: Vector2i) -> Variant:
+	var sidecar_path: String = _stream_hlod_tile_sidecar_path(cell)
+	var sidecar_text: String = FileAccess.get_file_as_string(sidecar_path)
+	if sidecar_text.is_empty():
+		push_error("TerrainVisualStreamer HLOD densify sidecar failed to load: " + sidecar_path)
+		return null
+	var parsed: Variant = JSON.parse_string(sidecar_text)
+	if not (parsed is Dictionary):
+		push_error("TerrainVisualStreamer HLOD densify sidecar malformed: " + sidecar_path)
+		return null
+	var sidecar: Dictionary = parsed as Dictionary
+	var heightmap_info: Dictionary = sidecar.get("heightmap", {}) as Dictionary
+	var surface_info: Dictionary = sidecar.get("surface_id", {}) as Dictionary
+	if heightmap_info == null or surface_info == null:
+		push_error("TerrainVisualStreamer HLOD densify sidecar missing render data: " + sidecar_path)
+		return null
+	if not (heightmap_info.has("shape") and heightmap_info.has("path")) or not surface_info.has("path"):
+		push_error("TerrainVisualStreamer HLOD densify sidecar missing shape/path: " + sidecar_path)
+		return null
+	var shape_value: Variant = heightmap_info["shape"]
+	if not (shape_value is Array):
+		push_error("TerrainVisualStreamer HLOD densify sidecar shape not array: " + sidecar_path)
+		return null
+	var shape_array: Array = shape_value as Array
+	if shape_array.size() != 2:
+		push_error("TerrainVisualStreamer HLOD densify sidecar shape size != 2: " + sidecar_path)
+		return null
+	var tile_directory: String = _stream_hlod_tile_directory(cell)
+	var heightmap_path: String = tile_directory.path_join(String(heightmap_info["path"]))
+	var surface_id_path: String = tile_directory.path_join(String(surface_info["path"]))
+	var height_bytes: PackedByteArray = FileAccess.get_file_as_bytes(heightmap_path)
+	var tile_size_m: float = float(sidecar.get("tile_size_m", GameConfig.STREAM_TILE_SIZE_M))
+	var depth: int = int(shape_array[0])
+	var width: int = int(shape_array[1])
+	var expected_bytes: int = width * depth * TerrainVisualBuilderScript.HEIGHTMAP_FLOAT_BYTE_SIZE
+	if height_bytes.size() != expected_bytes:
+		push_error("TerrainVisualStreamer HLOD densify heightmap byte mismatch: " + heightmap_path)
+		return null
+	var tile_data: Variant = TerrainVisualBuilderScript.RegionTileData.new()
+	tile_data.cell = cell
+	tile_data.key = str(cell.x) + "_" + str(cell.y)
+	tile_data.tile_size_m = tile_size_m
+	tile_data.depth = depth
+	tile_data.width = width
+	tile_data.heightmap_path = heightmap_path
+	tile_data.surface_id_path = surface_id_path
+	tile_data.heights = height_bytes.to_float32_array()
+	if tile_data.heights.size() != width * depth:
+		push_error("TerrainVisualStreamer HLOD densify heightmap float mismatch: " + heightmap_path)
+		return null
+	var surface_image: Image = Image.load_from_file(ProjectSettings.globalize_path(surface_id_path))
+	if surface_image == null or surface_image.is_empty():
+		push_error("TerrainVisualStreamer HLOD densify surface_id image failed: " + surface_id_path)
+		return null
+	tile_data.surface_image = surface_image
+	return tile_data
+
+
+func _stream_hlod_tile_directory(cell: Vector2i) -> String:
+	return GameConfig.STREAM_TILE_DATA_BASE.path_join(_region_id).path_join("tiles").path_join(str(cell.x) + "_" + str(cell.y))
+
+
+func _stream_hlod_tile_sidecar_path(cell: Vector2i) -> String:
+	return _stream_hlod_tile_directory(cell).path_join(TerrainVisualBuilderScript.REGION_TILE_SIDE_CAR_FILE)
 
 
 func _commit_foliage_tile(cell: Vector2i, foliage_tile_data: Variant) -> void:
