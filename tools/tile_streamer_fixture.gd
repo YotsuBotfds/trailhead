@@ -21,6 +21,7 @@ var _all_prefetched_keys: PackedStringArray = PackedStringArray()
 var _activation_ticks: Dictionary[String, int] = {}
 var _prefetch_ticks: Dictionary[String, int] = {}
 var _non_current_activation_counts_by_tick: Dictionary[int, int] = {}
+var _eviction_counts_by_tick: Dictionary[int, int] = {}
 var _physics_tick: int = 0
 var _worker_count: int = 1
 var _fixture_sort_origin_cell: Vector2i = Vector2i.ZERO
@@ -101,8 +102,10 @@ func _run() -> void:
 	_require_bool("end ready flags include prefetch ring", _ready_includes_prefetch(streamer, END_CELL))
 	_require_event_keys_include_cells("end prefetch event coverage", _all_prefetched_keys, expected_end_prefetch_cells)
 	_require_activation_budget("end activation budget")
+	_require_eviction_budget("end eviction budget")
 	_require_no_load_failures(streamer)
 
+	print("tile_streamer_max_evictions_per_tick=" + str(_max_evictions_per_tick()) + " eviction_budget=" + str(maxi(GameConfig.stream_collision_evictions_per_tick, 1)))
 	_finish(streamer)
 
 
@@ -157,6 +160,8 @@ func _on_world_tile_activated(cell: Vector2i) -> void:
 
 func _on_world_tile_evicted(cell: Vector2i) -> void:
 	_evicted_cells.append(cell)
+	var count: int = int(_eviction_counts_by_tick.get(_physics_tick, 0)) + 1
+	_eviction_counts_by_tick[_physics_tick] = count
 
 
 func _on_world_tile_prefetched(cell: Vector2i) -> void:
@@ -305,6 +310,25 @@ func _require_activation_budget(label: String) -> void:
 		var count: int = _non_current_activation_counts_by_tick[tick]
 		if count > budget:
 			_errors.append(label + " tick " + str(tick) + " activated " + str(count) + " non-current cells, budget " + str(budget))
+
+
+func _require_eviction_budget(label: String) -> void:
+	var budget: int = maxi(GameConfig.stream_collision_evictions_per_tick, 1)
+	var ticks: Array[int] = []
+	for tick_value in _eviction_counts_by_tick.keys():
+		ticks.append(int(tick_value))
+	ticks.sort()
+	for tick in ticks:
+		var count: int = _eviction_counts_by_tick[tick]
+		if count > budget:
+			_errors.append(label + " tick " + str(tick) + " evicted " + str(count) + " cells in one tick, budget " + str(budget))
+
+
+func _max_evictions_per_tick() -> int:
+	var result: int = 0
+	for tick_value in _eviction_counts_by_tick.keys():
+		result = maxi(result, int(_eviction_counts_by_tick[tick_value]))
+	return result
 
 
 func _require_event_keys_include_cells(label: String, observed_keys: PackedStringArray, expected_cells: Array[Vector2i]) -> void:

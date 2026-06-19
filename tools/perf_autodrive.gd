@@ -17,6 +17,7 @@ const FAIL_EXIT_CODE: int = 1
 var _host: Node = null
 var _duration_seconds: float = DEFAULT_DURATION_SECONDS
 var _hitch_threshold_ms: float = DEFAULT_HITCH_THRESHOLD_MS
+var _steer_strength: float = STEER_STRENGTH
 var _out_root: String = DEFAULT_OUT_ROOT
 var _run_dir: String = ""
 var _errors: PackedStringArray = PackedStringArray()
@@ -50,6 +51,8 @@ func _parse_args() -> void:
 			_duration_seconds = maxf(text.trim_prefix("--duration=").to_float(), 1.0)
 		elif text.begins_with("--hitch-threshold-ms="):
 			_hitch_threshold_ms = maxf(text.trim_prefix("--hitch-threshold-ms=").to_float(), 1.0)
+		elif text.begins_with("--steer-strength="):
+			_steer_strength = clampf(text.trim_prefix("--steer-strength=").to_float(), 0.0, 1.0)
 		elif text.begins_with("--out-root="):
 			_out_root = text.trim_prefix("--out-root=")
 
@@ -105,7 +108,7 @@ func _drive_and_sample() -> void:
 
 func _apply_drive_input(elapsed_seconds: float) -> void:
 	Input.action_press(&"throttle", 1.0)
-	var steer_value: float = sin(elapsed_seconds / STEER_PERIOD_SECONDS * TAU) * STEER_STRENGTH
+	var steer_value: float = sin(elapsed_seconds / STEER_PERIOD_SECONDS * TAU) * _steer_strength
 	if steer_value > 0.01:
 		Input.action_press(&"steer_left", steer_value)
 		Input.action_release(&"steer_right")
