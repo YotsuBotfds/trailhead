@@ -188,8 +188,8 @@ var scrub_density_mud: float = 0.12
 var riparian_grass_density: float = 0.72
 var riparian_willow_density: float = 0.34
 var riparian_cottonwood_density: float = 0.18
-var boulder_density_packed_gravel: float = 0.045
-var boulder_density_loose_rock: float = 0.080
+var boulder_density_packed_gravel: float = 0.08
+var boulder_density_loose_rock: float = 0.14
 var boulder_packed_gravel_candidate_share: float = 0.22
 var boulder_loose_rock_candidate_share: float = 0.65
 
