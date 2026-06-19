@@ -26,6 +26,7 @@ var _dt_samples_ms: Array[float] = []
 var _fps_samples: Array[float] = []
 var _draw_call_samples: Array[float] = []
 var _video_mem_samples_mb: Array[float] = []
+var _focus_samples: Array[float] = []
 var _hitch_count: int = 0
 var _crossing_hitch_count: int = 0
 var _crossing_count: int = 0
@@ -38,10 +39,22 @@ var _last_crossing_frame: int = -1000000
 func _ready() -> void:
 	_parse_args()
 	DisplayServer.window_set_size(WINDOW_SIZE)
+	_force_foreground()
 	_prepare_output_dir()
 	_host = CedarHollowPlayableScene.instantiate()
 	add_child(_host)
 	call_deferred("_run")
+
+
+func _force_foreground() -> void:
+	# Permanent harness fix: macOS throttles CAMetalLayer present (nextDrawable) for
+	# occluded / App-Napped windows up to ~1s, which corrupts wall-clock dt measurement.
+	# Pull the window to the front, keep it on top, and grab focus so the present path
+	# is not throttle-gated. App Nap itself is disabled at the process level by the
+	# launcher (caffeinate + NSAppSleepDisabled) — see tools/run_perf_drive.sh.
+	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_ALWAYS_ON_TOP, true)
+	DisplayServer.window_move_to_foreground()
+	DisplayServer.window_request_attention()
 
 
 func _parse_args() -> void:
@@ -75,7 +88,7 @@ func _run() -> void:
 	if not _errors.is_empty():
 		await _finish()
 		return
-	_frame_rows.append("frame,dt_ms,fps,process_ms,physics_process_ms,draw_calls,primitives,objects,video_mem_mb,static_mem_mb,current_cell,active_cells,ready_cells,stream_tick,crossing_flag,hitch_flag,hitch_at_crossing")
+	_frame_rows.append("frame,dt_ms,fps,process_ms,physics_process_ms,draw_calls,primitives,objects,video_mem_mb,static_mem_mb,current_cell,active_cells,ready_cells,stream_tick,crossing_flag,hitch_flag,hitch_at_crossing,window_is_focused")
 	await _drive_and_sample()
 	_release_input()
 	await _write_reports()
@@ -162,12 +175,14 @@ func _sample_frame(dt: float) -> void:
 		_hitch_count += 1
 		if hitch_at_crossing:
 			_crossing_hitch_count += 1
+	var window_focused: bool = DisplayServer.window_is_focused()
 
 	_dt_samples_ms.append(dt_ms)
 	_fps_samples.append(fps)
 	_draw_call_samples.append(float(draw_calls))
 	_video_mem_samples_mb.append(video_mem_mb)
-	_frame_rows.append("%d,%.3f,%.3f,%.3f,%.3f,%d,%d,%d,%.3f,%.3f,%s,%d,%d,%d,%d,%d,%d" % [
+	_focus_samples.append(1.0 if window_focused else 0.0)
+	_frame_rows.append("%d,%.3f,%.3f,%.3f,%.3f,%d,%d,%d,%.3f,%.3f,%s,%d,%d,%d,%d,%d,%d,%d" % [
 		_frame_index,
 		dt_ms,
 		fps,
@@ -185,6 +200,7 @@ func _sample_frame(dt: float) -> void:
 		1 if crossing_flag else 0,
 		1 if hitch_flag else 0,
 		1 if hitch_at_crossing else 0,
+		1 if window_focused else 0,
 	])
 
 
@@ -239,11 +255,14 @@ func _summary_text() -> String:
 	var hitch_crossing_pct: float = 0.0
 	if _hitch_count > 0:
 		hitch_crossing_pct = float(_crossing_hitch_count) / float(_hitch_count) * 100.0
+	var focus_ratio: float = _average(_focus_samples)
+	var walls_110_145: int = _count_in_range(_dt_samples_ms, 110.0, 145.0)
 	return "\n".join(PackedStringArray([
 		"ok: perf autodrive report " + _run_dir,
 		"frames=%d duration_s=%.3f crossings=%d" % [_dt_samples_ms.size(), duration, _crossing_count],
 		"frame_ms avg=%.3f p50=%.3f p95=%.3f p99=%.3f max=%.3f" % [avg_dt, p50_dt, p95_dt, p99_dt, max_dt],
 		"fps avg=%.3f min=%.3f" % [avg_fps, min_fps],
+		"window_is_focused ratio=%.3f  walls_110_145ms=%d" % [focus_ratio, walls_110_145],
 		"hitches count=%d at_crossing=%d at_crossing_pct=%.1f threshold_ms=%.3f median_multiplier=%.1f crossing_window_frames=%d" % [_hitch_count, _crossing_hitch_count, hitch_crossing_pct, _hitch_threshold_ms, HITCH_MEDIAN_MULTIPLIER, CROSSING_WINDOW_FRAMES],
 		"draw_calls avg=%.1f max=%.0f" % [avg_draw_calls, max_draw_calls],
 		"video_mem_mb avg=%.1f max=%.1f" % [avg_vram, max_vram],
@@ -341,6 +360,14 @@ func _percentile(values: Array[float], percentile: float) -> float:
 	sorted.sort()
 	var index: int = clampi(int(floor(percentile * float(sorted.size() - 1))), 0, sorted.size() - 1)
 	return sorted[index]
+
+
+func _count_in_range(values: Array[float], low: float, high: float) -> int:
+	var count: int = 0
+	for value in values:
+		if value >= low and value <= high:
+			count += 1
+	return count
 
 
 func _min_value(values: Array[float]) -> float:
