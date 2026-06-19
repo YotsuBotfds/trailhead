@@ -166,7 +166,19 @@ func _target_viewport_resolution() -> int:
 	var pixels_per_meter: float = maxf(GameConfig.terrain_track_painter_pixels_per_meter, 0.0)
 	var extent_resolution: int = _ceil_positive_to_int(_window_extent_meters() * pixels_per_meter)
 	var max_resolution: int = maxi(GameConfig.terrain_track_painter_max_resolution, MIN_VIEWPORT_RESOLUTION)
+	max_resolution = mini(max_resolution, _device_max_viewport_resolution())
 	return clampi(extent_resolution, MIN_VIEWPORT_RESOLUTION, max_resolution)
+
+
+func _device_max_viewport_resolution() -> int:
+	var configured_limit: int = maxi(GameConfig.terrain_track_painter_device_max_resolution, MIN_VIEWPORT_RESOLUTION)
+	var rendering_device: RenderingDevice = RenderingServer.get_rendering_device()
+	if rendering_device == null:
+		return configured_limit
+	var device_limit: int = rendering_device.limit_get(RenderingDevice.LIMIT_MAX_TEXTURE_SIZE_2D)
+	if device_limit <= 0:
+		return configured_limit
+	return maxi(mini(configured_limit, device_limit), MIN_VIEWPORT_RESOLUTION)
 
 
 func _window_extent_meters() -> float:
