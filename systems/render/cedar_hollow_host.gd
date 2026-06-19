@@ -93,6 +93,10 @@ var _chase_look_target_current: Vector3 = Vector3.ZERO
 var _chase_back_current: Vector3 = Vector3.ZERO
 var _chase_up_current: Vector3 = Vector3.UP
 var _chase_vehicle_y_current: float = 0.0
+var _chase_bank_current_deg: float = 0.0
+var _chase_pitch_current_deg: float = 0.0
+var _chase_last_velocity: Vector3 = Vector3.ZERO
+var _chase_last_velocity_valid: bool = false
 var _orbit_camera_initialized: bool = false
 var _orbit_vehicle_y_current: float = 0.0
 var _orbit_yaw_degrees: float = 0.0
@@ -997,6 +1001,18 @@ func _visual_acceleration(state: RefCounted, delta: float) -> Vector3:
 	return acceleration
 
 
+func _chase_acceleration(state: RefCounted, delta: float) -> Vector3:
+	var velocity: Vector3 = state.get("linear_velocity")
+	if not _chase_last_velocity_valid:
+		_chase_last_velocity = velocity
+		_chase_last_velocity_valid = true
+		return Vector3.ZERO
+	var safe_delta: float = maxf(delta, GameConfig.FIXED_DT)
+	var acceleration: Vector3 = (velocity - _chase_last_velocity) / safe_delta
+	_chase_last_velocity = velocity
+	return acceleration
+
+
 func _spring_scalar(current: float, target: float, delta: float, spring: float, damping: float, velocity_property: StringName) -> float:
 	var velocity: float = float(get(velocity_property))
 	velocity += (target - current) * maxf(spring, 0.0) * delta
@@ -1204,8 +1220,14 @@ func _update_chase_camera(delta: float, state: RefCounted) -> void:
 	if _camera == null:
 		return
 	var steer: float = clampf(float(_vehicle_input.get("steer")), -1.0, 1.0)
+	var basis: Basis = state.get("basis")
+	var forward: Vector3 = (-basis.z).normalized()
+	var right: Vector3 = basis.x.normalized()
+	var acceleration: Vector3 = _chase_acceleration(state, delta)
+	var lateral_accel: float = acceleration.dot(right)
+	var longitudinal_accel: float = acceleration.dot(forward)
 	_sync_chase_camera_rig_from_legacy()
-	_chase_camera_rig.call("update", _camera, state, steer, delta, true, _camera_mode == CAMERA_MODE_CHASE)
+	_chase_camera_rig.call("update", _camera, state, steer, delta, true, _camera_mode == CAMERA_MODE_CHASE, lateral_accel, longitudinal_accel)
 	_sync_chase_camera_legacy_from_rig()
 
 
@@ -1215,6 +1237,8 @@ func _sync_chase_camera_rig_from_legacy() -> void:
 	_chase_camera_rig.set("back_current", _chase_back_current)
 	_chase_camera_rig.set("up_current", _chase_up_current)
 	_chase_camera_rig.set("vehicle_y_current", _chase_vehicle_y_current)
+	_chase_camera_rig.set("_bank_current_deg", _chase_bank_current_deg)
+	_chase_camera_rig.set("_pitch_current_deg", _chase_pitch_current_deg)
 
 
 func _sync_chase_camera_legacy_from_rig() -> void:
@@ -1223,6 +1247,8 @@ func _sync_chase_camera_legacy_from_rig() -> void:
 	_chase_back_current = _chase_camera_rig.get("back_current")
 	_chase_up_current = _chase_camera_rig.get("up_current")
 	_chase_vehicle_y_current = float(_chase_camera_rig.get("vehicle_y_current"))
+	_chase_bank_current_deg = float(_chase_camera_rig.get("_bank_current_deg"))
+	_chase_pitch_current_deg = float(_chase_camera_rig.get("_pitch_current_deg"))
 
 
 func _update_orbit_camera(delta: float, state: RefCounted) -> void:

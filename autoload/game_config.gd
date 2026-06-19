@@ -188,7 +188,19 @@ var cam_look_turn_bias: float = 0.20
 var cam_fov_base: float = 68.0
 var cam_fov_speed_gain: float = 12.0
 var cam_pitch_deg: float = -5.0
-var cam_roll_steer_deg: float = 3.5
+# Steer-coupled roll is now an ANTICIPATION term only (reduced from 3.5). The
+# dominant bank is the real lateral-g lean below; this just hints the turn before
+# lateral accel builds. Set 0.0 for pure accel-based bank.
+var cam_roll_steer_deg: float = 1.5
+# SR1: accel-driven chase-cam bank/pitch (render-only feel). The host computes real
+# lateral/longitudinal accel from VehicleState.linear_velocity and passes it in; the
+# rig damps these into a subtle roll (lean into slides) + pitch (nose-up under accel,
+# nose-down under brake). Caps keep it golden-neutral, not a roller-coaster.
+var cam_bank_lateral_gain: float = 0.8
+var cam_bank_max_deg: float = 5.0
+var cam_pitch_accel_gain: float = 0.35
+var cam_pitch_max_deg: float = 2.0
+var cam_bank_smooth: float = 8.0
 var cam_gimbal_up_smooth: float = 1.0
 var cam_vertical_follow_softness: float = 7.5
 var orbit_cam_height: float = 0.65

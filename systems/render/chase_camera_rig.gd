@@ -7,6 +7,8 @@ var look_target_current: Vector3 = Vector3.ZERO
 var back_current: Vector3 = Vector3.ZERO
 var up_current: Vector3 = Vector3.UP
 var vehicle_y_current: float = 0.0
+var _bank_current_deg: float = 0.0
+var _pitch_current_deg: float = 0.0
 
 
 func reset() -> void:
@@ -15,9 +17,11 @@ func reset() -> void:
 	back_current = Vector3.ZERO
 	up_current = Vector3.UP
 	vehicle_y_current = 0.0
+	_bank_current_deg = 0.0
+	_pitch_current_deg = 0.0
 
 
-func update(camera: Camera3D, state: RefCounted, steer: float, delta: float, speed_fov_enabled: bool, is_current: bool) -> void:
+func update(camera: Camera3D, state: RefCounted, steer: float, delta: float, speed_fov_enabled: bool, is_current: bool, lateral_accel: float = 0.0, longitudinal_accel: float = 0.0) -> void:
 	if camera == null or state == null:
 		return
 	var vehicle_position: Vector3 = state.get("position")
@@ -31,6 +35,8 @@ func update(camera: Camera3D, state: RefCounted, steer: float, delta: float, spe
 		back_current = back
 		up_current = up
 		look_target_current = _look_target(camera, followed_position, back_current, up_current, steer)
+		_bank_current_deg = 0.0
+		_pitch_current_deg = 0.0
 		initialized = true
 	else:
 		back_current = back
@@ -43,7 +49,22 @@ func update(camera: Camera3D, state: RefCounted, steer: float, delta: float, spe
 		camera.global_position = desired_position
 		look_target_current = _look_target(camera, followed_position, back_current, up_current, steer)
 	camera.look_at(look_target_current, up_current)
-	camera.rotate(camera.basis.z, -steer * deg_to_rad(GameConfig.cam_roll_steer_deg))
+	var roll_target_deg: float = clampf(
+			-(lateral_accel * GameConfig.cam_bank_lateral_gain
+					+ steer * GameConfig.cam_roll_steer_deg),
+			-GameConfig.cam_bank_max_deg,
+			GameConfig.cam_bank_max_deg
+	)
+	var pitch_target_deg: float = clampf(
+			longitudinal_accel * GameConfig.cam_pitch_accel_gain,
+			-GameConfig.cam_pitch_max_deg,
+			GameConfig.cam_pitch_max_deg
+	)
+	var bank_alpha: float = clampf(GameConfig.cam_bank_smooth * delta, 0.0, 1.0)
+	_bank_current_deg = lerpf(_bank_current_deg, roll_target_deg, bank_alpha)
+	_pitch_current_deg = lerpf(_pitch_current_deg, pitch_target_deg, bank_alpha)
+	camera.rotate(camera.basis.z, deg_to_rad(_bank_current_deg))
+	camera.rotate(camera.basis.x, deg_to_rad(_pitch_current_deg))
 	if speed_fov_enabled:
 		var linear_velocity: Vector3 = state.get("linear_velocity")
 		camera.fov = GameConfig.get_fov_for_speed(linear_velocity.length())
