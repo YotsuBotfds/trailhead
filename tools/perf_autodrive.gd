@@ -4,7 +4,7 @@ const CedarHollowPlayableScene: PackedScene = preload("res://scenes/cedar_hollow
 const DEFAULT_DURATION_SECONDS: float = 40.0
 const DEFAULT_HITCH_THRESHOLD_MS: float = 20.0
 const DEFAULT_OUT_ROOT: String = "tests/out/perf"
-const WINDOW_SIZE: Vector2i = Vector2i(1280, 720)
+const WINDOW_SIZE: Vector2i = Vector2i(2880, 1620)
 const STREAM_WAIT_FRAMES: int = 1800
 const SETTLE_FRAMES: int = 30
 const CROSSING_WINDOW_FRAMES: int = 5
@@ -98,9 +98,15 @@ func _wait_for_streaming() -> void:
 
 func _drive_and_sample() -> void:
 	var elapsed_seconds: float = 0.0
+	# Use REAL wall-clock frame time, not get_process_delta_time() — Godot clamps/
+	# smooths the process delta (spiral-of-death protection), so a 500 ms freeze is
+	# reported as ~the clamp ceiling. Time.get_ticks_usec() captures the true stall.
+	var last_usec: int = Time.get_ticks_usec()
 	while elapsed_seconds < _duration_seconds:
 		await get_tree().process_frame
-		var dt: float = get_process_delta_time()
+		var now_usec: int = Time.get_ticks_usec()
+		var dt: float = maxf(float(now_usec - last_usec) / 1000000.0, 0.0)
+		last_usec = now_usec
 		elapsed_seconds += dt
 		_apply_drive_input(elapsed_seconds)
 		_sample_frame(dt)

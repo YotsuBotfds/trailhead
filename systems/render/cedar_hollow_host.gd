@@ -72,6 +72,8 @@ var _visual_antenna_roll_velocity: float = 0.0
 var _visual_last_velocity: Vector3 = Vector3.ZERO
 var _visual_last_velocity_valid: bool = false
 var _grass_crush_materials: Array[ShaderMaterial] = []
+var _grass_crush_collect_tick: int = 0
+const GRASS_CRUSH_RECOLLECT_INTERVAL: int = 12
 var _camera_mode: int = CAMERA_MODE_CHASE
 var _photo_mode_active: bool = false
 var _photo_mode_previous_camera_mode: int = CAMERA_MODE_CHASE
@@ -977,7 +979,15 @@ func _spring_scalar(current: float, target: float, delta: float, spring: float, 
 
 
 func _update_grass_crush(state: RefCounted) -> void:
-	_collect_grass_crush_materials(self)
+	# Re-collect grass materials only periodically, scoped to the foliage streamer
+	# subtree (NOT the whole host tree — that pulled in the track painter's stamp
+	# nodes and grew unbounded, scanning more nodes every physics tick).
+	_grass_crush_collect_tick += 1
+	if _grass_crush_materials.is_empty() or _grass_crush_collect_tick >= GRASS_CRUSH_RECOLLECT_INTERVAL:
+		_grass_crush_collect_tick = 0
+		_grass_crush_materials.clear()
+		if _terrain_visual_streamer != null:
+			_collect_grass_crush_materials(_terrain_visual_streamer)
 	var vehicle_position: Vector3 = state.get("position")
 	for material in _grass_crush_materials:
 		if material == null:
@@ -1008,7 +1018,9 @@ func _update_terrain_tracks() -> void:
 		return
 	var state: RefCounted = _vehicle.call("get_state")
 	_terrain_track_painter.call("apply_vehicle_state", state, GameConfig.FIXED_DT)
-	_apply_terrain_tracks_to_streamed_tiles()
+	# Re-applying the track texture to streamed tiles (a full streamer-tree walk)
+	# happens once per RENDER frame in _process(); doing it here too meant ~120Hz
+	# whole-tree material walks on top of the ~60Hz one. Stamp painting stays here.
 
 
 func _apply_terrain_tracks_to_streamed_tiles() -> void:

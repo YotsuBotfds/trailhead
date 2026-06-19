@@ -421,6 +421,7 @@ var terrain_track_painter_pixels_per_meter: float = 8.0
 var terrain_track_painter_window_meters: float = 256.0
 var terrain_track_painter_max_resolution: int = 2048
 var terrain_track_painter_device_max_resolution: int = 2048
+var terrain_track_max_stamps: int = 256
 var terrain_track_update_interval_ticks: int = 2
 var terrain_track_stamp_radius: float = 0.065
 var terrain_track_stamp_strength: float = 0.72

@@ -51,7 +51,7 @@ func _ready() -> void:
 
 func configure(bounds_min: Vector2, bounds_max: Vector2) -> void:
 	_configure_bounds(bounds_min, bounds_max)
-	_max_stamp_count = maxi(_target_viewport_resolution(), WHEEL_COUNT * MIN_STAMPS_PER_WHEEL)
+	_max_stamp_count = maxi(GameConfig.terrain_track_max_stamps, WHEEL_COUNT * MIN_STAMPS_PER_WHEEL)
 	_ensure_viewport()
 	_configure_viewport()
 
