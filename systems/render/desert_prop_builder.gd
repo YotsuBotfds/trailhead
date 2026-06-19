@@ -1,6 +1,19 @@
 class_name DesertPropBuilder
 extends RefCounted
 
+# Real prop GLBs (materials baked in via glTF import; preload + instantiate pattern
+# mirrors systems/render/prop_visual_builder.gd). Used for props that have a suitable
+# hero asset; the remaining props keep their articulated procedural ArrayMeshes.
+const TrailSignScene: PackedScene = preload("res://assets/models/props/trail_sign.glb")
+const MileMarkerScene: PackedScene = preload("res://assets/models/props/mile_marker.glb")
+
+# RC-scale fit: trail_sign.glb authors at 1.00 m tall / 0.90 m wide, mile_marker.glb at
+# 0.705 m tall (measured headlessly). Scales keep each instance inside the inspector's
+# MAX_PROP_HEIGHT (0.75) / MAX_PROP_WIDTH (0.90) RC prop envelope.
+const TRAILHEAD_SIGN_SCALE: float = 0.65
+const MARKER_POST_SCALE: float = 0.85
+const SIGN_YAW_DEG: float = 18.0
+
 const PROP_TRAILHEAD_SIGN: StringName = &"trailhead_sign"
 const PROP_ROCK_CAIRN: StringName = &"rock_cairn"
 const PROP_BLEACHED_DEAD_LOG: StringName = &"bleached_dead_log"
@@ -32,12 +45,8 @@ static func build_prop(prop_id: StringName, seed: int = 0) -> Node3D:
 static func build_trailhead_sign(seed: int = 0) -> Node3D:
 	var root: Node3D = Node3D.new()
 	root.name = "trailhead_sign"
-	var wood_material: StandardMaterial3D = _wood_material()
-	var dark_wood_material: StandardMaterial3D = _dark_wood_material()
-	_add_box(root, "post", Vector3(0.055, 0.34 + _unit(seed, 1) * 0.04, 0.055), Vector3(0.0, 0.17, 0.0), wood_material)
-	_add_box(root, "board", Vector3(0.38, 0.12, 0.045), Vector3(0.0, 0.30, -0.015), wood_material)
-	_add_box(root, "glyph", Vector3(0.055, 0.065, 0.008), Vector3(-0.095, 0.304, -0.043), dark_wood_material)
-	_add_box(root, "glyph_notch", Vector3(0.040, 0.010, 0.010), Vector3(0.060, 0.306, -0.044), dark_wood_material)
+	var yaw: float = (_unit(seed, 1) - 0.5) * SIGN_YAW_DEG * 2.0
+	_instance_glb(root, TrailSignScene, "sign", Vector3.ZERO, Vector3(0.0, yaw, 0.0), Vector3.ONE * TRAILHEAD_SIGN_SCALE)
 	_snap_base_to_ground(root)
 	return root
 
@@ -87,14 +96,8 @@ static func build_bleached_dead_log(seed: int = 0) -> Node3D:
 static func build_marker_post(seed: int = 0) -> Node3D:
 	var root: Node3D = Node3D.new()
 	root.name = "marker_post"
-	var wood_material: StandardMaterial3D = _wood_material()
-	var height: float = 0.33 + _unit(seed, 6) * 0.06
-	_add_box(root, "post", Vector3(0.060, height, 0.060), Vector3(0.0, height * 0.5, 0.0), wood_material)
-	_add_box(root, "cap_slant", Vector3(0.070, 0.024, 0.070), Vector3(0.0, height + 0.010, 0.0), wood_material)
-	var wire: MeshInstance3D = _mesh_instance("wire_stub", _prism_x_mesh("desert_marker_wire_" + str(seed), 0.20, 0.006, 5), _dark_wood_material())
-	wire.position = Vector3(0.095, height * 0.72, 0.0)
-	wire.rotation.z = (_unit(seed, 7) - 0.5) * 0.16
-	root.add_child(wire)
+	var yaw: float = (_unit(seed, 6) - 0.5) * SIGN_YAW_DEG * 2.0
+	_instance_glb(root, MileMarkerScene, "marker", Vector3.ZERO, Vector3(0.0, yaw, 0.0), Vector3.ONE * MARKER_POST_SCALE)
 	_snap_base_to_ground(root)
 	return root
 
@@ -114,21 +117,26 @@ static func build_desert_shrub(seed: int = 0) -> Node3D:
 		var tip: Vector3 = direction * length + Vector3(0.0, lift, 0.0)
 		var blade: MeshInstance3D = _mesh_instance("blade_" + str(blade_index), _triangle_mesh("desert_shrub_blade_" + str(seed) + "_" + str(blade_index), base_center - side * 0.012, base_center + side * 0.012, tip), yucca_material)
 		root.add_child(blade)
-	_add_box(root, "bloom_stalk", Vector3(0.012, 0.20, 0.012), Vector3(0.0, 0.10, 0.0), yucca_material)
-	_add_box(root, "bloom", Vector3(0.040, 0.050, 0.040), Vector3(0.0, 0.215, 0.0), _bloom_material())
+	var bloom_stalk: MeshInstance3D = _mesh_instance("bloom_stalk", _prism_x_mesh("desert_shrub_stalk_" + str(seed), 0.20, 0.007, 6), yucca_material)
+	bloom_stalk.position = Vector3(0.0, 0.10, 0.0)
+	bloom_stalk.rotation.z = PI * 0.5
+	root.add_child(bloom_stalk)
+	var bloom: MeshInstance3D = _mesh_instance("bloom", _faceted_stone_mesh("desert_shrub_bloom_" + str(seed), Vector3(0.040, 0.050, 0.040), seed + 99), _bloom_material())
+	bloom.position = Vector3(0.0, 0.215, 0.0)
+	root.add_child(bloom)
 	_snap_base_to_ground(root)
 	return root
 
 
-static func _add_box(parent: Node3D, node_name: String, size: Vector3, position: Vector3, material: StandardMaterial3D) -> MeshInstance3D:
-	var mesh: BoxMesh = BoxMesh.new()
-	mesh.resource_name = "desert_prop_" + node_name + "_mesh"
-	mesh.size = size
-	mesh.material = material
-	var instance: MeshInstance3D = MeshInstance3D.new()
+static func _instance_glb(parent: Node3D, scene: PackedScene, node_name: String, position: Vector3, rotation_deg: Vector3, scale: Vector3) -> Node3D:
+	var instance: Node3D = scene.instantiate() as Node3D
+	if instance == null:
+		push_error("DesertPropBuilder: failed to instantiate " + node_name)
+		return null
 	instance.name = node_name
-	instance.mesh = mesh
 	instance.position = position
+	instance.rotation_degrees = rotation_deg
+	instance.scale = scale
 	parent.add_child(instance)
 	return instance
 
@@ -270,19 +278,8 @@ static func _make_material(material_name: String, color: Color, roughness: float
 
 
 static func _snap_base_to_ground(root: Node3D) -> void:
-	var min_y: float = 0.0
-	var has_bounds: bool = false
-	for child in root.get_children():
-		var mesh_instance: MeshInstance3D = child as MeshInstance3D
-		if mesh_instance == null or mesh_instance.mesh == null:
-			continue
-		var transformed_aabb: AABB = mesh_instance.transform * mesh_instance.mesh.get_aabb()
-		if not has_bounds:
-			min_y = transformed_aabb.position.y
-			has_bounds = true
-		else:
-			min_y = minf(min_y, transformed_aabb.position.y)
-	if not has_bounds or absf(min_y) <= 0.0001:
+	var min_y: float = _subtree_min_y(root, Transform3D.IDENTITY)
+	if absf(min_y) <= 0.0001:
 		return
 	for child in root.get_children():
 		var child_3d: Node3D = child as Node3D
@@ -291,12 +288,19 @@ static func _snap_base_to_ground(root: Node3D) -> void:
 		child_3d.position.y -= min_y
 
 
-static func _wood_material() -> StandardMaterial3D:
-	return _make_material("desert_prop_weathered_wood", Color(0.55, 0.36, 0.18), 0.94)
-
-
-static func _dark_wood_material() -> StandardMaterial3D:
-	return _make_material("desert_prop_dark_wood_cut", Color(0.28, 0.18, 0.10), 0.96)
+static func _subtree_min_y(node: Node3D, accum: Transform3D) -> float:
+	var min_y: float = INF
+	for child in node.get_children():
+		var child_3d: Node3D = child as Node3D
+		if child_3d == null:
+			continue
+		var child_accum: Transform3D = accum * child_3d.transform
+		var mesh_instance: MeshInstance3D = child_3d as MeshInstance3D
+		if mesh_instance != null and mesh_instance.mesh != null:
+			var transformed_aabb: AABB = child_accum * mesh_instance.mesh.get_aabb()
+			min_y = minf(min_y, transformed_aabb.position.y)
+		min_y = minf(min_y, _subtree_min_y(child_3d, child_accum))
+	return min_y
 
 
 static func _sandstone_material() -> StandardMaterial3D:
