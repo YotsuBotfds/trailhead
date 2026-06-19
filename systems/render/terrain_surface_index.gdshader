@@ -35,6 +35,15 @@ uniform float terrain_specular = 0.18;
 uniform vec4 zion_sandstone_color : source_color = vec4(0.82, 0.42, 0.20, 1.0);
 uniform vec4 zion_sand_color : source_color = vec4(0.86, 0.74, 0.54, 1.0);
 uniform vec4 zion_strata_dark_color : source_color = vec4(0.36, 0.14, 0.08, 1.0);
+uniform vec4 zion_navajo_vermilion_color : source_color = vec4(0.36, 0.10, 0.04, 1.0);
+uniform vec4 zion_navajo_red_orange_color : source_color = vec4(0.49, 0.14, 0.05, 1.0);
+uniform vec4 zion_navajo_salmon_color : source_color = vec4(0.62, 0.27, 0.13, 1.0);
+uniform vec4 zion_navajo_apricot_color : source_color = vec4(0.71, 0.37, 0.18, 1.0);
+uniform vec4 zion_navajo_cream_color : source_color = vec4(0.79, 0.58, 0.34, 1.0);
+uniform vec4 zion_navajo_bleached_white_color : source_color = vec4(0.83, 0.74, 0.58, 1.0);
+uniform float zion_navajo_height_start = 1250.0;
+uniform float zion_navajo_height_end = 1700.0;
+uniform float zion_navajo_palette_strength = 0.9;
 uniform float zion_sandstone_slope_start = 0.08;
 uniform float zion_sandstone_slope_end = 0.38;
 uniform float zion_sand_height_start = 1193.0;
@@ -43,10 +52,19 @@ uniform float zion_strata_scale = 2.0;
 uniform float zion_strata_strength = 0.48;
 uniform vec4 zion_strata_light_color : source_color = vec4(0.86, 0.62, 0.38, 1.0);  // lighter band tone (Navajo cross-bedding)
 uniform vec2 zion_strata_dip = vec2(0.15, 0.15);                                    // xz phase per meter (diagonal cross-bedding dip)
+uniform vec2 zion_crossbed_dip_dir = vec2(0.84, 0.54);
+uniform float zion_crossbed_dip_tangent = 0.51;
+uniform float zion_crossbed_major_period_m = 18.0;
+uniform float zion_crossbed_lamina_period_m = 1.5;
+uniform float zion_crossbed_warp_m = 3.5;
 uniform float zion_detile_strength = 0.18;
 uniform vec4 zion_floor_dark_color : source_color = vec4(0.36, 0.28, 0.22, 1.0);
+uniform vec4 zion_floor_slickrock_color : source_color = vec4(0.66, 0.49, 0.31, 1.0);
+uniform vec4 zion_floor_wash_color : source_color = vec4(0.48, 0.42, 0.32, 1.0);
+uniform vec4 zion_floor_sand_patch_color : source_color = vec4(0.78, 0.63, 0.41, 1.0);
 uniform float zion_floor_scatter_strength = 0.36;
 uniform float zion_floor_detile_strength = 0.24;
+uniform float zion_floor_patch_strength = 0.34;
 uniform vec4 zion_riparian_tint_color : source_color = vec4(0.31, 0.44, 0.24, 1.0);
 uniform float zion_riparian_tint_strength = 0.24;
 uniform float zion_riparian_inner_m = 12.0;
@@ -65,14 +83,19 @@ uniform vec4 zion_river_segment_7 = vec4(1330.0, 1400.0, 1410.0, 1450.0);
 uniform vec4 zion_river_segment_8 = vec4(1410.0, 1450.0, 1500.0, 1550.0);
 uniform vec4 zion_river_segment_9 = vec4(1500.0, 1550.0, 1530.0, 1600.0);
 uniform vec4 zion_varnish_color : source_color = vec4(0.13, 0.08, 0.06, 1.0);  // warm charcoal
+uniform vec4 zion_varnish_mn_color : source_color = vec4(0.025, 0.018, 0.013, 1.0);
+uniform vec4 zion_varnish_fe_color : source_color = vec4(0.11, 0.035, 0.014, 1.0);
 uniform float zion_varnish_strength = 0.5;
 uniform float zion_varnish_wall_threshold = 0.30;   // local_normal_y below this = near-vertical face
 uniform float zion_varnish_height_start = 1300.0;   // varnish mostly on walls above the floor
 uniform float zion_varnish_streak_scale = 0.12;     // horizontal streak frequency
+uniform float zion_varnish_drop_m = 145.0;
 // Kayenta Formation: warm-dark band at cliff base (~1200-1250 m) below the Navajo mass.
 uniform vec4 zion_kayenta_color : source_color = vec4(0.38, 0.10, 0.06, 1.0);  // deep brick-red
+uniform vec4 zion_kayenta_lavender_color : source_color = vec4(0.20, 0.13, 0.14, 1.0);
 uniform float zion_kayenta_height_start = 1200.0;
 uniform float zion_kayenta_height_end = 1250.0;
+uniform float zion_kayenta_skirt_height_m = 120.0;
 uniform float zion_kayenta_strength = 0.55;
 // Upper-wall bleach: pale buff cream tint driven by world height (Great White Throne reads near-white).
 uniform vec4 zion_bleach_color : source_color = vec4(0.91, 0.84, 0.72, 1.0);  // pale buff cream
@@ -102,6 +125,12 @@ varying vec2 world_xz;
 varying float world_y;
 varying float local_normal_y;
 
+const float ZION_TAU = 6.28318530718;
+
+float luminance(vec3 color) {
+	return dot(color, vec3(0.2126, 0.7152, 0.0722));
+}
+
 float hash21(vec2 value) {
 	return fract(sin(dot(value, vec2(127.1, 311.7))) * 43758.5453123);
 }
@@ -118,6 +147,28 @@ float hash21_smooth(vec2 p) {
 	float h01 = hash21(cell + vec2(0.0, 1.0));
 	float h11 = hash21(cell + vec2(1.0, 1.0));
 	return mix(mix(h00, h10, blend.x), mix(h01, h11, blend.x), blend.y);
+}
+
+float wrapped_line(float phase, float width) {
+	float edge_distance = min(fract(phase), 1.0 - fract(phase));
+	return 1.0 - smoothstep(0.0, width, edge_distance);
+}
+
+vec3 zion_navajo_palette(float height_t) {
+	float t = clamp(height_t, 0.0, 1.0);
+	if (t < 0.2) {
+		return mix(zion_navajo_vermilion_color.rgb, zion_navajo_red_orange_color.rgb, smoothstep(0.0, 0.2, t));
+	}
+	if (t < 0.4) {
+		return mix(zion_navajo_red_orange_color.rgb, zion_navajo_salmon_color.rgb, smoothstep(0.2, 0.4, t));
+	}
+	if (t < 0.6) {
+		return mix(zion_navajo_salmon_color.rgb, zion_navajo_apricot_color.rgb, smoothstep(0.4, 0.6, t));
+	}
+	if (t < 0.8) {
+		return mix(zion_navajo_apricot_color.rgb, zion_navajo_cream_color.rgb, smoothstep(0.6, 0.8, t));
+	}
+	return mix(zion_navajo_cream_color.rgb, zion_navajo_bleached_white_color.rgb, smoothstep(0.8, 1.0, t));
 }
 
 vec4 surface_color_for_id(float surface_id_value) {
@@ -306,32 +357,70 @@ void fragment() {
 	float high_wall_mask = smoothstep(zion_sand_height_start + 4.0, zion_sand_height_end + 18.0, world_y);
 	float low_flat_mask = (1.0 - sandstone_mask) * (1.0 - smoothstep(zion_sand_height_start, zion_sand_height_end, world_y));
 	float cliff_mask = max(sandstone_mask, high_wall_mask * 0.58);
-	float strata_dip_phase = dot(world_xz, zion_strata_dip);
-	float strata_wave = sin(world_y * zion_strata_scale + strata_dip_phase + hash21_smooth(world_xz * 0.08) * 6.283185);
-	float kayenta_height_mask = smoothstep(zion_kayenta_height_start, zion_kayenta_height_start + 12.0, world_y) - smoothstep(zion_kayenta_height_end - 18.0, zion_kayenta_height_end, world_y);
-	float kayenta_mask = clamp(kayenta_height_mask, 0.0, 1.0) * sandstone_mask;
+	float cliff_face_mask = smoothstep(0.32, 0.82, slope_mask);
+	float kayenta_effective_end = max(zion_kayenta_height_end, zion_sand_height_start + zion_kayenta_skirt_height_m);
+	float kayenta_height_mask = smoothstep(zion_kayenta_height_start, zion_kayenta_height_start + 12.0, world_y)
+	                          * (1.0 - smoothstep(kayenta_effective_end - 20.0, kayenta_effective_end, world_y));
+	float kayenta_mask = clamp(kayenta_height_mask, 0.0, 1.0) * max(sandstone_mask, high_wall_mask * 0.42);
+	float navajo_height_span = max(zion_navajo_height_end - zion_navajo_height_start, 1.0);
+	float navajo_height_t = clamp((world_y - zion_navajo_height_start) / navajo_height_span + cliff_face_mask * 0.035, 0.0, 1.0);
+	vec3 navajo_color = zion_navajo_palette(navajo_height_t);
+	vec2 base_dip_dir = zion_crossbed_dip_dir / max(length(zion_crossbed_dip_dir), 0.001);
+	float dip_turn = (hash21_smooth(world_xz * 0.0025 + vec2(4.0, 9.0)) - 0.5) * 0.62;
+	float dip_cos = cos(dip_turn);
+	float dip_sin = sin(dip_turn);
+	vec2 dip_dir = vec2(base_dip_dir.x * dip_cos - base_dip_dir.y * dip_sin, base_dip_dir.x * dip_sin + base_dip_dir.y * dip_cos);
+	float bed_warp = (hash21_smooth(world_xz * 0.014 + vec2(9.3, 4.4)) * 2.0 - 1.0) * zion_crossbed_warp_m;
+	float bed_coord = world_y + dot(world_xz, dip_dir) * zion_crossbed_dip_tangent + bed_warp + dot(world_xz, zion_strata_dip) * 0.2;
+	float major_phase = bed_coord / max(zion_crossbed_major_period_m, 1.0);
+	float lamina_phase = bed_coord / max(zion_crossbed_lamina_period_m, 0.25);
+	float major_sweep = sin(major_phase * ZION_TAU + hash21_smooth(world_xz * 0.011) * ZION_TAU) * 0.5 + 0.5;
+	float major_line = wrapped_line(major_phase, 0.052);
+	float lamina_wave = sin(lamina_phase * ZION_TAU + hash21_smooth(world_xz * 0.065 + vec2(2.0, 13.0)) * 1.45);
+	float lamina_line = pow(max(0.0, lamina_wave * 0.5 + 0.5), 2.2);
+	float lamina_dark = wrapped_line(lamina_phase + 0.18, 0.055);
+	float strata_wave = clamp(major_sweep * 0.42 + (lamina_wave * 0.5 + 0.5) * 0.58, 0.0, 1.0) * 2.0 - 1.0;
+	float kayenta_phase = world_y / 4.25 + hash21_smooth(world_xz * 0.035 + vec2(5.0, 1.0)) * 0.25;
+	float kayenta_line = wrapped_line(kayenta_phase, 0.13);
+	float kayenta_lamina = sin(world_y * (ZION_TAU / 2.1) + hash21_smooth(world_xz * 0.045) * ZION_TAU) * 0.5 + 0.5;
+	vec3 kayenta_base = mix(zion_kayenta_color.rgb, zion_kayenta_lavender_color.rgb, smoothstep(0.48, 0.86, hash21_smooth(world_xz * 0.022 + vec2(12.0, 3.0))) * 0.42);
+	kayenta_base *= 0.88 + kayenta_lamina * 0.16;
+	kayenta_base = mix(kayenta_base, zion_kayenta_color.rgb * 0.55, kayenta_line * 0.35);
 	float detile_a = hash21_smooth(world_xz * 0.055) * 2.0 - 1.0;
 	float detile_b = hash21_smooth(world_xz * 0.031 + vec2(7.3, 2.1)) * 2.0 - 1.0;
 	float detile = detile_a * 0.5 + detile_b * 0.5;
 	vec3 zion_albedo = ALBEDO;
-	zion_albedo = mix(zion_albedo, zion_sand_color.rgb, low_flat_mask * 0.68);
-	float floor_scatter = hash21_smooth(world_xz * 0.042 + vec2(3.1, 8.7));
-	zion_albedo = mix(zion_albedo, zion_floor_dark_color.rgb, low_flat_mask * floor_scatter * zion_floor_scatter_strength);
-	float detile_floor = hash21_smooth(world_xz * 0.018 + vec2(5.2, 9.7)) * 2.0 - 1.0;
-	zion_albedo *= 1.0 + detile_floor * low_flat_mask * zion_floor_detile_strength;
 	float river_distance_m = zion_river_distance(world_xz);
 	float river_corridor_mask = 1.0 - smoothstep(zion_riparian_inner_m, zion_riparian_outer_m, river_distance_m);
 	float low_river_floor_mask = (1.0 - sandstone_mask) * (1.0 - smoothstep(zion_sand_height_end - 1.0, zion_sand_height_end + 7.0, world_y));
 	float riparian_tint_mask = river_corridor_mask * max(low_flat_mask, low_river_floor_mask * river_corridor_mask);
 	float bank_wet_mask = smoothstep(3.5, 7.0, river_distance_m) * (1.0 - smoothstep(7.0, zion_bank_wet_width_m, river_distance_m)) * low_river_floor_mask;
+	zion_albedo = mix(zion_albedo, zion_sand_color.rgb, low_flat_mask * 0.58);
+	float floor_macro = hash21_smooth(world_xz * 0.010 + vec2(8.0, 2.0));
+	float floor_mid = hash21_smooth(world_xz * 0.026 + vec2(3.1, 8.7));
+	float floor_fine = hash21_smooth(world_xz * 0.083 + vec2(14.4, 6.2));
+	float floor_wash_mask = low_flat_mask * (1.0 - river_corridor_mask * 0.35) * smoothstep(0.46, 0.82, floor_mid);
+	float floor_slickrock_mask = low_flat_mask * smoothstep(0.60, 0.90, floor_macro) * (1.0 - floor_wash_mask * 0.45);
+	float floor_sand_patch_mask = low_flat_mask * smoothstep(0.48, 0.86, floor_fine) * (1.0 - floor_slickrock_mask * 0.30);
+	zion_albedo = mix(zion_albedo, zion_floor_wash_color.rgb, floor_wash_mask * zion_floor_patch_strength);
+	zion_albedo = mix(zion_albedo, zion_floor_slickrock_color.rgb, floor_slickrock_mask * zion_floor_patch_strength);
+	zion_albedo = mix(zion_albedo, zion_floor_sand_patch_color.rgb, floor_sand_patch_mask * zion_floor_patch_strength * 0.8);
+	float floor_scatter = floor_mid * 0.55 + floor_fine * 0.45;
+	zion_albedo = mix(zion_albedo, zion_floor_dark_color.rgb, low_flat_mask * floor_scatter * zion_floor_scatter_strength * 0.65);
+	float detile_floor = (floor_macro * 0.45 + floor_mid * 0.35 + floor_fine * 0.20) * 2.0 - 1.0;
+	zion_albedo *= 1.0 + detile_floor * low_flat_mask * zion_floor_detile_strength * 0.72;
 	zion_albedo = mix(zion_albedo, zion_riparian_tint_color.rgb, riparian_tint_mask * zion_riparian_tint_strength);
-	zion_albedo = mix(zion_albedo, zion_sandstone_color.rgb, cliff_mask * 0.74);
-	zion_albedo = mix(zion_albedo, zion_kayenta_color.rgb, kayenta_mask * zion_kayenta_strength);
-	float strata_tone = strata_wave * 0.5 + 0.5;
-	vec3 strata_tint = mix(zion_strata_dark_color.rgb, zion_strata_light_color.rgb, strata_tone);
-	float strata_cliff_mask = cliff_mask * smoothstep(0.32, 0.78, slope_mask);
+	float navajo_mask = clamp(cliff_mask * (1.0 - kayenta_mask * 0.80), 0.0, 1.0);
+	zion_albedo = mix(zion_albedo, navajo_color, navajo_mask * zion_navajo_palette_strength);
+	zion_albedo = mix(zion_albedo, kayenta_base, kayenta_mask * min(zion_kayenta_strength + 0.18, 1.0));
+	float strata_shade = major_sweep * 0.10 + lamina_wave * 0.075 - major_line * 0.30 - lamina_dark * 0.11;
+	vec3 strata_tint = navajo_color * (1.0 + strata_shade);
+	strata_tint = mix(strata_tint, zion_strata_dark_color.rgb, major_line * 0.28);
+	strata_tint = mix(strata_tint, zion_strata_light_color.rgb, lamina_line * 0.045);
+	float strata_cliff_mask = navajo_mask * cliff_face_mask;
 	zion_albedo = mix(zion_albedo, strata_tint, strata_cliff_mask * zion_strata_strength);
-	zion_albedo *= 1.0 + detile * zion_detile_strength;
+	zion_albedo = mix(zion_albedo, kayenta_base, kayenta_mask * cliff_face_mask * zion_kayenta_strength * 0.35);
+	zion_albedo *= 1.0 + detile * zion_detile_strength * max(cliff_mask, low_flat_mask * 0.5);
 	ALBEDO = clamp(zion_albedo, vec3(0.0), vec3(1.0));
 	if (zion_wetrock_enabled) {
 		float wetrock_wall = step(local_normal_y, 0.25);
@@ -342,22 +431,36 @@ void fragment() {
 		ALBEDO = mix(ALBEDO, ALBEDO * (1.0 - zion_wetrock_darkness) + zion_wetrock_moss_color.rgb * 0.08, wetrock_mask);
 	}
 	float varnish_wall_mask = 1.0 - smoothstep(zion_varnish_wall_threshold - 0.08, zion_varnish_wall_threshold + 0.08, local_normal_y);
-	float varnish_height_mask = smoothstep(zion_varnish_height_start, zion_varnish_height_start + 80.0, world_y);
-	float varnish_phase = hash21(floor(world_xz * 0.11)) * 6.283185;
-	float varnish_region = hash21(floor(world_xz * 0.045) + vec2(17.0, 3.0));
-	float varnish_s = sin(world_xz.x * zion_varnish_streak_scale + varnish_phase) + sin(world_xz.y * (zion_varnish_streak_scale * 0.87) + varnish_phase * 1.4);
-	float varnish_streak = pow(max(0.0, 1.0 - abs(varnish_s) * 0.5), 2.0);
-	varnish_streak *= smoothstep(0.25, 0.85, varnish_region);
-	varnish_streak *= mix(0.55, 1.0, strata_wave * 0.5 + 0.5);
-	float varnish_amount = varnish_wall_mask * varnish_height_mask * varnish_streak * zion_varnish_strength;
-	ALBEDO = mix(ALBEDO, zion_varnish_color.rgb, clamp(varnish_amount, 0.0, 1.0));
+	float seep_noise = hash21_smooth(world_xz * 0.016 + vec2(2.0, 17.0));
+	float seep_y = mix(zion_wetrock_height_start + 35.0, max(zion_wetrock_height_end, zion_varnish_height_start) + 170.0, seep_noise);
+	float down_from_seep_m = seep_y - world_y;
+	float below_seep_mask = smoothstep(0.0, 18.0, down_from_seep_m)
+	                       * (1.0 - smoothstep(zion_varnish_drop_m * 0.48, zion_varnish_drop_m, down_from_seep_m));
+	float flow_x = dot(world_xz, vec2(0.73, -0.68));
+	float flow_y = dot(world_xz, vec2(0.68, 0.73));
+	float varnish_phase = flow_x * zion_varnish_streak_scale + hash21_smooth(vec2(floor(flow_y * 0.025), floor(seep_y * 0.018))) * ZION_TAU;
+	float varnish_column = pow(max(0.0, 1.0 - abs(sin(varnish_phase))), 3.6);
+	float varnish_breaks = smoothstep(0.22, 0.78, hash21_smooth(vec2(flow_x * 0.045, world_y * 0.036) + vec2(11.0, 6.0)));
+	float varnish_region = smoothstep(0.54, 0.88, hash21_smooth(world_xz * 0.021 + vec2(17.0, 3.0)));
+	float varnish_streak = varnish_column * varnish_breaks * varnish_region * mix(0.62, 1.0, strata_wave * 0.5 + 0.5);
+	float varnish_height_mask = smoothstep(zion_varnish_height_start - 65.0, zion_varnish_height_start + 25.0, world_y);
+	float varnish_amount = varnish_wall_mask * varnish_height_mask * below_seep_mask * varnish_streak * zion_varnish_strength;
+	vec3 varnish_oxide = mix(zion_varnish_fe_color.rgb, zion_varnish_mn_color.rgb, smoothstep(0.50, 0.92, hash21_smooth(world_xz * 0.033 + vec2(4.0, 19.0))));
+	varnish_oxide = mix(zion_varnish_color.rgb, varnish_oxide, 0.72);
+	ALBEDO = mix(ALBEDO, varnish_oxide, clamp(varnish_amount, 0.0, 0.72));
 	if (use_macro_albedo) {
 		vec2 macro_uv = clamp((world_xz - macro_albedo_origin_xz) / macro_albedo_size_xz, vec2(0.0), vec2(1.0));
 		vec3 macro_albedo = texture(macro_albedo_texture, macro_uv).rgb;
-		ALBEDO = clamp(mix(ALBEDO, macro_albedo, macro_albedo_strength), vec3(0.0), vec3(1.0));
+		float macro_luma = luminance(macro_albedo);
+		float base_luma = max(luminance(ALBEDO), 0.035);
+		float macro_luma_ratio = clamp(macro_luma / base_luma, 0.55, 1.45);
+		ALBEDO = clamp(mix(ALBEDO, ALBEDO * macro_luma_ratio, macro_albedo_strength), vec3(0.0), vec3(1.0));
 	}
-	float bleach_mask = smoothstep(zion_bleach_height_start, zion_bleach_height_start + 200.0, world_y) * cliff_mask;
-	ALBEDO = mix(ALBEDO, zion_bleach_color.rgb, bleach_mask * zion_bleach_strength);
+	float bleach_noise = hash21_smooth(world_xz * 0.018 + vec2(6.0, 14.0)) * 0.58
+	                   + hash21_smooth(world_xz * 0.047 + vec2(1.0, 5.0)) * 0.42;
+	float bleach_blob = smoothstep(0.50, 0.84, bleach_noise);
+	float bleach_mask = smoothstep(zion_bleach_height_start, zion_bleach_height_start + 210.0, world_y) * cliff_mask * (0.42 + bleach_blob * 0.58);
+	ALBEDO = mix(ALBEDO, zion_navajo_bleached_white_color.rgb, bleach_mask * zion_bleach_strength);
 	ALBEDO = mix(ALBEDO, ALBEDO * (1.0 - zion_bank_wet_darkness), bank_wet_mask);
 	// W6-SURFACE-DETAIL: surface micro-relief so raking golden-hour light catches
 	// real texture. A procedural micro-normal (hash only, no extra texture fetches)
@@ -378,6 +481,7 @@ void fragment() {
 	vec3 world_micro_normal = apply_micro_normal(world_detail_normal, world_xz, micro_strength);
 	NORMAL = normalize((VIEW_MATRIX * vec4(world_micro_normal, 0.0)).xyz);
 	float roughness_wobble = (hash21_smooth(world_xz * 0.31) * 2.0 - 1.0) * micro_roughness_variation * (0.5 + micro_strength);
-	ROUGHNESS = clamp(mix(terrain_roughness + roughness_wobble, zion_bank_wet_roughness, bank_wet_mask), 0.05, 1.0);
+	float floor_roughness_shift = floor_wash_mask * 0.035 + floor_sand_patch_mask * 0.055 - floor_slickrock_mask * 0.08 + low_flat_mask * detile_floor * 0.025;
+	ROUGHNESS = clamp(mix(terrain_roughness + roughness_wobble + floor_roughness_shift, zion_bank_wet_roughness, bank_wet_mask), 0.05, 1.0);
 	SPECULAR = terrain_specular;
 }
