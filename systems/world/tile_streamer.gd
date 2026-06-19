@@ -604,7 +604,7 @@ func _start_workers() -> void:
 		return
 	for _index in range(_worker_count):
 		var thread: Thread = Thread.new()
-		var start_error: Error = thread.start(Callable(self, "_worker_loop"))
+		var start_error: Error = thread.start(Callable(self, "_worker_loop"), Thread.PRIORITY_LOW)
 		if start_error != OK:
 			push_error("TileStreamer worker start failed: " + error_string(start_error))
 			continue
