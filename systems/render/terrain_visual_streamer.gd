@@ -431,9 +431,16 @@ func _start_workers() -> void:
 	_worker_should_stop = false
 	if _worker_count == 0:
 		return
+	# Low priority in the real (windowed) game so macOS schedules build workers onto
+	# efficiency cores, leaving the perf cores for main+render (kills the stutter
+	# carpet). Headless test fixtures busy-loop the main thread and would starve
+	# low-priority workers, so use NORMAL there.
+	var worker_priority: int = Thread.PRIORITY_LOW
+	if DisplayServer.get_name() == "headless":
+		worker_priority = Thread.PRIORITY_NORMAL
 	for _index in range(_worker_count):
 		var thread: Thread = Thread.new()
-		var start_error: Error = thread.start(Callable(self, "_worker_loop"), Thread.PRIORITY_LOW)
+		var start_error: Error = thread.start(Callable(self, "_worker_loop"), worker_priority)
 		if start_error != OK:
 			push_error("TerrainVisualStreamer worker start failed: " + error_string(start_error))
 			continue

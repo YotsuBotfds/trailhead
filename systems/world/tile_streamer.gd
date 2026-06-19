@@ -602,9 +602,14 @@ func _start_workers() -> void:
 	_worker_should_stop = false
 	if _worker_count == 0:
 		return
+	# See terrain_visual_streamer: low priority in-game (E-cores), NORMAL headless
+	# so the busy-loop test fixtures don't starve the build workers.
+	var worker_priority: int = Thread.PRIORITY_LOW
+	if DisplayServer.get_name() == "headless":
+		worker_priority = Thread.PRIORITY_NORMAL
 	for _index in range(_worker_count):
 		var thread: Thread = Thread.new()
-		var start_error: Error = thread.start(Callable(self, "_worker_loop"), Thread.PRIORITY_LOW)
+		var start_error: Error = thread.start(Callable(self, "_worker_loop"), worker_priority)
 		if start_error != OK:
 			push_error("TileStreamer worker start failed: " + error_string(start_error))
 			continue
