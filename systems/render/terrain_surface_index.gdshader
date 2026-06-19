@@ -59,9 +59,9 @@ uniform float zion_crossbed_lamina_period_m = 1.5;
 uniform float zion_crossbed_warp_m = 3.5;
 uniform float zion_detile_strength = 0.18;
 uniform vec4 zion_floor_dark_color : source_color = vec4(0.36, 0.28, 0.22, 1.0);
-uniform vec4 zion_floor_slickrock_color : source_color = vec4(0.66, 0.49, 0.31, 1.0);
+uniform vec4 zion_floor_slickrock_color : source_color = vec4(0.60, 0.45, 0.32, 1.0);  // warm but desaturated (exposed Navajo, not glowing)
 uniform vec4 zion_floor_wash_color : source_color = vec4(0.48, 0.42, 0.32, 1.0);
-uniform vec4 zion_floor_sand_patch_color : source_color = vec4(0.78, 0.63, 0.41, 1.0);
+uniform vec4 zion_floor_sand_patch_color : source_color = vec4(0.74, 0.66, 0.52, 1.0);  // cooler tan patch (was saturated orange)
 uniform float zion_floor_scatter_strength = 0.36;
 uniform float zion_floor_detile_strength = 0.24;
 uniform float zion_floor_patch_strength = 0.34;
@@ -120,6 +120,22 @@ uniform float surface_micro_strength_5 = 0.08;     // tall_grass (hidden by bill
 uniform float surface_micro_strength_6 = 0.02;     // paved_road (near-flat)
 uniform float surface_micro_strength_7 = 0.14;     // fallback (sand/dirt-like)
 uniform float micro_roughness_variation = 0.06;    // +/- wobble around terrain_roughness
+// FLOOR-FIDELITY (de-orange + micro-detail). Additive uniforms only: the render builder
+// does not set any of these, so the defaults below take effect without touching
+// terrain_visual_builder.gd / atmosphere / grass. Each defaults to a subtle, readable
+// amount and can be dialed to zero to restore the prior flat-warm floor.
+// De-orange the base sand: the builder hard-sets zion_sand_color to a warm tone, so we
+// pull the flat-floor albedo toward a cooler desert-sand target (warm tan, not saturated
+// orange). The hue-preserving macro-albedo blend downstream is untouched.
+uniform vec4 zion_floor_cool_sand_color : source_color = vec4(0.72, 0.67, 0.58, 1.0);
+uniform float zion_floor_deorange_strength = 0.55;
+// Micro-detail: extra fine-grain octave + floor-aware roughness/albedo break-up so the
+// immediate drivable floor reads as sand grain / slickrock / packed wash instead of a
+// flat matte plane. Hash-only (no extra texture fetches).
+uniform float micro_fine_scale = 2.6;              // ~0.38 m sand-grain frequency
+uniform float micro_fine_strength = 0.45;          // relative amplitude of the fine octave
+uniform float micro_roughness_floor_variation = 0.05;   // +/- extra floor roughness wobble
+uniform float micro_albedo_grain_strength = 0.045;      // subtle fine albedo break-up on floor
 
 varying vec2 world_xz;
 varying float world_y;
@@ -258,7 +274,9 @@ float surface_micro_strength_for_id(float surface_id_value) {
 // Two-octave smooth-hash "micro-height" in world XZ. Each octave is a couple of
 // hash21 corner samples; together they give subtle multi-scale grain rather than a
 // single cellular look. Output is roughly in [-1, 1]. Used only as a heightfield
-// for the surface-micro normal gradient below.
+// for the surface-micro normal gradient below. (The floor's extra fine-grain relief
+// is layered on separately by apply_floor_fine_normal, gated to the low flat floor
+// so cliffs/walls pay nothing for it.)
 float micro_height(vec2 world_xz_pos) {
 	vec2 q1 = world_xz_pos * micro_normal_scale;
 	vec2 q2 = world_xz_pos * (micro_normal_scale * 2.17) + vec2(11.7, 4.3);
@@ -301,6 +319,39 @@ vec3 apply_micro_normal(vec3 geo_world_normal, vec2 world_xz_pos, float strength
 	float h_z_neg = micro_height(world_xz_pos + vec2(0.0, -eps));
 	float h_z_pos = micro_height(world_xz_pos + vec2(0.0,  eps));
 	vec2 grad = vec2(h_x_neg - h_x_pos, h_z_neg - h_z_pos) * strength;
+	vec3 perturbed = geo_world_normal;
+	vec3 tx = vec3(1.0, 0.0, 0.0) - geo_world_normal * geo_world_normal.x;
+	float tx_len2 = dot(tx, tx);
+	if (tx_len2 > 1e-4) {
+		perturbed -= tx * (grad.x / sqrt(tx_len2));
+	}
+	vec3 tz = vec3(0.0, 0.0, 1.0) - geo_world_normal * geo_world_normal.z;
+	float tz_len2 = dot(tz, tz);
+	if (tz_len2 > 1e-4) {
+		perturbed -= tz * (grad.y / sqrt(tz_len2));
+	}
+	return normalize(perturbed);
+}
+
+// FLOOR-FIDELITY: floor-only fine sand-grain normal relief. Same isotropic 4-tap
+// axis gradient as apply_micro_normal (so grain quality matches), but on a fine
+// (~0.4 m) smooth hash and gated to the low flat floor by floor_gate. Non-floor
+// pixels (cliffs, sky) early-out before any hash work, so the per-pixel cost is
+// paid only where the camera actually drives. micro_fine_strength scales the fine
+// octave relative to the per-surface micro amplitude.
+vec3 apply_floor_fine_normal(vec3 geo_world_normal, vec2 world_xz_pos, float strength, float floor_gate) {
+	if (floor_gate <= 0.0 || strength <= 0.0) {
+		return geo_world_normal;
+	}
+	float eps = 0.22;  // ~0.22 m step (well below the ~0.4 m fine feature)
+	vec2 fs = vec2(micro_fine_scale);
+	vec2 off = vec2(4.1, 7.9);
+	float h_x_neg = hash21_smooth((world_xz_pos + vec2(-eps, 0.0)) * fs + off);
+	float h_x_pos = hash21_smooth((world_xz_pos + vec2( eps, 0.0)) * fs + off);
+	float h_z_neg = hash21_smooth((world_xz_pos + vec2(0.0, -eps)) * fs + off);
+	float h_z_pos = hash21_smooth((world_xz_pos + vec2(0.0,  eps)) * fs + off);
+	float amp = strength * floor_gate * micro_fine_strength;
+	vec2 grad = vec2(h_x_neg - h_x_pos, h_z_neg - h_z_pos) * amp;
 	vec3 perturbed = geo_world_normal;
 	vec3 tx = vec3(1.0, 0.0, 0.0) - geo_world_normal * geo_world_normal.x;
 	float tx_len2 = dot(tx, tx);
@@ -396,6 +447,7 @@ void fragment() {
 	float riparian_tint_mask = river_corridor_mask * max(low_flat_mask, low_river_floor_mask * river_corridor_mask);
 	float bank_wet_mask = smoothstep(3.5, 7.0, river_distance_m) * (1.0 - smoothstep(7.0, zion_bank_wet_width_m, river_distance_m)) * low_river_floor_mask;
 	zion_albedo = mix(zion_albedo, zion_sand_color.rgb, low_flat_mask * 0.58);
+	zion_albedo = mix(zion_albedo, zion_floor_cool_sand_color.rgb, low_flat_mask * zion_floor_deorange_strength);
 	float floor_macro = hash21_smooth(world_xz * 0.010 + vec2(8.0, 2.0));
 	float floor_mid = hash21_smooth(world_xz * 0.026 + vec2(3.1, 8.7));
 	float floor_fine = hash21_smooth(world_xz * 0.083 + vec2(14.4, 6.2));
@@ -409,6 +461,10 @@ void fragment() {
 	zion_albedo = mix(zion_albedo, zion_floor_dark_color.rgb, low_flat_mask * floor_scatter * zion_floor_scatter_strength * 0.65);
 	float detile_floor = (floor_macro * 0.45 + floor_mid * 0.35 + floor_fine * 0.20) * 2.0 - 1.0;
 	zion_albedo *= 1.0 + detile_floor * low_flat_mask * zion_floor_detile_strength * 0.72;
+	// FLOOR-FIDELITY: fine (~0.5 m) albedo grain so the floor breaks up at sand-grain
+	// scale under raking light, instead of reading as a smooth matte plane. Subtle.
+	float floor_albedo_grain = hash21_smooth(world_xz * 2.1 + vec2(2.7, 8.3)) * 2.0 - 1.0;
+	zion_albedo *= 1.0 + floor_albedo_grain * low_flat_mask * micro_albedo_grain_strength;
 	zion_albedo = mix(zion_albedo, zion_riparian_tint_color.rgb, riparian_tint_mask * zion_riparian_tint_strength);
 	float navajo_mask = clamp(cliff_mask * (1.0 - kayenta_mask * 0.80), 0.0, 1.0);
 	zion_albedo = mix(zion_albedo, navajo_color, navajo_mask * zion_navajo_palette_strength);
@@ -479,9 +535,11 @@ void fragment() {
 		world_detail_normal = apply_array_normal(world_detail_normal, sampled_normal, normal_array_strength * normal_mask);
 	}
 	vec3 world_micro_normal = apply_micro_normal(world_detail_normal, world_xz, micro_strength);
+	world_micro_normal = apply_floor_fine_normal(world_micro_normal, world_xz, micro_strength, low_flat_mask);
 	NORMAL = normalize((VIEW_MATRIX * vec4(world_micro_normal, 0.0)).xyz);
 	float roughness_wobble = (hash21_smooth(world_xz * 0.31) * 2.0 - 1.0) * micro_roughness_variation * (0.5 + micro_strength);
+	float floor_roughness_wobble = (hash21_smooth(world_xz * 0.9 + vec2(5.7, 2.4)) * 2.0 - 1.0) * micro_roughness_floor_variation * low_flat_mask;
 	float floor_roughness_shift = floor_wash_mask * 0.035 + floor_sand_patch_mask * 0.055 - floor_slickrock_mask * 0.08 + low_flat_mask * detile_floor * 0.025;
-	ROUGHNESS = clamp(mix(terrain_roughness + roughness_wobble + floor_roughness_shift, zion_bank_wet_roughness, bank_wet_mask), 0.05, 1.0);
+	ROUGHNESS = clamp(mix(terrain_roughness + roughness_wobble + floor_roughness_shift + floor_roughness_wobble, zion_bank_wet_roughness, bank_wet_mask), 0.05, 1.0);
 	SPECULAR = terrain_specular;
 }
