@@ -16,6 +16,7 @@ static var _surface_index_material_cache: Dictionary[String, ShaderMaterial] = {
 static var _foliage_mesh_cache: Dictionary[String, Mesh] = {}
 static var _foliage_material_cache: Dictionary[String, Material] = {}
 static var _surface_index_albedo_array_cache: Texture2DArray = null
+static var _surface_index_normal_array_cache: Texture2DArray = null
 static var _surface_index_macro_albedo_cache: Texture2D = null
 
 const REGION_ID_META: StringName = &"trailhead_region_id"
@@ -77,13 +78,19 @@ const REGION_FOLIAGE_HEIGHT_SCALE_MAX: float = 1.32
 const REGION_FOLIAGE_LOD0_COLOR: Color = Color(0.24, 0.38, 0.14, 0.92)
 const REGION_FOLIAGE_LOD1_COLOR: Color = Color(0.28, 0.34, 0.16, 0.86)
 const FOLIAGE_SPECIES_GRASS: StringName = &"grass"
+const FOLIAGE_SPECIES_RIPARIAN_GRASS: StringName = &"riparian_grass"
 const FOLIAGE_SPECIES_YUCCA: StringName = &"yucca"
 const FOLIAGE_SPECIES_JUNIPER: StringName = &"juniper"
+const FOLIAGE_SPECIES_WILLOW: StringName = &"willow"
+const FOLIAGE_SPECIES_COTTONWOOD: StringName = &"cottonwood"
 const FOLIAGE_SPECIES_BOULDER: StringName = &"boulder"
-const FOLIAGE_SPECIES_LIST: Array[StringName] = [FOLIAGE_SPECIES_GRASS, FOLIAGE_SPECIES_YUCCA, FOLIAGE_SPECIES_JUNIPER, FOLIAGE_SPECIES_BOULDER]
+const FOLIAGE_SPECIES_LIST: Array[StringName] = [FOLIAGE_SPECIES_GRASS, FOLIAGE_SPECIES_RIPARIAN_GRASS, FOLIAGE_SPECIES_YUCCA, FOLIAGE_SPECIES_JUNIPER, FOLIAGE_SPECIES_WILLOW, FOLIAGE_SPECIES_COTTONWOOD, FOLIAGE_SPECIES_BOULDER]
 const FOLIAGE_SPECIES_GRASS_COLOR: Color = Color(0.58, 0.66, 0.38, 0.92)
+const FOLIAGE_SPECIES_RIPARIAN_GRASS_COLOR: Color = Color(0.42, 0.55, 0.28, 0.92)
 const FOLIAGE_SPECIES_YUCCA_COLOR: Color = Color(0.557, 0.608, 0.471, 0.95)
 const FOLIAGE_SPECIES_JUNIPER_COLOR: Color = Color(0.165, 0.259, 0.157, 0.97)
+const FOLIAGE_SPECIES_WILLOW_COLOR: Color = Color(0.29, 0.45, 0.22, 0.95)
+const FOLIAGE_SPECIES_COTTONWOOD_COLOR: Color = Color(0.36, 0.52, 0.26, 0.96)
 const FOLIAGE_SPECIES_BOULDER_COLOR: Color = Color(0.69, 0.47, 0.31, 1.0)
 # Lane-D demo triage: keep Zion foliage lush without the graded rim/tips reading neon.
 const FOLIAGE_NEON_TAME_TIP_BOOST: Vector3 = Vector3(1.12, 1.08, 1.02)
@@ -92,6 +99,10 @@ const FOLIAGE_YUCCA_LOD0_SCALE: Vector3 = Vector3(0.95, 0.86, 0.95)
 const FOLIAGE_YUCCA_LOD1_SCALE: Vector3 = Vector3(0.78, 0.72, 0.78)
 const FOLIAGE_JUNIPER_LOD0_SCALE: Vector3 = Vector3(1.75, 1.92, 1.75)
 const FOLIAGE_JUNIPER_LOD1_SCALE: Vector3 = Vector3(1.45, 1.62, 1.45)
+const FOLIAGE_WILLOW_LOD0_SCALE: Vector3 = Vector3(2.15, 2.55, 2.15)
+const FOLIAGE_WILLOW_LOD1_SCALE: Vector3 = Vector3(1.65, 2.05, 1.65)
+const FOLIAGE_COTTONWOOD_LOD0_SCALE: Vector3 = Vector3(4.4, 5.8, 4.4)
+const FOLIAGE_COTTONWOOD_LOD1_SCALE: Vector3 = Vector3(3.3, 4.4, 3.3)
 const FOLIAGE_BOULDER_LOD0_SCALE: Vector3 = Vector3(1.0, 1.0, 1.0)
 const FOLIAGE_BOULDER_LOD1_SCALE: Vector3 = Vector3(0.82, 0.82, 0.82)
 const FOLIAGE_BOULDER_GROUND_SINK_M: float = 0.045
@@ -99,6 +110,23 @@ const FOLIAGE_DENSITY_PACKED_DIRT: float = 1.0
 const FOLIAGE_DENSITY_TALL_GRASS: float = 0.62
 const FOLIAGE_DENSITY_LOOSE_ROCK: float = 0.18
 const FOLIAGE_DENSITY_MUD: float = 0.30
+const RIPARIAN_TREE_MIN_DISTANCE_M: float = 10.0
+const RIPARIAN_WILLOW_OUTER_M: float = 28.0
+const RIPARIAN_COTTONWOOD_OUTER_M: float = 62.0
+const RIPARIAN_GRASS_OUTER_M: float = 86.0
+const ZION_RIVER_THALWEG_XZ: Array[Vector2] = [
+	Vector2(910.0, 500.0),
+	Vector2(900.0, 700.0),
+	Vector2(920.0, 900.0),
+	Vector2(1000.0, 1000.0),
+	Vector2(1070.0, 1200.0),
+	Vector2(1130.0, 1300.0),
+	Vector2(1180.0, 1350.0),
+	Vector2(1330.0, 1400.0),
+	Vector2(1410.0, 1450.0),
+	Vector2(1500.0, 1550.0),
+	Vector2(1530.0, 1600.0),
+]
 const WET_DIFFUSE_MULTIPLIER: float = 0.2
 const WET_ROUGHNESS: float = 0.12
 const WET_CLEARCOAT: float = 0.58
@@ -116,6 +144,9 @@ const TERRAIN_ROUGHNESS_UNIFORM: StringName = &"terrain_roughness"
 const TERRAIN_SPECULAR_UNIFORM: StringName = &"terrain_specular"
 const ALBEDO_ARRAY_UNIFORM: StringName = &"albedo_array"
 const USE_ALBEDO_ARRAY_UNIFORM: StringName = &"use_albedo_array"
+const NORMAL_ARRAY_UNIFORM: StringName = &"normal_array"
+const USE_NORMAL_ARRAY_UNIFORM: StringName = &"use_normal_array"
+const NORMAL_ARRAY_STRENGTH_UNIFORM: StringName = &"normal_array_strength"
 const MACRO_ALBEDO_TEXTURE_PATH: String = "res://data/terrain/cedar_hollow_zion_macro_albedo.png"
 const MACRO_ALBEDO_TEXTURE_UNIFORM: StringName = &"macro_albedo_texture"
 const MACRO_ALBEDO_ORIGIN_XZ_UNIFORM: StringName = &"macro_albedo_origin_xz"
@@ -124,7 +155,7 @@ const USE_MACRO_ALBEDO_UNIFORM: StringName = &"use_macro_albedo"
 const MACRO_ALBEDO_STRENGTH_UNIFORM: StringName = &"macro_albedo_strength"
 const MACRO_ALBEDO_REGION_ORIGIN_XZ: Vector2 = Vector2.ZERO
 const MACRO_ALBEDO_REGION_SIZE_XZ: Vector2 = Vector2(5500.0, 5700.0)
-const MACRO_ALBEDO_STRENGTH: float = 0.18
+const MACRO_ALBEDO_STRENGTH: float = 0.35
 const ZION_SANDSTONE_COLOR_UNIFORM: StringName = &"zion_sandstone_color"
 const ZION_SAND_COLOR_UNIFORM: StringName = &"zion_sand_color"
 const ZION_STRATA_DARK_COLOR_UNIFORM: StringName = &"zion_strata_dark_color"
@@ -140,6 +171,11 @@ const ZION_DETILE_STRENGTH_UNIFORM: StringName = &"zion_detile_strength"
 const ZION_FLOOR_DARK_COLOR_UNIFORM: StringName = &"zion_floor_dark_color"
 const ZION_FLOOR_SCATTER_STRENGTH_UNIFORM: StringName = &"zion_floor_scatter_strength"
 const ZION_FLOOR_DETILE_STRENGTH_UNIFORM: StringName = &"zion_floor_detile_strength"
+const ZION_RIPARIAN_TINT_COLOR_UNIFORM: StringName = &"zion_riparian_tint_color"
+const ZION_RIPARIAN_TINT_STRENGTH_UNIFORM: StringName = &"zion_riparian_tint_strength"
+const ZION_BANK_WET_WIDTH_UNIFORM: StringName = &"zion_bank_wet_width_m"
+const ZION_BANK_WET_DARKNESS_UNIFORM: StringName = &"zion_bank_wet_darkness"
+const ZION_BANK_WET_ROUGHNESS_UNIFORM: StringName = &"zion_bank_wet_roughness"
 const ZION_VARNISH_COLOR_UNIFORM: StringName = &"zion_varnish_color"
 const ZION_VARNISH_STRENGTH_UNIFORM: StringName = &"zion_varnish_strength"
 const ZION_VARNISH_WALL_THRESHOLD_UNIFORM: StringName = &"zion_varnish_wall_threshold"
@@ -1087,7 +1123,7 @@ static func _tile_foliage_custom_aabb(tile_data: RegionTileData) -> AABB:
 			var height: float = tile_data.heights[height_index]
 			min_height = minf(min_height, height)
 			max_height = maxf(max_height, height)
-	var max_blade_height: float = FOLIAGE_JUNIPER_LOD0_SCALE.y * REGION_FOLIAGE_HEIGHT_SCALE_MAX
+	var max_blade_height: float = _foliage_max_lod0_height()
 	return AABB(
 		Vector3(tile_data.tile_size_m * -0.5, min_height + REGION_FOLIAGE_Y_OFFSET, tile_data.tile_size_m * -0.5),
 		Vector3(tile_data.tile_size_m, maxf(max_height - min_height, 0.0) + max_blade_height + 0.1, tile_data.tile_size_m)
@@ -1144,6 +1180,10 @@ static func _surface_index_material(surface_data: MeshSurfaceData) -> ShaderMate
 	if albedo_array != null:
 		material.set_shader_parameter(ALBEDO_ARRAY_UNIFORM, albedo_array)
 		material.set_shader_parameter(USE_ALBEDO_ARRAY_UNIFORM, true)
+	var normal_array: Texture2DArray = _surface_index_normal_array()
+	if normal_array != null:
+		material.set_shader_parameter(NORMAL_ARRAY_UNIFORM, normal_array)
+		material.set_shader_parameter(USE_NORMAL_ARRAY_UNIFORM, true)
 	var macro_albedo_texture: Texture2D = _surface_index_macro_albedo_texture()
 	if macro_albedo_texture != null:
 		material.set_shader_parameter(MACRO_ALBEDO_TEXTURE_UNIFORM, macro_albedo_texture)
@@ -1200,7 +1240,7 @@ static func _apply_zion_surface_index_tuning(material: ShaderMaterial) -> void:
 	material.set_shader_parameter(ZION_SANDSTONE_SLOPE_END_UNIFORM, 0.38)
 	material.set_shader_parameter(ZION_SAND_HEIGHT_START_UNIFORM, 1193.0)
 	material.set_shader_parameter(ZION_SAND_HEIGHT_END_UNIFORM, 1202.0)
-	material.set_shader_parameter(ZION_STRATA_SCALE_UNIFORM, 0.58)
+	material.set_shader_parameter(ZION_STRATA_SCALE_UNIFORM, 2.0)
 	material.set_shader_parameter(ZION_STRATA_STRENGTH_UNIFORM, 0.48)
 	material.set_shader_parameter(ZION_STRATA_LIGHT_COLOR_UNIFORM, Color(0.86, 0.62, 0.38, 1.0))
 	material.set_shader_parameter(ZION_STRATA_DIP_UNIFORM, Vector2(0.15, 0.15))
@@ -1208,6 +1248,11 @@ static func _apply_zion_surface_index_tuning(material: ShaderMaterial) -> void:
 	material.set_shader_parameter(ZION_FLOOR_DARK_COLOR_UNIFORM, Color(0.36, 0.28, 0.22, 1.0))
 	material.set_shader_parameter(ZION_FLOOR_SCATTER_STRENGTH_UNIFORM, 0.36)
 	material.set_shader_parameter(ZION_FLOOR_DETILE_STRENGTH_UNIFORM, 0.24)
+	material.set_shader_parameter(ZION_RIPARIAN_TINT_COLOR_UNIFORM, Color(0.31, 0.44, 0.24, 1.0))
+	material.set_shader_parameter(ZION_RIPARIAN_TINT_STRENGTH_UNIFORM, 0.24)
+	material.set_shader_parameter(ZION_BANK_WET_WIDTH_UNIFORM, 14.0)
+	material.set_shader_parameter(ZION_BANK_WET_DARKNESS_UNIFORM, 0.16)
+	material.set_shader_parameter(ZION_BANK_WET_ROUGHNESS_UNIFORM, 0.36)
 	material.set_shader_parameter(ZION_VARNISH_COLOR_UNIFORM, Color(0.13, 0.08, 0.06, 1.0))
 	material.set_shader_parameter(ZION_VARNISH_STRENGTH_UNIFORM, 0.5)
 	material.set_shader_parameter(ZION_VARNISH_WALL_THRESHOLD_UNIFORM, 0.30)
@@ -1227,6 +1272,7 @@ static func _apply_zion_surface_index_tuning(material: ShaderMaterial) -> void:
 	material.set_shader_parameter(MACRO_ALBEDO_ORIGIN_XZ_UNIFORM, MACRO_ALBEDO_REGION_ORIGIN_XZ)
 	material.set_shader_parameter(MACRO_ALBEDO_SIZE_XZ_UNIFORM, MACRO_ALBEDO_REGION_SIZE_XZ)
 	material.set_shader_parameter(MACRO_ALBEDO_STRENGTH_UNIFORM, MACRO_ALBEDO_STRENGTH)
+	material.set_shader_parameter(NORMAL_ARRAY_STRENGTH_UNIFORM, 0.36)
 
 
 static func _surface_index_macro_albedo_texture() -> Texture2D:
@@ -1258,9 +1304,38 @@ static func _surface_index_albedo_array() -> Texture2DArray:
 	return _surface_index_albedo_array_cache
 
 
+static func _surface_index_normal_array() -> Texture2DArray:
+	if _surface_index_normal_array_cache != null:
+		return _surface_index_normal_array_cache
+	var target_size: Vector2i = _surface_index_normal_target_size()
+	var images: Array[Image] = []
+	for id_value in range(8):
+		var image: Image = _surface_index_normal_image(id_value, target_size)
+		if image == null:
+			return null
+		images.append(image)
+	var texture_array: Texture2DArray = Texture2DArray.new()
+	var create_error: Error = texture_array.create_from_images(images)
+	if create_error != OK:
+		push_error("Terrain surface-index normal array failed to create: " + error_string(create_error))
+		return null
+	texture_array.resource_name = "terrain_surface_index_normal_array"
+	_surface_index_normal_array_cache = texture_array
+	return _surface_index_normal_array_cache
+
+
 static func _surface_index_albedo_target_size() -> Vector2i:
 	for id_value in range(8):
 		var image: Image = _load_surface_index_source_albedo_image(id_value)
+		if image == null:
+			continue
+		return Vector2i(image.get_width(), image.get_height())
+	return Vector2i(4, 4)
+
+
+static func _surface_index_normal_target_size() -> Vector2i:
+	for id_value in range(8):
+		var image: Image = _load_surface_index_source_normal_image(id_value)
 		if image == null:
 			continue
 		return Vector2i(image.get_width(), image.get_height())
@@ -1282,6 +1357,21 @@ static func _surface_index_albedo_image(id_value: int, target_size: Vector2i) ->
 	return image
 
 
+static func _surface_index_normal_image(id_value: int, target_size: Vector2i) -> Image:
+	var image: Image = _load_surface_index_source_normal_image(id_value)
+	if image == null:
+		image = Image.create(target_size.x, target_size.y, false, Image.FORMAT_RGBA8)
+		image.fill(Color(0.5, 0.5, 1.0, 1.0))
+	else:
+		if image.get_width() != target_size.x or image.get_height() != target_size.y:
+			image.resize(target_size.x, target_size.y, Image.INTERPOLATE_LANCZOS)
+		image.convert(Image.FORMAT_RGBA8)
+	var mip_error: Error = image.generate_mipmaps()
+	if mip_error != OK:
+		push_error("Terrain surface-index normal mipmaps failed for layer " + str(id_value) + ": " + error_string(mip_error))
+	return image
+
+
 static func _load_surface_index_source_albedo_image(id_value: int) -> Image:
 	var surface_id: StringName = _surface_id_for_value(id_value)
 	var visual_def: Resource = SurfaceVisualCatalogResource.call("default_visual_for_surface_id", surface_id)
@@ -1291,6 +1381,20 @@ static func _load_surface_index_source_albedo_image(id_value: int) -> Image:
 	if albedo_texture_path.is_empty():
 		return null
 	var image: Image = Image.load_from_file(ProjectSettings.globalize_path(albedo_texture_path))
+	if image == null or image.is_empty():
+		return null
+	return image
+
+
+static func _load_surface_index_source_normal_image(id_value: int) -> Image:
+	var surface_id: StringName = _surface_id_for_value(id_value)
+	var visual_def: Resource = SurfaceVisualCatalogResource.call("default_visual_for_surface_id", surface_id)
+	if visual_def == null:
+		return null
+	var normal_texture_path: String = visual_def.get("normal_texture_path")
+	if normal_texture_path.is_empty():
+		return null
+	var image: Image = Image.load_from_file(ProjectSettings.globalize_path(normal_texture_path))
 	if image == null or image.is_empty():
 		return null
 	return image
@@ -1540,7 +1644,7 @@ static func _build_region_foliage_cell_data_with_audit(tile_data_by_cell: Dictio
 		var world_x: float = cell_rect.position.x + unit_x * cell_rect.size.x
 		var world_z: float = cell_rect.position.y + unit_z * cell_rect.size.y
 		var surface_id_value: int = _surface_id_value_at_region_xz(tile_data_by_cell, world_x, world_z)
-		var species_id: StringName = _foliage_species_for_candidate(surface_id_value, foliage_cell, lod_index, attempt)
+		var species_id: StringName = _foliage_species_for_candidate(surface_id_value, foliage_cell, lod_index, attempt, world_x, world_z)
 		if species_id == &"":
 			continue
 		var density: float = _foliage_density_for_surface_species(surface_id_value, species_id)
@@ -1589,7 +1693,7 @@ static func _build_region_foliage_cell_data_with_audit(tile_data_by_cell: Dictio
 	cell_data.position = Vector3(foliage_origin_xz.x, 0.0, foliage_origin_xz.y)
 	cell_data.custom_aabb = AABB(
 		Vector3(cell_rect.size.x * -0.5, 0.0, cell_rect.size.y * -0.5),
-		Vector3(cell_rect.size.x, FOLIAGE_JUNIPER_LOD0_SCALE.y * REGION_FOLIAGE_HEIGHT_SCALE_MAX + REGION_FOLIAGE_Y_OFFSET + 0.1, cell_rect.size.y)
+		Vector3(cell_rect.size.x, _foliage_max_lod0_height() + REGION_FOLIAGE_Y_OFFSET + 0.1, cell_rect.size.y)
 	)
 	cell_data.visibility_radius = foliage_cell_radius
 	cell_data.species = species_data_list
@@ -1720,6 +1824,10 @@ static func _region_foliage_mesh_for_lod_species(lod_index: int, species_id: Str
 		mesh = _region_yucca_mesh("region_foliage_yucca_lod" + str(safe_lod_index) + "_mesh", safe_lod_index)
 	elif species_id == FOLIAGE_SPECIES_JUNIPER:
 		mesh = _region_juniper_mesh("region_foliage_juniper_lod" + str(safe_lod_index) + "_mesh", safe_lod_index)
+	elif species_id == FOLIAGE_SPECIES_WILLOW:
+		mesh = _region_willow_mesh("region_foliage_willow_lod" + str(safe_lod_index) + "_mesh", safe_lod_index)
+	elif species_id == FOLIAGE_SPECIES_COTTONWOOD:
+		mesh = _region_cottonwood_mesh("region_foliage_cottonwood_lod" + str(safe_lod_index) + "_mesh", safe_lod_index)
 	elif species_id == FOLIAGE_SPECIES_BOULDER:
 		mesh = _region_boulder_mesh("region_foliage_boulder_lod" + str(safe_lod_index) + "_mesh", safe_lod_index)
 	else:
@@ -1894,6 +2002,93 @@ static func _region_juniper_mesh(mesh_name: String, lod_index: int) -> ArrayMesh
 	arrays[Mesh.ARRAY_INDEX] = indices
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	return mesh
+
+
+static func _region_willow_mesh(mesh_name: String, lod_index: int) -> ArrayMesh:
+	var mesh: ArrayMesh = ArrayMesh.new()
+	mesh.resource_name = mesh_name
+	var vertices: PackedVector3Array = PackedVector3Array()
+	var normals: PackedVector3Array = PackedVector3Array()
+	var uvs: PackedVector2Array = PackedVector2Array()
+	var indices: PackedInt32Array = PackedInt32Array()
+	var plane_count: int = 3
+	if lod_index > 0:
+		plane_count = 2
+	for plane_index in range(plane_count):
+		var yaw: float = TAU * float(plane_index) / float(plane_count)
+		_append_tapered_billboard_plane(vertices, normals, uvs, indices, yaw, 0.0, 0.52, 1.0, 0.20, 0.36, 0.16)
+	var arrays: Array = []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = vertices
+	arrays[Mesh.ARRAY_NORMAL] = normals
+	arrays[Mesh.ARRAY_TEX_UV] = uvs
+	arrays[Mesh.ARRAY_INDEX] = indices
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	return mesh
+
+
+static func _region_cottonwood_mesh(mesh_name: String, lod_index: int) -> ArrayMesh:
+	var mesh: ArrayMesh = ArrayMesh.new()
+	mesh.resource_name = mesh_name
+	var vertices: PackedVector3Array = PackedVector3Array()
+	var normals: PackedVector3Array = PackedVector3Array()
+	var uvs: PackedVector2Array = PackedVector2Array()
+	var indices: PackedInt32Array = PackedInt32Array()
+	var plane_count: int = 4
+	for plane_index in range(plane_count):
+		var yaw: float = TAU * float(plane_index) / float(plane_count)
+		_append_tapered_billboard_plane(vertices, normals, uvs, indices, yaw, 0.06, 0.54, 1.0, 0.28, 0.53, 0.30)
+	var arrays: Array = []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = vertices
+	arrays[Mesh.ARRAY_NORMAL] = normals
+	arrays[Mesh.ARRAY_TEX_UV] = uvs
+	arrays[Mesh.ARRAY_INDEX] = indices
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	return mesh
+
+
+static func _append_tapered_billboard_plane(
+		vertices: PackedVector3Array,
+		normals: PackedVector3Array,
+		uvs: PackedVector2Array,
+		indices: PackedInt32Array,
+		yaw: float,
+		bottom_y: float,
+		mid_y: float,
+		top_y: float,
+		bottom_half_width: float,
+		mid_half_width: float,
+		top_half_width: float) -> void:
+	var direction: Vector3 = Vector3(cos(yaw), 0.0, sin(yaw))
+	var side: Vector3 = Vector3(-direction.z, 0.0, direction.x)
+	var vertex_start: int = vertices.size()
+	vertices.append(side * -bottom_half_width + Vector3(0.0, bottom_y, 0.0))
+	vertices.append(side * bottom_half_width + Vector3(0.0, bottom_y, 0.0))
+	vertices.append(side * -mid_half_width + Vector3(0.0, mid_y, 0.0))
+	vertices.append(side * mid_half_width + Vector3(0.0, mid_y, 0.0))
+	vertices.append(side * -top_half_width + Vector3(0.0, top_y, 0.0))
+	vertices.append(side * top_half_width + Vector3(0.0, top_y, 0.0))
+	for _i in range(6):
+		normals.append(direction)
+	uvs.append(Vector2(0.0, 1.0))
+	uvs.append(Vector2(1.0, 1.0))
+	uvs.append(Vector2(0.0, 0.45))
+	uvs.append(Vector2(1.0, 0.45))
+	uvs.append(Vector2(0.0, 0.0))
+	uvs.append(Vector2(1.0, 0.0))
+	indices.append(vertex_start)
+	indices.append(vertex_start + 2)
+	indices.append(vertex_start + 1)
+	indices.append(vertex_start + 1)
+	indices.append(vertex_start + 2)
+	indices.append(vertex_start + 3)
+	indices.append(vertex_start + 2)
+	indices.append(vertex_start + 4)
+	indices.append(vertex_start + 3)
+	indices.append(vertex_start + 3)
+	indices.append(vertex_start + 4)
+	indices.append(vertex_start + 5)
 
 
 static func _region_boulder_mesh(mesh_name: String, lod_index: int) -> ArrayMesh:
@@ -2098,8 +2293,11 @@ static func _new_region_foliage_tile_audit(cell: Vector2i) -> Dictionary[String,
 		"slope_violation_count": 0,
 		"instance_count": 0,
 		"grass_instance_count": 0,
+		"riparian_grass_instance_count": 0,
 		"yucca_instance_count": 0,
 		"juniper_instance_count": 0,
+		"willow_instance_count": 0,
+		"cottonwood_instance_count": 0,
 		"boulder_instance_count": 0,
 		"min_accepted_normal_y": 1.0,
 	}
@@ -2188,6 +2386,16 @@ static func _foliage_density_for_surface_species(surface_id_value: int, species_
 	if not bool(TerrainSurfacePaletteResource.call("has_surface_id_value", surface_id_value)):
 		return 0.0
 	var surface_id: StringName = _surface_id_for_value(surface_id_value)
+	if species_id == FOLIAGE_SPECIES_RIPARIAN_GRASS:
+		return GameConfig.riparian_grass_density
+	if species_id == FOLIAGE_SPECIES_WILLOW:
+		if surface_id == &"wet_stone":
+			return GameConfig.riparian_willow_density * 0.65
+		return GameConfig.riparian_willow_density
+	if species_id == FOLIAGE_SPECIES_COTTONWOOD:
+		if surface_id == &"wet_stone":
+			return 0.0
+		return GameConfig.riparian_cottonwood_density
 	if species_id == FOLIAGE_SPECIES_GRASS and surface_id == &"packed_gravel":
 		return GameConfig.scrub_density_packed_gravel
 	if species_id == FOLIAGE_SPECIES_GRASS and surface_id == &"paved_road":
@@ -2228,10 +2436,13 @@ static func _foliage_species_for_surface_value(surface_id_value: int) -> StringN
 	return &""
 
 
-static func _foliage_species_for_candidate(surface_id_value: int, foliage_cell: Vector2i, lod_index: int, attempt: int) -> StringName:
+static func _foliage_species_for_candidate(surface_id_value: int, foliage_cell: Vector2i, lod_index: int, attempt: int, world_x: float, world_z: float) -> StringName:
 	if not bool(TerrainSurfacePaletteResource.call("has_surface_id_value", surface_id_value)):
 		return &""
 	var surface_id: StringName = _surface_id_for_value(surface_id_value)
+	var riparian_species: StringName = _riparian_species_for_candidate(foliage_cell, lod_index, attempt, world_x, world_z)
+	if riparian_species != &"":
+		return riparian_species
 	if surface_id == &"packed_gravel":
 		if _region_foliage_unit(foliage_cell, lod_index, attempt, 12) <= GameConfig.boulder_packed_gravel_candidate_share:
 			return FOLIAGE_SPECIES_BOULDER
@@ -2243,6 +2454,49 @@ static func _foliage_species_for_candidate(surface_id_value: int, foliage_cell: 
 
 static func _foliage_species_allows_steep_slope(species_id: StringName) -> bool:
 	return species_id == FOLIAGE_SPECIES_BOULDER
+
+
+static func _riparian_species_for_candidate(foliage_cell: Vector2i, lod_index: int, attempt: int, world_x: float, world_z: float) -> StringName:
+	var river_distance_m: float = _distance_to_zion_river_xz(Vector2(world_x, world_z))
+	if river_distance_m > RIPARIAN_GRASS_OUTER_M:
+		return &""
+	var selector: float = _region_foliage_unit(foliage_cell, lod_index, attempt, 13)
+	if river_distance_m <= RIPARIAN_TREE_MIN_DISTANCE_M:
+		if selector <= 0.72:
+			return FOLIAGE_SPECIES_RIPARIAN_GRASS
+		return &""
+	if river_distance_m <= RIPARIAN_WILLOW_OUTER_M:
+		if selector <= 0.46:
+			return FOLIAGE_SPECIES_WILLOW
+		return FOLIAGE_SPECIES_RIPARIAN_GRASS
+	if river_distance_m <= RIPARIAN_COTTONWOOD_OUTER_M:
+		if selector <= 0.26:
+			return FOLIAGE_SPECIES_COTTONWOOD
+		if selector <= 0.58:
+			return FOLIAGE_SPECIES_WILLOW
+		return FOLIAGE_SPECIES_RIPARIAN_GRASS
+	if selector <= 0.12:
+		return FOLIAGE_SPECIES_COTTONWOOD
+	if selector <= 0.62:
+		return FOLIAGE_SPECIES_RIPARIAN_GRASS
+	return &""
+
+
+static func _distance_to_zion_river_xz(point: Vector2) -> float:
+	if ZION_RIVER_THALWEG_XZ.size() < 2:
+		return INF
+	var best_distance: float = INF
+	for point_index in range(ZION_RIVER_THALWEG_XZ.size() - 1):
+		var segment_distance: float = _distance_to_segment_xz(point, ZION_RIVER_THALWEG_XZ[point_index], ZION_RIVER_THALWEG_XZ[point_index + 1])
+		best_distance = minf(best_distance, segment_distance)
+	return best_distance
+
+
+static func _distance_to_segment_xz(point: Vector2, a: Vector2, b: Vector2) -> float:
+	var ab: Vector2 = b - a
+	var ab_len2: float = maxf(ab.length_squared(), 0.0001)
+	var t: float = clampf((point - a).dot(ab) / ab_len2, 0.0, 1.0)
+	return point.distance_to(a + ab * t)
 
 
 static func _foliage_species_data(cell_data: FoliageCellData, species_id: StringName) -> FoliageSpeciesCellData:
@@ -2273,10 +2527,16 @@ static func _foliage_species_total_count(species_data_list: Array[FoliageSpecies
 
 
 static func _foliage_color_for_species(species_id: StringName) -> Color:
+	if species_id == FOLIAGE_SPECIES_RIPARIAN_GRASS:
+		return FOLIAGE_SPECIES_RIPARIAN_GRASS_COLOR
 	if species_id == FOLIAGE_SPECIES_YUCCA:
 		return FOLIAGE_SPECIES_YUCCA_COLOR
 	if species_id == FOLIAGE_SPECIES_JUNIPER:
 		return FOLIAGE_SPECIES_JUNIPER_COLOR
+	if species_id == FOLIAGE_SPECIES_WILLOW:
+		return FOLIAGE_SPECIES_WILLOW_COLOR
+	if species_id == FOLIAGE_SPECIES_COTTONWOOD:
+		return FOLIAGE_SPECIES_COTTONWOOD_COLOR
 	if species_id == FOLIAGE_SPECIES_BOULDER:
 		return FOLIAGE_SPECIES_BOULDER_COLOR
 	return FOLIAGE_SPECIES_GRASS_COLOR
@@ -2301,9 +2561,27 @@ static func _foliage_base_scale_for_lod_species(lod_index: int, species_id: Stri
 		if lod_index > 0:
 			return FOLIAGE_JUNIPER_LOD1_SCALE
 		return FOLIAGE_JUNIPER_LOD0_SCALE
+	if species_id == FOLIAGE_SPECIES_WILLOW:
+		if lod_index > 0:
+			return FOLIAGE_WILLOW_LOD1_SCALE
+		return FOLIAGE_WILLOW_LOD0_SCALE
+	if species_id == FOLIAGE_SPECIES_COTTONWOOD:
+		if lod_index > 0:
+			return FOLIAGE_COTTONWOOD_LOD1_SCALE
+		return FOLIAGE_COTTONWOOD_LOD0_SCALE
 	if lod_index > 0:
 		return GameConfig.foliage_grass_scrub_lod1_scale
 	return GameConfig.foliage_grass_scrub_lod0_scale
+
+
+static func _foliage_max_lod0_height() -> float:
+	var max_height: float = GameConfig.foliage_grass_scrub_lod0_scale.y
+	max_height = maxf(max_height, FOLIAGE_YUCCA_LOD0_SCALE.y)
+	max_height = maxf(max_height, FOLIAGE_JUNIPER_LOD0_SCALE.y)
+	max_height = maxf(max_height, FOLIAGE_WILLOW_LOD0_SCALE.y)
+	max_height = maxf(max_height, FOLIAGE_COTTONWOOD_LOD0_SCALE.y)
+	max_height = maxf(max_height, FOLIAGE_BOULDER_LOD0_SCALE.y)
+	return max_height * REGION_FOLIAGE_HEIGHT_SCALE_MAX
 
 
 static func _region_foliage_unit(cell: Vector2i, lod_index: int, instance_index: int, salt: int) -> float:

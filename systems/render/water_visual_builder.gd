@@ -10,6 +10,24 @@ const SHALLOW_ALPHA: float = 0.38
 const DOWNSTREAM_FLOW_SPEED: float = 0.06
 const FOAM_COLOR: Color = Color(0.86, 0.90, 0.84)
 const WETLINE_STRENGTH: float = 0.20
+const ZION_RIVER_WIDTH_M: float = 9.5
+const ZION_RIVER_WATER_OFFSET_M: float = 0.45
+const ZION_RIVER_WEST_POINTS: Array[Vector3] = [
+	Vector3(910.0, 1184.280762 + ZION_RIVER_WATER_OFFSET_M, 500.0),
+	Vector3(900.0, 1188.923584 + ZION_RIVER_WATER_OFFSET_M, 700.0),
+	Vector3(920.0, 1187.693237 + ZION_RIVER_WATER_OFFSET_M, 900.0),
+	Vector3(1000.0, 1188.516602 + ZION_RIVER_WATER_OFFSET_M, 1000.0),
+	Vector3(1070.0, 1190.058228 + ZION_RIVER_WATER_OFFSET_M, 1200.0),
+	Vector3(1130.0, 1191.382202 + ZION_RIVER_WATER_OFFSET_M, 1300.0),
+]
+const ZION_RIVER_EAST_POINTS: Array[Vector3] = [
+	Vector3(1130.0, 1191.382202 + ZION_RIVER_WATER_OFFSET_M, 1300.0),
+	Vector3(1180.0, 1192.419800 + ZION_RIVER_WATER_OFFSET_M, 1350.0),
+	Vector3(1330.0, 1193.652832 + ZION_RIVER_WATER_OFFSET_M, 1400.0),
+	Vector3(1410.0, 1194.914185 + ZION_RIVER_WATER_OFFSET_M, 1450.0),
+	Vector3(1500.0, 1203.034424 + ZION_RIVER_WATER_OFFSET_M, 1550.0),
+	Vector3(1530.0, 1204.157349 + ZION_RIVER_WATER_OFFSET_M, 1600.0),
+]
 
 
 static func build_cedar_hollow(parent: Node3D) -> Node3D:
@@ -26,8 +44,8 @@ static func build_zion_virgin_river(parent: Node3D) -> Node3D:
 	var root: Node3D = Node3D.new()
 	root.name = ROOT_NAME
 	parent.add_child(root)
-	_add_water_plane(root, "virgin_river_west", Vector3(1164.0, 1194.25, 835.0), Vector2(72.0, 5.6), 0.0)
-	_add_water_plane(root, "virgin_river_east", Vector3(1236.0, 1194.65, 834.0), Vector2(72.0, 5.4), 1.5)
+	_add_water_ribbon(root, "virgin_river_west", ZION_RIVER_WEST_POINTS, ZION_RIVER_WIDTH_M)
+	_add_water_ribbon(root, "virgin_river_east", ZION_RIVER_EAST_POINTS, ZION_RIVER_WIDTH_M)
 	return root
 
 
@@ -45,6 +63,111 @@ static func _add_water_plane(parent: Node3D, node_name: String, position: Vector
 	instance.set_meta("water_visual_kind", node_name)
 	parent.add_child(instance)
 	return instance
+
+
+static func _add_water_ribbon(parent: Node3D, node_name: String, world_points: Array[Vector3], width_m: float) -> MeshInstance3D:
+	if world_points.size() < 2:
+		return null
+	var transform: Transform3D = _water_ribbon_transform(world_points)
+	var inverse_basis: Basis = transform.basis.inverse()
+	var vertices: PackedVector3Array = PackedVector3Array()
+	var normals: PackedVector3Array = PackedVector3Array()
+	var uvs: PackedVector2Array = PackedVector2Array()
+	var tangents: PackedFloat32Array = PackedFloat32Array()
+	var indices: PackedInt32Array = PackedInt32Array()
+	var half_width: float = width_m * 0.5
+	var distance_m: float = 0.0
+	for point_index in range(world_points.size()):
+		var point: Vector3 = world_points[point_index]
+		if point_index > 0:
+			distance_m += _water_xz_distance(world_points[point_index - 1], point)
+		var tangent_xz: Vector2 = _water_point_tangent_xz(world_points, point_index)
+		var side_xz: Vector2 = Vector2(-tangent_xz.y, tangent_xz.x)
+		var local_tangent: Vector3 = (inverse_basis * Vector3(tangent_xz.x, 0.0, tangent_xz.y)).normalized()
+		var left_world: Vector3 = Vector3(point.x + side_xz.x * half_width, point.y, point.z + side_xz.y * half_width)
+		var right_world: Vector3 = Vector3(point.x - side_xz.x * half_width, point.y, point.z - side_xz.y * half_width)
+		var left_local: Vector3 = inverse_basis * (left_world - transform.origin)
+		var right_local: Vector3 = inverse_basis * (right_world - transform.origin)
+		vertices.append(left_local)
+		vertices.append(right_local)
+		normals.append(Vector3.UP)
+		normals.append(Vector3.UP)
+		var u: float = distance_m * 0.06
+		uvs.append(Vector2(u, 0.0))
+		uvs.append(Vector2(u, 1.0))
+		_append_tangent(tangents, local_tangent)
+		_append_tangent(tangents, local_tangent)
+	for segment_index in range(world_points.size() - 1):
+		var left_0: int = segment_index * 2
+		var right_0: int = left_0 + 1
+		var left_1: int = left_0 + 2
+		var right_1: int = left_0 + 3
+		indices.append(left_0)
+		indices.append(left_1)
+		indices.append(right_0)
+		indices.append(right_0)
+		indices.append(left_1)
+		indices.append(right_1)
+	var arrays: Array = []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = vertices
+	arrays[Mesh.ARRAY_NORMAL] = normals
+	arrays[Mesh.ARRAY_TEX_UV] = uvs
+	arrays[Mesh.ARRAY_TANGENT] = tangents
+	arrays[Mesh.ARRAY_INDEX] = indices
+	var mesh: ArrayMesh = ArrayMesh.new()
+	mesh.resource_name = node_name + "_ribbon_mesh"
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	var instance: MeshInstance3D = MeshInstance3D.new()
+	instance.name = node_name
+	instance.mesh = mesh
+	instance.transform = transform
+	instance.material_override = _water_material(node_name)
+	instance.visibility_range_end = GameConfig.vis_range_water
+	instance.add_to_group(WATER_SURFACE_GROUP)
+	instance.set_meta("water_visual_kind", node_name)
+	instance.set_meta("water_visual_shape", "thalweg_ribbon")
+	parent.add_child(instance)
+	return instance
+
+
+static func _water_ribbon_transform(world_points: Array[Vector3]) -> Transform3D:
+	var origin: Vector3 = Vector3.ZERO
+	for point in world_points:
+		origin += point
+	origin /= float(world_points.size())
+	var start_xz: Vector2 = Vector2(world_points[0].x, world_points[0].z)
+	var end_point: Vector3 = world_points[world_points.size() - 1]
+	var end_xz: Vector2 = Vector2(end_point.x, end_point.z)
+	var direction_xz: Vector2 = end_xz - start_xz
+	if direction_xz.length() <= 0.001:
+		direction_xz = Vector2.RIGHT
+	else:
+		direction_xz = direction_xz.normalized()
+	var x_axis: Vector3 = Vector3(direction_xz.x, 0.0, direction_xz.y)
+	var y_axis: Vector3 = Vector3.UP
+	var z_axis: Vector3 = x_axis.cross(y_axis).normalized()
+	return Transform3D(Basis(x_axis, y_axis, z_axis), origin)
+
+
+static func _water_point_tangent_xz(world_points: Array[Vector3], point_index: int) -> Vector2:
+	var previous_point: Vector3 = world_points[maxi(point_index - 1, 0)]
+	var next_point: Vector3 = world_points[mini(point_index + 1, world_points.size() - 1)]
+	var tangent: Vector2 = Vector2(next_point.x - previous_point.x, next_point.z - previous_point.z)
+	if tangent.length() <= 0.001:
+		return Vector2.RIGHT
+	return tangent.normalized()
+
+
+static func _water_xz_distance(a: Vector3, b: Vector3) -> float:
+	return Vector2(a.x, a.z).distance_to(Vector2(b.x, b.z))
+
+
+static func _append_tangent(tangents: PackedFloat32Array, tangent: Vector3) -> void:
+	tangents.append(tangent.x)
+	tangents.append(tangent.y)
+	tangents.append(tangent.z)
+	tangents.append(1.0)
 
 
 static func _water_material(resource_name: String) -> ShaderMaterial:
