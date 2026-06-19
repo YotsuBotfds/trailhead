@@ -26,7 +26,21 @@ const GRASS_LOW_BLADE_HEIGHT_FACTOR: float = 0.34
 const GRASS_LOW_BLADE_WIDTH_FACTOR: float = 1.55
 const GRASS_LOW_BLADE_RADIUS_FACTOR: float = 1.36
 const GRASS_BLADE_YAW_JITTER_DEGREES: float = 42.0
-const GRASS_BLADE_LEAN_DEGREES: float = 11.0
+const GRASS_BLADE_LEAN_DEGREES: float = 17.0
+const GRASS_BLADE_LEAN_MAGNITUDE_MIN: float = 0.35
+const GRASS_BLADE_LEAN_MAGNITUDE_RANGE: float = 0.95
+const GRASS_BLADE_SPIRAL_YAW_WEIGHT: float = 0.35
+const GRASS_BLADE_SCALE_MIN: float = 0.58
+const GRASS_BLADE_SCALE_RANGE: float = 0.74
+const GRASS_BLADE_HEIGHT_MIN: float = 0.66
+const GRASS_BLADE_HEIGHT_RANGE: float = 0.66
+const GRASS_BLADE_WIDTH_JITTER_MIN: float = 0.86
+const GRASS_BLADE_WIDTH_JITTER_RANGE: float = 0.32
+const GRASS_BLADE_VALUE_MIN: float = 0.70
+const GRASS_BLADE_VALUE_RANGE: float = 0.46
+const GRASS_BLADE_WARM_SHIFT: float = 0.12
+const GRASS_BLADE_COOL_SHIFT: float = 0.09
+const GRASS_BLADE_YELLOW_BIAS: float = 0.07
 const GRASS_BLADE_RADIAL_JITTER: float = 0.14
 const GRASS_BLADE_ANGLE_JITTER_DEGREES: float = 32.0
 const GRASS_PATTERN_MODULUS: int = 997
@@ -60,6 +74,24 @@ const CROSSING_CHASE_QA_POSITION: Vector3 = Vector3(4.25, 0.0, -6.55)
 const CROSSING_CHASE_QA_YAW_DEGREES: float = -70.0
 const CHASE_CLEAR_CORRIDOR_LENGTH: float = 0.7
 const CHASE_CLEAR_CORRIDOR_HALF_WIDTH: float = 0.18
+const GRASS_OCCLUDER_BAND_X_MIN: float = -2.8
+const GRASS_OCCLUDER_BAND_X_MAX: float = 4.7
+const GRASS_OCCLUDER_BAND_Z_MIN: float = -7.4
+const GRASS_OCCLUDER_BAND_Z_MAX: float = -0.9
+const GRASS_CLUSTER_SEED_COUNT: int = 14
+const GRASS_CLUSTER_RADIUS: float = 0.85
+const GRASS_CLUSTER_OFFSET_BIAS: float = 0.18
+const GRASS_CLUSTER_SALT: int = 317
+const GRASS_CLUSTER_LATTICE_X_CELLS: int = 13
+const GRASS_CLUSTER_LATTICE_Z_CELLS: int = 19
+const OCCLUDER_CLUSTER_SEED_COUNT: int = 5
+const OCCLUDER_CLUSTER_RADIUS: float = 1.15
+const OCCLUDER_CLUSTER_OFFSET_BIAS: float = 0.22
+const OCCLUDER_CLUSTER_SALT: int = 419
+const OCCLUDER_CLUSTER_LATTICE_X_CELLS: int = 11
+const OCCLUDER_CLUSTER_LATTICE_Z_CELLS: int = 13
+const CLUSTER_NUDGE_STEP: float = 0.6
+const CLUSTER_NUDGE_MAX_ATTEMPTS: int = 6
 
 
 static func build_cedar_hollow(parent: Node3D) -> Node3D:
@@ -251,17 +283,21 @@ static func _create_grass_clump(node_name: String, mesh: Mesh, material: ShaderM
 			pass_height_factor = GRASS_LOW_BLADE_HEIGHT_FACTOR
 			pass_width_factor = GRASS_LOW_BLADE_WIDTH_FACTOR
 			pass_radius = radius * GRASS_LOW_BLADE_RADIUS_FACTOR
+		var full_yaw: float = _pattern_unit(pattern_index, 61) * 360.0
 		var yaw_jitter: float = (_pattern_unit(pattern_index, 3) - 0.5) * GRASS_BLADE_YAW_JITTER_DEGREES
-		var blade_basis: Basis = Basis(Vector3.UP, deg_to_rad(yaw_degrees + float(i) * BLADE_SPIRAL_DEGREES + yaw_jitter))
-		var lean_x: float = (_pattern_unit(pattern_index, 5) - 0.5) * GRASS_BLADE_LEAN_DEGREES
-		var lean_z: float = (_pattern_unit(pattern_index, 7) - 0.5) * GRASS_BLADE_LEAN_DEGREES
+		var blade_yaw: float = yaw_degrees + float(i) * BLADE_SPIRAL_DEGREES * GRASS_BLADE_SPIRAL_YAW_WEIGHT + full_yaw + yaw_jitter
+		var blade_basis: Basis = Basis(Vector3.UP, deg_to_rad(blade_yaw))
+		var lean_magnitude: float = GRASS_BLADE_LEAN_MAGNITUDE_MIN + _pattern_unit(pattern_index, 67) * GRASS_BLADE_LEAN_MAGNITUDE_RANGE
+		var lean_x: float = (_pattern_unit(pattern_index, 5) - 0.5) * GRASS_BLADE_LEAN_DEGREES * lean_magnitude
+		var lean_z: float = (_pattern_unit(pattern_index, 7) - 0.5) * GRASS_BLADE_LEAN_DEGREES * lean_magnitude
 		blade_basis = blade_basis * Basis(Vector3(1.0, 0.0, 0.0), deg_to_rad(lean_x)) * Basis(Vector3(0.0, 0.0, 1.0), deg_to_rad(lean_z))
-		var blade_scale_factor: float = 0.62 + _pattern_unit(pattern_index, 11) * 0.66
-		var blade_height_factor: float = 0.70 + _pattern_unit(pattern_index, 13) * 0.58
+		var blade_scale_factor: float = GRASS_BLADE_SCALE_MIN + _pattern_unit(pattern_index, 11) * GRASS_BLADE_SCALE_RANGE
+		var blade_height_factor: float = GRASS_BLADE_HEIGHT_MIN + _pattern_unit(pattern_index, 13) * GRASS_BLADE_HEIGHT_RANGE
+		var blade_width_jitter: float = GRASS_BLADE_WIDTH_JITTER_MIN + _pattern_unit(pattern_index, 71) * GRASS_BLADE_WIDTH_JITTER_RANGE
 		blade_basis = blade_basis.scaled(Vector3(
-			base_scale.x * blade_scale_factor * pass_width_factor,
+			base_scale.x * blade_scale_factor * pass_width_factor * blade_width_jitter,
 			base_scale.y * blade_height_factor * pass_height_factor,
-			base_scale.z * blade_scale_factor * pass_width_factor
+			base_scale.z * blade_scale_factor * pass_width_factor * blade_width_jitter
 		))
 		var pass_index: int = i
 		var pass_count: int = primary_blade_count
@@ -270,15 +306,16 @@ static func _create_grass_clump(node_name: String, mesh: Mesh, material: ShaderM
 			pass_count = low_blade_count
 		var blade_transform: Transform3D = Transform3D(blade_basis, _blade_offset(pass_index, pass_count, pass_radius, pattern_index))
 		multimesh.set_instance_transform(i, blade_transform)
-		var color_factor: float = 0.78 + _pattern_unit(pattern_index, 17) * 0.36
+		var color_factor: float = GRASS_BLADE_VALUE_MIN + _pattern_unit(pattern_index, 17) * GRASS_BLADE_VALUE_RANGE
 		var warm_shift: float = _pattern_unit(pattern_index, 31) - 0.5
 		var cool_shift: float = _pattern_unit(pattern_index, 37) - 0.5
+		var yellow_bias: float = _pattern_unit(pattern_index, 79) - 0.5
 		if low_pass:
 			color_factor *= 0.76
 			warm_shift -= 0.08
-		var red_factor: float = color_factor + warm_shift * 0.08
-		var green_factor: float = color_factor + warm_shift * 0.04
-		var blue_factor: float = color_factor + cool_shift * 0.05
+		var red_factor: float = color_factor + warm_shift * GRASS_BLADE_WARM_SHIFT + yellow_bias * GRASS_BLADE_YELLOW_BIAS
+		var green_factor: float = color_factor + warm_shift * (GRASS_BLADE_WARM_SHIFT * 0.5) + yellow_bias * (GRASS_BLADE_YELLOW_BIAS * 0.5)
+		var blue_factor: float = color_factor + cool_shift * GRASS_BLADE_COOL_SHIFT - yellow_bias * (GRASS_BLADE_YELLOW_BIAS * 0.9)
 		multimesh.set_instance_color(i, Color(red_factor, green_factor, blue_factor, 1.0))
 		var wind_weight: float = 0.54 + _pattern_unit(pattern_index, 19) * 0.64
 		if low_pass:
@@ -546,18 +583,21 @@ static func _grass_positions(target_count: int) -> Array[Vector3]:
 	_trim_positions(positions, target_count)
 	if positions.size() >= target_count:
 		return positions
-	var z_values: Array[float] = [-0.42, -0.95, -1.48, -2.01, -2.54, -3.07, -3.6, -4.13, -4.66, -5.19, -5.72, -6.25, -6.78, -7.31, -7.84, -8.37, -8.9, -9.43]
-	var x_lanes: Array[float] = [-2.75, 4.75, -1.25, 3.75, 1.25, 2.25, -2.25, 3.25, -1.75, 4.25, 0.75, 2.75]
-	for x_index in range(x_lanes.size()):
-		for z_index in range(z_values.size()):
-			var z_source_index: int = z_index
-			if x_index % 2 == 1:
-				z_source_index = z_values.size() - 1 - z_index
-			var drift_index: int = ((x_index * 7 + z_index * 3) % 5) - 2
-			var candidate: Vector3 = Vector3(x_lanes[x_index] + float(drift_index) * 0.025, 0.0, z_values[z_source_index])
-			if _append_if_spaced(positions, candidate, GRASS_MIN_SPACING):
-				if positions.size() >= target_count:
-					return positions
+	_fill_clustered(
+		positions,
+		target_count,
+		GRASS_CLUSTER_SEED_COUNT,
+		GRASS_CLUSTER_RADIUS,
+		GRASS_MIN_SPACING,
+		SCATTER_X_MIN + SCATTER_EDGE_MARGIN,
+		SCATTER_X_MAX - SCATTER_EDGE_MARGIN,
+		SCATTER_Z_MIN + SCATTER_EDGE_MARGIN,
+		SCATTER_Z_MAX - SCATTER_EDGE_MARGIN,
+		GRASS_CLUSTER_SALT,
+		GRASS_CLUSTER_OFFSET_BIAS,
+		GRASS_CLUSTER_LATTICE_X_CELLS,
+		GRASS_CLUSTER_LATTICE_Z_CELLS
+	)
 	return positions
 
 
@@ -577,18 +617,21 @@ static func _grass_occluder_positions(target_count: int) -> Array[Vector3]:
 	_trim_positions(positions, target_count)
 	if positions.size() >= target_count:
 		return positions
-	var candidates: Array[Vector3] = [
-		Vector3(-1.85, 0.0, -1.75),
-		Vector3(-1.65, 0.0, -3.55),
-		Vector3(0.85, 0.0, -2.05),
-		Vector3(1.7, 0.0, -3.15),
-		Vector3(4.35, 0.0, -4.75),
-		Vector3(3.65, 0.0, -6.75)
-	]
-	for i in range(candidates.size()):
-		if _append_if_spaced(positions, candidates[i], GRASS_OCCLUDER_MIN_SPACING):
-			if positions.size() >= target_count:
-				return positions
+	_fill_clustered(
+		positions,
+		target_count,
+		OCCLUDER_CLUSTER_SEED_COUNT,
+		OCCLUDER_CLUSTER_RADIUS,
+		GRASS_OCCLUDER_MIN_SPACING,
+		GRASS_OCCLUDER_BAND_X_MIN + SCATTER_EDGE_MARGIN,
+		GRASS_OCCLUDER_BAND_X_MAX - SCATTER_EDGE_MARGIN,
+		GRASS_OCCLUDER_BAND_Z_MIN + SCATTER_EDGE_MARGIN,
+		GRASS_OCCLUDER_BAND_Z_MAX - SCATTER_EDGE_MARGIN,
+		OCCLUDER_CLUSTER_SALT,
+		OCCLUDER_CLUSTER_OFFSET_BIAS,
+		OCCLUDER_CLUSTER_LATTICE_X_CELLS,
+		OCCLUDER_CLUSTER_LATTICE_Z_CELLS
+	)
 	return positions
 
 
@@ -605,3 +648,89 @@ static func _append_if_spaced(positions: Array[Vector3], candidate: Vector3, min
 			return false
 	positions.append(candidate)
 	return true
+
+
+static func _fill_clustered(positions: Array[Vector3], target_count: int, cluster_count: int, cluster_radius: float, min_spacing: float, bounds_x_min: float, bounds_x_max: float, bounds_z_min: float, bounds_z_max: float, salt: int, offset_bias: float, lattice_x_cells: int, lattice_z_cells: int) -> void:
+	if positions.size() >= target_count or cluster_count <= 0:
+		return
+	var cluster_centers: Array[Vector3] = _cluster_centers(cluster_count, bounds_x_min, bounds_x_max, bounds_z_min, bounds_z_max, salt)
+	var cluster_weights: Array[float] = []
+	var weight_total: float = 0.0
+	for c in range(cluster_count):
+		var weight: float = 0.45 + _scatter_unit(c, 2, salt + 17) * 1.55
+		cluster_weights.append(weight)
+		weight_total += weight
+	var cumulative: Array[float] = []
+	var running: float = 0.0
+	for c in range(cluster_count):
+		var share: float = cluster_weights[c] / weight_total if weight_total > 0.0 else 1.0 / float(cluster_count)
+		running += share
+		cumulative.append(running)
+	var slot: int = positions.size()
+	while positions.size() < target_count:
+		var placed: bool = false
+		for attempt in range(SCATTER_MAX_ATTEMPTS):
+			var cluster_pick: int = _weighted_cluster_pick(slot, attempt, salt, cumulative)
+			var center: Vector3 = cluster_centers[cluster_pick]
+			var offset_angle: float = _scatter_unit(slot, attempt, salt + 29) * SCATTER_FULL_TURN_RADIANS
+			var offset_distance: float = cluster_radius * (offset_bias + _scatter_unit(slot, attempt, salt + 31) * (1.0 - offset_bias))
+			var candidate: Vector3 = center + Vector3(cos(offset_angle) * offset_distance, 0.0, sin(offset_angle) * offset_distance)
+			candidate = Vector3(clampf(candidate.x, bounds_x_min, bounds_x_max), 0.0, clampf(candidate.z, bounds_z_min, bounds_z_max))
+			if _is_protected_negative_space(candidate):
+				continue
+			if _append_if_spaced(positions, candidate, min_spacing):
+				placed = true
+				break
+		if not placed:
+			var lattice_ok: bool = _lattice_append_spaced(positions, min_spacing, bounds_x_min, bounds_x_max, bounds_z_min, bounds_z_max, slot, lattice_x_cells, lattice_z_cells, salt)
+			if not lattice_ok:
+				push_error("ScatterVisualBuilder: clustered scatter lattice exhausted before reaching target count " + str(target_count))
+				break
+		slot += 1
+
+
+static func _cluster_centers(cluster_count: int, bounds_x_min: float, bounds_x_max: float, bounds_z_min: float, bounds_z_max: float, salt: int) -> Array[Vector3]:
+	var centers: Array[Vector3] = []
+	for c in range(cluster_count):
+		var center: Vector3 = Vector3(
+			lerpf(bounds_x_min, bounds_x_max, _scatter_unit(c, 0, salt + 7)),
+			0.0,
+			lerpf(bounds_z_min, bounds_z_max, _scatter_unit(c, 1, salt + 13))
+		)
+		var nudge: int = 0
+		while _is_protected_negative_space(center) and nudge < CLUSTER_NUDGE_MAX_ATTEMPTS:
+			var angle: float = _scatter_unit(c, nudge + 3, salt + 19) * SCATTER_FULL_TURN_RADIANS
+			center = center + Vector3(cos(angle) * CLUSTER_NUDGE_STEP, 0.0, sin(angle) * CLUSTER_NUDGE_STEP)
+			center = Vector3(clampf(center.x, bounds_x_min, bounds_x_max), 0.0, clampf(center.z, bounds_z_min, bounds_z_max))
+			nudge += 1
+		centers.append(center)
+	return centers
+
+
+static func _weighted_cluster_pick(slot: int, attempt: int, salt: int, cumulative: Array[float]) -> int:
+	var roll: float = _scatter_unit(slot, attempt, salt + 23)
+	var count: int = cumulative.size()
+	for c in range(count):
+		if roll <= cumulative[c]:
+			return c
+	return count - 1
+
+
+static func _lattice_append_spaced(positions: Array[Vector3], min_spacing: float, bounds_x_min: float, bounds_x_max: float, bounds_z_min: float, bounds_z_max: float, slot: int, lattice_x_cells: int, lattice_z_cells: int, salt: int) -> bool:
+	var cell_count: int = lattice_x_cells * lattice_z_cells
+	for cell in range(cell_count):
+		var ix: int = cell % lattice_x_cells
+		var iz: int = cell / lattice_x_cells
+		if iz % 2 == 1:
+			ix = lattice_x_cells - 1 - ix
+		var base_x: float = lerpf(bounds_x_min, bounds_x_max, (float(ix) + 0.5) / float(lattice_x_cells))
+		var base_z: float = lerpf(bounds_z_min, bounds_z_max, (float(iz) + 0.5) / float(lattice_z_cells))
+		var jitter_span: float = (bounds_x_max - bounds_x_min) / float(lattice_x_cells) * 0.45
+		var jitter_x: float = (_scatter_unit(slot, cell, salt + 43) - 0.5) * jitter_span
+		var jitter_z: float = (_scatter_unit(slot, cell, salt + 47) - 0.5) * jitter_span
+		var candidate: Vector3 = Vector3(clampf(base_x + jitter_x, bounds_x_min, bounds_x_max), 0.0, clampf(base_z + jitter_z, bounds_z_min, bounds_z_max))
+		if _is_protected_negative_space(candidate):
+			continue
+		if _append_if_spaced(positions, candidate, min_spacing):
+			return true
+	return false
