@@ -180,6 +180,7 @@ class MeshSurfaceData:
 	var indices: PackedInt32Array = PackedInt32Array()
 	var use_surface_index_material: bool = false
 	var surface_id_path: String = ""
+	var surface_id_texture: Texture2D = null
 	var control_origin_xz: Vector2 = Vector2.ZERO
 	var control_size_xz: Vector2 = Vector2.ONE
 
@@ -398,8 +399,9 @@ static func _build_region_foliage_tile_data(region_id: String, cell: Vector2i, a
 	var tile_min_z: float = float(cell.y) * tile_data.tile_size_m
 	var tile_origin_xz: Vector2 = _tile_origin_xz(tile_data)
 	var tile_custom_aabb: AABB = _tile_foliage_custom_aabb(tile_data)
-	var lod0_tile_data: FoliageCellData = _build_region_foliage_tile_lod_data(tile_data, tile_custom_aabb, 0)
-	var lod1_tile_data: FoliageCellData = _build_region_foliage_tile_lod_data(tile_data, tile_custom_aabb, 1)
+	var tile_radius: float = _tile_visibility_radius(tile_data)
+	var lod0_cell_data_list: Array[FoliageCellData] = []
+	var lod1_cell_data_list: Array[FoliageCellData] = []
 	var cell_count_x: int = int(ceil(tile_data.tile_size_m / REGION_FOLIAGE_CELL_SIZE_M))
 	var cell_count_z: int = int(ceil(tile_data.tile_size_m / REGION_FOLIAGE_CELL_SIZE_M))
 	for cell_z in range(cell_count_z):
@@ -415,18 +417,20 @@ static func _build_region_foliage_tile_data(region_id: String, cell: Vector2i, a
 			var foliage_cell: Vector2i = Vector2i(cell.x * 1000 + cell_x, cell.y * 1000 + cell_z)
 			var lod0_data: FoliageCellData = _build_region_foliage_cell_data_with_audit(tile_data_by_cell, cell_rect, foliage_cell, 0, REGION_FOLIAGE_LOD0_BASE_COUNT, audit)
 			if lod0_data != null:
-				_append_foliage_cell_data_to_tile_lod(lod0_tile_data, lod0_data, tile_origin_xz)
+				_prepare_streamed_foliage_cell_data(lod0_data, tile_origin_xz, tile_custom_aabb, tile_radius)
+				_build_foliage_cell_multimeshes(lod0_data)
+				lod0_cell_data_list.append(lod0_data)
 			var lod1_data: FoliageCellData = _build_region_foliage_cell_data_with_audit(tile_data_by_cell, cell_rect, foliage_cell, 1, REGION_FOLIAGE_LOD1_BASE_COUNT, audit)
 			if lod1_data != null:
-				_append_foliage_cell_data_to_tile_lod(lod1_tile_data, lod1_data, tile_origin_xz)
+				_prepare_streamed_foliage_cell_data(lod1_data, tile_origin_xz, tile_custom_aabb, tile_radius)
+				_build_foliage_cell_multimeshes(lod1_data)
+				lod1_cell_data_list.append(lod1_data)
 
 	foliage_tile_data.position = Vector3(tile_origin_xz.x, 0.0, tile_origin_xz.y)
-	_pack_foliage_cell_buffer(lod0_tile_data)
-	_pack_foliage_cell_buffer(lod1_tile_data)
-	_build_foliage_cell_multimeshes(lod0_tile_data)
-	_build_foliage_cell_multimeshes(lod1_tile_data)
-	foliage_tile_data.cells.append(lod0_tile_data)
-	foliage_tile_data.cells.append(lod1_tile_data)
+	for lod0_cell_data in lod0_cell_data_list:
+		foliage_tile_data.cells.append(lod0_cell_data)
+	for lod1_cell_data in lod1_cell_data_list:
+		foliage_tile_data.cells.append(lod1_cell_data)
 	foliage_tile_data.ok = true
 	if not audit.is_empty():
 		audit["ok"] = true
@@ -435,16 +439,33 @@ static func _build_region_foliage_tile_data(region_id: String, cell: Vector2i, a
 
 
 static func region_foliage_tile_from_data(parent: Node3D, foliage_tile_data: RegionFoliageTileData) -> Node3D:
-	if foliage_tile_data == null or not foliage_tile_data.ok:
+	var tile_root: Node3D = region_foliage_tile_root_from_data(parent, foliage_tile_data)
+	if tile_root == null:
+		return null
+	for cell_data in foliage_tile_data.cells:
+		_add_foliage_cell_from_data(tile_root, cell_data)
+	return tile_root
+
+
+static func region_foliage_tile_root_from_data(parent: Node3D, foliage_tile_data: RegionFoliageTileData) -> Node3D:
+	if parent == null or foliage_tile_data == null or not foliage_tile_data.ok:
 		return null
 	var tile_root: Node3D = Node3D.new()
 	tile_root.name = "foliage_tile_" + str(foliage_tile_data.cell.x) + "_" + str(foliage_tile_data.cell.y)
 	tile_root.position = foliage_tile_data.position
 	tile_root.set_meta(TILE_INDEX_META, foliage_tile_data.cell)
-	for cell_data in foliage_tile_data.cells:
-		_add_foliage_cell_from_data(tile_root, cell_data)
 	parent.add_child(tile_root)
 	return tile_root
+
+
+static func add_region_foliage_species_cell_from_data(parent: Node3D, cell_data: FoliageCellData, species_data: FoliageSpeciesCellData) -> bool:
+	if parent == null or cell_data == null or species_data == null:
+		return false
+	if species_data.transforms.is_empty():
+		return false
+	var child_count: int = parent.get_child_count()
+	_add_foliage_species_cell_from_data(parent, cell_data, species_data)
+	return parent.get_child_count() > child_count
 
 
 static func _build_region_foliage_tile_lod_data(tile_data: RegionTileData, tile_custom_aabb: AABB, lod_index: int) -> FoliageCellData:
@@ -477,6 +498,24 @@ static func _append_foliage_cell_data_to_tile_lod(tile_lod_data: FoliageCellData
 			target_species_data.transforms.append(transform)
 			target_species_data.colors.append(source_species_data.colors[i])
 			target_species_data.custom_data.append(source_species_data.custom_data[i])
+
+
+static func _prepare_streamed_foliage_cell_data(cell_data: FoliageCellData, tile_origin_xz: Vector2, tile_custom_aabb: AABB, tile_radius: float) -> void:
+	var local_position: Vector3 = cell_data.position
+	local_position.x -= tile_origin_xz.x
+	local_position.z -= tile_origin_xz.y
+	cell_data.position = local_position
+	cell_data.custom_aabb = AABB(
+		Vector3(tile_custom_aabb.position.x - local_position.x, tile_custom_aabb.position.y, tile_custom_aabb.position.z - local_position.z),
+		tile_custom_aabb.size
+	)
+	cell_data.visibility_radius = tile_radius
+	if cell_data.lod_index == 0:
+		cell_data.visibility_range_begin = 0.0
+		cell_data.visibility_range_end = _foliage_lod0_visibility_range_end(tile_radius)
+	else:
+		cell_data.visibility_range_begin = _foliage_lod1_visibility_range_begin(tile_radius)
+		cell_data.visibility_range_end = _foliage_lod1_visibility_range_end(tile_radius)
 
 
 static func visual_tile_node_name(tile_index: Vector2i, tile_path: String, tile_array_index: int) -> String:
@@ -778,6 +817,9 @@ static func build_region_surface_index_mesh_data(tile_data: RegionTileData, samp
 	surface_data.indices = bucket.indices
 	surface_data.use_surface_index_material = true
 	surface_data.surface_id_path = tile_data.surface_id_path
+	surface_data.surface_id_texture = load(tile_data.surface_id_path) as Texture2D
+	if surface_data.surface_id_texture == null and tile_data.surface_image != null and not tile_data.surface_image.is_empty():
+		surface_data.surface_id_texture = ImageTexture.create_from_image(tile_data.surface_image)
 	surface_data.control_origin_xz = Vector2(float(tile_data.cell.x) * tile_data.tile_size_m, float(tile_data.cell.y) * tile_data.tile_size_m)
 	surface_data.control_size_xz = Vector2(tile_data.tile_size_m, tile_data.tile_size_m)
 	mesh_data.surfaces.append(surface_data)
@@ -1019,7 +1061,9 @@ static func _surface_index_tile_material(surface_data: MeshSurfaceData) -> Shade
 	var shared_material: ShaderMaterial = _surface_index_material(surface_data)
 	var tile_material: ShaderMaterial = shared_material.duplicate(false) as ShaderMaterial
 	tile_material.resource_name = TERRAIN_INDEX_MATERIAL_NAME
-	var surface_texture: Texture2D = _load_texture(surface_data.surface_id_path)
+	var surface_texture: Texture2D = surface_data.surface_id_texture
+	if surface_texture == null:
+		surface_texture = _load_texture(surface_data.surface_id_path)
 	if surface_texture != null:
 		tile_material.set_shader_parameter(SURFACE_ID_TEXTURE_UNIFORM, surface_texture)
 	return tile_material

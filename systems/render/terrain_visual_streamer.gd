@@ -3,6 +3,13 @@ extends Node3D
 const TerrainVisualBuilderScript: GDScript = preload("res://systems/render/terrain_visual_builder.gd")
 const MAX_BUILD_WORKERS: int = 4
 
+
+class FoliageSubcommit:
+	var cell: Vector2i = Vector2i.ZERO
+	var cell_data: Variant = null
+	var species_data: Variant = null
+
+
 # Build workers compete with the main + render threads for PHYSICAL cores. On the
 # M5 (4 perf cores / 10 logical) an 8-worker pool saturated every perf core and
 # starved the render thread -> multi-hundred-ms freezes during build bursts. Size
@@ -22,6 +29,7 @@ var _hlod_dirty: bool = false
 var _active_cells: Dictionary[Vector2i, bool] = {}
 var _visual_tiles_by_cell: Dictionary[Vector2i, Node3D] = {}
 var _foliage_tiles_by_cell: Dictionary[Vector2i, Node3D] = {}
+var _partial_foliage_tiles_by_cell: Dictionary[Vector2i, Node3D] = {}
 var _ready_tile_data_by_cell: Dictionary[Vector2i, Variant] = {}
 var _ready_foliage_data_by_cell: Dictionary[Vector2i, Variant] = {}
 var _load_failures_by_cell: Dictionary[Vector2i, String] = {}
@@ -29,6 +37,8 @@ var _queued_builds: Dictionary[Vector2i, bool] = {}
 var _cancelled_builds: Dictionary[Vector2i, bool] = {}
 var _commit_queue: Array[Vector2i] = []
 var _queued_commits: Dictionary[Vector2i, bool] = {}
+var _foliage_subcommit_queue: Array[FoliageSubcommit] = []
+var _pending_foliage_subcommit_counts_by_cell: Dictionary[Vector2i, int] = {}
 var _pending_free_cells: Array[Vector2i] = []
 var _workers: Array[Thread] = []
 var _work_mutex: Mutex = Mutex.new()
@@ -84,9 +94,12 @@ func reset_stream() -> void:
 		_free_visual_cell(cell)
 	for cell in _sorted_cells(_foliage_tiles_by_cell.keys()):
 		_free_foliage_cell(cell)
+	for cell in _sorted_cells(_partial_foliage_tiles_by_cell.keys()):
+		_free_foliage_cell(cell)
 	_active_cells.clear()
 	_visual_tiles_by_cell.clear()
 	_foliage_tiles_by_cell.clear()
+	_partial_foliage_tiles_by_cell.clear()
 	_ready_tile_data_by_cell.clear()
 	_ready_foliage_data_by_cell.clear()
 	_load_failures_by_cell.clear()
@@ -94,6 +107,8 @@ func reset_stream() -> void:
 	_cancelled_builds.clear()
 	_commit_queue.clear()
 	_queued_commits.clear()
+	_foliage_subcommit_queue.clear()
+	_pending_foliage_subcommit_counts_by_cell.clear()
 	_pending_free_cells.clear()
 	_clear_worker_queues()
 	_configured = false
@@ -116,7 +131,9 @@ func _process(_delta: float) -> void:
 	if _workers.is_empty():
 		_process_build_queue_synchronously()
 	_drain_worker_results()
-	_drain_commit_queue()
+	var committed_visual_tiles: int = _drain_commit_queue()
+	if committed_visual_tiles <= 0:
+		_drain_foliage_subcommit_queue()
 	_drain_pending_frees()
 
 
@@ -138,6 +155,10 @@ func ready_foliage_cell_count() -> int:
 
 func pending_visual_commit_count() -> int:
 	return _commit_queue.size()
+
+
+func pending_foliage_subcommit_count() -> int:
+	return _foliage_subcommit_queue.size()
 
 
 func foliage_cell_count() -> int:
@@ -213,7 +234,7 @@ func _on_world_tile_activated(cell: Vector2i) -> void:
 	_pending_free_cells.erase(cell)
 	_active_cells[cell] = true
 	_hlod_dirty = true
-	if _visual_tiles_by_cell.has(cell) and _foliage_tiles_by_cell.has(cell):
+	if _visual_tiles_by_cell.has(cell) and (_foliage_tiles_by_cell.has(cell) or _partial_foliage_tiles_by_cell.has(cell)):
 		return
 	if _ready_tile_data_by_cell.has(cell):
 		_enqueue_ready_commit(cell)
@@ -232,6 +253,7 @@ func _on_world_tile_evicted(cell: Vector2i) -> void:
 	_active_cells.erase(cell)
 	_hlod_dirty = true
 	_remove_queued_commit(cell)
+	_remove_queued_foliage_subcommits(cell)
 	if not _pending_free_cells.has(cell):
 		_pending_free_cells.append(cell)
 	_load_failures_by_cell.erase(cell)
@@ -259,6 +281,7 @@ func _on_world_tile_unprefetched(cell: Vector2i) -> void:
 		return
 	_cancel_build(cell)
 	_remove_queued_commit(cell)
+	_remove_queued_foliage_subcommits(cell)
 	_ready_tile_data_by_cell.erase(cell)
 	_ready_foliage_data_by_cell.erase(cell)
 	_load_failures_by_cell.erase(cell)
@@ -346,9 +369,20 @@ func _remove_queued_commit(cell: Vector2i) -> void:
 	_commit_queue.erase(cell)
 
 
-func _drain_commit_queue() -> void:
-	if _commit_queue.is_empty():
+func _remove_queued_foliage_subcommits(cell: Vector2i) -> void:
+	if _foliage_subcommit_queue.is_empty() and not _pending_foliage_subcommit_counts_by_cell.has(cell):
 		return
+	var retained_queue: Array[FoliageSubcommit] = []
+	for subcommit in _foliage_subcommit_queue:
+		if subcommit.cell != cell:
+			retained_queue.append(subcommit)
+	_foliage_subcommit_queue = retained_queue
+	_pending_foliage_subcommit_counts_by_cell.erase(cell)
+
+
+func _drain_commit_queue() -> int:
+	if _commit_queue.is_empty():
+		return 0
 	var commit_budget: int = maxi(GameConfig.render_visual_tile_commits_per_frame, 1)
 	_commit_queue.sort_custom(Callable(self, "_cell_less"))
 	var committed_count: int = 0
@@ -359,13 +393,33 @@ func _drain_commit_queue() -> void:
 			continue
 		_commit_ready_cell(cell)
 		committed_count += 1
+	return committed_count
 
 
 func _commit_ready_cell(cell: Vector2i) -> void:
 	if _ready_tile_data_by_cell.has(cell):
 		_commit_visual_tile(cell, _ready_tile_data_by_cell[cell])
-	if _ready_foliage_data_by_cell.has(cell):
-		_commit_foliage_tile(cell, _ready_foliage_data_by_cell[cell])
+	if _ready_foliage_data_by_cell.has(cell) and _visual_tiles_by_cell.has(cell):
+		_begin_foliage_tile_commit(cell, _ready_foliage_data_by_cell[cell])
+
+
+func _drain_foliage_subcommit_queue() -> void:
+	if _foliage_subcommit_queue.is_empty():
+		return
+	var subcommit_budget: int = maxi(GameConfig.render_visual_foliage_subcommits_per_frame, 1)
+	var committed_count: int = 0
+	while committed_count < subcommit_budget and not _foliage_subcommit_queue.is_empty():
+		var subcommit: FoliageSubcommit = _foliage_subcommit_queue.pop_front()
+		if not _active_cells.has(subcommit.cell):
+			continue
+		var tile_root: Node3D = null
+		if _partial_foliage_tiles_by_cell.has(subcommit.cell):
+			tile_root = _partial_foliage_tiles_by_cell[subcommit.cell]
+		if tile_root == null:
+			continue
+		TerrainVisualBuilderScript.add_region_foliage_species_cell_from_data(tile_root, subcommit.cell_data, subcommit.species_data)
+		_finish_foliage_subcommit(subcommit.cell)
+		committed_count += 1
 
 
 func _drain_pending_frees() -> void:
@@ -411,6 +465,66 @@ func _commit_foliage_tile(cell: Vector2i, foliage_tile_data: Variant) -> void:
 		return
 	_foliage_tiles_by_cell[cell] = foliage_tile
 	_ready_foliage_data_by_cell.erase(cell)
+
+
+func _begin_foliage_tile_commit(cell: Vector2i, foliage_tile_data: Variant) -> void:
+	if _foliage_root == null:
+		return
+	if _foliage_tiles_by_cell.has(cell) or _partial_foliage_tiles_by_cell.has(cell):
+		return
+	if foliage_tile_data == null or not bool(foliage_tile_data.ok):
+		_ready_foliage_data_by_cell.erase(cell)
+		return
+	var foliage_tile: Node3D = TerrainVisualBuilderScript.region_foliage_tile_root_from_data(_foliage_root, foliage_tile_data) as Node3D
+	if foliage_tile == null:
+		_ready_foliage_data_by_cell.erase(cell)
+		return
+	_partial_foliage_tiles_by_cell[cell] = foliage_tile
+	_ready_foliage_data_by_cell.erase(cell)
+
+	var subcommit_count: int = 0
+	for cell_data in foliage_tile_data.cells:
+		if cell_data == null:
+			continue
+		for species_data in cell_data.species:
+			if species_data == null or bool(species_data.transforms.is_empty()):
+				continue
+			var subcommit: FoliageSubcommit = FoliageSubcommit.new()
+			subcommit.cell = cell
+			subcommit.cell_data = cell_data
+			subcommit.species_data = species_data
+			_foliage_subcommit_queue.append(subcommit)
+			subcommit_count += 1
+	if subcommit_count <= 0:
+		_finish_foliage_tile_commit(cell)
+		return
+	_pending_foliage_subcommit_counts_by_cell[cell] = subcommit_count
+
+
+func _finish_foliage_subcommit(cell: Vector2i) -> void:
+	if not _pending_foliage_subcommit_counts_by_cell.has(cell):
+		return
+	var remaining_count: int = _pending_foliage_subcommit_counts_by_cell[cell] - 1
+	if remaining_count > 0:
+		_pending_foliage_subcommit_counts_by_cell[cell] = remaining_count
+		return
+	_finish_foliage_tile_commit(cell)
+
+
+func _finish_foliage_tile_commit(cell: Vector2i) -> void:
+	if not _partial_foliage_tiles_by_cell.has(cell):
+		_pending_foliage_subcommit_counts_by_cell.erase(cell)
+		return
+	var foliage_tile: Node3D = _partial_foliage_tiles_by_cell[cell]
+	_partial_foliage_tiles_by_cell.erase(cell)
+	_pending_foliage_subcommit_counts_by_cell.erase(cell)
+	if _active_cells.has(cell):
+		_foliage_tiles_by_cell[cell] = foliage_tile
+		return
+	if foliage_tile != null:
+		if foliage_tile.get_parent() != null:
+			foliage_tile.get_parent().remove_child(foliage_tile)
+		foliage_tile.queue_free()
 
 
 func _record_load_failure(cell: Vector2i, message: String) -> void:
@@ -561,15 +675,18 @@ func _free_visual_cell(cell: Vector2i) -> void:
 
 
 func _free_foliage_cell(cell: Vector2i) -> void:
-	if not _foliage_tiles_by_cell.has(cell):
-		return
-	var foliage_tile: Node3D = _foliage_tiles_by_cell[cell]
-	_foliage_tiles_by_cell.erase(cell)
-	if foliage_tile == null:
-		return
-	if foliage_tile.get_parent() != null:
-		foliage_tile.get_parent().remove_child(foliage_tile)
-	foliage_tile.queue_free()
+	_remove_queued_foliage_subcommits(cell)
+	var foliage_tile: Node3D = null
+	if _foliage_tiles_by_cell.has(cell):
+		foliage_tile = _foliage_tiles_by_cell[cell]
+		_foliage_tiles_by_cell.erase(cell)
+	elif _partial_foliage_tiles_by_cell.has(cell):
+		foliage_tile = _partial_foliage_tiles_by_cell[cell]
+		_partial_foliage_tiles_by_cell.erase(cell)
+	if foliage_tile != null:
+		if foliage_tile.get_parent() != null:
+			foliage_tile.get_parent().remove_child(foliage_tile)
+		foliage_tile.queue_free()
 
 
 func _sorted_cells(value: Array) -> Array[Vector2i]:

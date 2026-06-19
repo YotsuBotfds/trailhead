@@ -32,6 +32,7 @@ const DIRECTIONAL_SHADOW_PARALLEL_4_SPLITS: int = 2
 var render_frame_cap_enabled: bool = true
 var render_max_fps: int = 60
 var render_visual_tile_commits_per_frame: int = 1
+var render_visual_foliage_subcommits_per_frame: int = 2
 var stream_collision_activations_per_tick: int = 3
 var stream_collision_prebuild_per_tick: int = 1
 var stream_collision_evictions_per_tick: int = 3
