@@ -107,6 +107,25 @@ const FOLIAGE_DENSITY_PACKED_DIRT: float = 0.30
 const FOLIAGE_DENSITY_TALL_GRASS: float = 0.62
 const FOLIAGE_DENSITY_LOOSE_ROCK: float = 0.18
 const FOLIAGE_DENSITY_MUD: float = 0.30
+# Region-foliage grass/riparian_grass de-uniforming. The live band read as an even grid of
+# identical single crosses ("fence"). These gather accepted grass candidates around deterministic
+# clump centers (so instances form tussocks with bare ground between) and add non-uniform per-
+# instance scale, a small lean, and hue/value COLOR jitter. Salts are >= 20 to stay disjoint from
+# the 1-13 candidate slots already consumed in _build_region_foliage_cell_data_with_audit.
+const GRASS_CLUMP_ATTEMPTS_PER_CLUMP: int = 4
+const GRASS_CLUMP_RADIUS_M: float = 1.6
+const GRASS_TILT_MAX_DEG: float = 9.0
+const GRASS_HUE_JITTER: float = 0.06
+const GRASS_VALUE_JITTER: float = 0.16
+const GRASS_MIN_VALUE: float = 0.42
+const GRASS_CLUMP_CENTER_SALT_X: int = 20
+const GRASS_CLUMP_CENTER_SALT_Z: int = 21
+const GRASS_CLUMP_OFFSET_SALT_X: int = 22
+const GRASS_WIDTH_Z_SALT: int = 24
+const GRASS_TILT_AXIS_SALT: int = 25
+const GRASS_TILT_AMOUNT_SALT: int = 26
+const GRASS_HUE_SALT: int = 27
+const GRASS_VALUE_SALT: int = 28
 const RIPARIAN_TREE_MIN_DISTANCE_M: float = 10.0
 const RIPARIAN_WILLOW_OUTER_M: float = 28.0
 const RIPARIAN_COTTONWOOD_OUTER_M: float = 62.0
@@ -1670,12 +1689,26 @@ static func _build_region_foliage_cell_data_with_audit(tile_data_by_cell: Dictio
 		var keep_value: float = _region_foliage_unit(foliage_cell, lod_index, attempt, 3)
 		if keep_value > density:
 			continue
-		var terrain_normal: Vector3 = _normal_at_region_xz(tile_data_by_cell, world_x, world_z)
+		# Grass/riparian_grass gather into deterministic clumps (cluster centers + jittered
+		# offsets) instead of an even per-cell fill, so the live band reads as tussocks with
+		# bare gaps rather than a uniform fence. Species/density stay anchored to the candidate
+		# sample (so non-grass species and accepted counts are unchanged); only the render
+		# transform is relocated and re-grounded on the clumped position.
+		var is_grass_clump: bool = species_id == FOLIAGE_SPECIES_GRASS or species_id == FOLIAGE_SPECIES_RIPARIAN_GRASS
+		var place_x: float = world_x
+		var place_z: float = world_z
+		if is_grass_clump:
+			var clump_group: int = attempt / GRASS_CLUMP_ATTEMPTS_PER_CLUMP
+			var clump_center_x: float = cell_rect.position.x + _region_foliage_unit(foliage_cell, lod_index, clump_group, GRASS_CLUMP_CENTER_SALT_X) * cell_rect.size.x
+			var clump_center_z: float = cell_rect.position.y + _region_foliage_unit(foliage_cell, lod_index, clump_group, GRASS_CLUMP_CENTER_SALT_Z) * cell_rect.size.y
+			place_x = clampf(clump_center_x + _grass_clump_offset_m(foliage_cell, lod_index, attempt, 0), cell_rect.position.x, cell_rect.position.x + cell_rect.size.x)
+			place_z = clampf(clump_center_z + _grass_clump_offset_m(foliage_cell, lod_index, attempt, 1), cell_rect.position.y, cell_rect.position.y + cell_rect.size.y)
+		var terrain_normal: Vector3 = _normal_at_region_xz(tile_data_by_cell, place_x, place_z)
 		_record_foliage_slope_candidate(audit)
 		if terrain_normal.y < FOLIAGE_MAX_SLOPE_NORMAL_Y and not _foliage_species_allows_steep_slope(species_id):
 			_record_foliage_slope_rejection(audit)
 			continue
-		var height: float = _height_at_region_xz(tile_data_by_cell, world_x, world_z)
+		var height: float = _height_at_region_xz(tile_data_by_cell, place_x, place_z)
 		var yaw: float = deg_to_rad(_region_foliage_unit(foliage_cell, lod_index, attempt, 4) * 360.0)
 		var width_scale: float = 0.82 + _region_foliage_unit(foliage_cell, lod_index, attempt, 5) * 0.42
 		var height_scale: float = 0.78 + _region_foliage_unit(foliage_cell, lod_index, attempt, 6) * 0.54
@@ -1686,16 +1719,23 @@ static func _build_region_foliage_cell_data_with_audit(tile_data_by_cell: Dictio
 			width_scale = 0.46 + _region_foliage_unit(foliage_cell, lod_index, attempt, 5) * 1.18
 			height_scale = 0.34 + _region_foliage_unit(foliage_cell, lod_index, attempt, 6) * 0.68
 		var base_scale: Vector3 = _foliage_base_scale_for_lod_species(lod_index, species_id)
-		var basis: Basis = Basis(Vector3.UP, yaw).scaled(Vector3(base_scale.x * width_scale, base_scale.y * height_scale, base_scale.z * width_scale))
+		var basis: Basis
+		if is_grass_clump:
+			basis = _grass_clump_basis(base_scale, width_scale, height_scale, foliage_cell, lod_index, attempt, yaw)
+		else:
+			basis = Basis(Vector3.UP, yaw).scaled(Vector3(base_scale.x * width_scale, base_scale.y * height_scale, base_scale.z * width_scale))
 		var species_data: FoliageSpeciesCellData = _foliage_species_data_from_list(species_data_list, species_id)
 		var y_offset: float = REGION_FOLIAGE_Y_OFFSET
 		if species_id == FOLIAGE_SPECIES_BOULDER:
 			y_offset = -FOLIAGE_BOULDER_GROUND_SINK_M
-		species_data.transforms.append(Transform3D(basis, Vector3(world_x, height + y_offset, world_z)))
+		species_data.transforms.append(Transform3D(basis, Vector3(place_x, height + y_offset, place_z)))
 		_record_foliage_acceptance(audit, terrain_normal.y, species_id)
 		_record_foliage_species_acceptance(audit, species_id)
 		var color_warmth: float = _region_foliage_unit(foliage_cell, lod_index, attempt, 7)
-		species_data.colors.append(_foliage_instance_color(species_id, color_warmth))
+		if is_grass_clump:
+			species_data.colors.append(_grass_clump_instance_color(species_id, color_warmth, foliage_cell, lod_index, attempt))
+		else:
+			species_data.colors.append(_foliage_instance_color(species_id, color_warmth))
 		var wind_weight: float = 0.45 + _region_foliage_unit(foliage_cell, lod_index, attempt, 8) * 0.55
 		var wind_phase: float = _region_foliage_unit(foliage_cell, lod_index, attempt, 9)
 		var wind_flutter: float = _region_foliage_unit(foliage_cell, lod_index, attempt, 10)
@@ -2434,6 +2474,52 @@ static func _foliage_instance_color(species_id: StringName, color_warmth: float)
 	var base_color: Color = _foliage_color_for_species(species_id)
 	var warm_color: Color = Color(minf(base_color.r * 1.16, 1.0), minf(base_color.g * 1.10, 1.0), minf(base_color.b * 1.06, 1.0), 1.0)
 	return base_color.lerp(warm_color, color_warmth)
+
+
+static func _grass_clump_offset_m(foliage_cell: Vector2i, lod_index: int, attempt: int, axis: int) -> float:
+	var unit_value: float = _region_foliage_unit(foliage_cell, lod_index, attempt, GRASS_CLUMP_OFFSET_SALT_X + axis)
+	return (unit_value * 2.0 - 1.0) * GRASS_CLUMP_RADIUS_M
+
+
+static func _grass_clump_basis(base_scale: Vector3, width_scale_x: float, height_scale: float, foliage_cell: Vector2i, lod_index: int, attempt: int, yaw: float) -> Basis:
+	# Non-uniform X/Z width so blades in a tussock do not share one outline, plus a small
+	# deterministic lean (tilt about a horizontal axis) so clumps read as weighted scrub rather
+	# than a regimented picket fence pivoting in lockstep.
+	var width_scale_z: float = 0.82 + _region_foliage_unit(foliage_cell, lod_index, attempt, GRASS_WIDTH_Z_SALT) * 0.42
+	var scaled: Basis = Basis(Vector3.UP, yaw).scaled(Vector3(base_scale.x * width_scale_x, base_scale.y * height_scale, base_scale.z * width_scale_z))
+	var tilt_yaw: float = deg_to_rad(_region_foliage_unit(foliage_cell, lod_index, attempt, GRASS_TILT_AXIS_SALT) * 360.0)
+	var tilt_angle: float = deg_to_rad((_region_foliage_unit(foliage_cell, lod_index, attempt, GRASS_TILT_AMOUNT_SALT) * 2.0 - 1.0) * GRASS_TILT_MAX_DEG)
+	var tilt_axis: Vector3 = Vector3(cos(tilt_yaw), 0.0, sin(tilt_yaw))
+	return scaled.rotated(tilt_axis, tilt_angle)
+
+
+static func _grass_clump_instance_color(species_id: StringName, color_warmth: float, foliage_cell: Vector2i, lod_index: int, attempt: int) -> Color:
+	# grass_billboard.gdshader multiplies ALBEDO by the MultiMesh instance COLOR, so per-instance
+	# hue/value jitter reads directly as varied tussock color instead of a single repeating tint.
+	# HSV is derived by hand: this Godot 4.6 build exposes no Color HSV getters, only from_hsv.
+	var base: Color = _foliage_instance_color(species_id, color_warmth)
+	var max_channel: float = maxf(maxf(base.r, base.g), base.b)
+	var min_channel: float = minf(minf(base.r, base.g), base.b)
+	var delta: float = max_channel - min_channel
+	var hue: float = 0.0
+	var saturation: float = 0.0
+	if max_channel > 0.0:
+		saturation = delta / max_channel
+	if delta > 0.0:
+		if max_channel == base.r:
+			hue = fmod((base.g - base.b) / delta, 6.0)
+		elif max_channel == base.g:
+			hue = (base.b - base.r) / delta + 2.0
+		else:
+			hue = (base.r - base.g) / delta + 4.0
+		hue = hue / 6.0
+		if hue < 0.0:
+			hue += 1.0
+	var hue_shift: float = (_region_foliage_unit(foliage_cell, lod_index, attempt, GRASS_HUE_SALT) * 2.0 - 1.0) * GRASS_HUE_JITTER
+	var value_shift: float = (_region_foliage_unit(foliage_cell, lod_index, attempt, GRASS_VALUE_SALT) * 2.0 - 1.0) * GRASS_VALUE_JITTER
+	hue = fmod(hue + hue_shift + 1.0, 1.0)
+	var value: float = clampf(max_channel + value_shift, GRASS_MIN_VALUE, 1.0)
+	return Color.from_hsv(hue, saturation, value, base.a)
 
 
 static func _foliage_base_scale_for_lod_species(lod_index: int, species_id: StringName) -> Vector3:
