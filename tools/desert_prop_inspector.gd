@@ -39,23 +39,16 @@ func _inspect_prop(prop_id: StringName, seed: int, prop: Node3D) -> void:
 	if mesh_instances.is_empty():
 		_errors.append(String(prop_id) + " seed " + str(seed) + " produced no mesh instances")
 		return
-	var combined_aabb: AABB = AABB()
-	var has_aabb: bool = false
 	for mesh_instance in mesh_instances:
 		_inspect_mesh_instance(prop_id, seed, mesh_instance)
-		var mesh: Mesh = mesh_instance.mesh
-		if mesh == null:
-			continue
-		var local_aabb: AABB = mesh.get_aabb()
-		var transformed_aabb: AABB = mesh_instance.transform * local_aabb
-		if not has_aabb:
-			combined_aabb = transformed_aabb
-			has_aabb = true
-		else:
-			combined_aabb = combined_aabb.merge(transformed_aabb)
-	if not has_aabb:
+	var mesh_aabbs: Array[AABB] = []
+	_collect_mesh_aabbs(prop, Transform3D.IDENTITY, mesh_aabbs)
+	if mesh_aabbs.is_empty():
 		_errors.append(String(prop_id) + " seed " + str(seed) + " has no valid AABB")
 		return
+	var combined_aabb: AABB = mesh_aabbs[0]
+	for index in range(1, mesh_aabbs.size()):
+		combined_aabb = combined_aabb.merge(mesh_aabbs[index])
 	if absf(combined_aabb.position.y) > FLOAT_EPSILON:
 		_errors.append(String(prop_id) + " seed " + str(seed) + " base should sit at y=0, got " + str(combined_aabb.position.y))
 	if combined_aabb.size.y <= 0.02 or combined_aabb.size.y > MAX_PROP_HEIGHT:
@@ -71,6 +64,9 @@ func _inspect_mesh_instance(prop_id: StringName, seed: int, mesh_instance: MeshI
 	var mesh: Mesh = mesh_instance.mesh
 	if mesh == null:
 		_errors.append(String(prop_id) + " seed " + str(seed) + " mesh instance " + String(mesh_instance.name) + " has no mesh")
+		return
+	if mesh is BoxMesh:
+		_errors.append(String(prop_id) + " seed " + str(seed) + " mesh " + String(mesh_instance.name) + " is a placeholder BoxMesh (L1 forbids un-art-directed primitives)")
 		return
 	if mesh.get_surface_count() <= 0:
 		_errors.append(String(prop_id) + " seed " + str(seed) + " mesh " + String(mesh_instance.name) + " has no surfaces")
@@ -90,6 +86,18 @@ func _collect_mesh_instances(node: Node, mesh_instances: Array[MeshInstance3D]) 
 		mesh_instances.append(mesh_instance)
 	for child in node.get_children():
 		_collect_mesh_instances(child, mesh_instances)
+
+
+func _collect_mesh_aabbs(node: Node3D, accum: Transform3D, out: Array[AABB]) -> void:
+	for child in node.get_children():
+		var child_3d: Node3D = child as Node3D
+		if child_3d == null:
+			continue
+		var child_accum: Transform3D = accum * child_3d.transform
+		var mesh_instance: MeshInstance3D = child_3d as MeshInstance3D
+		if mesh_instance != null and mesh_instance.mesh != null:
+			out.append(child_accum * mesh_instance.mesh.get_aabb())
+		_collect_mesh_aabbs(child_3d, child_accum, out)
 
 
 func _finish() -> void:
