@@ -21,6 +21,10 @@ const MOTOR_RPM_BUZZ_SCALE: float = 0.34
 const MOTOR_SPEED_BLEND: float = 0.18
 const MOTOR_RPM_VOLUME_GAIN: float = 0.72
 const TIRE_SPEED_GATE: float = 0.08
+const DIAG_NO_AUDIO_RIG_ENV: String = "TRAILHEAD_DIAG_NOAUDIORIG"
+const AUDIO_TARGET_BUFFER_SECONDS: float = 0.064
+const AUDIO_FILL_BUDGET_SECONDS: float = 0.024
+const AUDIO_SYNTH_STRIDE_FRAMES: int = 4
 
 var _vehicle: Node = null
 var _motor_player: AudioStreamPlayer = null
@@ -55,6 +59,15 @@ var _preview_master_volume_db: float = 0.0
 var _preview_ambient_volume_db: float = 0.0
 var _preview_reverb_wet: float = 0.0
 var _ambient_duck_volume_db: float = 0.0
+var _diag_no_audio_rig: bool = false
+var _audio_capacity_frames: int = 1
+var _audio_target_free_frames: int = 0
+var _audio_fill_budget_frames: int = 1
+var _motor_fill_buffer: PackedVector2Array = PackedVector2Array()
+var _tire_fill_buffer: PackedVector2Array = PackedVector2Array()
+var _ambient_fill_buffer: PackedVector2Array = PackedVector2Array()
+var _water_fill_buffer: PackedVector2Array = PackedVector2Array()
+var _plank_fill_buffer: PackedVector2Array = PackedVector2Array()
 
 
 func configure(vehicle: Node) -> void:
@@ -62,6 +75,8 @@ func configure(vehicle: Node) -> void:
 
 
 func _ready() -> void:
+	_diag_no_audio_rig = _env_enabled(DIAG_NO_AUDIO_RIG_ENV)
+	_configure_audio_fill_budget()
 	_ambient_duck_volume_db = GameConfig.audio_bus_ambient_volume_db
 	_motor_player = _make_generator_player("MotorWhine")
 	_tire_player = _make_generator_player("TireTexture")
@@ -94,6 +109,8 @@ func _exit_tree() -> void:
 
 
 func _process(_delta: float) -> void:
+	if _diag_no_audio_rig:
+		return
 	if _vehicle == null:
 		return
 	var state: RefCounted = _vehicle.call("get_state")
@@ -234,51 +251,111 @@ func _start_players() -> void:
 func _fill_motor(speed: float, motor_rpm: float) -> void:
 	if _motor_playback == null:
 		return
-	var frames_available: int = _motor_playback.get_frames_available()
-	for i in range(frames_available):
-		_motor_playback.push_frame(_next_motor_frame(speed, motor_rpm))
+	var frame_count: int = _frames_to_fill(_motor_playback)
+	if frame_count <= 0:
+		return
+	_motor_fill_buffer.resize(frame_count)
+	var write_index: int = 0
+	while write_index < frame_count:
+		var repeat_count: int = mini(AUDIO_SYNTH_STRIDE_FRAMES, frame_count - write_index)
+		var frame: Vector2 = _next_motor_frame(speed, motor_rpm, repeat_count)
+		for repeat_index in range(repeat_count):
+			_motor_fill_buffer[write_index + repeat_index] = frame
+		write_index += repeat_count
+	_motor_playback.push_buffer(_motor_fill_buffer)
 
 
 func _fill_tires(speed: float) -> void:
 	if _tire_playback == null:
 		return
-	var frames_available: int = _tire_playback.get_frames_available()
-	for i in range(frames_available):
-		_tire_playback.push_frame(_next_tire_frame(speed))
+	var frame_count: int = _frames_to_fill(_tire_playback)
+	if frame_count <= 0:
+		return
+	_tire_fill_buffer.resize(frame_count)
+	var write_index: int = 0
+	while write_index < frame_count:
+		var repeat_count: int = mini(AUDIO_SYNTH_STRIDE_FRAMES, frame_count - write_index)
+		var frame: Vector2 = _next_tire_frame(speed, repeat_count)
+		for repeat_index in range(repeat_count):
+			_tire_fill_buffer[write_index + repeat_index] = frame
+		write_index += repeat_count
+	_tire_playback.push_buffer(_tire_fill_buffer)
 
 
 func _fill_ambient(vehicle_position: Vector3) -> void:
 	if _ambient_playback == null:
 		return
-	var frames_available: int = _ambient_playback.get_frames_available()
-	for i in range(frames_available):
-		_ambient_playback.push_frame(_next_ambient_frame(vehicle_position))
+	var frame_count: int = _frames_to_fill(_ambient_playback)
+	if frame_count <= 0:
+		return
+	_ambient_fill_buffer.resize(frame_count)
+	var write_index: int = 0
+	while write_index < frame_count:
+		var repeat_count: int = mini(AUDIO_SYNTH_STRIDE_FRAMES, frame_count - write_index)
+		var frame: Vector2 = _next_ambient_frame(vehicle_position, repeat_count)
+		for repeat_index in range(repeat_count):
+			_ambient_fill_buffer[write_index + repeat_index] = frame
+		write_index += repeat_count
+	_ambient_playback.push_buffer(_ambient_fill_buffer)
 
 
 func _fill_water(vehicle_position: Vector3) -> void:
 	if _water_playback == null:
 		return
-	var frames_available: int = _water_playback.get_frames_available()
-	for i in range(frames_available):
-		_water_playback.push_frame(_next_water_frame(vehicle_position))
+	var frame_count: int = _frames_to_fill(_water_playback)
+	if frame_count <= 0:
+		return
+	_water_fill_buffer.resize(frame_count)
+	var write_index: int = 0
+	while write_index < frame_count:
+		var repeat_count: int = mini(AUDIO_SYNTH_STRIDE_FRAMES, frame_count - write_index)
+		var frame: Vector2 = _next_water_frame(vehicle_position, repeat_count)
+		for repeat_index in range(repeat_count):
+			_water_fill_buffer[write_index + repeat_index] = frame
+		write_index += repeat_count
+	_water_playback.push_buffer(_water_fill_buffer)
 
 
 func _fill_planks(speed: float) -> void:
 	if _plank_playback == null:
 		return
-	var frames_available: int = _plank_playback.get_frames_available()
-	for i in range(frames_available):
-		_plank_playback.push_frame(_next_plank_frame(speed))
+	var frame_count: int = _frames_to_fill(_plank_playback)
+	if frame_count <= 0:
+		return
+	_plank_fill_buffer.resize(frame_count)
+	var write_index: int = 0
+	while write_index < frame_count:
+		var repeat_count: int = mini(AUDIO_SYNTH_STRIDE_FRAMES, frame_count - write_index)
+		var frame: Vector2 = _next_plank_frame(speed, repeat_count)
+		for repeat_index in range(repeat_count):
+			_plank_fill_buffer[write_index + repeat_index] = frame
+		write_index += repeat_count
+	_plank_playback.push_buffer(_plank_fill_buffer)
 
 
-func _next_motor_frame(speed: float, motor_rpm: float) -> Vector2:
+func _configure_audio_fill_budget() -> void:
+	var mix_rate: float = maxf(GameConfig.audio_mix_rate, 1.0)
+	_audio_capacity_frames = maxi(int(mix_rate * maxf(GameConfig.audio_buffer_length, 0.001)), 1)
+	var target_buffer_frames: int = clampi(int(mix_rate * AUDIO_TARGET_BUFFER_SECONDS), 1, _audio_capacity_frames)
+	_audio_target_free_frames = clampi(_audio_capacity_frames - target_buffer_frames, 0, _audio_capacity_frames - 1)
+	_audio_fill_budget_frames = clampi(int(mix_rate * AUDIO_FILL_BUDGET_SECONDS), 1, _audio_capacity_frames)
+
+
+func _frames_to_fill(playback: AudioStreamGeneratorPlayback) -> int:
+	var frames_available: int = playback.get_frames_available()
+	if frames_available <= _audio_target_free_frames:
+		return 0
+	return mini(frames_available - _audio_target_free_frames, _audio_fill_budget_frames)
+
+
+func _next_motor_frame(speed: float, motor_rpm: float, sample_stride: int = 1) -> Vector2:
 	var speed_ratio: float = clampf(speed / maxf(GameConfig.max_speed, 0.001), 0.0, 1.25)
 	var expected_max_rpm: float = maxf(GameConfig.max_speed * GameConfig.motor_rpm_speed_scale, 1.0)
 	var rpm_ratio: float = clampf(maxf(motor_rpm, 0.0) / expected_max_rpm, 0.0, 1.35)
 	var rpm_frequency: float = MOTOR_IDLE_RPM + rpm_ratio * GameConfig.audio_motor_speed_hz_gain * maxf(GameConfig.max_speed, 1.0)
 	var speed_frequency: float = GameConfig.audio_motor_base_hz + speed_ratio * GameConfig.audio_motor_speed_hz_gain * maxf(GameConfig.max_speed, 1.0)
 	var frequency: float = lerpf(rpm_frequency, speed_frequency, MOTOR_SPEED_BLEND)
-	var phase_step: float = TAU * frequency / maxf(GameConfig.audio_mix_rate, 1.0)
+	var phase_step: float = TAU * frequency * float(maxi(sample_stride, 1)) / maxf(GameConfig.audio_mix_rate, 1.0)
 	_motor_phase += phase_step
 	if _motor_phase > TAU:
 		_motor_phase -= TAU
@@ -290,9 +367,9 @@ func _next_motor_frame(speed: float, motor_rpm: float) -> Vector2:
 	return _apply_layer_mix(Vector2(wave, wave) * volume, LAYER_MOTOR)
 
 
-func _next_tire_frame(speed: float) -> Vector2:
+func _next_tire_frame(speed: float, sample_stride: int = 1) -> Vector2:
 	var frequency: float = GameConfig.audio_tire_base_hz * surface_tire_pitch_for(_current_surface_id)
-	var phase_step: float = TAU * frequency / maxf(GameConfig.audio_mix_rate, 1.0)
+	var phase_step: float = TAU * frequency * float(maxi(sample_stride, 1)) / maxf(GameConfig.audio_mix_rate, 1.0)
 	var speed_ratio: float = clampf(speed / maxf(GameConfig.max_speed, 0.001), 0.0, 1.25)
 	var surface_gain: float = surface_tire_gain_for(_current_surface_id)
 	var speed_gate: float = clampf(speed / TIRE_SPEED_GATE, 0.0, 1.0)
@@ -305,10 +382,11 @@ func _next_tire_frame(speed: float) -> Vector2:
 	return _apply_layer_mix(Vector2(wave, wave) * volume, LAYER_TIRE)
 
 
-func _next_ambient_frame(vehicle_position: Vector3) -> Vector2:
-	var wind_step: float = TAU * GameConfig.audio_ambient_wind_base_hz / maxf(GameConfig.audio_mix_rate, 1.0)
-	var bird_step: float = TAU * GameConfig.audio_ambient_bird_hz / maxf(GameConfig.audio_mix_rate, 1.0)
-	var insect_step: float = TAU * GameConfig.audio_ambient_insect_hz / maxf(GameConfig.audio_mix_rate, 1.0)
+func _next_ambient_frame(vehicle_position: Vector3, sample_stride: int = 1) -> Vector2:
+	var stride: float = float(maxi(sample_stride, 1))
+	var wind_step: float = TAU * GameConfig.audio_ambient_wind_base_hz * stride / maxf(GameConfig.audio_mix_rate, 1.0)
+	var bird_step: float = TAU * GameConfig.audio_ambient_bird_hz * stride / maxf(GameConfig.audio_mix_rate, 1.0)
+	var insect_step: float = TAU * GameConfig.audio_ambient_insect_hz * stride / maxf(GameConfig.audio_mix_rate, 1.0)
 	_ambient_phase += wind_step
 	_bird_phase += bird_step
 	_insect_phase += insect_step
@@ -329,9 +407,9 @@ func _next_ambient_frame(vehicle_position: Vector3) -> Vector2:
 	return _apply_layer_mix(wind_frame + bird_frame + insect_frame, LAYER_AMBIENT)
 
 
-func _next_water_frame(vehicle_position: Vector3) -> Vector2:
+func _next_water_frame(vehicle_position: Vector3, sample_stride: int = 1) -> Vector2:
 	var volume: float = water_volume_for_position(vehicle_position)
-	var phase_step: float = TAU * GameConfig.audio_water_base_hz / maxf(GameConfig.audio_mix_rate, 1.0)
+	var phase_step: float = TAU * GameConfig.audio_water_base_hz * float(maxi(sample_stride, 1)) / maxf(GameConfig.audio_mix_rate, 1.0)
 	_water_phase += phase_step
 	if _water_phase > TAU:
 		_water_phase -= TAU
@@ -339,16 +417,16 @@ func _next_water_frame(vehicle_position: Vector3) -> Vector2:
 	return _apply_layer_mix(_pan_frame(stream_noise * volume, water_pan_for_position(vehicle_position)), LAYER_WATER)
 
 
-func _next_plank_frame(speed: float) -> Vector2:
+func _next_plank_frame(speed: float, sample_stride: int = 1) -> Vector2:
 	var is_on_plank: bool = bool(SurfaceVisualCatalogResource.call("emits_plank_knock_for", _current_surface_id))
 	var frequency: float = GameConfig.audio_plank_base_hz + speed * GameConfig.audio_plank_speed_hz_gain
-	var phase_step: float = TAU * frequency / maxf(GameConfig.audio_mix_rate, 1.0)
+	var phase_step: float = TAU * frequency * float(maxi(sample_stride, 1)) / maxf(GameConfig.audio_mix_rate, 1.0)
 	if is_on_plank:
 		_plank_phase += phase_step
 		if _plank_phase > TAU:
 			_plank_phase -= TAU
 			_plank_envelope = 1.0
-	_plank_envelope *= GameConfig.audio_plank_decay
+	_plank_envelope *= pow(GameConfig.audio_plank_decay, float(maxi(sample_stride, 1)))
 	var sample: float = sin(_plank_phase * 5.0) * _plank_envelope * GameConfig.audio_plank_volume
 	return _apply_layer_mix(Vector2(sample, sample), LAYER_PLANK)
 
@@ -557,3 +635,8 @@ func _dominant_surface_from_state(state: RefCounted, fallback_surface_id: String
 
 func _on_vehicle_changed_surface(surface_id: StringName) -> void:
 	_current_surface_id = surface_id
+
+
+func _env_enabled(env_name: String) -> bool:
+	var value: String = OS.get_environment(env_name).to_lower()
+	return value == "1" or value == "true" or value == "yes"

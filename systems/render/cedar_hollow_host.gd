@@ -49,6 +49,7 @@ const ZION_REGION_ID: String = "cedar_hollow_zion"
 const ZION_SPAWN_ID: StringName = &"demo_canyon_junction"
 const WORLD_REGION_ID_META: StringName = &"trailhead_world_region_id"
 const GAMEPAD_DEVICE_ANY: int = -1
+const TRACK_APPLY_CELLS_PER_FRAME: int = 1
 
 var _world: Node3D = null
 var _vehicle: Node = null
@@ -117,6 +118,13 @@ var _sim_tick: int = 0
 var _frequency_input_panel: CanvasLayer = null
 var _grasshopper_livery: Node = null
 var _drive_started: bool = false
+var _track_texture_state_valid: bool = false
+var _track_last_texture: Texture2D = null
+var _track_last_bounds_min: Vector2 = Vector2.ZERO
+var _track_last_bounds_max: Vector2 = Vector2.ZERO
+var _track_apply_queue: Array[Vector2i] = []
+var _track_apply_queue_lookup: Dictionary[Vector2i, bool] = {}
+var _track_applied_cells: Dictionary[Vector2i, bool] = {}
 
 
 func _ready() -> void:
@@ -305,6 +313,7 @@ func _setup_terrain_tracks(terrain_root: Node3D) -> void:
 	var track_texture: Texture2D = _terrain_track_painter.call("track_texture") as Texture2D
 	var track_bounds_min: Vector2 = _terrain_track_painter.call("render_bounds_min")
 	var track_bounds_max: Vector2 = _terrain_track_painter.call("render_bounds_max")
+	_remember_track_texture_state(track_texture, track_bounds_min, track_bounds_max)
 	TerrainVisualBuilderScript.apply_track_texture(terrain_root, track_texture, track_bounds_min, track_bounds_max)
 
 
@@ -1031,7 +1040,71 @@ func _apply_terrain_tracks_to_streamed_tiles() -> void:
 		return
 	var track_bounds_min: Vector2 = _terrain_track_painter.call("render_bounds_min")
 	var track_bounds_max: Vector2 = _terrain_track_painter.call("render_bounds_max")
-	TerrainVisualBuilderScript.apply_track_texture(_terrain_visual_streamer, track_texture, track_bounds_min, track_bounds_max)
+	if _track_texture_state_changed(track_texture, track_bounds_min, track_bounds_max):
+		_remember_track_texture_state(track_texture, track_bounds_min, track_bounds_max)
+		_track_applied_cells.clear()
+		_track_apply_queue.clear()
+		_track_apply_queue_lookup.clear()
+	if not _terrain_visual_streamer.has_method("active_visual_cells"):
+		return
+	var active_cells: Array = _terrain_visual_streamer.call("active_visual_cells")
+	_sync_track_apply_queue(active_cells)
+	_drain_track_apply_queue(track_texture, track_bounds_min, track_bounds_max)
+
+
+func _remember_track_texture_state(track_texture: Texture2D, bounds_min: Vector2, bounds_max: Vector2) -> void:
+	_track_texture_state_valid = true
+	_track_last_texture = track_texture
+	_track_last_bounds_min = bounds_min
+	_track_last_bounds_max = bounds_max
+
+
+func _track_texture_state_changed(track_texture: Texture2D, bounds_min: Vector2, bounds_max: Vector2) -> bool:
+	return not _track_texture_state_valid \
+		or _track_last_texture != track_texture \
+		or _track_last_bounds_min != bounds_min \
+		or _track_last_bounds_max != bounds_max
+
+
+func _sync_track_apply_queue(active_cells: Array) -> void:
+	var active_lookup: Dictionary[Vector2i, bool] = {}
+	for cell_variant in active_cells:
+		var cell: Vector2i = cell_variant
+		active_lookup[cell] = true
+		if not _track_applied_cells.has(cell):
+			_queue_track_apply_cell(cell)
+	for applied_cell_variant in _track_applied_cells.keys():
+		var applied_cell: Vector2i = applied_cell_variant
+		if not active_lookup.has(applied_cell):
+			_track_applied_cells.erase(applied_cell)
+
+
+func _queue_track_apply_cell(cell: Vector2i) -> void:
+	if _track_apply_queue_lookup.has(cell):
+		return
+	_track_apply_queue.append(cell)
+	_track_apply_queue_lookup[cell] = true
+
+
+func _drain_track_apply_queue(track_texture: Texture2D, bounds_min: Vector2, bounds_max: Vector2) -> void:
+	var applied_count: int = 0
+	while applied_count < TRACK_APPLY_CELLS_PER_FRAME and not _track_apply_queue.is_empty():
+		var cell: Vector2i = _track_apply_queue.pop_front()
+		_track_apply_queue_lookup.erase(cell)
+		if _track_applied_cells.has(cell):
+			continue
+		var visual_cell: Node = _visual_cell_node(cell)
+		if visual_cell == null:
+			continue
+		TerrainVisualBuilderScript.apply_track_texture(visual_cell, track_texture, bounds_min, bounds_max)
+		_track_applied_cells[cell] = true
+		applied_count += 1
+
+
+func _visual_cell_node(cell: Vector2i) -> Node:
+	if _terrain_visual_streamer == null or not _terrain_visual_streamer.has_method("visual_cell_node"):
+		return null
+	return _terrain_visual_streamer.call("visual_cell_node", cell) as Node
 
 
 func _wheel_mesh_for_socket(socket: Node3D) -> Node3D:
