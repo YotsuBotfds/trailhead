@@ -1,3 +1,6 @@
+printf 'run: Zion river ribbon height\n'
+"$godot_bin" --headless --path . res://tools/zion_water_ribbon_height_fixture.tscn
+
 printf 'run: Zion playable streamed visuals\n'
 "$godot_bin" --headless --path . res://tools/zion_playable_inspector.tscn
 

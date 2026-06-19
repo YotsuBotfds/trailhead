@@ -2,6 +2,7 @@ class_name WaterVisualBuilder
 extends RefCounted
 
 const WaterShader: Shader = preload("res://systems/render/water_visual.gdshader")
+const TerrainBuilderScript: GDScript = preload("res://systems/world/terrain_builder.gd")
 const ROOT_NAME: String = "WaterVisuals"
 const WATER_SURFACE_GROUP: String = "render_water_surface"
 const BED_TINT_COLOR: Color = Color(0.84, 0.78, 0.60)
@@ -11,22 +12,22 @@ const DOWNSTREAM_FLOW_SPEED: float = 0.06
 const FOAM_COLOR: Color = Color(0.86, 0.90, 0.84)
 const WETLINE_STRENGTH: float = 0.20
 const ZION_RIVER_WIDTH_M: float = 9.5
-const ZION_RIVER_WATER_OFFSET_M: float = 0.45
-const ZION_RIVER_WEST_POINTS: Array[Vector3] = [
-	Vector3(910.0, 1184.280762 + ZION_RIVER_WATER_OFFSET_M, 500.0),
-	Vector3(900.0, 1188.923584 + ZION_RIVER_WATER_OFFSET_M, 700.0),
-	Vector3(920.0, 1187.693237 + ZION_RIVER_WATER_OFFSET_M, 900.0),
-	Vector3(1000.0, 1188.516602 + ZION_RIVER_WATER_OFFSET_M, 1000.0),
-	Vector3(1070.0, 1190.058228 + ZION_RIVER_WATER_OFFSET_M, 1200.0),
-	Vector3(1130.0, 1191.382202 + ZION_RIVER_WATER_OFFSET_M, 1300.0),
+const ZION_RIVER_SURFACE_RISE_M: float = 0.30
+const ZION_RIVER_WEST_POINTS: Array[Vector2] = [
+	Vector2(910.0, 500.0),
+	Vector2(900.0, 700.0),
+	Vector2(920.0, 900.0),
+	Vector2(1000.0, 1000.0),
+	Vector2(1070.0, 1200.0),
+	Vector2(1130.0, 1300.0),
 ]
-const ZION_RIVER_EAST_POINTS: Array[Vector3] = [
-	Vector3(1130.0, 1191.382202 + ZION_RIVER_WATER_OFFSET_M, 1300.0),
-	Vector3(1180.0, 1192.419800 + ZION_RIVER_WATER_OFFSET_M, 1350.0),
-	Vector3(1330.0, 1193.652832 + ZION_RIVER_WATER_OFFSET_M, 1400.0),
-	Vector3(1410.0, 1194.914185 + ZION_RIVER_WATER_OFFSET_M, 1450.0),
-	Vector3(1500.0, 1203.034424 + ZION_RIVER_WATER_OFFSET_M, 1550.0),
-	Vector3(1530.0, 1204.157349 + ZION_RIVER_WATER_OFFSET_M, 1600.0),
+const ZION_RIVER_EAST_POINTS: Array[Vector2] = [
+	Vector2(1130.0, 1300.0),
+	Vector2(1180.0, 1350.0),
+	Vector2(1330.0, 1400.0),
+	Vector2(1410.0, 1450.0),
+	Vector2(1500.0, 1550.0),
+	Vector2(1530.0, 1600.0),
 ]
 
 
@@ -65,9 +66,12 @@ static func _add_water_plane(parent: Node3D, node_name: String, position: Vector
 	return instance
 
 
-static func _add_water_ribbon(parent: Node3D, node_name: String, world_points: Array[Vector3], width_m: float) -> MeshInstance3D:
-	if world_points.size() < 2:
+static func _add_water_ribbon(parent: Node3D, node_name: String, river_points_xz: Array[Vector2], width_m: float) -> MeshInstance3D:
+	if river_points_xz.size() < 2:
 		return null
+	var terrain_def: Resource = TerrainBuilderScript.cedar_hollow_10m_terrain_def()
+	var horizontal_offset: Vector2 = TerrainBuilderScript.cedar_hollow_10m_horizontal_offset()
+	var world_points: Array[Vector3] = _zion_river_surface_points(river_points_xz, terrain_def, horizontal_offset)
 	var transform: Transform3D = _water_ribbon_transform(world_points)
 	var inverse_basis: Basis = transform.basis.inverse()
 	var vertices: PackedVector3Array = PackedVector3Array()
@@ -84,8 +88,10 @@ static func _add_water_ribbon(parent: Node3D, node_name: String, world_points: A
 		var tangent_xz: Vector2 = _water_point_tangent_xz(world_points, point_index)
 		var side_xz: Vector2 = Vector2(-tangent_xz.y, tangent_xz.x)
 		var local_tangent: Vector3 = (inverse_basis * Vector3(tangent_xz.x, 0.0, tangent_xz.y)).normalized()
-		var left_world: Vector3 = Vector3(point.x + side_xz.x * half_width, point.y, point.z + side_xz.y * half_width)
-		var right_world: Vector3 = Vector3(point.x - side_xz.x * half_width, point.y, point.z - side_xz.y * half_width)
+		var left_xz: Vector2 = Vector2(point.x + side_xz.x * half_width, point.z + side_xz.y * half_width)
+		var right_xz: Vector2 = Vector2(point.x - side_xz.x * half_width, point.z - side_xz.y * half_width)
+		var left_world: Vector3 = Vector3(left_xz.x, _zion_river_surface_y(left_xz, terrain_def, horizontal_offset), left_xz.y)
+		var right_world: Vector3 = Vector3(right_xz.x, _zion_river_surface_y(right_xz, terrain_def, horizontal_offset), right_xz.y)
 		var left_local: Vector3 = inverse_basis * (left_world - transform.origin)
 		var right_local: Vector3 = inverse_basis * (right_world - transform.origin)
 		vertices.append(left_local)
@@ -129,6 +135,19 @@ static func _add_water_ribbon(parent: Node3D, node_name: String, world_points: A
 	instance.set_meta("water_visual_shape", "thalweg_ribbon")
 	parent.add_child(instance)
 	return instance
+
+
+static func _zion_river_surface_points(river_points_xz: Array[Vector2], terrain_def: Resource, horizontal_offset: Vector2) -> Array[Vector3]:
+	var world_points: Array[Vector3] = []
+	for point_xz in river_points_xz:
+		var surface_y: float = _zion_river_surface_y(point_xz, terrain_def, horizontal_offset)
+		world_points.append(Vector3(point_xz.x, surface_y, point_xz.y))
+	return world_points
+
+
+static func _zion_river_surface_y(world_xz: Vector2, terrain_def: Resource, horizontal_offset: Vector2) -> float:
+	var bed_y: float = TerrainBuilderScript.heightmap_height_at_world_xz(terrain_def, world_xz, horizontal_offset)
+	return bed_y + ZION_RIVER_SURFACE_RISE_M
 
 
 static func _water_ribbon_transform(world_points: Array[Vector3]) -> Transform3D:

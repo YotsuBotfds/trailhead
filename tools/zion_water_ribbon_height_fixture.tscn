@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://tools/zion_water_ribbon_height_fixture.gd" id="1_fixture"]
+
+[node name="ZionWaterRibbonHeightFixture" type="Node"]
+script = ExtResource("1_fixture")
