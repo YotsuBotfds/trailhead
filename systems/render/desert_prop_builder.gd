@@ -6,12 +6,22 @@ extends RefCounted
 # hero asset; the remaining props keep their articulated procedural ArrayMeshes.
 const TrailSignScene: PackedScene = preload("res://assets/models/props/trail_sign.glb")
 const MileMarkerScene: PackedScene = preload("res://assets/models/props/mile_marker.glb")
+const PicnicTableScene: PackedScene = preload("res://assets/models/props/picnic_table.glb")
+const ParkBenchScene: PackedScene = preload("res://assets/models/props/park_bench.glb")
+const FireRingScene: PackedScene = preload("res://assets/models/props/fire_ring.glb")
 
 # RC-scale fit: trail_sign.glb authors at 1.00 m tall / 0.90 m wide, mile_marker.glb at
 # 0.705 m tall (measured headlessly). Scales keep each instance inside the inspector's
 # MAX_PROP_HEIGHT (0.75) / MAX_PROP_WIDTH (0.90) RC prop envelope.
 const TRAILHEAD_SIGN_SCALE: float = 0.65
 const MARKER_POST_SCALE: float = 0.85
+# The three hero GLBs (picnic_table / park_bench / fire_ring) are bigger trailside
+# furniture than the scatter envelope; they are placed by hand as static dressing in
+# CedarHollowHost._setup_demo_props, not run through the scatter inspector, so they
+# keep a near-identity scale to read at believable real-world size.
+const PICNIC_TABLE_SCALE: float = 1.0
+const PARK_BENCH_SCALE: float = 1.0
+const FIRE_RING_SCALE: float = 1.0
 const SIGN_YAW_DEG: float = 18.0
 
 const PROP_TRAILHEAD_SIGN: StringName = &"trailhead_sign"
@@ -19,12 +29,18 @@ const PROP_ROCK_CAIRN: StringName = &"rock_cairn"
 const PROP_BLEACHED_DEAD_LOG: StringName = &"bleached_dead_log"
 const PROP_MARKER_POST: StringName = &"marker_post"
 const PROP_DESERT_SHRUB: StringName = &"desert_shrub"
+const PROP_PICNIC_TABLE: StringName = &"picnic_table"
+const PROP_PARK_BENCH: StringName = &"park_bench"
+const PROP_FIRE_RING: StringName = &"fire_ring"
 const PROP_IDS: Array[StringName] = [
 	PROP_TRAILHEAD_SIGN,
 	PROP_ROCK_CAIRN,
 	PROP_BLEACHED_DEAD_LOG,
 	PROP_MARKER_POST,
-	PROP_DESERT_SHRUB
+	PROP_DESERT_SHRUB,
+	PROP_PICNIC_TABLE,
+	PROP_PARK_BENCH,
+	PROP_FIRE_RING
 ]
 
 static func build_prop(prop_id: StringName, seed: int = 0) -> Node3D:
@@ -38,6 +54,12 @@ static func build_prop(prop_id: StringName, seed: int = 0) -> Node3D:
 		return build_marker_post(seed)
 	if prop_id == PROP_DESERT_SHRUB:
 		return build_desert_shrub(seed)
+	if prop_id == PROP_PICNIC_TABLE:
+		return build_picnic_table(seed)
+	if prop_id == PROP_PARK_BENCH:
+		return build_park_bench(seed)
+	if prop_id == PROP_FIRE_RING:
+		return build_fire_ring(seed)
 	push_error("DesertPropBuilder unknown prop id: " + String(prop_id))
 	return Node3D.new()
 
@@ -98,6 +120,33 @@ static func build_marker_post(seed: int = 0) -> Node3D:
 	root.name = "marker_post"
 	var yaw: float = (_unit(seed, 6) - 0.5) * SIGN_YAW_DEG * 2.0
 	_instance_glb(root, MileMarkerScene, "marker", Vector3.ZERO, Vector3(0.0, yaw, 0.0), Vector3.ONE * MARKER_POST_SCALE)
+	_snap_base_to_ground(root)
+	return root
+
+
+# Hero trail-furniture GLBs. No inner yaw jitter: CedarHollowHost hand-picks each
+# instance's facing at placement time, so the GLB is instanced straight and the base
+# is snapped to y=0 just like the scatter props.
+static func build_picnic_table(_seed: int = 0) -> Node3D:
+	var root: Node3D = Node3D.new()
+	root.name = "picnic_table"
+	_instance_glb(root, PicnicTableScene, "table", Vector3.ZERO, Vector3.ZERO, Vector3.ONE * PICNIC_TABLE_SCALE)
+	_snap_base_to_ground(root)
+	return root
+
+
+static func build_park_bench(_seed: int = 0) -> Node3D:
+	var root: Node3D = Node3D.new()
+	root.name = "park_bench"
+	_instance_glb(root, ParkBenchScene, "bench", Vector3.ZERO, Vector3.ZERO, Vector3.ONE * PARK_BENCH_SCALE)
+	_snap_base_to_ground(root)
+	return root
+
+
+static func build_fire_ring(_seed: int = 0) -> Node3D:
+	var root: Node3D = Node3D.new()
+	root.name = "fire_ring"
+	_instance_glb(root, FireRingScene, "ring", Vector3.ZERO, Vector3.ZERO, Vector3.ONE * FIRE_RING_SCALE)
 	_snap_base_to_ground(root)
 	return root
 

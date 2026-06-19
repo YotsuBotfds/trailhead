@@ -31,6 +31,8 @@ const TerrainTrackVisualPainterScript: GDScript = preload("res://systems/render/
 const FrequencyInputPanelScene: PackedScene = preload("res://ui/frequency_input_panel.tscn")
 const GrasshopperLiveryScript: GDScript = preload("res://systems/render/grasshopper_livery.gd")
 const SurfaceMapScript: GDScript = preload("res://systems/world/surface_map.gd")
+const TerrainBuilderScript: GDScript = preload("res://systems/world/terrain_builder.gd")
+const DesertPropBuilderScript: GDScript = preload("res://systems/render/desert_prop_builder.gd")
 const GrassShader: Shader = preload("res://systems/render/grass_billboard.gdshader")
 const CAMERA_MODE_CHASE: int = 0
 const CAMERA_MODE_ORBIT: int = 1
@@ -48,6 +50,8 @@ const ZION_NIGHT_FOG_SKY_AFFECT: float = 0.18
 const ZION_SHADOW_ATLAS_SIZE: int = 8192
 const ZION_REGION_ID: String = "cedar_hollow_zion"
 const ZION_SPAWN_ID: StringName = &"demo_canyon_junction"
+const DEMO_PROPS_ROOT_NAME: StringName = &"DemoProps"
+const DEMO_PROP_GROUND_Y_OFFSET: float = 0.02
 const WORLD_REGION_ID_META: StringName = &"trailhead_world_region_id"
 const GAMEPAD_DEVICE_ANY: int = -1
 const TRACK_APPLY_CELLS_PER_FRAME: int = 1
@@ -137,6 +141,7 @@ func _ready() -> void:
 	_ensure_default_input_map()
 	_setup_surface_map()
 	_setup_world()
+	_setup_demo_props()
 	_spawn_vehicle()
 	_report_render_subsystem_health()
 	_setup_audio()
@@ -339,6 +344,43 @@ func _setup_terrain_tracks(terrain_root: Node3D) -> void:
 	var track_bounds_max: Vector2 = _terrain_track_painter.call("render_bounds_max")
 	_remember_track_texture_state(track_texture, track_bounds_min, track_bounds_max)
 	TerrainVisualBuilderScript.apply_track_texture(terrain_root, track_texture, track_bounds_min, track_bounds_max)
+
+
+func _setup_demo_props() -> void:
+	# Static, render-only hero-prop dressing (Q67): a small hand-placed cluster of real
+	# prop GLBs near the demo spawn and along the drivable corridor toward the Virgin
+	# River confluence, so the streamed Zion world reads as an inhabited trail rather
+	# than empty desert. Deterministic + cheap (no streaming, no collision); built once
+	# here. Y is sampled from the same heightfield the water visual uses, so each prop
+	# sits ON the ground instead of floating or buried. DemoProps is intentionally NOT a
+	# strip-only root name (see zion_playable_inspector STRIP_ONLY_ROOTS) and carries no
+	# CollisionObject3D/CollisionShape3D, so the playable inspector stays green.
+	if _world == null:
+		return
+	var root: Node3D = Node3D.new()
+	root.name = String(DEMO_PROPS_ROOT_NAME)
+	_world.add_child(root)
+	# Trailhead rest-stop cluster at demo_canyon_junction (spawn ~1550,1550).
+	_place_demo_prop(root, DesertPropBuilderScript.PROP_TRAILHEAD_SIGN, 1543.0, 1533.0, 210.0, 11)
+	_place_demo_prop(root, DesertPropBuilderScript.PROP_PICNIC_TABLE, 1527.0, 1546.0, 25.0, 0)
+	_place_demo_prop(root, DesertPropBuilderScript.PROP_FIRE_RING, 1514.0, 1528.0, 0.0, 0)
+	# Scenic corridor toward the river thalweg (east fork ~1330-1500, 1400-1550).
+	_place_demo_prop(root, DesertPropBuilderScript.PROP_PARK_BENCH, 1498.0, 1570.0, 250.0, 0)
+	_place_demo_prop(root, DesertPropBuilderScript.PROP_MARKER_POST, 1458.0, 1508.0, 90.0, 7)
+	_place_demo_prop(root, DesertPropBuilderScript.PROP_TRAILHEAD_SIGN, 1408.0, 1458.0, 275.0, 23)
+	_place_demo_prop(root, DesertPropBuilderScript.PROP_PARK_BENCH, 1372.0, 1430.0, 35.0, 0)
+	_place_demo_prop(root, DesertPropBuilderScript.PROP_FIRE_RING, 1338.0, 1398.0, 175.0, 0)
+
+
+func _place_demo_prop(parent: Node3D, prop_id: StringName, world_x: float, world_z: float, yaw_degrees: float, seed: int) -> void:
+	var ground_y: float = TerrainBuilderScript.heightmap_height_at_world_xz(
+			TerrainBuilderScript.cedar_hollow_10m_terrain_def(),
+			Vector2(world_x, world_z),
+			TerrainBuilderScript.cedar_hollow_10m_horizontal_offset())
+	var prop: Node3D = DesertPropBuilderScript.build_prop(prop_id, seed)
+	prop.rotation_degrees = Vector3(0.0, yaw_degrees, 0.0)
+	prop.position = Vector3(world_x, ground_y + DEMO_PROP_GROUND_Y_OFFSET, world_z)
+	parent.add_child(prop)
 
 
 func _spawn_vehicle() -> void:
