@@ -1,5 +1,5 @@
 shader_type spatial;
-render_mode cull_disabled, diffuse_lambert, specular_schlick_ggx;
+render_mode cull_disabled, depth_prepass_alpha, diffuse_lambert, specular_schlick_ggx;
 uniform vec4 blade_base_color : source_color = vec4(0.07, 0.18, 0.055, 1.0);
 uniform vec4 blade_tip_color : source_color = vec4(0.48, 0.66, 0.23, 1.0);
 uniform float blade_height_reference = 0.42;
@@ -11,8 +11,25 @@ uniform float backlight_energy = 0.32;
 uniform vec3 vehicle_world_pos = vec3(0.0, 0.0, 0.0);
 uniform float crush_radius = 1.2;
 uniform float crush_strength = 0.75;
+uniform float blade_half_width = 0.055;
+uniform float blade_edge_softness = 0.025;
+uniform float blade_alpha_scissor = 0.4;
 varying float blade_height;
 varying float tip_mix_shift;
+
+// Single vertical grass blade contribution for the procedural cutout mask.
+// `center` is the blade's UV.x position, `tip` its max height (0 base, 1 card top).
+// `h` is the fragment's height (1.0 - UV.y, so 0 at the card base, 1 at the top).
+// The blade is a soft vertical strip that anchors softly at the base, tapers to a
+// point at `tip`, and is zero above it, so clusters of these read as discrete blades.
+float blade_contribution(float center, float tip, float h, float uvx, float base_half, float edge_soft) {
+	float within = smoothstep(0.0, 0.05, h) * smoothstep(tip, max(tip - 0.15, 0.0), h);
+	float taper = clamp(h / max(tip, 0.001), 0.0, 1.0);
+	float hw = base_half * (1.0 - taper);
+	float d = abs(uvx - center);
+	return smoothstep(hw + edge_soft, hw, d) * within;
+}
+
 void vertex() {
 	blade_height = smoothstep(0.0, blade_height_reference, VERTEX.y);
 	tip_mix_shift = INSTANCE_CUSTOM.w;
@@ -42,4 +59,17 @@ void fragment() {
 	ROUGHNESS = 0.86;
 	SPECULAR = 0.16;
 	BACKLIGHT = backlight_color.rgb * backlight_energy * (0.35 + blade_height * 0.65) * COLOR.rgb;
+	// Procedural grass-blade cutout: turn the solid cross-quad into a cluster of a few
+	// tapering vertical blades. `h` is 0 at the card base and 1 at the top (UV.y is
+	// inverted relative to mesh height). ALPHA + ALPHA_SCISSOR_THRESHOLD keep the card
+	// in the opaque pass (depth_prepass_alpha) — no transparency sort, deterministic.
+	float h = 1.0 - UV.y;
+	float edge_fade = smoothstep(0.0, 0.10, UV.x) * smoothstep(1.0, 0.90, UV.x);
+	float mask = 0.0;
+	mask = max(mask, blade_contribution(0.22, 0.92, h, UV.x, blade_half_width, blade_edge_softness));
+	mask = max(mask, blade_contribution(0.40, 1.00, h, UV.x, blade_half_width, blade_edge_softness));
+	mask = max(mask, blade_contribution(0.60, 0.96, h, UV.x, blade_half_width, blade_edge_softness));
+	mask = max(mask, blade_contribution(0.78, 0.88, h, UV.x, blade_half_width, blade_edge_softness));
+	ALPHA = mask * edge_fade;
+	ALPHA_SCISSOR_THRESHOLD = blade_alpha_scissor;
 }
