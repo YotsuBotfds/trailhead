@@ -27,6 +27,7 @@ func _inspect() -> void:
 		return
 
 	_streamer.call("configure_region", REGION_ID)
+	_streamer.call("set_worker_count_for_tests", 0)
 	_require_cell_count("configured empty", 0)
 	_require_cells("configured active cells", [])
 	_require_detail_root()
@@ -77,7 +78,8 @@ func _inspect() -> void:
 	_require_cell_count("second activation", 2)
 	_require_foliage_cell_count("second foliage activation", 2)
 	_require_cells("second activation cells", [FIRST_CELL, SECOND_CELL])
-	_require_visual_tile(SECOND_CELL)
+	var second_tile: MeshInstance3D = _require_visual_tile(SECOND_CELL)
+	_require_surface_index_material_reused_or_fallback(first_surface_index_material, second_tile)
 	_require_foliage_tile(SECOND_CELL)
 
 	EventBus.world_tile_evicted.emit(FIRST_CELL)
@@ -109,7 +111,7 @@ func _inspect() -> void:
 	var rebuilt_tile: MeshInstance3D = _require_visual_tile(FIRST_CELL)
 	_require_rebuilt_tile(first_surface_count, first_vertex_count, first_index_count, first_bounds, rebuilt_tile)
 	_require_cached_materials_reused(first_materials_by_name, rebuilt_tile)
-	_require_cached_surface_index_material_reused(first_surface_index_material, rebuilt_tile)
+	_require_surface_index_material_reused_or_fallback(first_surface_index_material, rebuilt_tile)
 
 	EventBus.world_tile_evicted.emit(FIRST_CELL)
 	EventBus.world_tile_unprefetched.emit(FIRST_CELL)
@@ -304,8 +306,8 @@ func _require_visual_tile(cell: Vector2i) -> MeshInstance3D:
 				_errors.append("streamed visual cell material missing surface ID texture: " + String(mesh_instance.name))
 			var expected_control_origin: Vector2 = Vector2(float(cell.x) * GameConfig.STREAM_TILE_SIZE_M, float(cell.y) * GameConfig.STREAM_TILE_SIZE_M)
 			var expected_control_size: Vector2 = Vector2(GameConfig.STREAM_TILE_SIZE_M, GameConfig.STREAM_TILE_SIZE_M)
-			_require_shader_vector2(material, TerrainVisualBuilderScript.CONTROL_ORIGIN_XZ_UNIFORM, expected_control_origin, "streamed visual cell material", String(mesh_instance.name))
-			_require_shader_vector2(material, TerrainVisualBuilderScript.CONTROL_SIZE_XZ_UNIFORM, expected_control_size, "streamed visual cell material", String(mesh_instance.name))
+			_require_instance_shader_vector2(mesh_instance, TerrainVisualBuilderScript.CONTROL_ORIGIN_XZ_UNIFORM, expected_control_origin, "streamed visual cell instance")
+			_require_instance_shader_vector2(mesh_instance, TerrainVisualBuilderScript.CONTROL_SIZE_XZ_UNIFORM, expected_control_size, "streamed visual cell instance")
 			_require_shader_color(material, TerrainVisualBuilderScript.ZION_SANDSTONE_COLOR_UNIFORM, "streamed visual cell material", String(mesh_instance.name))
 			_require_shader_color(material, TerrainVisualBuilderScript.ZION_SAND_COLOR_UNIFORM, "streamed visual cell material", String(mesh_instance.name))
 			_require_shader_float(material, TerrainVisualBuilderScript.ZION_STRATA_STRENGTH_UNIFORM, "streamed visual cell material", String(mesh_instance.name))
@@ -405,6 +407,16 @@ func _require_shader_vector2(material: ShaderMaterial, parameter_name: StringNam
 		_errors.append(label + " " + node_name + " " + String(parameter_name) + " expected " + str(expected) + ", got " + str(observed))
 
 
+func _require_instance_shader_vector2(mesh_instance: MeshInstance3D, parameter_name: StringName, expected: Vector2, label: String) -> void:
+	var value: Variant = mesh_instance.get_instance_shader_parameter(parameter_name)
+	if not (value is Vector2):
+		_errors.append(label + " " + String(mesh_instance.name) + " missing Vector2 shader parameter " + String(parameter_name))
+		return
+	var observed: Vector2 = Vector2(value)
+	if observed.distance_to(expected) > FLOAT_EPSILON:
+		_errors.append(label + " " + String(mesh_instance.name) + " " + String(parameter_name) + " expected " + str(expected) + ", got " + str(observed))
+
+
 func _require_no_visual_cell(cell: Vector2i) -> void:
 	var has_cell: bool = bool(_streamer.call("has_visual_cell", cell))
 	if has_cell:
@@ -467,14 +479,14 @@ func _require_cached_materials_reused(expected_materials_by_name: Dictionary[Str
 			_errors.append("rebuilt tile material " + material_name + " should reuse the cached StandardMaterial3D")
 
 
-func _require_cached_surface_index_material_reused(expected_material: ShaderMaterial, tile: MeshInstance3D) -> void:
+func _require_surface_index_material_reused_or_fallback(expected_material: ShaderMaterial, tile: MeshInstance3D) -> void:
 	if expected_material == null or tile == null:
 		return
 	var observed_material: ShaderMaterial = _surface_index_material_for_tile(tile)
 	if observed_material == null:
-		_errors.append("rebuilt tile missing cached surface-index ShaderMaterial")
-	elif observed_material != expected_material:
-		_errors.append("rebuilt tile should reuse the cached surface-index ShaderMaterial")
+		_errors.append("tile missing surface-index ShaderMaterial")
+	elif observed_material != expected_material and observed_material.shader != expected_material.shader:
+		_errors.append("tile surface-index fallback material should reuse the cached Shader resource")
 
 
 func _surface_index_material_for_tile(tile: MeshInstance3D) -> ShaderMaterial:

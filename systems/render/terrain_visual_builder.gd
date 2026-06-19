@@ -353,6 +353,7 @@ static func region_visual_tile_from_data(parent: Node3D, visual_tile_data: Regio
 	instance.position = visual_tile_data.position
 	apply_region_mesh_materials(visual_tile_data.mesh, visual_tile_data.mesh_data)
 	instance.mesh = visual_tile_data.mesh
+	apply_region_mesh_instance_parameters(instance, visual_tile_data.mesh_data)
 	instance.visibility_range_end = visual_tile_data.visibility_range_end
 	instance.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
 	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -806,9 +807,20 @@ static func apply_region_mesh_materials(mesh: ArrayMesh, mesh_data: RegionMeshDa
 	for surface_index in range(surface_count):
 		var surface_data: MeshSurfaceData = mesh_data.surfaces[surface_index]
 		if surface_data.use_surface_index_material:
-			mesh.surface_set_material(surface_index, _surface_index_material(surface_data))
+			mesh.surface_set_material(surface_index, _surface_index_tile_material(surface_data))
 		else:
 			mesh.surface_set_material(surface_index, _material_for_surface_value(surface_data.surface_id_value))
+
+
+static func apply_region_mesh_instance_parameters(instance: MeshInstance3D, mesh_data: RegionMeshData) -> void:
+	if instance == null or mesh_data == null:
+		return
+	for surface_data in mesh_data.surfaces:
+		if not surface_data.use_surface_index_material:
+			continue
+		instance.set_instance_shader_parameter(CONTROL_ORIGIN_XZ_UNIFORM, surface_data.control_origin_xz)
+		instance.set_instance_shader_parameter(CONTROL_SIZE_XZ_UNIFORM, surface_data.control_size_xz)
+		return
 
 
 static func _append_tile_quads(tile_data: RegionTileData, sample_step: int, buckets: Dictionary[int, MeshBucket], local_origin_xz: Vector2) -> void:
@@ -987,9 +999,6 @@ static func _surface_index_material(surface_data: MeshSurfaceData) -> ShaderMate
 	var material: ShaderMaterial = ShaderMaterial.new()
 	material.resource_name = TERRAIN_INDEX_MATERIAL_NAME
 	material.shader = TerrainSurfaceIndexShader
-	var surface_texture: Texture2D = _load_texture(surface_data.surface_id_path)
-	if surface_texture != null:
-		material.set_shader_parameter(SURFACE_ID_TEXTURE_UNIFORM, surface_texture)
 	var albedo_array: Texture2DArray = _surface_index_albedo_array()
 	if albedo_array != null:
 		material.set_shader_parameter(ALBEDO_ARRAY_UNIFORM, albedo_array)
@@ -998,8 +1007,6 @@ static func _surface_index_material(surface_data: MeshSurfaceData) -> ShaderMate
 	if macro_albedo_texture != null:
 		material.set_shader_parameter(MACRO_ALBEDO_TEXTURE_UNIFORM, macro_albedo_texture)
 		material.set_shader_parameter(USE_MACRO_ALBEDO_UNIFORM, true)
-	material.set_shader_parameter(CONTROL_ORIGIN_XZ_UNIFORM, surface_data.control_origin_xz)
-	material.set_shader_parameter(CONTROL_SIZE_XZ_UNIFORM, surface_data.control_size_xz)
 	material.set_shader_parameter(TERRAIN_ROUGHNESS_UNIFORM, _average_default_surface_roughness())
 	material.set_shader_parameter(TERRAIN_SPECULAR_UNIFORM, 0.18)
 	_apply_zion_surface_index_tuning(material)
@@ -1008,14 +1015,18 @@ static func _surface_index_material(surface_data: MeshSurfaceData) -> ShaderMate
 	return material
 
 
+static func _surface_index_tile_material(surface_data: MeshSurfaceData) -> ShaderMaterial:
+	var shared_material: ShaderMaterial = _surface_index_material(surface_data)
+	var tile_material: ShaderMaterial = shared_material.duplicate(false) as ShaderMaterial
+	tile_material.resource_name = TERRAIN_INDEX_MATERIAL_NAME
+	var surface_texture: Texture2D = _load_texture(surface_data.surface_id_path)
+	if surface_texture != null:
+		tile_material.set_shader_parameter(SURFACE_ID_TEXTURE_UNIFORM, surface_texture)
+	return tile_material
+
+
 static func _surface_index_material_cache_key(surface_data: MeshSurfaceData) -> String:
-	return (
-		surface_data.surface_id_path
-		+ "|origin="
-		+ str(surface_data.control_origin_xz)
-		+ "|size="
-		+ str(surface_data.control_size_xz)
-	)
+	return TerrainSurfacePaletteResource.resource_path + "|" + SurfaceVisualCatalogResource.resource_path
 
 
 static func _surface_index_warmup_material() -> ShaderMaterial:
