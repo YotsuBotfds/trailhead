@@ -177,6 +177,24 @@ func _process(_delta: float) -> void:
 	_apply_terrain_tracks_to_streamed_tiles()
 
 
+func _unhandled_input(event: InputEvent) -> void:
+	# Render/window-only fullscreen toggle (F11, or \ as a fallback if macOS Mission
+	# Control grabs F11). Raw-key handling instead of an InputMap action; F is already
+	# bound to `photograph` (see Q66), so the toggle must NOT use F.
+	# DisplayServer is window-side only; this path is inert under the headless
+	# DisplayServer and never touches sim/physics/deterministic state.
+	var key_event: InputEventKey = event as InputEventKey
+	if key_event == null or not key_event.pressed or key_event.echo:
+		return
+	if key_event.keycode != KEY_F11 and key_event.keycode != KEY_BACKSLASH:
+		return
+	var mode: DisplayServer.WindowMode = DisplayServer.window_get_mode()
+	if mode == DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN:
+		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
+	else:
+		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN)
+
+
 func _ensure_default_input_map() -> void:
 	_ensure_action(&"throttle", [KEY_W, KEY_UP])
 	_ensure_action(&"brake", [KEY_S, KEY_DOWN])
