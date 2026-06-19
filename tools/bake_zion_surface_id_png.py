@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import argparse
+from collections import deque
 import hashlib
 import json
 import math
 import re
+import struct
 import sys
 import time
 import zlib
@@ -37,7 +39,19 @@ DOWNLOAD_ATTEMPTS = 3
 SURFACE_ID_ROCK = 2
 SURFACE_ID_LOOSE = 4
 SURFACE_ID_GRASS = 5
+SURFACE_ID_PAVED_ROAD = 6
 FALLBACK_SURFACE_ID = SURFACE_ID_LOOSE
+PAVED_ROAD_KEEP_COMPONENT_PIXELS = 2000
+_BFS_NEIGHBORS_8: tuple[tuple[int, int], ...] = (
+    (-1, -1),
+    (-1, 0),
+    (-1, 1),
+    (0, -1),
+    (0, 1),
+    (1, -1),
+    (1, 0),
+    (1, 1),
+)
 
 
 @dataclass(frozen=True)
@@ -81,14 +95,23 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--year", choices=("auto", "2024", "2021"), default="auto")
     parser.add_argument("--naip-interpolation", default="RSP_BilinearInterpolation")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--reclassify-only",
+        action="store_true",
+        help="Skip NLCD/NAIP/network work. Read the existing source PNG, apply the "
+        "paved_road reclassification pass in place, rewrite it, and refresh the "
+        "manifest. Deterministic offline path; no rasterio / network required.",
+    )
     return parser.parse_args()
 
 
 def main() -> int:
     try:
+        args = parse_args()
+        if args.reclassify_only:
+            return _run_reclassify_only()
         _assert_python_deps()
         config = _load_config()
-        args = parse_args()
         selected_year, catalog_by_year = _select_naip_year(args.year, config)
         output_dir = ROOT / "data/bake_inputs" / ("zion_naip_" + str(selected_year))
         if args.dry_run:
@@ -113,6 +136,36 @@ def main() -> int:
     print("manifest: " + str(manifest_path.relative_to(ROOT)))
     print("surface_id_counts: " + _format_counts(stats["surface_id_counts"]))
     print("ndvi_refined_barren_pixels: " + str(stats["ndvi_refined_barren_pixels"]))
+    return 0
+
+
+def _run_reclassify_only() -> int:
+    import numpy as np
+
+    if not SURFACE_ID_PNG_PATH.is_file():
+        raise RuntimeError("source surface-ID PNG is missing: " + str(SURFACE_ID_PNG_PATH))
+    width, height, samples = _read_l8_png(SURFACE_ID_PNG_PATH)
+    surface_ids = np.frombuffer(samples, dtype=np.uint8).reshape(height, width).copy()
+    before_counts = _counts(surface_ids)
+    surface_ids, reclassify_stats = _reclassify_overclassified_paved_road(surface_ids)
+    after_counts = _counts(surface_ids)
+    _write_png_l8(SURFACE_ID_PNG_PATH, surface_ids)
+    manifest_path = _refresh_surface_id_manifest(after_counts, before_counts, reclassify_stats)
+    print("ok: zion surface-ID PNG (reclassify-only)")
+    print("surface_id_png: " + str(SURFACE_ID_PNG_PATH.relative_to(ROOT)))
+    if manifest_path is not None:
+        print("manifest: " + str(manifest_path.relative_to(ROOT)))
+    print("surface_id_counts_before: " + _format_counts(before_counts))
+    print("surface_id_counts_after: " + _format_counts(after_counts))
+    print(
+        "paved_road_reclassified: "
+        + str(reclassify_stats["paved_road_pixels_reclassified"])
+        + " (kept "
+        + str(reclassify_stats["paved_road_pixels_after"])
+        + " across "
+        + str(reclassify_stats["paved_road_components_kept"])
+        + " components)"
+    )
     return 0
 
 
@@ -327,6 +380,7 @@ def _build_surface_id_array(naip_path: Path, config: SurfaceBakeConfig):
     vegetated = barren & (ndvi >= np.float32(0.15))
     refined[sparse] = SURFACE_ID_LOOSE
     refined[vegetated] = SURFACE_ID_GRASS
+    refined, reclassify_stats = _reclassify_overclassified_paved_road(refined)
     values, counts = np.unique(refined, return_counts=True)
     ndvi_values = ndvi[barren]
     stats = {
@@ -339,6 +393,7 @@ def _build_surface_id_array(naip_path: Path, config: SurfaceBakeConfig):
         "ndvi_min": float(np.min(ndvi_values)) if ndvi_values.size else None,
         "ndvi_max": float(np.max(ndvi_values)) if ndvi_values.size else None,
         "ndvi_mean": float(np.mean(ndvi_values, dtype=np.float64)) if ndvi_values.size else None,
+        "paved_road_reclassification": reclassify_stats,
     }
     return refined, stats
 
@@ -439,6 +494,303 @@ def _write_png_l8(path: Path, surface_ids) -> None:
     ]
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(b"\x89PNG\r\n\x1a\n" + b"".join(chunks))
+
+
+def _read_l8_png(path: Path) -> tuple[int, int, bytes]:
+    """Pure-Python L8 (8-bit grayscale) PNG reader. Returns (width, height, samples).
+
+    Used by the `--reclassify-only` offline path so the bake tool can refresh a
+    committed surface-ID PNG without rasterio or any network access.
+    """
+    data = path.read_bytes()
+    if len(data) < 24:
+        raise ValueError("surface-ID PNG is too small for a PNG header")
+    if data[:8] != b"\x89PNG\r\n\x1a\n":
+        raise ValueError("surface-ID PNG has invalid signature")
+    offset = 8
+    width = 0
+    height = 0
+    bit_depth = 0
+    color_type = 0
+    idat = bytearray()
+    saw_iend = False
+    while offset + 8 <= len(data):
+        chunk_length = struct.unpack_from(">I", data, offset)[0]
+        offset += 4
+        chunk_type = data[offset : offset + 4]
+        offset += 4
+        if offset + chunk_length + 4 > len(data):
+            raise ValueError("surface-ID PNG has a truncated chunk")
+        chunk_data = data[offset : offset + chunk_length]
+        offset += chunk_length
+        expected_crc = struct.unpack_from(">I", data, offset)[0]
+        offset += 4
+        actual_crc = zlib.crc32(chunk_type + chunk_data) & 0xFFFFFFFF
+        if actual_crc != expected_crc:
+            raise ValueError("surface-ID PNG has invalid CRC for chunk " + chunk_type.decode("latin1"))
+        if chunk_type == b"IHDR":
+            width, height, bit_depth, color_type, compression, filter_method, interlace = struct.unpack_from(">IIBBBBB", chunk_data, 0)
+            if compression != 0 or filter_method != 0 or interlace != 0:
+                raise ValueError("surface-ID PNG has unsupported header flags")
+        elif chunk_type == b"IDAT":
+            idat.extend(chunk_data)
+        elif chunk_type == b"IEND":
+            saw_iend = True
+            break
+    if not saw_iend:
+        raise ValueError("surface-ID PNG is missing IEND")
+    if width <= 0 or height <= 0:
+        raise ValueError("surface-ID PNG has invalid dimensions " + str(width) + "x" + str(height))
+    if bit_depth != 8:
+        raise ValueError("surface-ID PNG must use 8-bit channels, got bit depth " + str(bit_depth))
+    if color_type != 0:
+        raise ValueError("surface-ID PNG must be grayscale (color type 0), got " + str(color_type))
+    if not idat:
+        raise ValueError("surface-ID PNG is missing IDAT data")
+    raw = zlib.decompress(bytes(idat))
+    stride = width
+    expected_size = (stride + 1) * height
+    if len(raw) != expected_size:
+        raise ValueError("surface-ID PNG payload size " + str(len(raw)) + " != expected " + str(expected_size))
+    samples = bytearray(width * height)
+    previous = bytearray(stride)
+    raw_offset = 0
+    sample_offset = 0
+    for _row in range(height):
+        filter_type = raw[raw_offset]
+        raw_offset += 1
+        row = bytearray(raw[raw_offset : raw_offset + stride])
+        raw_offset += stride
+        _unfilter_l8_row(row, previous, filter_type)
+        samples[sample_offset : sample_offset + stride] = row
+        sample_offset += stride
+        previous = row
+    return width, height, bytes(samples)
+
+
+def _unfilter_l8_row(row: bytearray, previous: bytearray, filter_type: int) -> None:
+    if filter_type == 0:
+        return
+    if filter_type == 1:
+        for index in range(len(row)):
+            left = row[index - 1] if index >= 1 else 0
+            row[index] = (row[index] + left) & 0xFF
+        return
+    if filter_type == 2:
+        for index in range(len(row)):
+            row[index] = (row[index] + previous[index]) & 0xFF
+        return
+    if filter_type == 3:
+        for index in range(len(row)):
+            left = row[index - 1] if index >= 1 else 0
+            up = previous[index]
+            row[index] = (row[index] + ((left + up) // 2)) & 0xFF
+        return
+    if filter_type == 4:
+        for index in range(len(row)):
+            left = row[index - 1] if index >= 1 else 0
+            up = previous[index]
+            up_left = previous[index - 1] if index >= 1 else 0
+            row[index] = (row[index] + _paeth(left, up, up_left)) & 0xFF
+        return
+    raise ValueError("surface-ID PNG has unsupported filter type " + str(filter_type))
+
+
+def _paeth(left: int, up: int, up_left: int) -> int:
+    estimate = left + up - up_left
+    left_distance = abs(estimate - left)
+    up_distance = abs(estimate - up)
+    up_left_distance = abs(estimate - up_left)
+    if left_distance <= up_distance and left_distance <= up_left_distance:
+        return left
+    if up_distance <= up_left_distance:
+        return up
+    return up_left
+
+
+def _reclassify_overclassified_paved_road(surface_ids) -> tuple[Any, dict[str, Any]]:
+    """Reclassify over-classified paved_road (id 6) pixels to the surrounding natural surface.
+
+    NLCD systematically tags large contiguous expanses of dry canyon floor as
+    "developed / open space", which the NLCD remap collapses to surface id 6
+    (paved_road). In the Cedar Hollow corridor these tags are spurious: there
+    is no real pavement covering most of the canyon floor. Real paved
+    infrastructure (parking pads, bridge decks, small pull-outs) is a handful
+    of small footprints. Rule:
+
+      * 8-connectivity component-label the (surface_ids == 6) mask.
+      * Reclassify every pixel in components with size >=
+        PAVED_ROAD_KEEP_COMPONENT_PIXELS back to natural surface.
+      * Keep every pixel in components smaller than that threshold as
+        paved_road (real infrastructure).
+
+    Reclassified pixels are filled by multi-source BFS from their nearest
+    stable neighbor (8-conn, raster-order seed enqueue, fixed neighbor order)
+    so each pixel takes the surface id of whichever natural pixel reaches it
+    first. This produces a deterministic Voronoi-like fill that preserves the
+    natural-desert variety (sand / slickrock / wash / gravel) instead of
+    collapsing to a single replacement id.
+
+    Determinism: no RNG, no Python str hash, no wall clock. Pure-Python +
+    numpy boolean ops. The rule depends only on the surface-id array, so the
+    `--reclassify-only` offline path produces byte-identical output to a full
+    NLCD+NAIP+NDVI re-bake that runs this same function in-line.
+    """
+    import numpy as np
+
+    height, width = surface_ids.shape
+    road_mask = surface_ids == SURFACE_ID_PAVED_ROAD
+    road_total = int(road_mask.sum())
+    if road_total == 0:
+        return surface_ids, {
+            "paved_road_pixels_before": 0,
+            "paved_road_pixels_after": 0,
+            "paved_road_components_before": 0,
+            "paved_road_components_kept": 0,
+            "paved_road_components_reclassified": 0,
+            "paved_road_pixels_reclassified": 0,
+            "paved_road_keep_component_pixels": PAVED_ROAD_KEEP_COMPONENT_PIXELS,
+            "paved_road_reclassify_targets": {},
+        }
+
+    labels = _label_8connected(road_mask)
+    num_components = int(labels.max())
+    component_sizes = np.bincount(labels.ravel())
+    reclassify_mask = np.zeros_like(road_mask)
+    kept_components = 0
+    reclassified_components = 0
+    for label_id in range(1, num_components + 1):
+        size = int(component_sizes[label_id])
+        if size >= PAVED_ROAD_KEEP_COMPONENT_PIXELS:
+            reclassify_mask |= labels == label_id
+            reclassified_components += 1
+        else:
+            kept_components += 1
+
+    reclassify_count = int(reclassify_mask.sum())
+    before_counts = _counts(surface_ids)
+    if reclassify_count == 0:
+        return surface_ids.copy(), {
+            "paved_road_pixels_before": road_total,
+            "paved_road_pixels_after": road_total,
+            "paved_road_components_before": num_components,
+            "paved_road_components_kept": num_components,
+            "paved_road_components_reclassified": 0,
+            "paved_road_pixels_reclassified": 0,
+            "paved_road_keep_component_pixels": PAVED_ROAD_KEEP_COMPONENT_PIXELS,
+            "paved_road_reclassify_targets": {},
+        }
+
+    out = surface_ids.copy()
+    pending = reclassify_mask.copy()
+    stable = ~pending
+    boundary_stable = np.zeros_like(stable)
+    for dy, dx in _BFS_NEIGHBORS_8:
+        shifted = np.zeros_like(pending)
+        src_y = slice(max(0, dy), height + min(0, dy))
+        src_x = slice(max(0, dx), width + min(0, dx))
+        dst_y = slice(max(0, -dy), height + min(0, -dy))
+        dst_x = slice(max(0, -dx), width + min(0, -dx))
+        shifted[dst_y, dst_x] = pending[src_y, src_x]
+        boundary_stable |= shifted & stable
+
+    queue: deque = deque()
+    for y, x in np.argwhere(boundary_stable).tolist():
+        queue.append((int(y), int(x), int(out[y, x])))
+
+    while queue:
+        y, x, sid = queue.popleft()
+        for dy, dx in _BFS_NEIGHBORS_8:
+            ny = y + dy
+            nx = x + dx
+            if 0 <= ny < height and 0 <= nx < width and pending[ny, nx]:
+                out[ny, nx] = sid
+                pending[ny, nx] = False
+                queue.append((ny, nx, sid))
+
+    if pending.any():
+        raise RuntimeError(
+            "paved_road reclassify left "
+            + str(int(pending.sum()))
+            + " pixels unassigned (input must be entirely enclosed by stable surface)"
+        )
+
+    after_counts = _counts(out)
+    targets: dict[str, int] = {}
+    for value in sorted(int(v) for v in set(out[reclassify_mask].tolist())):
+        targets[str(value)] = int(after_counts.get(str(value), 0)) - int(before_counts.get(str(value), 0))
+
+    stats = {
+        "paved_road_pixels_before": road_total,
+        "paved_road_pixels_after": int((out == SURFACE_ID_PAVED_ROAD).sum()),
+        "paved_road_components_before": num_components,
+        "paved_road_components_kept": kept_components,
+        "paved_road_components_reclassified": reclassified_components,
+        "paved_road_pixels_reclassified": reclassify_count,
+        "paved_road_keep_component_pixels": PAVED_ROAD_KEEP_COMPONENT_PIXELS,
+        "paved_road_reclassify_targets": targets,
+    }
+    return out, stats
+
+
+def _label_8connected(mask) -> Any:
+    """8-connectivity component labeling, pure Python + numpy. Deterministic;
+    labels are assigned in raster order of the first pixel encountered."""
+    import numpy as np
+
+    rows, cols = mask.shape
+    labels = np.zeros((rows, cols), dtype=np.int32)
+    next_label = 1
+    stack: list[tuple[int, int]] = []
+    mask_view = mask
+    for y in range(rows):
+        row = mask_view[y]
+        labels_row = labels[y]
+        for x in range(cols):
+            if row[x] and labels_row[x] == 0:
+                labels_row[x] = next_label
+                stack.append((y, x))
+                while stack:
+                    cy, cx = stack.pop()
+                    for dy in (-1, 0, 1):
+                        ny = cy + dy
+                        if ny < 0 or ny >= rows:
+                            continue
+                        for dx in (-1, 0, 1):
+                            if dy == 0 and dx == 0:
+                                continue
+                            nx = cx + dx
+                            if nx < 0 or nx >= cols:
+                                continue
+                            if mask_view[ny, nx] and labels[ny, nx] == 0:
+                                labels[ny, nx] = next_label
+                                stack.append((ny, nx))
+                next_label += 1
+    return labels
+
+
+def _refresh_surface_id_manifest(
+    after_counts: dict[str, int],
+    before_counts: dict[str, int],
+    reclassify_stats: dict[str, Any],
+) -> Path | None:
+    candidates = sorted((ROOT / "data/bake_inputs").glob("zion_naip_*/zion_naip_surface_id_manifest.json"))
+    if not candidates:
+        return None
+    manifest_path = candidates[0]
+    data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise RuntimeError("surface-ID manifest root must be an object: " + str(manifest_path))
+    data["surface_id_png_sha256"] = _sha256(SURFACE_ID_PNG_PATH)
+    stats = data.get("stats", {})
+    if not isinstance(stats, dict):
+        stats = {}
+    stats["surface_id_counts_before_paved_road_reclass"] = before_counts
+    stats["surface_id_counts"] = after_counts
+    stats["paved_road_reclassification"] = reclassify_stats
+    data["stats"] = stats
+    _write_json(manifest_path, data)
+    return manifest_path
 
 
 def _png_chunk(chunk_type: bytes, data: bytes) -> bytes:

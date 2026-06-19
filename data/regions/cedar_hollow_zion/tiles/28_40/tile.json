@@ -27,10 +27,9 @@
       100,
       100
     ],
-    "sha256": "1b745e8a5f0b35534fc5757ba5e1eb1240dfec5b7bc8b0b151bb9d4fe7a58d2e",
+    "sha256": "52473ed1e860b68548d250a2e28efe52ce6cbf1cf10d9f1b79c7af8ad3b5646a",
     "counts": {
-      "4": 9820,
-      "6": 180
+      "4": 10000
     }
   },
   "bake": {
