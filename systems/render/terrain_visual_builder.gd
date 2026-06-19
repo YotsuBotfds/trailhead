@@ -1476,6 +1476,11 @@ static func _build_foliage_species_multimesh(cell_data: FoliageCellData, species
 	multimesh.use_colors = true
 	multimesh.use_custom_data = true
 	multimesh.custom_aabb = cell_data.custom_aabb
+	# Set mesh BEFORE instance_count (matches the pipeline-warmup order). Assigning MultiMesh.mesh
+	# AFTER instance_count re-initializes (zeros) the buffer in Godot 4.x; doing it first means the
+	# worker-built buffer survives and the main-thread commit doesn't need to re-assign mesh/buffer.
+	# The foliage mesh cache is pre-warmed before workers start, so this lookup is a pure cache read.
+	multimesh.mesh = _region_foliage_mesh_for_lod_species(cell_data.lod_index, species_data.species_id)
 	multimesh.instance_count = species_data.transforms.size()
 	multimesh.buffer = species_data.packed_buffer
 	return multimesh
@@ -1528,7 +1533,6 @@ static func _add_foliage_species_cell_from_data(parent: Node3D, cell_data: Folia
 	var instance: MultiMeshInstance3D = MultiMeshInstance3D.new()
 	instance.name = cell_data.node_name + "_" + String(species_data.species_id)
 	instance.position = cell_data.position
-	var mesh: Mesh = _region_foliage_mesh_for_lod_species(cell_data.lod_index, species_data.species_id)
 	var material: Material = _region_foliage_material_for_lod_species(cell_data.lod_index, species_data.species_id)
 	instance.material_override = material
 	instance.extra_cull_margin = REGION_FOLIAGE_CULL_MARGIN
@@ -1544,11 +1548,8 @@ static func _add_foliage_species_cell_from_data(parent: Node3D, cell_data: Folia
 		multimesh = _build_foliage_species_multimesh(cell_data, species_data)
 	if multimesh == null:
 		return
-	multimesh.mesh = mesh
-	# CRITICAL: assigning MultiMesh.mesh when instance_count>0 re-initializes (zeros) the buffer in
-	# Godot 4.x — without re-applying it here, every instance snaps to world-origin (below terrain) and
-	# the foliage/boulders render invisibly. Re-apply the packed buffer AFTER the mesh assignment.
-	multimesh.buffer = species_data.packed_buffer
+	# mesh + buffer are already set by _build_foliage_species_multimesh (mesh BEFORE instance_count,
+	# so the buffer is not re-zeroed). No main-thread mesh/buffer re-assignment needed.
 	instance.multimesh = multimesh
 	parent.add_child(instance)
 
