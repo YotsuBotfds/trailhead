@@ -2,22 +2,27 @@ extends Node3D
 
 const CottonwoodScene: PackedScene = preload("res://assets/models/foliage/cottonwood.glb")
 const WillowScene: PackedScene = preload("res://assets/models/foliage/willow.glb")
+const JuniperScene: PackedScene = preload("res://assets/models/foliage/juniper.glb")
 
 const WINDOW_SIZE: Vector2i = Vector2i(1280, 720)
 const OUT_DIR: String = "tests/out/foliage_closeup"
 const CHASE_CAPTURE_NAME: String = "foliage_closeup_chase.png"
 const ORBIT_CAPTURE_NAME: String = "foliage_closeup_orbit.png"
+const JUNIPER_CAPTURE_NAME: String = "foliage_closeup_juniper.png"
 const RENDER_WAIT_FRAMES: int = 8
 const SHUTDOWN_FRAMES: int = 3
 const MIN_TREE_SURFACE_COUNT: int = 2
 const MIN_COTTONWOOD_HEIGHT_M: float = 8.0
 const MIN_WILLOW_HEIGHT_M: float = 4.0
-const MIN_CANOPY_WIDTH_M: float = 3.0
+const MIN_JUNIPER_HEIGHT_M: float = 2.5
+const MIN_TREE_CANOPY_WIDTH_M: float = 3.0
+const MIN_JUNIPER_CANOPY_WIDTH_M: float = 1.8
 
 var _errors: PackedStringArray = PackedStringArray()
 var _camera: Camera3D = null
 var _cottonwood: Node3D = null
 var _willow: Node3D = null
+var _juniper: Node3D = null
 
 
 func _ready() -> void:
@@ -70,7 +75,7 @@ func _add_trees() -> void:
 		_cottonwood.name = "CottonwoodCloseup"
 		_cottonwood.position = Vector3(-1.4, 0.0, 0.0)
 		add_child(_cottonwood)
-		_validate_tree_mesh(_cottonwood, "cottonwood", MIN_COTTONWOOD_HEIGHT_M)
+		_validate_tree_mesh(_cottonwood, "cottonwood", MIN_COTTONWOOD_HEIGHT_M, MIN_TREE_CANOPY_WIDTH_M)
 	_willow = WillowScene.instantiate() as Node3D
 	if _willow == null:
 		_errors.append("failed to instantiate willow.glb")
@@ -78,10 +83,18 @@ func _add_trees() -> void:
 		_willow.name = "WillowCloseup"
 		_willow.position = Vector3(3.4, 0.0, 1.0)
 		add_child(_willow)
-		_validate_tree_mesh(_willow, "willow", MIN_WILLOW_HEIGHT_M)
+		_validate_tree_mesh(_willow, "willow", MIN_WILLOW_HEIGHT_M, MIN_TREE_CANOPY_WIDTH_M)
+	_juniper = JuniperScene.instantiate() as Node3D
+	if _juniper == null:
+		_errors.append("failed to instantiate juniper.glb")
+	else:
+		_juniper.name = "JuniperCloseup"
+		_juniper.position = Vector3(0.6, 0.0, -2.8)
+		add_child(_juniper)
+		_validate_tree_mesh(_juniper, "juniper", MIN_JUNIPER_HEIGHT_M, MIN_JUNIPER_CANOPY_WIDTH_M)
 
 
-func _validate_tree_mesh(tree: Node3D, label: String, min_height_m: float) -> void:
+func _validate_tree_mesh(tree: Node3D, label: String, min_height_m: float, min_canopy_width_m: float) -> void:
 	var mesh_instance: MeshInstance3D = _find_first_mesh_instance(tree)
 	if mesh_instance == null or mesh_instance.mesh == null:
 		_errors.append(label + " has no MeshInstance3D mesh")
@@ -93,7 +106,7 @@ func _validate_tree_mesh(tree: Node3D, label: String, min_height_m: float) -> vo
 	if bounds.size.y < min_height_m:
 		_errors.append(label + " height too small: " + str(bounds.size.y))
 	var canopy_width: float = maxf(bounds.size.x, bounds.size.z)
-	if canopy_width < MIN_CANOPY_WIDTH_M:
+	if canopy_width < min_canopy_width_m:
 		_errors.append(label + " canopy width too small: " + str(canopy_width))
 
 
@@ -129,7 +142,20 @@ func _run() -> void:
 	_set_camera(Vector3(8.2, 3.2, 4.8), Vector3(0.4, 4.8, 0.1))
 	await _wait_for_render()
 	await _capture(ORBIT_CAPTURE_NAME)
+	_set_juniper_only_view(true)
+	_set_camera(Vector3(4.0, 1.55, 1.2), Vector3(0.6, 1.45, -2.8))
+	await _wait_for_render()
+	await _capture(JUNIPER_CAPTURE_NAME)
 	await _finish()
+
+
+func _set_juniper_only_view(enabled: bool) -> void:
+	if _cottonwood != null:
+		_cottonwood.visible = not enabled
+	if _willow != null:
+		_willow.visible = not enabled
+	if _juniper != null:
+		_juniper.visible = true
 
 
 func _set_camera(position: Vector3, target: Vector3) -> void:

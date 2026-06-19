@@ -15,6 +15,7 @@ GENERATOR_NAME = "Trailhead gen_foliage_glb.py"
 
 COTTONWOOD_OUT = OUT_DIR / "cottonwood.glb"
 WILLOW_OUT = OUT_DIR / "willow.glb"
+JUNIPER_OUT = OUT_DIR / "juniper.glb"
 
 
 def clear_scene() -> None:
@@ -126,6 +127,24 @@ def add_leaf_cluster(
     obj.rotation_euler = rotation
     obj.data.materials.append(material)
     shade_smooth(obj)
+    apply_object_transform(obj)
+    return obj
+
+
+def add_low_poly_leaf_cluster(
+        name: str,
+        center: Vector,
+        scale: Vector,
+        rotation: tuple[float, float, float],
+        subdivisions: int,
+        material: bpy.types.Material) -> bpy.types.Object:
+    bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=subdivisions, radius=1.0, location=center)
+    obj = bpy.context.object
+    obj.name = name
+    obj.data.name = name + "_mesh"
+    obj.scale = scale
+    obj.rotation_euler = rotation
+    obj.data.materials.append(material)
     apply_object_transform(obj)
     return obj
 
@@ -313,6 +332,123 @@ def build_willow() -> bpy.types.Object:
     return join_tree_objects("willow", objects, bark, leaves)
 
 
+def juniper_trunk_center_at(height: float) -> Vector:
+    t = min(max(height / 1.52, 0.0), 1.0)
+    return Vector((
+        0.10 * math.sin(t * math.pi * 1.65) + 0.13 * t,
+        -0.08 * math.sin(t * math.pi * 0.95),
+        height,
+    ))
+
+
+def add_juniper_branches(objects: list[bpy.types.Object], bark: bpy.types.Material) -> list[Vector]:
+    branch_specs = [
+        (0.45, 22.0, 0.88, 0.38, 0.105),
+        (0.55, 142.0, 0.76, 0.45, 0.095),
+        (0.70, 246.0, 0.86, 0.36, 0.088),
+        (0.92, 76.0, 1.06, 0.66, 0.080),
+        (1.05, 188.0, 0.96, 0.58, 0.074),
+        (1.22, 314.0, 0.82, 0.70, 0.066),
+        (1.38, 34.0, 0.56, 0.94, 0.058),
+    ]
+    branch_ends: list[Vector] = []
+    for index, spec in enumerate(branch_specs):
+        height, angle_degrees, length, rise, radius = spec
+        start = juniper_trunk_center_at(height)
+        direction = radial(angle_degrees)
+        bend = start + radial(angle_degrees + 18.0 * math.sin(float(index) * 1.3)) * (length * 0.48) + Vector((0.0, 0.0, rise * 0.40))
+        end = start + direction * length + Vector((0.0, 0.0, rise))
+        objects.append(add_cone_between("juniper_branch_lower_" + str(index), start, bend, radius, radius * 0.66, 7, bark))
+        objects.append(add_cone_between("juniper_branch_upper_" + str(index), bend, end, radius * 0.66, radius * 0.18, 6, bark))
+        branch_ends.append(end)
+        if index % 2 == 0:
+            fork_direction = radial(angle_degrees + 42.0 + 8.0 * float(index % 3))
+            fork_end = bend + fork_direction * (length * 0.42) + Vector((0.0, 0.0, rise * 0.32))
+            objects.append(add_cone_between(
+                "juniper_branch_fork_" + str(index),
+                bend,
+                fork_end,
+                radius * 0.40,
+                radius * 0.12,
+                5,
+                bark,
+            ))
+            branch_ends.append(fork_end)
+    return branch_ends
+
+
+def add_juniper_canopy(objects: list[bpy.types.Object], leaves: bpy.types.Material, branch_ends: list[Vector]) -> None:
+    ring_specs = [
+        (1.12, 0.92, 6, 0.48, 0.36),
+        (1.58, 1.24, 8, 0.58, 0.44),
+        (2.02, 1.02, 7, 0.56, 0.44),
+        (2.48, 0.62, 4, 0.48, 0.40),
+        (2.92, 0.18, 1, 0.40, 0.34),
+    ]
+    cluster_index = 0
+    for ring_index, spec in enumerate(ring_specs):
+        height, radius, count, horizontal_scale, vertical_scale = spec
+        for i in range(count):
+            angle = math.tau * (float(i) / float(count)) + float(ring_index) * 0.41
+            wobble = 0.78 + 0.30 * float((i * 5 + ring_index * 7) % 11) / 10.0
+            center = Vector((
+                math.cos(angle) * radius * wobble + 0.10 * math.sin(angle * 2.7),
+                math.sin(angle) * radius * (0.84 + 0.12 * math.cos(angle * 1.9)),
+                height + 0.13 * math.sin(angle * 2.1 + float(ring_index)),
+            ))
+            scale = Vector((
+                horizontal_scale * (0.86 + 0.08 * float((i + ring_index) % 4)),
+                horizontal_scale * (0.74 + 0.07 * float((i * 3 + ring_index) % 5)),
+                vertical_scale * (0.90 + 0.06 * float((i + 2) % 4)),
+            ))
+            rotation = (
+                0.10 * float((i % 3) - 1),
+                0.07 * float(((i + ring_index) % 3) - 1),
+                angle * 0.22,
+            )
+            objects.append(add_low_poly_leaf_cluster("juniper_leaf_cluster_" + str(cluster_index), center, scale, rotation, 2, leaves))
+            cluster_index += 1
+    for branch_index, end in enumerate(branch_ends):
+        if branch_index % 2 == 1:
+            continue
+        scale = Vector((0.36 + 0.04 * float(branch_index % 3), 0.30, 0.28 + 0.04 * float(branch_index % 2)))
+        objects.append(add_low_poly_leaf_cluster(
+            "juniper_terminal_cluster_" + str(branch_index),
+            end + Vector((0.0, 0.0, 0.05)),
+            scale,
+            (0.06 * float((branch_index % 5) - 2), 0.0, float(branch_index) * 0.19),
+            1,
+            leaves,
+        ))
+
+
+def build_juniper() -> bpy.types.Object:
+    clear_scene()
+    bark = make_material("juniper_shaggy_bark", (0.32, 0.26, 0.18, 1.0), 0.96, False)
+    leaves = make_material("juniper_blue_green_leaves", (0.24, 0.34, 0.24, 1.0), 0.90, True)
+    objects: list[bpy.types.Object] = []
+    trunk_points = [
+        Vector((0.0, 0.0, 0.0)),
+        Vector((0.10, -0.05, 0.48)),
+        Vector((-0.04, 0.02, 0.94)),
+        Vector((0.13, -0.08, 1.52)),
+    ]
+    trunk_radii = [0.20, 0.18, 0.13, 0.070]
+    for i in range(len(trunk_points) - 1):
+        objects.append(add_cone_between(
+            "juniper_twisted_trunk_" + str(i),
+            trunk_points[i],
+            trunk_points[i + 1],
+            trunk_radii[i],
+            trunk_radii[i + 1],
+            8,
+            bark,
+        ))
+    branch_ends = add_juniper_branches(objects, bark)
+    add_juniper_canopy(objects, leaves, branch_ends)
+    return join_tree_objects("juniper", objects, bark, leaves)
+
+
 def join_tree_objects(name: str, objects: list[bpy.types.Object], bark: bpy.types.Material, leaves: bpy.types.Material) -> bpy.types.Object:
     if not objects:
         raise ValueError("no objects built for " + name)
@@ -412,6 +548,8 @@ def main() -> None:
     export_tree(cottonwood, COTTONWOOD_OUT)
     willow = build_willow()
     export_tree(willow, WILLOW_OUT)
+    juniper = build_juniper()
+    export_tree(juniper, JUNIPER_OUT)
 
 
 if __name__ == "__main__":
