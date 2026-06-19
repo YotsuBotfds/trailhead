@@ -16,6 +16,7 @@ GENERATOR_NAME = "Trailhead gen_foliage_glb.py"
 COTTONWOOD_OUT = OUT_DIR / "cottonwood.glb"
 WILLOW_OUT = OUT_DIR / "willow.glb"
 JUNIPER_OUT = OUT_DIR / "juniper.glb"
+YUCCA_OUT = OUT_DIR / "yucca.glb"
 
 
 def clear_scene() -> None:
@@ -146,6 +147,96 @@ def add_low_poly_leaf_cluster(
     obj.rotation_euler = rotation
     obj.data.materials.append(material)
     apply_object_transform(obj)
+    return obj
+
+
+def add_yucca_rosette_mesh(
+        material: bpy.types.Material,
+        tip_material: bpy.types.Material) -> bpy.types.Object:
+    vertices: list[tuple[float, float, float]] = []
+    faces: list[tuple[int, int, int, int]] = []
+    vertex_uvs: list[tuple[float, float]] = []
+    face_material_indices: list[int] = []
+    section_values = [0.0, 0.24, 0.52, 0.78, 1.0]
+    leaf_specs: list[tuple[int, float, float, float, float, float, float]] = [
+        (22, 0.0, 1.08, 0.18, 0.125, 0.040, 0.05),
+        (14, 8.0, 0.82, 0.52, 0.096, 0.032, 0.12),
+        (8, 18.0, 0.56, 0.86, 0.072, 0.024, 0.20),
+    ]
+    leaf_index = 0
+    for ring_count, angle_offset, base_length, base_lift, base_width, base_thickness, base_radius in leaf_specs:
+        for ring_index in range(ring_count):
+            angle = math.tau * float(ring_index) / float(ring_count) + math.radians(angle_offset)
+            direction = Vector((math.cos(angle), math.sin(angle), 0.0))
+            side = Vector((-direction.y, direction.x, 0.0))
+            length = base_length * (0.92 + 0.14 * float((leaf_index * 7) % 11) / 10.0)
+            lift = base_lift * (0.90 + 0.18 * float((leaf_index * 5 + 3) % 13) / 12.0)
+            width = base_width * (0.88 + 0.18 * float((leaf_index * 3 + 1) % 9) / 8.0)
+            thickness = base_thickness * (0.84 + 0.20 * float((leaf_index * 11 + 2) % 7) / 6.0)
+            lateral_curve = 0.035 * math.sin(float(leaf_index) * 1.71)
+            section_indices: list[tuple[int, int, int, int]] = []
+            for section in section_values:
+                taper = max(1.0 - section, 0.0)
+                local_width = width * pow(taper, 0.82)
+                local_thickness = thickness * (0.28 + 0.72 * taper)
+                center = (
+                    direction * (base_radius + length * section)
+                    + side * (lateral_curve * math.sin(math.pi * section))
+                    + Vector((0.0, 0.0, 0.055 + lift * section + 0.055 * math.sin(math.pi * section)))
+                )
+                top_ridge = center + Vector((0.0, 0.0, local_thickness * 0.55))
+                bottom_ridge = center - Vector((0.0, 0.0, local_thickness * 0.45))
+                left = center - side * local_width
+                right = center + side * local_width
+                section_start = len(vertices)
+                vertices.extend([
+                    tuple(left),
+                    tuple(top_ridge),
+                    tuple(right),
+                    tuple(bottom_ridge),
+                ])
+                vertex_uvs.extend([
+                    (0.0, section),
+                    (0.5, section),
+                    (1.0, section),
+                    (0.5, section),
+                ])
+                section_indices.append((section_start, section_start + 1, section_start + 2, section_start + 3))
+            for section_index in range(len(section_indices) - 1):
+                left_a, top_a, right_a, bottom_a = section_indices[section_index]
+                left_b, top_b, right_b, bottom_b = section_indices[section_index + 1]
+                material_index = 1 if section_index >= len(section_indices) - 2 else 0
+                faces.append((left_a, top_a, top_b, left_b))
+                face_material_indices.append(material_index)
+                faces.append((top_a, right_a, right_b, top_b))
+                face_material_indices.append(material_index)
+                faces.append((right_a, bottom_a, bottom_b, right_b))
+                face_material_indices.append(material_index)
+                faces.append((bottom_a, left_a, left_b, bottom_b))
+                face_material_indices.append(material_index)
+            base_left, base_top, base_right, base_bottom = section_indices[0]
+            faces.append((base_left, base_bottom, base_right, base_top))
+            face_material_indices.append(0)
+            tip_left, tip_top, tip_right, tip_bottom = section_indices[-1]
+            faces.append((tip_left, tip_top, tip_right, tip_bottom))
+            face_material_indices.append(1)
+            leaf_index += 1
+
+    mesh = bpy.data.meshes.new("yucca_rosette_mesh")
+    mesh.from_pydata(vertices, [], faces)
+    mesh.update(calc_edges=True)
+    mesh.materials.append(material)
+    mesh.materials.append(tip_material)
+    for polygon_index, polygon in enumerate(mesh.polygons):
+        polygon.material_index = face_material_indices[polygon_index]
+    uv_layer = mesh.uv_layers.new(name="UVMap")
+    for polygon in mesh.polygons:
+        for loop_index in polygon.loop_indices:
+            vertex_index = mesh.loops[loop_index].vertex_index
+            uv_layer.data[loop_index].uv = vertex_uvs[vertex_index]
+    obj = bpy.data.objects.new("yucca_rosette", mesh)
+    bpy.context.collection.objects.link(obj)
+    shade_smooth(obj)
     return obj
 
 
@@ -449,6 +540,48 @@ def build_juniper() -> bpy.types.Object:
     return join_tree_objects("juniper", objects, bark, leaves)
 
 
+def build_yucca() -> bpy.types.Object:
+    clear_scene()
+    leaves = make_material("yucca_blue_green_leaves", (0.42, 0.50, 0.36, 1.0), 0.90, True)
+    spine_tips = make_material("yucca_dry_spine_tips", (0.47, 0.42, 0.28, 1.0), 0.94, True)
+    stalk = make_material("yucca_flower_stalk", (0.44, 0.36, 0.23, 1.0), 0.96, False)
+    flowers = make_material("yucca_cream_flowers", (0.78, 0.73, 0.56, 1.0), 0.88, True)
+    objects: list[bpy.types.Object] = []
+    objects.append(add_yucca_rosette_mesh(leaves, spine_tips))
+    objects.append(add_cone_between(
+        "yucca_center_stalk",
+        Vector((0.0, 0.0, 0.12)),
+        Vector((0.055, -0.035, 2.18)),
+        0.030,
+        0.014,
+        8,
+        stalk,
+    ))
+    bud_specs = [
+        (1.48, 0.18, 24.0, 0.080),
+        (1.58, 0.16, 146.0, 0.070),
+        (1.70, 0.18, 256.0, 0.078),
+        (1.82, 0.15, 68.0, 0.068),
+        (1.92, 0.13, 202.0, 0.062),
+        (2.02, 0.11, 318.0, 0.056),
+        (2.11, 0.08, 112.0, 0.050),
+        (2.19, 0.04, 280.0, 0.044),
+    ]
+    for bud_index, spec in enumerate(bud_specs):
+        height, radius, angle_degrees, bud_scale = spec
+        stalk_center = Vector((0.055 * height / 2.18, -0.035 * height / 2.18, height))
+        center = stalk_center + radial(angle_degrees) * radius
+        objects.append(add_low_poly_leaf_cluster(
+            "yucca_flower_cluster_" + str(bud_index),
+            center,
+            Vector((bud_scale, bud_scale * 0.74, bud_scale * 0.92)),
+            (0.08 * float((bud_index % 3) - 1), 0.0, math.radians(angle_degrees)),
+            1,
+            flowers,
+        ))
+    return join_foliage_objects("yucca", objects)
+
+
 def join_tree_objects(name: str, objects: list[bpy.types.Object], bark: bpy.types.Material, leaves: bpy.types.Material) -> bpy.types.Object:
     if not objects:
         raise ValueError("no objects built for " + name)
@@ -461,6 +594,25 @@ def join_tree_objects(name: str, objects: list[bpy.types.Object], bark: bpy.type
     obj.name = name
     obj.data.name = name + "_mesh"
     normalize_material_slots(obj, bark, leaves)
+    select_active(obj)
+    bpy.ops.object.modifier_add(type="TRIANGULATE")
+    bpy.ops.object.modifier_apply(modifier="Triangulate")
+    obj["generator"] = GENERATOR_NAME
+    obj["triangle_count"] = triangle_count(obj)
+    return obj
+
+
+def join_foliage_objects(name: str, objects: list[bpy.types.Object]) -> bpy.types.Object:
+    if not objects:
+        raise ValueError("no objects built for " + name)
+    bpy.ops.object.select_all(action="DESELECT")
+    for obj in objects:
+        obj.select_set(True)
+    bpy.context.view_layer.objects.active = objects[0]
+    bpy.ops.object.join()
+    obj = bpy.context.object
+    obj.name = name
+    obj.data.name = name + "_mesh"
     select_active(obj)
     bpy.ops.object.modifier_add(type="TRIANGULATE")
     bpy.ops.object.modifier_apply(modifier="Triangulate")
@@ -550,6 +702,8 @@ def main() -> None:
     export_tree(willow, WILLOW_OUT)
     juniper = build_juniper()
     export_tree(juniper, JUNIPER_OUT)
+    yucca = build_yucca()
+    export_tree(yucca, YUCCA_OUT)
 
 
 if __name__ == "__main__":
