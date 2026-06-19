@@ -138,6 +138,7 @@ func _ready() -> void:
 	_setup_surface_map()
 	_setup_world()
 	_spawn_vehicle()
+	_report_render_subsystem_health()
 	_setup_audio()
 	_setup_recoverable_object_render()
 	_setup_golden_line_systems()
@@ -349,6 +350,24 @@ func _spawn_vehicle() -> void:
 	visual_builder.call("attach", _vehicle)
 	_collect_visual_wheels()
 	_setup_grasshopper_livery()
+
+
+func _report_render_subsystem_health() -> void:
+	# The render host's per-frame visual/camera updates deref sub-systems that are
+	# only non-null when their backing scripts compiled and their asset preloads
+	# (rc_buggy.glb, residue PNGs) imported. A stale/missing `.godot/imported`
+	# cache (or a broken preload) leaves these null; without this check the host
+	# spams 3 push_error lines every physics frame (lines 872/1234/1239) and the
+	# resulting hitches light up the debug overlay's red HITCH_COLOR banner.
+	# Flag the failure exactly once here so the headless harness sees it; the
+	# per-frame update paths null-guard and stay quiet (see _update_visual_wheels
+	# / _update_chase_camera).
+	if _vehicle_visual_root == null:
+		push_error("CedarHollowHost render subsystem broken: vehicle visual root missing (procedural_buggy_visual.gd or rc_buggy.glb import failed); visual updates skipped")
+	if _vehicle_residue_visual == null:
+		push_error("CedarHollowHost render subsystem broken: vehicle residue visual missing (vehicle_residue_visual.gd or residue texture import failed); residue updates skipped")
+	if _chase_camera_rig == null:
+		push_error("CedarHollowHost render subsystem broken: chase camera rig missing (chase_camera_rig.gd failed to instantiate); chase camera updates skipped")
 
 
 func _configure_streaming_collision() -> void:
@@ -863,6 +882,8 @@ func _collect_visual_wheels() -> void:
 
 
 func _update_visual_wheels(delta: float) -> void:
+	if _vehicle_visual_root == null:
+		return
 	var state: RefCounted = _vehicle.call("get_state")
 	var acceleration: Vector3 = _visual_acceleration(state, delta)
 	_update_vehicle_residue_visual(state)
@@ -1222,6 +1243,8 @@ func _cinematic_ease(t: float) -> float:
 
 func _update_chase_camera(delta: float, state: RefCounted) -> void:
 	if _camera == null:
+		return
+	if _chase_camera_rig == null:
 		return
 	var steer: float = clampf(float(_vehicle_input.get("steer")), -1.0, 1.0)
 	var basis: Basis = state.get("basis")
