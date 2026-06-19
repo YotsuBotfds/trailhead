@@ -9,6 +9,7 @@ const TerrainSurfaceIndexShader: Shader = preload("res://systems/render/terrain_
 const GrassShader: Shader = preload("res://systems/render/grass_billboard.gdshader")
 const CottonwoodTreeScene: PackedScene = preload("res://assets/models/foliage/cottonwood.glb")
 const WillowTreeScene: PackedScene = preload("res://assets/models/foliage/willow.glb")
+const JuniperTreeScene: PackedScene = preload("res://assets/models/foliage/juniper.glb")
 const DETAIL_MASK_TEXTURE_PATH: String = "res://assets/textures/surface_visuals/generated/terrain_detail_mask.png"
 const GENERATED_SURFACE_TEXTURE_DIR: String = "res://assets/textures/surface_visuals/generated/"
 const TEXTURE_SOURCE_PATH_META: StringName = &"trailhead_source_path"
@@ -99,8 +100,6 @@ const FOLIAGE_NEON_TAME_TIP_BOOST: Vector3 = Vector3(1.12, 1.08, 1.02)
 const FOLIAGE_NEON_TAME_BACKLIGHT_ENERGY: float = 0.10
 const FOLIAGE_YUCCA_LOD0_SCALE: Vector3 = Vector3(0.95, 0.86, 0.95)
 const FOLIAGE_YUCCA_LOD1_SCALE: Vector3 = Vector3(0.78, 0.72, 0.78)
-const FOLIAGE_JUNIPER_LOD0_SCALE: Vector3 = Vector3(1.75, 1.92, 1.75)
-const FOLIAGE_JUNIPER_LOD1_SCALE: Vector3 = Vector3(1.45, 1.62, 1.45)
 const FOLIAGE_TREE_REAL_MESH_SCALE: Vector3 = Vector3.ONE
 const FOLIAGE_BOULDER_LOD0_SCALE: Vector3 = Vector3(1.0, 1.0, 1.0)
 const FOLIAGE_BOULDER_LOD1_SCALE: Vector3 = Vector3(0.82, 0.82, 0.82)
@@ -1964,50 +1963,8 @@ static func _region_yucca_mesh(mesh_name: String, lod_index: int) -> ArrayMesh:
 	return mesh
 
 
-static func _region_juniper_mesh(mesh_name: String, lod_index: int) -> ArrayMesh:
-	var mesh: ArrayMesh = ArrayMesh.new()
-	mesh.resource_name = mesh_name
-	var vertices: PackedVector3Array = PackedVector3Array()
-	var normals: PackedVector3Array = PackedVector3Array()
-	var uvs: PackedVector2Array = PackedVector2Array()
-	var indices: PackedInt32Array = PackedInt32Array()
-	var plane_count: int = 5
-	if lod_index > 0:
-		plane_count = 3
-	for plane_index in range(plane_count):
-		var yaw: float = TAU * float(plane_index) / float(plane_count)
-		var direction: Vector3 = Vector3(cos(yaw), 0.0, sin(yaw))
-		var side: Vector3 = Vector3(-direction.z, 0.0, direction.x)
-		var center: Vector3 = Vector3(0.0, 0.62 + 0.08 * float(plane_index % 2), 0.0)
-		var half_width: float = 0.42 - 0.035 * float(plane_index % 2)
-		var height: float = 0.70 + 0.08 * float(plane_index % 3)
-		var vertex_start: int = vertices.size()
-		vertices.append(center - side * half_width + Vector3(0.0, -height * 0.48, 0.0))
-		vertices.append(center + side * half_width + Vector3(0.0, -height * 0.48, 0.0))
-		vertices.append(center - side * half_width * 0.78 + Vector3(0.0, height * 0.52, 0.0))
-		vertices.append(center + side * half_width * 0.78 + Vector3(0.0, height * 0.52, 0.0))
-		normals.append(direction)
-		normals.append(direction)
-		normals.append(direction)
-		normals.append(direction)
-		uvs.append(Vector2(0.0, 1.0))
-		uvs.append(Vector2(1.0, 1.0))
-		uvs.append(Vector2(0.0, 0.0))
-		uvs.append(Vector2(1.0, 0.0))
-		indices.append(vertex_start)
-		indices.append(vertex_start + 2)
-		indices.append(vertex_start + 1)
-		indices.append(vertex_start + 1)
-		indices.append(vertex_start + 2)
-		indices.append(vertex_start + 3)
-	var arrays: Array = []
-	arrays.resize(Mesh.ARRAY_MAX)
-	arrays[Mesh.ARRAY_VERTEX] = vertices
-	arrays[Mesh.ARRAY_NORMAL] = normals
-	arrays[Mesh.ARRAY_TEX_UV] = uvs
-	arrays[Mesh.ARRAY_INDEX] = indices
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-	return mesh
+static func _region_juniper_mesh(mesh_name: String, _lod_index: int) -> Mesh:
+	return _extract_first_mesh(JuniperTreeScene, mesh_name)
 
 
 static func _region_willow_mesh(mesh_name: String, _lod_index: int) -> Mesh:
@@ -2407,7 +2364,7 @@ static func _foliage_species_allows_steep_slope(species_id: StringName) -> bool:
 
 
 static func _foliage_species_uses_source_material(species_id: StringName) -> bool:
-	return species_id == FOLIAGE_SPECIES_WILLOW or species_id == FOLIAGE_SPECIES_COTTONWOOD
+	return species_id == FOLIAGE_SPECIES_JUNIPER or species_id == FOLIAGE_SPECIES_WILLOW or species_id == FOLIAGE_SPECIES_COTTONWOOD
 
 
 static func _riparian_species_for_candidate(foliage_cell: Vector2i, lod_index: int, attempt: int, world_x: float, world_z: float) -> StringName:
@@ -2511,10 +2468,6 @@ static func _foliage_base_scale_for_lod_species(lod_index: int, species_id: Stri
 		if lod_index > 0:
 			return FOLIAGE_YUCCA_LOD1_SCALE
 		return FOLIAGE_YUCCA_LOD0_SCALE
-	if species_id == FOLIAGE_SPECIES_JUNIPER:
-		if lod_index > 0:
-			return FOLIAGE_JUNIPER_LOD1_SCALE
-		return FOLIAGE_JUNIPER_LOD0_SCALE
 	if _foliage_species_uses_source_material(species_id):
 		return FOLIAGE_TREE_REAL_MESH_SCALE
 	if lod_index > 0:
