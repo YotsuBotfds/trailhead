@@ -92,8 +92,8 @@ func _inspect_detail_tiles(detail_root: Node) -> void:
 			_errors.append("TerrainDetailTiles/" + String(child.name) + " visibility_range_end expected " + str(expected_range_end) + ", got " + str(mesh_instance.visibility_range_end))
 		if mesh_instance.visibility_range_fade_mode != GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED:
 			_errors.append("TerrainDetailTiles/" + String(child.name) + " visibility_range_fade_mode expected DISABLED, got " + str(mesh_instance.visibility_range_fade_mode))
-		if mesh_instance.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF:
-			_errors.append("TerrainDetailTiles/" + String(child.name) + " should not cast shadows")
+		if mesh_instance.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_ON:
+			_errors.append("TerrainDetailTiles/" + String(child.name) + " should cast shadows")
 		if not mesh_instance.has_meta(TILE_INDEX_META):
 			_errors.append("TerrainDetailTiles/" + String(child.name) + " missing tile index metadata")
 		else:

@@ -125,6 +125,7 @@ func _require_zion_water_visuals(world: Node) -> void:
 
 func _require_stream_roots(visual_root: Node) -> void:
 	_require_node(visual_root, TerrainVisualBuilderScript.REGION_DETAIL_ROOT_NAME)
+	_require_node(visual_root, TerrainVisualBuilderScript.REGION_STREAM_MIDLOD_ROOT_NAME)
 	_require_node(visual_root, TerrainVisualBuilderScript.REGION_STREAMED_FOLIAGE_ROOT_NAME)
 	var warmup_root: Node = _require_node(visual_root, TerrainVisualBuilderScript.REGION_PIPELINE_WARMUP_ROOT_NAME)
 	if warmup_root != null:
@@ -234,8 +235,8 @@ func _require_stream_hlod_chunk(chunk: MeshInstance3D) -> void:
 			_errors.append(String(chunk.name) + " HLOD origin should not be world zero")
 		if observed_xz.distance_to(expected_xz) > POSITION_TOLERANCE_M:
 			_errors.append(String(chunk.name) + " HLOD origin expected " + str(expected_origin) + ", got " + str(chunk.global_position))
-	if absf(chunk.visibility_range_begin - GameConfig.vis_range_terrain) > POSITION_TOLERANCE_M:
-		_errors.append(String(chunk.name) + " HLOD visibility_range_begin expected " + str(GameConfig.vis_range_terrain) + ", got " + str(chunk.visibility_range_begin))
+	if absf(chunk.visibility_range_begin - TerrainVisualBuilderScript.REGION_STREAM_MIDLOD_RANGE_END_M) > POSITION_TOLERANCE_M:
+		_errors.append(String(chunk.name) + " HLOD visibility_range_begin expected " + str(TerrainVisualBuilderScript.REGION_STREAM_MIDLOD_RANGE_END_M) + ", got " + str(chunk.visibility_range_begin))
 	if absf(chunk.visibility_range_end) > POSITION_TOLERANCE_M:
 		_errors.append(String(chunk.name) + " HLOD visibility_range_end should be open-ended")
 	if chunk.visibility_range_fade_mode != GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED:
@@ -250,6 +251,43 @@ func _require_stream_hlod_chunk(chunk: MeshInstance3D) -> void:
 		var surface_id_texture: Texture2D = material.get_shader_parameter(TerrainVisualBuilderScript.SURFACE_ID_TEXTURE_UNIFORM) as Texture2D
 		if surface_id_texture == null:
 			_errors.append(String(chunk.name) + " HLOD surface-index material missing surface ID texture")
+
+
+func _require_first_midlod_tile() -> void:
+	var midlod_root: Node = _scene_root.get_node_or_null("CedarHollow/TerrainVisualStreamer/" + TerrainVisualBuilderScript.REGION_ROOT_NAME + "/" + TerrainVisualBuilderScript.REGION_STREAM_MIDLOD_ROOT_NAME)
+	if midlod_root == null:
+		_errors.append("Zion streamer missing TerrainMidLODTiles root")
+		return
+	var midlod_tile: MeshInstance3D = null
+	for child in midlod_root.get_children():
+		var mesh_instance: MeshInstance3D = child as MeshInstance3D
+		if mesh_instance != null:
+			midlod_tile = mesh_instance
+			break
+	if midlod_tile == null:
+		_errors.append("Zion TerrainMidLODTiles should contain at least one MeshInstance3D")
+		return
+	if not midlod_tile.has_meta(TerrainVisualBuilderScript.REGION_LOD_META):
+		_errors.append(String(midlod_tile.name) + " missing mid-LOD metadata")
+	elif String(midlod_tile.get_meta(TerrainVisualBuilderScript.REGION_LOD_META)) != "stream_midlod":
+		_errors.append(String(midlod_tile.name) + " mid-LOD metadata expected stream_midlod")
+	if absf(midlod_tile.visibility_range_begin - GameConfig.vis_range_terrain) > POSITION_TOLERANCE_M:
+		_errors.append(String(midlod_tile.name) + " mid-LOD visibility_range_begin expected " + str(GameConfig.vis_range_terrain) + ", got " + str(midlod_tile.visibility_range_begin))
+	if not midlod_tile.has_meta(TerrainVisualBuilderScript.VISIBILITY_RADIUS_META):
+		_errors.append(String(midlod_tile.name) + " missing mid-LOD visibility radius metadata")
+	else:
+		var visibility_radius: float = float(midlod_tile.get_meta(TerrainVisualBuilderScript.VISIBILITY_RADIUS_META))
+		var expected_range_end: float = TerrainVisualBuilderScript.REGION_STREAM_MIDLOD_RANGE_END_M + visibility_radius
+		if absf(midlod_tile.visibility_range_end - expected_range_end) > POSITION_TOLERANCE_M:
+			_errors.append(String(midlod_tile.name) + " mid-LOD visibility_range_end expected " + str(expected_range_end) + ", got " + str(midlod_tile.visibility_range_end))
+	if midlod_tile.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF:
+		_errors.append(String(midlod_tile.name) + " mid-LOD should not cast shadows")
+	if midlod_tile.mesh == null:
+		_errors.append(String(midlod_tile.name) + " mid-LOD missing mesh")
+	elif midlod_tile.mesh.get_surface_count() <= 0:
+		_errors.append(String(midlod_tile.name) + " mid-LOD mesh has no surfaces")
+	if _count_collision_objects(midlod_tile) > 0:
+		_errors.append(String(midlod_tile.name) + " mid-LOD should be render-only and collision-free")
 
 
 func _require_vehicle_spawn() -> void:
@@ -333,6 +371,8 @@ func _wait_for_streaming(streamer: Node) -> void:
 		+ str(_tile_streamer_active_cells().size())
 		+ " visual="
 		+ str(int(streamer.call("visual_cell_count")))
+		+ " midlod="
+		+ str(int(streamer.call("midlod_cell_count")))
 		+ " foliage="
 		+ str(int(streamer.call("foliage_cell_count")))
 	)
@@ -344,6 +384,8 @@ func _streaming_ready(streamer: Node) -> bool:
 	if int(streamer.call("visual_cell_count")) != EXPECTED_ACTIVE_VISUAL_CELLS:
 		return false
 	if int(streamer.call("foliage_cell_count")) != EXPECTED_ACTIVE_VISUAL_CELLS:
+		return false
+	if int(streamer.call("midlod_cell_count")) <= 0:
 		return false
 	return true
 
@@ -366,6 +408,8 @@ func _require_visual_streamer_state(streamer: Node) -> void:
 		_errors.append("Zion visual cell count expected " + str(EXPECTED_ACTIVE_VISUAL_CELLS) + ", got " + str(int(streamer.call("visual_cell_count"))))
 	if int(streamer.call("foliage_cell_count")) != EXPECTED_ACTIVE_VISUAL_CELLS:
 		_errors.append("Zion foliage cell count expected " + str(EXPECTED_ACTIVE_VISUAL_CELLS) + ", got " + str(int(streamer.call("foliage_cell_count"))))
+	if int(streamer.call("midlod_cell_count")) <= 0:
+		_errors.append("Zion streamer should commit at least one mid-LOD cell")
 	if not bool(streamer.call("has_visual_cell", _expected_center_cell)):
 		_errors.append("Zion streamer missing visual center cell " + str(_expected_center_cell))
 	if not bool(streamer.call("has_foliage_cell", _expected_center_cell)):
@@ -377,6 +421,9 @@ func _require_visual_streamer_state(streamer: Node) -> void:
 		_errors.append("Zion center visual cell is missing mesh")
 	elif not center_tile.visibility_parent.is_empty():
 		_errors.append("Zion center visual cell should not use TerrainHLOD as visibility_parent")
+	elif center_tile.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_ON:
+		_errors.append("Zion center visual cell should cast shadows")
+	_require_first_midlod_tile()
 	var failures: Dictionary = streamer.call("load_failures")
 	if not failures.is_empty():
 		_errors.append("Zion visual streamer load failures: " + str(failures))

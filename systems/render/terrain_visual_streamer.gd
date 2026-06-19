@@ -19,6 +19,7 @@ const DEFAULT_WORKER_COUNT: int = 2
 var _region_id: String = ""
 var _visual_root: Node3D = null
 var _detail_root: Node3D = null
+var _midlod_root: Node3D = null
 var _foliage_root: Node3D = null
 var _hlod_instance: MeshInstance3D = null
 var _stream_generation: int = 0
@@ -26,17 +27,26 @@ var _worker_count: int = clampi(OS.get_processor_count() / 4, DEFAULT_WORKER_COU
 var _configured: bool = false
 var _events_connected: bool = false
 var _hlod_dirty: bool = false
+var _region_cells_by_cell: Dictionary[Vector2i, bool] = {}
 var _active_cells: Dictionary[Vector2i, bool] = {}
+var _desired_midlod_cells_by_cell: Dictionary[Vector2i, bool] = {}
 var _visual_tiles_by_cell: Dictionary[Vector2i, Node3D] = {}
+var _midlod_tiles_by_cell: Dictionary[Vector2i, Node3D] = {}
 var _foliage_tiles_by_cell: Dictionary[Vector2i, Node3D] = {}
 var _partial_foliage_tiles_by_cell: Dictionary[Vector2i, Node3D] = {}
 var _ready_tile_data_by_cell: Dictionary[Vector2i, Variant] = {}
+var _ready_midlod_data_by_cell: Dictionary[Vector2i, Variant] = {}
 var _ready_foliage_data_by_cell: Dictionary[Vector2i, Variant] = {}
 var _load_failures_by_cell: Dictionary[Vector2i, String] = {}
+var _midlod_load_failures_by_cell: Dictionary[Vector2i, String] = {}
 var _queued_builds: Dictionary[Vector2i, bool] = {}
+var _queued_midlod_builds: Dictionary[Vector2i, bool] = {}
 var _cancelled_builds: Dictionary[Vector2i, bool] = {}
+var _cancelled_midlod_builds: Dictionary[Vector2i, bool] = {}
 var _commit_queue: Array[Vector2i] = []
+var _midlod_commit_queue: Array[Vector2i] = []
 var _queued_commits: Dictionary[Vector2i, bool] = {}
+var _queued_midlod_commits: Dictionary[Vector2i, bool] = {}
 var _foliage_subcommit_queue: Array[FoliageSubcommit] = []
 var _pending_foliage_subcommit_counts_by_cell: Dictionary[Vector2i, int] = {}
 var _pending_free_cells: Array[Vector2i] = []
@@ -45,6 +55,7 @@ var _work_mutex: Mutex = Mutex.new()
 var _work_semaphore: Semaphore = Semaphore.new()
 var _worker_should_stop: bool = false
 var _build_queue: Array[Variant] = []
+var _midlod_build_queue: Array[Variant] = []
 var _result_queue: Array[Variant] = []
 
 
@@ -64,11 +75,13 @@ func configure_region(new_region_id: String) -> void:
 	_configured = not _region_id.is_empty()
 	if not _configured:
 		return
+	_region_cells_by_cell = _region_cell_lookup(_region_id)
 	_visual_root = TerrainVisualBuilderScript.build_region_stream_root(self, _region_id)
 	_detail_root = _visual_root.get_node_or_null(TerrainVisualBuilderScript.REGION_DETAIL_ROOT_NAME) as Node3D
+	_midlod_root = _visual_root.get_node_or_null(TerrainVisualBuilderScript.REGION_STREAM_MIDLOD_ROOT_NAME) as Node3D
 	_foliage_root = _visual_root.get_node_or_null(TerrainVisualBuilderScript.REGION_STREAMED_FOLIAGE_ROOT_NAME) as Node3D
 	_hlod_instance = _visual_root.get_node_or_null(TerrainVisualBuilderScript.REGION_HLOD_NAME) as MeshInstance3D
-	if _detail_root == null or _foliage_root == null:
+	if _detail_root == null or _midlod_root == null or _foliage_root == null:
 		_load_failures_by_cell[Vector2i.ZERO] = "region stream roots missing"
 		_configured = false
 		return
@@ -92,21 +105,32 @@ func reset_stream() -> void:
 	_disconnect_event_connections()
 	for cell in _sorted_cells(_visual_tiles_by_cell.keys()):
 		_free_visual_cell(cell)
+	for cell in _sorted_cells(_midlod_tiles_by_cell.keys()):
+		_free_midlod_cell(cell)
 	for cell in _sorted_cells(_foliage_tiles_by_cell.keys()):
 		_free_foliage_cell(cell)
 	for cell in _sorted_cells(_partial_foliage_tiles_by_cell.keys()):
 		_free_foliage_cell(cell)
+	_region_cells_by_cell.clear()
 	_active_cells.clear()
+	_desired_midlod_cells_by_cell.clear()
 	_visual_tiles_by_cell.clear()
+	_midlod_tiles_by_cell.clear()
 	_foliage_tiles_by_cell.clear()
 	_partial_foliage_tiles_by_cell.clear()
 	_ready_tile_data_by_cell.clear()
+	_ready_midlod_data_by_cell.clear()
 	_ready_foliage_data_by_cell.clear()
 	_load_failures_by_cell.clear()
+	_midlod_load_failures_by_cell.clear()
 	_queued_builds.clear()
+	_queued_midlod_builds.clear()
 	_cancelled_builds.clear()
+	_cancelled_midlod_builds.clear()
 	_commit_queue.clear()
+	_midlod_commit_queue.clear()
 	_queued_commits.clear()
+	_queued_midlod_commits.clear()
 	_foliage_subcommit_queue.clear()
 	_pending_foliage_subcommit_counts_by_cell.clear()
 	_pending_free_cells.clear()
@@ -114,6 +138,7 @@ func reset_stream() -> void:
 	_configured = false
 	_region_id = ""
 	_detail_root = null
+	_midlod_root = null
 	_foliage_root = null
 	_hlod_instance = null
 	if _visual_root != null:
@@ -132,8 +157,11 @@ func _process(_delta: float) -> void:
 		_process_build_queue_synchronously()
 	_drain_worker_results()
 	var committed_visual_tiles: int = _drain_commit_queue()
+	var had_foliage_subcommits: bool = not _foliage_subcommit_queue.is_empty()
 	if committed_visual_tiles <= 0:
 		_drain_foliage_subcommit_queue()
+	if committed_visual_tiles <= 0 and not had_foliage_subcommits:
+		_drain_midlod_commit_queue()
 	_drain_pending_frees()
 
 
@@ -149,12 +177,24 @@ func ready_visual_cell_count() -> int:
 	return _ready_tile_data_by_cell.size()
 
 
+func midlod_cell_count() -> int:
+	return _midlod_tiles_by_cell.size()
+
+
+func ready_midlod_cell_count() -> int:
+	return _ready_midlod_data_by_cell.size()
+
+
 func ready_foliage_cell_count() -> int:
 	return _ready_foliage_data_by_cell.size()
 
 
 func pending_visual_commit_count() -> int:
 	return _commit_queue.size()
+
+
+func pending_midlod_commit_count() -> int:
+	return _midlod_commit_queue.size()
 
 
 func pending_foliage_subcommit_count() -> int:
@@ -169,12 +209,20 @@ func has_ready_visual_cell(cell: Vector2i) -> bool:
 	return _ready_tile_data_by_cell.has(cell)
 
 
+func has_ready_midlod_cell(cell: Vector2i) -> bool:
+	return _ready_midlod_data_by_cell.has(cell)
+
+
 func has_ready_foliage_cell(cell: Vector2i) -> bool:
 	return _ready_foliage_data_by_cell.has(cell)
 
 
 func has_visual_cell(cell: Vector2i) -> bool:
 	return _visual_tiles_by_cell.has(cell)
+
+
+func has_midlod_cell(cell: Vector2i) -> bool:
+	return _midlod_tiles_by_cell.has(cell)
 
 
 func has_foliage_cell(cell: Vector2i) -> bool:
@@ -187,6 +235,12 @@ func visual_cell_node(cell: Vector2i) -> Node3D:
 	return _visual_tiles_by_cell[cell]
 
 
+func midlod_cell_node(cell: Vector2i) -> Node3D:
+	if not _midlod_tiles_by_cell.has(cell):
+		return null
+	return _midlod_tiles_by_cell[cell]
+
+
 func foliage_cell_node(cell: Vector2i) -> Node3D:
 	if not _foliage_tiles_by_cell.has(cell):
 		return null
@@ -197,6 +251,8 @@ func load_failures() -> Dictionary[Vector2i, String]:
 	var copy: Dictionary[Vector2i, String] = {}
 	for cell in _sorted_cells(_load_failures_by_cell.keys()):
 		copy[cell] = _load_failures_by_cell[cell]
+	for cell in _sorted_cells(_midlod_load_failures_by_cell.keys()):
+		copy[cell] = _midlod_load_failures_by_cell[cell]
 	return copy
 
 
@@ -229,11 +285,12 @@ func _disconnect_event_connections() -> void:
 
 
 func _on_world_tile_activated(cell: Vector2i) -> void:
-	if not _configured or _detail_root == null or _foliage_root == null:
+	if not _configured or _detail_root == null or _midlod_root == null or _foliage_root == null:
 		return
 	_pending_free_cells.erase(cell)
 	_active_cells[cell] = true
 	_hlod_dirty = true
+	_refresh_midlod_streaming()
 	if _visual_tiles_by_cell.has(cell) and (_foliage_tiles_by_cell.has(cell) or _partial_foliage_tiles_by_cell.has(cell)):
 		return
 	if _ready_tile_data_by_cell.has(cell):
@@ -252,6 +309,7 @@ func _on_world_tile_evicted(cell: Vector2i) -> void:
 		return
 	_active_cells.erase(cell)
 	_hlod_dirty = true
+	_refresh_midlod_streaming()
 	_remove_queued_commit(cell)
 	_remove_queued_foliage_subcommits(cell)
 	if not _pending_free_cells.has(cell):
@@ -280,11 +338,15 @@ func _on_world_tile_unprefetched(cell: Vector2i) -> void:
 	if _active_cells.has(cell):
 		return
 	_cancel_build(cell)
+	_cancel_midlod_build(cell)
 	_remove_queued_commit(cell)
+	_remove_queued_midlod_commit(cell)
 	_remove_queued_foliage_subcommits(cell)
 	_ready_tile_data_by_cell.erase(cell)
+	_ready_midlod_data_by_cell.erase(cell)
 	_ready_foliage_data_by_cell.erase(cell)
 	_load_failures_by_cell.erase(cell)
+	_midlod_load_failures_by_cell.erase(cell)
 
 
 func _enqueue_build(cell: Vector2i) -> void:
@@ -300,6 +362,7 @@ func _enqueue_build(cell: Vector2i) -> void:
 	var job: Dictionary = {
 		"cell": cell,
 		"generation": _stream_generation,
+		"kind": "visual",
 		"region_id": _region_id,
 	}
 	_work_mutex.lock()
@@ -318,6 +381,122 @@ func _cancel_build(cell: Vector2i) -> void:
 	_work_mutex.unlock()
 
 
+func _refresh_midlod_streaming() -> void:
+	if _midlod_root == null:
+		return
+	var desired_cells: Array[Vector2i] = _desired_midlod_cells()
+	var desired_lookup: Dictionary[Vector2i, bool] = {}
+	for cell in desired_cells:
+		desired_lookup[cell] = true
+	_desired_midlod_cells_by_cell = desired_lookup
+
+	for cell in _sorted_cells(_midlod_tiles_by_cell.keys()):
+		if not _desired_midlod_cells_by_cell.has(cell):
+			_free_midlod_cell(cell)
+	for cell in _sorted_cells(_ready_midlod_data_by_cell.keys()):
+		if not _desired_midlod_cells_by_cell.has(cell):
+			_ready_midlod_data_by_cell.erase(cell)
+	for cell in _sorted_cells(_queued_midlod_builds.keys()):
+		if not _desired_midlod_cells_by_cell.has(cell):
+			_cancel_midlod_build(cell)
+	for cell in _sorted_cells(_queued_midlod_commits.keys()):
+		if not _desired_midlod_cells_by_cell.has(cell):
+			_remove_queued_midlod_commit(cell)
+	for cell in _sorted_cells(_midlod_load_failures_by_cell.keys()):
+		if not _desired_midlod_cells_by_cell.has(cell):
+			_midlod_load_failures_by_cell.erase(cell)
+
+	var enqueued_count: int = 0
+	for cell in desired_cells:
+		if _midlod_tiles_by_cell.has(cell):
+			continue
+		if _ready_midlod_data_by_cell.has(cell):
+			_enqueue_ready_midlod_commit(cell)
+			continue
+		if _queued_midlod_builds.has(cell) or _midlod_load_failures_by_cell.has(cell):
+			continue
+		_enqueue_midlod_build(cell)
+		enqueued_count += 1
+
+	if enqueued_count > 0 and _workers.is_empty():
+		_process_build_queue_synchronously()
+		_drain_worker_results()
+
+
+func _desired_midlod_cells() -> Array[Vector2i]:
+	var desired_cells: Array[Vector2i] = []
+	if _active_cells.is_empty() or _region_cells_by_cell.is_empty():
+		return desired_cells
+	var center_cell: Vector2i = _active_cell_center()
+	var tile_size_m: float = GameConfig.STREAM_TILE_SIZE_M
+	var tile_radius: float = Vector2(tile_size_m, tile_size_m).length() * 0.5
+	var max_distance: float = TerrainVisualBuilderScript.REGION_STREAM_MIDLOD_RANGE_END_M + tile_radius
+	var cell_radius: int = maxi(int(ceil(max_distance / maxf(tile_size_m, 0.001))), 1)
+	var center_xz: Vector2 = Vector2((float(center_cell.x) + 0.5) * tile_size_m, (float(center_cell.y) + 0.5) * tile_size_m)
+	for y in range(center_cell.y - cell_radius, center_cell.y + cell_radius + 1):
+		for x in range(center_cell.x - cell_radius, center_cell.x + cell_radius + 1):
+			var cell: Vector2i = Vector2i(x, y)
+			if _active_cells.has(cell):
+				continue
+			if not _region_cells_by_cell.has(cell):
+				continue
+			var cell_xz: Vector2 = Vector2((float(cell.x) + 0.5) * tile_size_m, (float(cell.y) + 0.5) * tile_size_m)
+			if center_xz.distance_to(cell_xz) > max_distance:
+				continue
+			desired_cells.append(cell)
+	desired_cells.sort_custom(Callable(self, "_cell_less"))
+	return desired_cells
+
+
+func _active_cell_center() -> Vector2i:
+	if _active_cells.is_empty():
+		return Vector2i.ZERO
+	var sum_x: int = 0
+	var sum_y: int = 0
+	for cell in _sorted_cells(_active_cells.keys()):
+		sum_x += cell.x
+		sum_y += cell.y
+	var count: int = maxi(_active_cells.size(), 1)
+	return Vector2i(
+		int(floorf(float(sum_x) / float(count) + 0.5)),
+		int(floorf(float(sum_y) / float(count) + 0.5))
+	)
+
+
+func _enqueue_midlod_build(cell: Vector2i) -> void:
+	if _midlod_tiles_by_cell.has(cell):
+		return
+	if _ready_midlod_data_by_cell.has(cell):
+		return
+	if _queued_midlod_builds.has(cell):
+		return
+	if _midlod_load_failures_by_cell.has(cell):
+		return
+	if not _desired_midlod_cells_by_cell.has(cell):
+		return
+	_queued_midlod_builds[cell] = true
+	var job: Dictionary = {
+		"cell": cell,
+		"generation": _stream_generation,
+		"kind": "midlod",
+		"region_id": _region_id,
+	}
+	_work_mutex.lock()
+	_cancelled_midlod_builds.erase(cell)
+	_midlod_build_queue.append(job)
+	_work_mutex.unlock()
+	_work_semaphore.post()
+
+
+func _cancel_midlod_build(cell: Vector2i) -> void:
+	if not _queued_midlod_builds.has(cell):
+		return
+	_queued_midlod_builds.erase(cell)
+	_work_mutex.lock()
+	_cancelled_midlod_builds[cell] = true
+	_work_mutex.unlock()
+
+
 func _drain_worker_results() -> void:
 	var results: Array[Dictionary] = []
 	_work_mutex.lock()
@@ -328,6 +507,10 @@ func _drain_worker_results() -> void:
 
 	results.sort_custom(Callable(self, "_build_result_less"))
 	for result in results:
+		var kind: String = String(result.get("kind", "visual"))
+		if kind == "midlod":
+			_drain_midlod_worker_result(result)
+			continue
 		var cell: Vector2i = result["cell"] as Vector2i
 		var generation: int = int(result["generation"])
 		if generation != _stream_generation:
@@ -351,6 +534,30 @@ func _drain_worker_results() -> void:
 			_enqueue_ready_commit(cell)
 
 
+func _drain_midlod_worker_result(result: Dictionary) -> void:
+	var cell: Vector2i = result["cell"] as Vector2i
+	var generation: int = int(result["generation"])
+	if generation != _stream_generation:
+		return
+	_work_mutex.lock()
+	var was_cancelled: bool = _cancelled_midlod_builds.has(cell)
+	if was_cancelled:
+		_cancelled_midlod_builds.erase(cell)
+	_work_mutex.unlock()
+	if was_cancelled:
+		return
+	if not _queued_midlod_builds.has(cell):
+		return
+	_queued_midlod_builds.erase(cell)
+	if not bool(result["ok"]):
+		_record_midlod_load_failure(cell, String(result["message"]))
+		return
+	if not _desired_midlod_cells_by_cell.has(cell):
+		return
+	_ready_midlod_data_by_cell[cell] = result["midlod_tile_data"]
+	_enqueue_ready_midlod_commit(cell)
+
+
 func _enqueue_ready_commit(cell: Vector2i) -> void:
 	if _queued_commits.has(cell):
 		return
@@ -362,11 +569,31 @@ func _enqueue_ready_commit(cell: Vector2i) -> void:
 	_commit_queue.append(cell)
 
 
+func _enqueue_ready_midlod_commit(cell: Vector2i) -> void:
+	if _queued_midlod_commits.has(cell):
+		return
+	if _midlod_tiles_by_cell.has(cell):
+		return
+	if not _ready_midlod_data_by_cell.has(cell):
+		return
+	if not _desired_midlod_cells_by_cell.has(cell):
+		return
+	_queued_midlod_commits[cell] = true
+	_midlod_commit_queue.append(cell)
+
+
 func _remove_queued_commit(cell: Vector2i) -> void:
 	if not _queued_commits.has(cell):
 		return
 	_queued_commits.erase(cell)
 	_commit_queue.erase(cell)
+
+
+func _remove_queued_midlod_commit(cell: Vector2i) -> void:
+	if not _queued_midlod_commits.has(cell):
+		return
+	_queued_midlod_commits.erase(cell)
+	_midlod_commit_queue.erase(cell)
 
 
 func _remove_queued_foliage_subcommits(cell: Vector2i) -> void:
@@ -392,6 +619,25 @@ func _drain_commit_queue() -> int:
 		if not _active_cells.has(cell):
 			continue
 		_commit_ready_cell(cell)
+		committed_count += 1
+	return committed_count
+
+
+func _drain_midlod_commit_queue() -> int:
+	if _midlod_commit_queue.is_empty():
+		return 0
+	var commit_budget: int = maxi(GameConfig.render_visual_tile_commits_per_frame, 1)
+	_midlod_commit_queue.sort_custom(Callable(self, "_cell_less"))
+	var committed_count: int = 0
+	while committed_count < commit_budget and not _midlod_commit_queue.is_empty():
+		var cell: Vector2i = _midlod_commit_queue.pop_front()
+		_queued_midlod_commits.erase(cell)
+		if not _desired_midlod_cells_by_cell.has(cell):
+			_ready_midlod_data_by_cell.erase(cell)
+			continue
+		if not _ready_midlod_data_by_cell.has(cell):
+			continue
+		_commit_midlod_tile(cell, _ready_midlod_data_by_cell[cell])
 		committed_count += 1
 	return committed_count
 
@@ -448,10 +694,29 @@ func _commit_visual_tile(cell: Vector2i, visual_tile_data: Variant) -> void:
 	_load_failures_by_cell.erase(cell)
 
 
-func _update_hlod_visibility() -> void:
-	if _hlod_instance == null:
+func _commit_midlod_tile(cell: Vector2i, midlod_tile_data: Variant) -> void:
+	if _midlod_root == null:
 		return
-	_hlod_instance.visible = _active_cells.size() > 0
+	if _midlod_tiles_by_cell.has(cell):
+		return
+	if not _desired_midlod_cells_by_cell.has(cell):
+		_ready_midlod_data_by_cell.erase(cell)
+		return
+	var midlod_tile: MeshInstance3D = TerrainVisualBuilderScript.region_stream_midlod_tile_from_data(_midlod_root, midlod_tile_data)
+	if midlod_tile == null:
+		_midlod_load_failures_by_cell[cell] = "mid-LOD tile failed to load"
+		return
+	_midlod_tiles_by_cell[cell] = midlod_tile
+	_ready_midlod_data_by_cell.erase(cell)
+	_midlod_load_failures_by_cell.erase(cell)
+
+
+func _update_hlod_visibility() -> void:
+	var has_active_cells: bool = _active_cells.size() > 0
+	if _hlod_instance != null:
+		_hlod_instance.visible = has_active_cells
+	if _midlod_root != null:
+		_midlod_root.visible = has_active_cells
 
 
 func _commit_foliage_tile(cell: Vector2i, foliage_tile_data: Variant) -> void:
@@ -534,6 +799,13 @@ func _record_load_failure(cell: Vector2i, message: String) -> void:
 	push_error(message)
 
 
+func _record_midlod_load_failure(cell: Vector2i, message: String) -> void:
+	if _midlod_load_failures_by_cell.has(cell):
+		return
+	_midlod_load_failures_by_cell[cell] = message
+	push_error(message)
+
+
 func _build_result_less(left: Dictionary, right: Dictionary) -> bool:
 	var left_cell: Vector2i = left["cell"] as Vector2i
 	var right_cell: Vector2i = right["cell"] as Vector2i
@@ -579,14 +851,13 @@ func _process_build_queue_synchronously() -> void:
 	while true:
 		var job: Dictionary = {}
 		_work_mutex.lock()
-		if not _build_queue.is_empty():
-			job = _build_queue.pop_front() as Dictionary
+		job = _pop_next_build_job_locked()
 		_work_mutex.unlock()
 
 		if job.is_empty():
 			return
 
-		var result: Dictionary = _build_visual_tile_result(job)
+		var result: Dictionary = _build_worker_result(job)
 		_work_mutex.lock()
 		if not _worker_should_stop:
 			_result_queue.append(result)
@@ -596,6 +867,7 @@ func _process_build_queue_synchronously() -> void:
 func _clear_worker_queues() -> void:
 	_work_mutex.lock()
 	_build_queue.clear()
+	_midlod_build_queue.clear()
 	_result_queue.clear()
 	_work_mutex.unlock()
 
@@ -609,20 +881,41 @@ func _worker_loop() -> void:
 		if _worker_should_stop:
 			_work_mutex.unlock()
 			return
-		if not _build_queue.is_empty():
-			job = _build_queue.pop_front() as Dictionary
+		job = _pop_next_build_job_locked()
 		_work_mutex.unlock()
 
 		if job.is_empty():
 			continue
 
-		var result: Dictionary = _build_visual_tile_result(job)
+		var result: Dictionary = _build_worker_result(job)
 		var cell: Vector2i = result["cell"] as Vector2i
 		var generation: int = int(result["generation"])
+		var kind: String = String(result.get("kind", "visual"))
 		_work_mutex.lock()
-		if not _worker_should_stop and generation == _stream_generation and not _cancelled_builds.has(cell):
+		if not _worker_should_stop and generation == _stream_generation and not _worker_result_is_cancelled_locked(kind, cell):
 			_result_queue.append(result)
 		_work_mutex.unlock()
+
+
+func _pop_next_build_job_locked() -> Dictionary:
+	if not _build_queue.is_empty():
+		return _build_queue.pop_front() as Dictionary
+	if not _midlod_build_queue.is_empty():
+		return _midlod_build_queue.pop_front() as Dictionary
+	return {}
+
+
+func _worker_result_is_cancelled_locked(kind: String, cell: Vector2i) -> bool:
+	if kind == "midlod":
+		return _cancelled_midlod_builds.has(cell)
+	return _cancelled_builds.has(cell)
+
+
+func _build_worker_result(job: Dictionary) -> Dictionary:
+	var kind: String = String(job.get("kind", "visual"))
+	if kind == "midlod":
+		return _build_midlod_tile_result(job)
+	return _build_visual_tile_result(job)
 
 
 func _build_visual_tile_result(job: Dictionary) -> Dictionary:
@@ -638,6 +931,7 @@ func _build_visual_tile_result(job: Dictionary) -> Dictionary:
 			"ok": false,
 			"cell": cell,
 			"generation": generation,
+			"kind": "visual",
 			"message": "visual tile build cancelled: " + str(cell),
 			"visual_tile_data": null,
 		}
@@ -656,9 +950,45 @@ func _build_visual_tile_result(job: Dictionary) -> Dictionary:
 		"ok": ok,
 		"cell": cell,
 		"generation": generation,
+		"kind": "visual",
 		"message": message,
 		"visual_tile_data": visual_tile_data,
 		"foliage_tile_data": foliage_tile_data,
+	}
+
+
+func _build_midlod_tile_result(job: Dictionary) -> Dictionary:
+	var cell: Vector2i = job["cell"] as Vector2i
+	var generation: int = int(job["generation"])
+	var region_id: String = String(job["region_id"])
+
+	_work_mutex.lock()
+	var should_skip: bool = _worker_should_stop or generation != _stream_generation or _cancelled_midlod_builds.has(cell)
+	_work_mutex.unlock()
+	if should_skip:
+		return {
+			"ok": false,
+			"cell": cell,
+			"generation": generation,
+			"kind": "midlod",
+			"message": "mid-LOD tile build cancelled: " + str(cell),
+			"midlod_tile_data": null,
+		}
+
+	var midlod_tile_data: Variant = TerrainVisualBuilderScript.build_region_stream_midlod_tile_data(region_id, cell)
+	var ok: bool = midlod_tile_data != null and bool(midlod_tile_data.ok)
+	var message: String = ""
+	if not ok and midlod_tile_data != null:
+		message = String(midlod_tile_data.message)
+	if message.is_empty():
+		message = "mid-LOD tile failed to build: " + region_id + " " + str(cell)
+	return {
+		"ok": ok,
+		"cell": cell,
+		"generation": generation,
+		"kind": "midlod",
+		"message": message,
+		"midlod_tile_data": midlod_tile_data,
 	}
 
 
@@ -674,6 +1004,20 @@ func _free_visual_cell(cell: Vector2i) -> void:
 	visual_tile.queue_free()
 
 
+func _free_midlod_cell(cell: Vector2i) -> void:
+	_remove_queued_midlod_commit(cell)
+	_ready_midlod_data_by_cell.erase(cell)
+	if not _midlod_tiles_by_cell.has(cell):
+		return
+	var midlod_tile: Node3D = _midlod_tiles_by_cell[cell]
+	_midlod_tiles_by_cell.erase(cell)
+	if midlod_tile == null:
+		return
+	if midlod_tile.get_parent() != null:
+		midlod_tile.get_parent().remove_child(midlod_tile)
+	midlod_tile.queue_free()
+
+
 func _free_foliage_cell(cell: Vector2i) -> void:
 	_remove_queued_foliage_subcommits(cell)
 	var foliage_tile: Node3D = null
@@ -687,6 +1031,14 @@ func _free_foliage_cell(cell: Vector2i) -> void:
 		if foliage_tile.get_parent() != null:
 			foliage_tile.get_parent().remove_child(foliage_tile)
 		foliage_tile.queue_free()
+
+
+func _region_cell_lookup(region_id: String) -> Dictionary[Vector2i, bool]:
+	var lookup: Dictionary[Vector2i, bool] = {}
+	var cells: Array[Vector2i] = TerrainVisualBuilderScript.region_tile_cells(region_id)
+	for cell in cells:
+		lookup[cell] = true
+	return lookup
 
 
 func _sorted_cells(value: Array) -> Array[Vector2i]:

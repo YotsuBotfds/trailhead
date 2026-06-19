@@ -32,8 +32,10 @@ const SPIKE_1KM_REGION_ID: String = "spike_1km"
 const SPIKE_1KM_SCENE_ROOT_NAME: String = "Spike1KmRegion"
 const REGION_ROOT_NAME: String = "TerrainVisuals"
 const REGION_DETAIL_ROOT_NAME: String = "TerrainDetailTiles"
+const REGION_STREAM_MIDLOD_ROOT_NAME: String = "TerrainMidLODTiles"
 const REGION_HLOD_NAME: String = "TerrainHLOD"
 const REGION_HLOD_TILE_NAME_PREFIX: String = "TerrainHLODTile"
+const REGION_MIDLOD_TILE_NAME_PREFIX: String = "TerrainMidLODTile"
 const REGION_FOLIAGE_ROOT_NAME: String = "FoliageCells"
 const REGION_STREAMED_FOLIAGE_ROOT_NAME: String = "StreamedFoliageCells"
 const REGION_PIPELINE_WARMUP_ROOT_NAME: String = "PipelineWarmup"
@@ -49,7 +51,9 @@ const PIPELINE_WARMUP_FOLIAGE_LOD_COUNT_META: StringName = &"trailhead_pipeline_
 const HEIGHTMAP_FLOAT_BYTE_SIZE: int = 4
 const REGION_DETAIL_SAMPLE_STEP: int = 1
 const REGION_HLOD_SAMPLE_STEP: int = 5
-const REGION_STREAM_HLOD_SAMPLE_STEP: int = 20
+const REGION_STREAM_MIDLOD_SAMPLE_STEP: int = 4
+const REGION_STREAM_HLOD_SAMPLE_STEP: int = 8
+const REGION_STREAM_MIDLOD_RANGE_END_M: float = 700.0
 const REGION_VERTEX_KEY_CELL_OFFSET: int = 32768
 const REGION_VERTEX_KEY_CELL_STRIDE: int = 65536
 const REGION_FOLIAGE_CELL_SIZE_M: float = 32.0
@@ -207,6 +211,22 @@ class RegionVisualTileData:
 	var message: String = ""
 
 
+class RegionStreamLODTileData:
+	var ok: bool = false
+	var cell: Vector2i = Vector2i.ZERO
+	var node_name: String = ""
+	var position: Vector3 = Vector3.ZERO
+	var mesh_data: RegionMeshData = null
+	var mesh: ArrayMesh = null
+	var visibility_range_begin: float = 0.0
+	var visibility_range_end: float = 0.0
+	var visibility_radius: float = 0.0
+	var heightmap_path: String = ""
+	var surface_id_path: String = ""
+	var lod_meta: String = ""
+	var message: String = ""
+
+
 class FoliageCellData:
 	var lod_index: int = 0
 	var node_name: String = ""
@@ -308,6 +328,10 @@ static func build_region_stream_root(parent: Node3D, region_id: String) -> Node3
 
 	_add_region_pipeline_warmup(root)
 	_add_region_stream_hlod(root, region_id)
+	var midlod_root: Node3D = Node3D.new()
+	midlod_root.name = REGION_STREAM_MIDLOD_ROOT_NAME
+	midlod_root.set_meta(REGION_ID_META, region_id)
+	root.add_child(midlod_root)
 	var detail_root: Node3D = Node3D.new()
 	detail_root.name = REGION_DETAIL_ROOT_NAME
 	detail_root.set_meta(REGION_ID_META, region_id)
@@ -349,6 +373,38 @@ static func build_region_visual_tile_data(region_id: String, cell: Vector2i) -> 
 	return visual_tile_data
 
 
+static func build_region_stream_midlod_tile_data(region_id: String, cell: Vector2i) -> RegionStreamLODTileData:
+	var midlod_tile_data: RegionStreamLODTileData = RegionStreamLODTileData.new()
+	midlod_tile_data.cell = cell
+	midlod_tile_data.lod_meta = "stream_midlod"
+
+	var tile_data: RegionTileData = _load_region_tile(region_id, cell)
+	if tile_data == null:
+		midlod_tile_data.message = "mid-LOD tile failed to load: " + region_id + " " + str(cell)
+		return midlod_tile_data
+
+	var tile_origin_xz: Vector2 = _tile_origin_xz(tile_data)
+	midlod_tile_data.node_name = _region_stream_midlod_tile_node_name(region_id, tile_data.cell)
+	midlod_tile_data.position = Vector3(tile_origin_xz.x, 0.0, tile_origin_xz.y)
+	midlod_tile_data.mesh_data = build_region_surface_index_mesh_data(
+		tile_data,
+		REGION_STREAM_MIDLOD_SAMPLE_STEP,
+		tile_data.key + "_stream_terrain_midlod_mesh",
+		tile_origin_xz
+	)
+	if midlod_tile_data.mesh_data != null and midlod_tile_data.mesh_data.surfaces.size() > 0:
+		midlod_tile_data.mesh = region_mesh_from_data(midlod_tile_data.mesh_data, false)
+	midlod_tile_data.visibility_range_begin = _midlod_visibility_range_begin()
+	midlod_tile_data.visibility_range_end = _midlod_visibility_range_end(tile_data)
+	midlod_tile_data.visibility_radius = _tile_visibility_radius(tile_data)
+	midlod_tile_data.heightmap_path = tile_data.heightmap_path
+	midlod_tile_data.surface_id_path = tile_data.surface_id_path
+	midlod_tile_data.ok = midlod_tile_data.mesh_data != null and midlod_tile_data.mesh != null and midlod_tile_data.mesh_data.surfaces.size() > 0
+	if not midlod_tile_data.ok:
+		midlod_tile_data.message = "mid-LOD tile mesh had no surfaces: " + region_id + " " + str(cell)
+	return midlod_tile_data
+
+
 static func region_visual_tile_from_data(parent: Node3D, visual_tile_data: RegionVisualTileData, _hlod_instance: MeshInstance3D) -> MeshInstance3D:
 	if visual_tile_data == null or not visual_tile_data.ok or visual_tile_data.mesh_data == null or visual_tile_data.mesh == null:
 		return null
@@ -360,12 +416,34 @@ static func region_visual_tile_from_data(parent: Node3D, visual_tile_data: Regio
 	apply_region_mesh_instance_parameters(instance, visual_tile_data.mesh_data)
 	instance.visibility_range_end = visual_tile_data.visibility_range_end
 	instance.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
-	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 	instance.set_meta(REGION_LOD_META, "detail")
 	instance.set_meta(VISIBILITY_RADIUS_META, visual_tile_data.visibility_radius)
 	instance.set_meta(TILE_INDEX_META, visual_tile_data.cell)
 	instance.set_meta(TILE_PATH_META, visual_tile_data.heightmap_path)
 	instance.set_meta(TILE_SURFACE_ID_PATH_META, visual_tile_data.surface_id_path)
+	parent.add_child(instance)
+	return instance
+
+
+static func region_stream_midlod_tile_from_data(parent: Node3D, midlod_tile_data: RegionStreamLODTileData) -> MeshInstance3D:
+	if midlod_tile_data == null or not midlod_tile_data.ok or midlod_tile_data.mesh_data == null or midlod_tile_data.mesh == null:
+		return null
+	var instance: MeshInstance3D = MeshInstance3D.new()
+	instance.name = midlod_tile_data.node_name
+	instance.position = midlod_tile_data.position
+	apply_region_mesh_materials(midlod_tile_data.mesh, midlod_tile_data.mesh_data)
+	instance.mesh = midlod_tile_data.mesh
+	apply_region_mesh_instance_parameters(instance, midlod_tile_data.mesh_data)
+	instance.visibility_range_begin = midlod_tile_data.visibility_range_begin
+	instance.visibility_range_end = midlod_tile_data.visibility_range_end
+	instance.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
+	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	instance.set_meta(REGION_LOD_META, midlod_tile_data.lod_meta)
+	instance.set_meta(VISIBILITY_RADIUS_META, midlod_tile_data.visibility_radius)
+	instance.set_meta(TILE_INDEX_META, midlod_tile_data.cell)
+	instance.set_meta(TILE_PATH_META, midlod_tile_data.heightmap_path)
+	instance.set_meta(TILE_SURFACE_ID_PATH_META, midlod_tile_data.surface_id_path)
 	parent.add_child(instance)
 	return instance
 
@@ -536,12 +614,28 @@ static func _region_stream_hlod_tile_node_name(region_id: String, tile_index: Ve
 	return REGION_HLOD_TILE_NAME_PREFIX + "_" + _safe_node_name(region_id) + "_" + str(tile_index.x) + "_" + str(tile_index.y)
 
 
+static func _region_stream_midlod_tile_node_name(region_id: String, tile_index: Vector2i) -> String:
+	return REGION_MIDLOD_TILE_NAME_PREFIX + "_" + _safe_node_name(region_id) + "_" + str(tile_index.x) + "_" + str(tile_index.y)
+
+
 static func _detail_visibility_range_end(tile_data: RegionTileData) -> float:
 	return maxf(maxf(GameConfig.cam_far, GameConfig.vis_range_terrain) + _tile_visibility_radius(tile_data), 0.0)
 
 
 static func _hlod_visibility_range_begin() -> float:
 	return maxf(GameConfig.vis_range_terrain, 0.0)
+
+
+static func _midlod_visibility_range_begin() -> float:
+	return _hlod_visibility_range_begin()
+
+
+static func _midlod_visibility_range_end(tile_data: RegionTileData) -> float:
+	return maxf(REGION_STREAM_MIDLOD_RANGE_END_M + _tile_visibility_radius(tile_data), _midlod_visibility_range_begin())
+
+
+static func _stream_hlod_visibility_range_begin() -> float:
+	return maxf(REGION_STREAM_MIDLOD_RANGE_END_M, _hlod_visibility_range_begin())
 
 
 static func _foliage_lod0_visibility_range_end(cell_radius: float) -> float:
@@ -668,6 +762,7 @@ static func _add_region_hlod(parent: Node3D, tile_data_list: Array[RegionTileDat
 	instance.visibility_range_begin = _hlod_visibility_range_begin()
 	instance.visibility_range_end = 0.0
 	instance.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
+	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	instance.set_meta(REGION_LOD_META, "hlod")
 	parent.add_child(instance)
 	return instance
@@ -712,9 +807,10 @@ static func _region_stream_hlod_chunk(region_id: String, tile_data: RegionTileDa
 	var instance: MeshInstance3D = MeshInstance3D.new()
 	instance.name = _region_stream_hlod_tile_node_name(region_id, tile_data.cell)
 	instance.mesh = _build_region_stream_hlod_mesh(tile_data, tile_origin_xz)
-	instance.visibility_range_begin = _hlod_visibility_range_begin()
+	instance.visibility_range_begin = _stream_hlod_visibility_range_begin()
 	instance.visibility_range_end = 0.0
 	instance.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
+	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	instance.set_meta(REGION_LOD_META, "stream_hlod")
 	instance.set_meta(VISIBILITY_RADIUS_META, _tile_visibility_radius(tile_data))
 	instance.set_meta(TILE_INDEX_META, tile_data.cell)
@@ -767,7 +863,7 @@ static func _add_region_detail_tile(parent: Node3D, region_id: String, tile_data
 	instance.mesh = region_mesh_from_data(mesh_data)
 	instance.visibility_range_end = _detail_visibility_range_end(tile_data)
 	instance.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
-	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 	instance.set_meta(REGION_LOD_META, "detail")
 	instance.set_meta(VISIBILITY_RADIUS_META, _tile_visibility_radius(tile_data))
 	instance.set_meta(TILE_INDEX_META, tile_data.cell)
@@ -1261,6 +1357,15 @@ static func _load_region_tiles(region_id: String, tile_cells: Array[Vector2i]) -
 		if tile_data != null:
 			tile_data_list.append(tile_data)
 	return tile_data_list
+
+
+static func region_tile_cells(region_id: String) -> Array[Vector2i]:
+	var manifest_path: String = _region_manifest_path(region_id)
+	var manifest: Dictionary = _load_json_dictionary(manifest_path)
+	if manifest.is_empty():
+		var empty_cells: Array[Vector2i] = []
+		return empty_cells
+	return _tile_cells_from_manifest(manifest)
 
 
 static func _load_region_tile(region_id: String, cell: Vector2i) -> RegionTileData:

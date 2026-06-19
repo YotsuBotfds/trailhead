@@ -8,6 +8,7 @@ const SECOND_CELL: Vector2i = Vector2i(2, 3)
 const FLOAT_EPSILON: float = 0.001
 const WAIT_FRAMES: int = 180
 const EXPECTED_STREAM_HLOD_MAX_PRIMITIVES: int = 5000
+const EXPECTED_STREAM_MIDLOD_MIN_PRIMITIVES: int = 1000
 
 var _streamer: Node3D = null
 var _errors: PackedStringArray = PackedStringArray()
@@ -31,6 +32,7 @@ func _inspect() -> void:
 	_require_cell_count("configured empty", 0)
 	_require_cells("configured active cells", [])
 	_require_detail_root()
+	_require_stream_midlod_root()
 	_require_streamed_foliage_root()
 	_require_pipeline_warmup()
 	_require_stream_hlod(false)
@@ -51,6 +53,9 @@ func _inspect() -> void:
 	_require_foliage_cell_count("first foliage activation", 1)
 	_require_cells("first activation cells", [FIRST_CELL])
 	_require_stream_hlod(true)
+	await _wait_for_midlod_cell_count("first mid-LOD activation", 1)
+	_require_midlod_cell_count_at_least("first mid-LOD activation", 1)
+	_require_first_midlod_tile()
 	_require_foliage_tile(FIRST_CELL)
 	var first_tile: MeshInstance3D = _require_visual_tile(FIRST_CELL)
 	var first_surface_count: int = 0
@@ -130,6 +135,7 @@ func _inspect() -> void:
 	_require_cell_count("reset", 0)
 	_require_foliage_cell_count("reset foliage", 0)
 	_require_ready_cell_count("reset ready cache", 0)
+	_require_midlod_cell_count("reset mid-LOD", 0)
 	_require_ready_foliage_cell_count("reset foliage ready cache", 0)
 	_require_cells("reset cells", [])
 	EventBus.world_tile_activated.emit(FIRST_CELL)
@@ -145,6 +151,15 @@ func _require_detail_root() -> void:
 	var detail_root: Node = terrain_root.get_node_or_null(TerrainVisualBuilderScript.REGION_DETAIL_ROOT_NAME)
 	if detail_root == null:
 		_errors.append("streamer missing TerrainDetailTiles root")
+
+
+func _require_stream_midlod_root() -> void:
+	var terrain_root: Node = _streamer.get_node_or_null(TerrainVisualBuilderScript.REGION_ROOT_NAME)
+	if terrain_root == null:
+		return
+	var midlod_root: Node = terrain_root.get_node_or_null(TerrainVisualBuilderScript.REGION_STREAM_MIDLOD_ROOT_NAME)
+	if midlod_root == null:
+		_errors.append("streamer missing TerrainMidLODTiles root")
 
 
 func _require_streamed_foliage_root() -> void:
@@ -221,8 +236,8 @@ func _require_stream_hlod(expected_visible: bool) -> void:
 		_errors.append("streamed TerrainHLOD visible expected " + str(expected_visible) + ", got " + str(hlod.visible))
 	if hlod.visibility_range_fade_mode != GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED:
 		_errors.append("streamed TerrainHLOD visibility_range_fade_mode expected DISABLED")
-	if absf(hlod.visibility_range_begin - GameConfig.vis_range_terrain) > FLOAT_EPSILON:
-		_errors.append("streamed TerrainHLOD visibility_range_begin expected " + str(GameConfig.vis_range_terrain) + ", got " + str(hlod.visibility_range_begin))
+	if absf(hlod.visibility_range_begin - TerrainVisualBuilderScript.REGION_STREAM_MIDLOD_RANGE_END_M) > FLOAT_EPSILON:
+		_errors.append("streamed TerrainHLOD visibility_range_begin expected " + str(TerrainVisualBuilderScript.REGION_STREAM_MIDLOD_RANGE_END_M) + ", got " + str(hlod.visibility_range_begin))
 	if absf(hlod.visibility_range_end) > FLOAT_EPSILON:
 		_errors.append("streamed TerrainHLOD visibility_range_end should be open-ended")
 
@@ -276,8 +291,8 @@ func _require_visual_tile(cell: Vector2i) -> MeshInstance3D:
 			_errors.append("streamed visual cell visibility_range_end expected " + str(expected_range_end) + ", got " + str(mesh_instance.visibility_range_end) + ": " + String(mesh_instance.name))
 	if mesh_instance.visibility_range_fade_mode != GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED:
 		_errors.append("streamed visual cell visibility_range_fade_mode expected DISABLED, got " + str(mesh_instance.visibility_range_fade_mode) + ": " + String(mesh_instance.name))
-	if mesh_instance.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF:
-		_errors.append("streamed visual cell should not cast shadows: " + String(mesh_instance.name))
+	if mesh_instance.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_ON:
+		_errors.append("streamed visual cell should cast shadows: " + String(mesh_instance.name))
 	if not mesh_instance.has_meta(TerrainVisualBuilderScript.TILE_INDEX_META):
 		_errors.append("visual cell missing tile index metadata: " + String(mesh_instance.name))
 	elif Vector2i(mesh_instance.get_meta(TerrainVisualBuilderScript.TILE_INDEX_META)) != cell:
@@ -315,6 +330,62 @@ func _require_visual_tile(cell: Vector2i) -> MeshInstance3D:
 	if collision_count > 0:
 		_errors.append("streamed visual cell should not create collision objects: " + String(mesh_instance.name))
 	return mesh_instance
+
+
+func _require_first_midlod_tile() -> void:
+	var terrain_root: Node = _streamer.get_node_or_null(TerrainVisualBuilderScript.REGION_ROOT_NAME)
+	if terrain_root == null:
+		return
+	var midlod_root: Node = terrain_root.get_node_or_null(TerrainVisualBuilderScript.REGION_STREAM_MIDLOD_ROOT_NAME)
+	if midlod_root == null:
+		return
+	var midlod_tile: MeshInstance3D = null
+	for child in midlod_root.get_children():
+		var mesh_instance: MeshInstance3D = child as MeshInstance3D
+		if mesh_instance != null:
+			midlod_tile = mesh_instance
+			break
+	if midlod_tile == null:
+		_errors.append("TerrainMidLODTiles should contain at least one MeshInstance3D")
+		return
+	_require_midlod_tile(midlod_tile)
+
+
+func _require_midlod_tile(midlod_tile: MeshInstance3D) -> void:
+	if not midlod_tile.has_meta(TerrainVisualBuilderScript.REGION_LOD_META):
+		_errors.append(String(midlod_tile.name) + " missing mid-LOD metadata")
+	elif String(midlod_tile.get_meta(TerrainVisualBuilderScript.REGION_LOD_META)) != "stream_midlod":
+		_errors.append(String(midlod_tile.name) + " mid-LOD metadata expected stream_midlod, got " + String(midlod_tile.get_meta(TerrainVisualBuilderScript.REGION_LOD_META)))
+	if not midlod_tile.has_meta(TerrainVisualBuilderScript.TILE_INDEX_META):
+		_errors.append(String(midlod_tile.name) + " missing mid-LOD tile metadata")
+	if absf(midlod_tile.visibility_range_begin - GameConfig.vis_range_terrain) > FLOAT_EPSILON:
+		_errors.append(String(midlod_tile.name) + " mid-LOD visibility_range_begin expected " + str(GameConfig.vis_range_terrain) + ", got " + str(midlod_tile.visibility_range_begin))
+	if midlod_tile.has_meta(TerrainVisualBuilderScript.VISIBILITY_RADIUS_META):
+		var visibility_radius: float = float(midlod_tile.get_meta(TerrainVisualBuilderScript.VISIBILITY_RADIUS_META))
+		var expected_range_end: float = TerrainVisualBuilderScript.REGION_STREAM_MIDLOD_RANGE_END_M + visibility_radius
+		if absf(midlod_tile.visibility_range_end - expected_range_end) > FLOAT_EPSILON:
+			_errors.append(String(midlod_tile.name) + " mid-LOD visibility_range_end expected " + str(expected_range_end) + ", got " + str(midlod_tile.visibility_range_end))
+	else:
+		_errors.append(String(midlod_tile.name) + " missing mid-LOD visibility radius metadata")
+	if midlod_tile.visibility_range_fade_mode != GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED:
+		_errors.append(String(midlod_tile.name) + " mid-LOD visibility_range_fade_mode expected DISABLED")
+	if midlod_tile.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF:
+		_errors.append(String(midlod_tile.name) + " mid-LOD should not cast shadows")
+	if midlod_tile.mesh == null:
+		_errors.append(String(midlod_tile.name) + " mid-LOD missing mesh")
+	elif midlod_tile.mesh.get_surface_count() != 1:
+		_errors.append(String(midlod_tile.name) + " mid-LOD should collapse to one surface, got " + str(midlod_tile.mesh.get_surface_count()))
+	else:
+		var primitive_count: int = _mesh_index_count(midlod_tile.mesh) / 3
+		if primitive_count < EXPECTED_STREAM_MIDLOD_MIN_PRIMITIVES:
+			_errors.append(String(midlod_tile.name) + " mid-LOD primitive count should exceed coarse HLOD density, got " + str(primitive_count))
+		var material: ShaderMaterial = midlod_tile.mesh.surface_get_material(0) as ShaderMaterial
+		if material == null:
+			_errors.append(String(midlod_tile.name) + " mid-LOD should use surface-index ShaderMaterial")
+		elif material.resource_name != TerrainVisualBuilderScript.TERRAIN_INDEX_MATERIAL_NAME:
+			_errors.append(String(midlod_tile.name) + " mid-LOD material expected " + TerrainVisualBuilderScript.TERRAIN_INDEX_MATERIAL_NAME + ", got " + material.resource_name)
+	if _count_collision_objects(midlod_tile) > 0:
+		_errors.append(String(midlod_tile.name) + " mid-LOD should not create collision objects")
 
 
 func _require_foliage_tile(cell: Vector2i) -> Node3D:
@@ -513,6 +584,18 @@ func _require_cell_count(label: String, expected_count: int) -> void:
 		_errors.append(label + " expected " + str(expected_count) + " visual cells, got " + str(observed_count))
 
 
+func _require_midlod_cell_count(label: String, expected_count: int) -> void:
+	var observed_count: int = int(_streamer.call("midlod_cell_count"))
+	if observed_count != expected_count:
+		_errors.append(label + " expected " + str(expected_count) + " mid-LOD cells, got " + str(observed_count))
+
+
+func _require_midlod_cell_count_at_least(label: String, expected_minimum: int) -> void:
+	var observed_count: int = int(_streamer.call("midlod_cell_count"))
+	if observed_count < expected_minimum:
+		_errors.append(label + " expected at least " + str(expected_minimum) + " mid-LOD cells, got " + str(observed_count))
+
+
 func _require_ready_cell_count(label: String, expected_count: int) -> void:
 	var observed_count: int = int(_streamer.call("ready_visual_cell_count"))
 	if observed_count != expected_count:
@@ -543,6 +626,14 @@ func _wait_for_cell_count(label: String, expected_count: int) -> void:
 			return
 		await get_tree().process_frame
 	_require_cell_count(label, expected_count)
+
+
+func _wait_for_midlod_cell_count(label: String, expected_minimum: int) -> void:
+	for _frame_index in range(WAIT_FRAMES):
+		if int(_streamer.call("midlod_cell_count")) >= expected_minimum:
+			return
+		await get_tree().process_frame
+	_require_midlod_cell_count_at_least(label, expected_minimum)
 
 
 func _wait_for_foliage_cell_count(label: String, expected_count: int) -> void:
