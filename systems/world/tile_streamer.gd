@@ -35,6 +35,8 @@ var _queued_builds: Dictionary[Vector2i, bool] = {}
 var _cancelled_builds: Dictionary[Vector2i, bool] = {}
 var _prebuild_queue: Array[Vector2i] = []
 var _prebuilt_shapes_by_cell: Dictionary[Vector2i, HeightMapShape3D] = {}
+var _pending_eviction_cells: Array[Vector2i] = []
+var _pending_evictions_by_cell: Dictionary[Vector2i, bool] = {}
 var _last_to_load: Array[Vector2i] = []
 var _last_to_unload: Array[Vector2i] = []
 var _workers: Array[Thread] = []
@@ -154,6 +156,8 @@ func reset() -> void:
 	_cancelled_builds.clear()
 	_prebuild_queue.clear()
 	_prebuilt_shapes_by_cell.clear()
+	_pending_eviction_cells.clear()
+	_pending_evictions_by_cell.clear()
 	_forced_unready_ticks_by_cell.clear()
 	_withheld_cells_previous_tick.clear()
 	_withheld_cells_current_tick.clear()
@@ -223,6 +227,7 @@ func _physics_process(_delta: float) -> void:
 	_last_to_unload = _cell_difference(current_active_cells, desired_active_cells)
 
 	_drain_worker_results()
+	_cancel_pending_evictions_for_cells(desired_active_cells)
 	_process_unloads(_last_to_unload)
 	_forget_ready_cells_outside_prefetch(desired_prefetch_cells)
 	_cancel_prefetch_builds_outside(desired_prefetch_cells)
@@ -238,18 +243,11 @@ func _process_unloads(cells: Array[Vector2i]) -> void:
 	for cell in cells:
 		if not _active_bodies_by_cell.has(cell):
 			continue
-		var body_rid: RID = _active_bodies_by_cell[cell]
-		if body_rid.is_valid():
-			PhysicsServer3D.body_set_space(body_rid, RID())
-			PhysicsServer3D.free_rid(body_rid)
-		_active_bodies_by_cell.erase(cell)
-		_active_shapes_by_cell.erase(cell)
-		_activated_ticks_by_cell.erase(cell)
-		_ready_flags.erase(cell)
-		_heightmap_data_by_cell.erase(cell)
-		_remove_prebuild_state(cell)
-		_cancel_build(cell)
-		EventBus.world_tile_evicted.emit(cell)
+		if _pending_evictions_by_cell.has(cell):
+			continue
+		_pending_evictions_by_cell[cell] = true
+		_pending_eviction_cells.append(cell)
+	_drain_pending_evictions()
 
 
 func _process_loads(cells: Array[Vector2i]) -> void:
@@ -296,6 +294,9 @@ func _activate_cell(cell: Vector2i) -> void:
 	var shape: HeightMapShape3D
 	var prebuilt_shape: Variant = _prebuilt_shapes_by_cell.get(cell, null)
 	if prebuilt_shape == null:
+		if cell != _current_cell:
+			_enqueue_prebuild(cell)
+			return
 		shape = _shape_from_heightmap_data(_heightmap_data_by_cell[cell])
 	else:
 		shape = prebuilt_shape as HeightMapShape3D
@@ -332,6 +333,7 @@ func _load_heightmap_data(cell: Vector2i, sidecar_path: String, heightmap_path: 
 		"width": 0,
 		"depth": 0,
 		"map_data": PackedFloat32Array(),
+		"shape": null,
 	}
 	if not FileAccess.file_exists(sidecar_path):
 		result["message"] = "missing tile sidecar: " + sidecar_path
@@ -392,6 +394,7 @@ func _load_heightmap_data(cell: Vector2i, sidecar_path: String, heightmap_path: 
 	result["width"] = width
 	result["depth"] = depth
 	result["map_data"] = map_data
+	result["shape"] = _shape_from_heightmap_data(result)
 	return result
 
 
@@ -495,12 +498,11 @@ func _drain_worker_results() -> void:
 			continue
 		_heightmap_data_by_cell[cell] = result
 		_ready_flags[cell] = true
-		if (
-			not _active_bodies_by_cell.has(cell)
-			and not _prebuild_queue.has(cell)
-			and not _prebuilt_shapes_by_cell.has(cell)
-		):
-			_prebuild_queue.append(cell)
+		var result_shape: Variant = result.get("shape", null)
+		if result_shape != null and not _active_bodies_by_cell.has(cell):
+			_prebuilt_shapes_by_cell[cell] = result_shape as HeightMapShape3D
+		else:
+			_enqueue_prebuild(cell)
 		EventBus.world_tile_prefetched.emit(cell)
 
 
@@ -518,9 +520,56 @@ func _drain_prebuild_queue() -> void:
 			budget -= 1
 
 
+func _enqueue_prebuild(cell: Vector2i) -> void:
+	if _active_bodies_by_cell.has(cell):
+		return
+	if not _ready_flags.has(cell):
+		return
+	if not _heightmap_data_by_cell.has(cell):
+		return
+	if _prebuilt_shapes_by_cell.has(cell):
+		return
+	if _prebuild_queue.has(cell):
+		return
+	_prebuild_queue.append(cell)
+
+
 func _remove_prebuild_state(cell: Vector2i) -> void:
 	_prebuild_queue.erase(cell)
 	_prebuilt_shapes_by_cell.erase(cell)
+
+
+func _cancel_pending_evictions_for_cells(cells: Array[Vector2i]) -> void:
+	for cell in cells:
+		_pending_evictions_by_cell.erase(cell)
+
+
+func _drain_pending_evictions() -> void:
+	var budget: int = maxi(GameConfig.stream_collision_evictions_per_tick, 0)
+	while budget > 0 and not _pending_eviction_cells.is_empty():
+		var cell: Vector2i = _pending_eviction_cells.pop_front()
+		if not _pending_evictions_by_cell.has(cell):
+			continue
+		_pending_evictions_by_cell.erase(cell)
+		_evict_cell_now(cell)
+		budget -= 1
+
+
+func _evict_cell_now(cell: Vector2i) -> void:
+	if not _active_bodies_by_cell.has(cell):
+		return
+	var body_rid: RID = _active_bodies_by_cell[cell]
+	if body_rid.is_valid():
+		PhysicsServer3D.body_set_space(body_rid, RID())
+		PhysicsServer3D.free_rid(body_rid)
+	_active_bodies_by_cell.erase(cell)
+	_active_shapes_by_cell.erase(cell)
+	_activated_ticks_by_cell.erase(cell)
+	_ready_flags.erase(cell)
+	_heightmap_data_by_cell.erase(cell)
+	_remove_prebuild_state(cell)
+	_cancel_build(cell)
+	EventBus.world_tile_evicted.emit(cell)
 
 
 func _begin_withhold_tracking_tick() -> void:

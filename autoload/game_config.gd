@@ -34,6 +34,7 @@ var render_max_fps: int = 60
 var render_visual_tile_commits_per_frame: int = 1
 var stream_collision_activations_per_tick: int = 3
 var stream_collision_prebuild_per_tick: int = 1
+var stream_collision_evictions_per_tick: int = 3
 var stream_spawn_no_fall_probe_ticks: int = 840
 var render_visual_tile_frees_per_frame: int = 2
 var render_dynamic_resolution_enabled: bool = true
