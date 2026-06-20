@@ -2,7 +2,7 @@ extends Node3D
 
 const TerrainVisualBuilderScript: GDScript = preload("res://systems/render/terrain_visual_builder.gd")
 const MAX_BUILD_WORKERS: int = 4
-const MIDLOD_COMMIT_BUDGET_PER_FRAME: int = 1
+const MIDLOD_COMMIT_BUDGET_PER_FRAME: int = 2
 
 
 class FoliageSubcommit:
