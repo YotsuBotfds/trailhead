@@ -278,6 +278,7 @@ var debug_overlay_hitch_flash_seconds: float = 0.25
 var title_card_enabled: bool = true
 var title_card_display_seconds: float = 5.0
 var title_card_fade_seconds: float = 1.5
+var title_card_max_hold_seconds: float = 8.0
 var minimap_route_line_width: float = 1.5
 var minimap_dot_radius: float = 2.6
 var minimap_player_radius: float = 4.0

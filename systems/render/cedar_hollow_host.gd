@@ -149,6 +149,8 @@ var _track_last_bounds_max: Vector2 = Vector2.ZERO
 var _track_apply_queue: Array[Vector2i] = []
 var _track_apply_queue_lookup: Dictionary[Vector2i, bool] = {}
 var _track_applied_cells: Dictionary[Vector2i, bool] = {}
+var _cold_start_streaming_released: bool = false
+var _cold_start_hold_elapsed: float = 0.0
 
 
 func _ready() -> void:
@@ -222,7 +224,8 @@ func _physics_process(delta: float) -> void:
 	_update_camera(delta)
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	_update_cold_start_streaming_gate(delta)
 	if _terrain_track_painter == null:
 		return
 	_apply_terrain_tracks_to_streamed_tiles()
@@ -594,6 +597,74 @@ func _setup_title_card_hud() -> void:
 	add_child(_title_card_hud)
 
 
+func _update_cold_start_streaming_gate(delta: float) -> void:
+	if _cold_start_streaming_released:
+		return
+	_cold_start_hold_elapsed += maxf(delta, 0.0)
+	if _visual_streaming_ready_for_reveal() or _cold_start_hold_elapsed >= maxf(GameConfig.title_card_max_hold_seconds, 0.0):
+		_release_cold_start_streaming_gate()
+
+
+func _release_cold_start_streaming_gate() -> void:
+	if _cold_start_streaming_released:
+		return
+	_cold_start_streaming_released = true
+	if _title_card_hud != null and _title_card_hud.has_method("notify_world_ready"):
+		_title_card_hud.call("notify_world_ready")
+
+
+func _visual_streaming_ready_for_reveal() -> bool:
+	if _terrain_visual_streamer == null:
+		return false
+	if not _terrain_visual_streamer.has_method("active_visual_cells"):
+		return false
+	var active_cells: Array = _terrain_visual_streamer.call("active_visual_cells")
+	var active_count: int = active_cells.size()
+	if active_count <= 0:
+		return false
+	var expected_count: int = _expected_spawn_visual_cell_count()
+	if expected_count <= 0:
+		return _visual_streaming_ready_signal_observed(active_count)
+	if active_count < expected_count:
+		return false
+	if _terrain_visual_streamer.has_method("foliage_cell_count"):
+		var foliage_count: int = int(_terrain_visual_streamer.call("foliage_cell_count"))
+		if foliage_count < expected_count:
+			return false
+	return true
+
+
+func _visual_streaming_ready_signal_observed(active_count: int) -> bool:
+	if active_count <= 0:
+		return false
+	if not _terrain_visual_streamer.has_method("ready_visual_cell_count"):
+		return false
+	var ready_visual_count: int = int(_terrain_visual_streamer.call("ready_visual_cell_count"))
+	if ready_visual_count < active_count:
+		return false
+	if _terrain_visual_streamer.has_method("ready_foliage_cell_count"):
+		var ready_foliage_count: int = int(_terrain_visual_streamer.call("ready_foliage_cell_count"))
+		if ready_foliage_count < active_count:
+			return false
+	return true
+
+
+func _expected_spawn_visual_cell_count() -> int:
+	var streamer: Node = get_node_or_null("/root/TileStreamer")
+	if streamer == null or not streamer.has_method("expected_active_cells_for_position"):
+		return 0
+	var cells: Array = streamer.call("expected_active_cells_for_position", _vehicle_world_position())
+	return cells.size()
+
+
+func _vehicle_world_position() -> Vector3:
+	if _vehicle != null:
+		var body: Node3D = _vehicle.get_node_or_null("PhysicsBody") as Node3D
+		if body != null:
+			return body.global_position
+	return global_position
+
+
 func _sample_golden_line() -> void:
 	if _golden_line_tracker == null:
 		_sim_tick += 1
@@ -624,6 +695,13 @@ func _update_vehicle_input() -> void:
 	if forward_throttle > 0.0 or reverse_throttle <= 0.0:
 		brake = brake_action
 	var steer: float = Input.get_action_strength("steer_left") - Input.get_action_strength("steer_right")
+	if not _cold_start_streaming_released:
+		_vehicle_input.set("throttle", 0.0)
+		_vehicle_input.set("brake", 0.0)
+		_vehicle_input.set("steer", 0.0)
+		_vehicle_input.set("ebrake", false)
+		_vehicle_input.set("self_right", false)
+		return
 	_vehicle_input.set("throttle", clampf(throttle, -1.0, 1.0))
 	_vehicle_input.set("brake", brake)
 	_vehicle_input.set("steer", clampf(steer, -1.0, 1.0))
@@ -1478,6 +1556,11 @@ class TitleCardHud:
 			_panel.dismiss()
 
 
+	func notify_world_ready() -> void:
+		if _panel != null:
+			_panel.notify_world_ready()
+
+
 	class _TitleCardPanel:
 		extends Control
 
@@ -1494,19 +1577,32 @@ class TitleCardHud:
 		const SUBTITLE_COLOR: Color = Color(0.93, 0.78, 0.50, 0.82)
 		const SHADOW_COLOR: Color = Color(0.08, 0.05, 0.03, 0.52)
 		const SHADOW_OFFSET: Vector2 = Vector2(0.0, 2.0)
+		const COVER_COLOR: Color = Color(0.06, 0.05, 0.05, 1.0)
 
 		var _elapsed: float = 0.0
 		var _alpha: float = 1.0
 		var _fading: bool = false
+		var _world_ready: bool = false
 
 
 		func dismiss() -> void:
+			_world_ready = true
 			_fading = true
+
+
+		func notify_world_ready() -> void:
+			if _world_ready:
+				return
+			_world_ready = true
+			queue_redraw()
 
 
 		func _process(delta: float) -> void:
 			if _alpha <= 0.0:
 				visible = false
+				return
+			if not _world_ready:
+				queue_redraw()
 				return
 			if not _fading:
 				_elapsed += delta
@@ -1520,6 +1616,7 @@ class TitleCardHud:
 		func _draw() -> void:
 			if _alpha <= 0.0:
 				return
+			draw_rect(Rect2(Vector2.ZERO, size), _with_alpha(COVER_COLOR))
 			var font: Font = get_theme_default_font()
 			var title_size: Vector2 = font.get_string_size(TITLE_TEXT, HORIZONTAL_ALIGNMENT_CENTER, 0.0, TITLE_FONT_SIZE)
 			var subtitle_size: Vector2 = font.get_string_size(SUBTITLE_TEXT, HORIZONTAL_ALIGNMENT_CENTER, 0.0, SUBTITLE_FONT_SIZE)
