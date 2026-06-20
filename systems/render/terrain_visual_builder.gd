@@ -247,6 +247,34 @@ const ZION_WETROCK_HEIGHT_START_UNIFORM: StringName = &"zion_wetrock_height_star
 const ZION_WETROCK_HEIGHT_END_UNIFORM: StringName = &"zion_wetrock_height_end"
 const ZION_WETROCK_DARKNESS_UNIFORM: StringName = &"zion_wetrock_darkness"
 const SURFACE_UV_SCALE_UNIFORM_PREFIX: String = "surface_uv_scale_"
+# FLOOR-PBR: triplanar world-space sampling of the real CC0 ambientCG albedo+normal
+# arrays onto the drivable floor (see terrain_surface_index.gdshader). Render-only
+# tuning; bound explicitly in _apply_zion_surface_index_tuning so the values are
+# inspectable and never drift from the shader defaults.
+const USE_FLOOR_PBR_UNIFORM: StringName = &"use_floor_pbr"
+const FLOOR_PBR_BLEND_UNIFORM: StringName = &"floor_pbr_blend"
+const FLOOR_PBR_NORMAL_STRENGTH_UNIFORM: StringName = &"floor_pbr_normal_strength"
+const FLOOR_PBR_ROUGHNESS_STRENGTH_UNIFORM: StringName = &"floor_pbr_roughness_strength"
+const FLOOR_PBR_UV_SCALE_UNIFORM: StringName = &"floor_pbr_uv_scale"
+const FLOOR_PBR_SLICKROCK_SCALE_MUL_UNIFORM: StringName = &"floor_pbr_slickrock_scale_mul"
+const FLOOR_PBR_TRIPLANAR_BLEND_UNIFORM: StringName = &"floor_pbr_triplanar_blend"
+const FLOOR_PBR_SLOPE_FLAT_NY_UNIFORM: StringName = &"floor_pbr_slope_flat_ny"
+const FLOOR_PBR_SLOPE_STEEP_NY_UNIFORM: StringName = &"floor_pbr_slope_steep_ny"
+const FLOOR_PBR_HEIGHT_START_OFFSET_UNIFORM: StringName = &"floor_pbr_height_start_offset"
+const FLOOR_PBR_HEIGHT_END_OFFSET_UNIFORM: StringName = &"floor_pbr_height_end_offset"
+const FLOOR_PBR_SINGLE_PLANE_THRESHOLD_UNIFORM: StringName = &"floor_pbr_single_plane_threshold"
+const FLOOR_PBR_ENABLED: bool = true
+const FLOOR_PBR_BLEND: float = 0.55
+const FLOOR_PBR_NORMAL_STRENGTH: float = 0.50
+const FLOOR_PBR_ROUGHNESS_STRENGTH: float = 0.10
+const FLOOR_PBR_UV_SCALE: Vector2 = Vector2(0.45, 0.45)
+const FLOOR_PBR_SLICKROCK_SCALE_MUL: float = 0.5
+const FLOOR_PBR_TRIPLANAR_BLEND: float = 6.0
+const FLOOR_PBR_SLOPE_FLAT_NY: float = 0.86
+const FLOOR_PBR_SLOPE_STEEP_NY: float = 0.55
+const FLOOR_PBR_HEIGHT_START_OFFSET: float = 6.0
+const FLOOR_PBR_HEIGHT_END_OFFSET: float = 22.0
+const FLOOR_PBR_SINGLE_PLANE_THRESHOLD: float = 0.90
 
 
 class RegionTileData:
@@ -1395,6 +1423,22 @@ static func _apply_zion_surface_index_tuning(material: ShaderMaterial) -> void:
 	material.set_shader_parameter(MACRO_ALBEDO_SIZE_XZ_UNIFORM, MACRO_ALBEDO_REGION_SIZE_XZ)
 	material.set_shader_parameter(MACRO_ALBEDO_STRENGTH_UNIFORM, MACRO_ALBEDO_STRENGTH)
 	material.set_shader_parameter(NORMAL_ARRAY_STRENGTH_UNIFORM, 0.36)
+	# FLOOR-PBR: real CC0 ambientCG albedo+normal triplanar detail on the drivable floor.
+	# Defaults match the shader; bound explicitly so the values are inspectable. The floor
+	# path reuses the already-bound per-surface-id albedo_array + normal_array, so no new
+	# textures are wired here.
+	material.set_shader_parameter(USE_FLOOR_PBR_UNIFORM, FLOOR_PBR_ENABLED)
+	material.set_shader_parameter(FLOOR_PBR_BLEND_UNIFORM, FLOOR_PBR_BLEND)
+	material.set_shader_parameter(FLOOR_PBR_NORMAL_STRENGTH_UNIFORM, FLOOR_PBR_NORMAL_STRENGTH)
+	material.set_shader_parameter(FLOOR_PBR_ROUGHNESS_STRENGTH_UNIFORM, FLOOR_PBR_ROUGHNESS_STRENGTH)
+	material.set_shader_parameter(FLOOR_PBR_UV_SCALE_UNIFORM, FLOOR_PBR_UV_SCALE)
+	material.set_shader_parameter(FLOOR_PBR_SLICKROCK_SCALE_MUL_UNIFORM, FLOOR_PBR_SLICKROCK_SCALE_MUL)
+	material.set_shader_parameter(FLOOR_PBR_TRIPLANAR_BLEND_UNIFORM, FLOOR_PBR_TRIPLANAR_BLEND)
+	material.set_shader_parameter(FLOOR_PBR_SLOPE_FLAT_NY_UNIFORM, FLOOR_PBR_SLOPE_FLAT_NY)
+	material.set_shader_parameter(FLOOR_PBR_SLOPE_STEEP_NY_UNIFORM, FLOOR_PBR_SLOPE_STEEP_NY)
+	material.set_shader_parameter(FLOOR_PBR_HEIGHT_START_OFFSET_UNIFORM, FLOOR_PBR_HEIGHT_START_OFFSET)
+	material.set_shader_parameter(FLOOR_PBR_HEIGHT_END_OFFSET_UNIFORM, FLOOR_PBR_HEIGHT_END_OFFSET)
+	material.set_shader_parameter(FLOOR_PBR_SINGLE_PLANE_THRESHOLD_UNIFORM, FLOOR_PBR_SINGLE_PLANE_THRESHOLD)
 
 
 static func _surface_index_macro_albedo_texture() -> Texture2D:
