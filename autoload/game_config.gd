@@ -36,8 +36,8 @@ const SCALING_3D_MODE_FSR2: int = Viewport.SCALING_3D_MODE_FSR2
 
 var render_frame_cap_enabled: bool = true
 var render_max_fps: int = 60
-var render_visual_tile_commits_per_frame: int = 2
-var render_visual_foliage_subcommits_per_frame: int = 16
+var render_visual_tile_commits_per_frame: int = 1
+var render_visual_foliage_subcommits_per_frame: int = 4
 var stream_collision_activations_per_tick: int = 3
 var stream_collision_prebuild_per_tick: int = 1
 var stream_collision_evictions_per_tick: int = 3
@@ -48,9 +48,9 @@ var render_visual_tile_frees_per_frame: int = 2
 # the game viewport once in _ready(). DEFAULT IS FSR1 (spatial), NOT FSR2:
 # measured on Apple Silicon (Godot 4.6.1, Metal), FSR2's temporal pass costs
 # ~5-6 ms/frame vs bilinear at equal scale and falls below the 45 fps floor
-# under load, while FSR1 ties bilinear for cost yet sharpens the 0.85 upscale for
-# free (a net fidelity win). The scale (0.85) -- not the mode -- is what banks
-# the ~28% pixel-savings; it was already live via the dynamic-resolution band.
+# under load, while FSR1 ties bilinear for cost yet sharpens the 0.65 upscale for
+# free (a net fidelity win). The scale (0.65) -- not the mode -- is what banks
+# the pixel savings; it is pinned by the dynamic-resolution band.
 # render_scaling_3d_scale is the BASELINE; RenderDynamicResolutionController
 # re-pins scaling_3d_scale to its min/max band every frame, so to move the
 # steady-state scale also set render_dynamic_resolution_min_scale/_max_scale.
@@ -58,11 +58,11 @@ var render_visual_tile_frees_per_frame: int = 2
 # budget allows; use_taa stays true (FSR2 needs its velocity buffer; headless
 # visual inspectors assert it).
 var render_scaling_3d_mode: int = SCALING_3D_MODE_FSR
-var render_scaling_3d_scale: float = 0.85
+var render_scaling_3d_scale: float = 0.65
 var render_use_taa: bool = true
 var render_dynamic_resolution_enabled: bool = true
-var render_dynamic_resolution_min_scale: float = 0.85
-var render_dynamic_resolution_max_scale: float = 0.85
+var render_dynamic_resolution_min_scale: float = 0.65
+var render_dynamic_resolution_max_scale: float = 0.65
 var render_dynamic_resolution_step_down: float = 0.03
 var render_dynamic_resolution_step_up: float = 0.01
 var render_dynamic_resolution_ema_alpha: float = 0.18
@@ -179,7 +179,7 @@ var grass_clump_count: int = 72
 var grass_blades_per_clump: int = 5
 var grass_clump_radius: float = 0.30
 var grass_occluder_band_count: int = 16
-var foliage_grass_scrub_lod0_scale: Vector3 = Vector3(0.72, 0.82, 0.72)
+var foliage_grass_scrub_lod0_scale: Vector3 = Vector3(0.72, 0.90, 0.72)
 var foliage_grass_scrub_lod1_scale: Vector3 = Vector3(0.62, 0.54, 0.62)
 var scrub_density_bench_shrub: float = 0.90
 var scrub_density_packed_gravel: float = 0.60
@@ -519,7 +519,7 @@ var water_alpha: float = 0.65
 var water_roughness: float = 0.30
 var vis_range_terrain: float = 140.0
 var vis_range_ground_detail: float = 14.0
-var vis_range_grass: float = 230.0
+var vis_range_grass: float = 35.0
 var vis_range_scatter: float = 18.0
 var vis_range_props: float = 22.0
 var vis_range_vehicle: float = 24.0
