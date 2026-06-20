@@ -134,6 +134,30 @@ static func _apply_chassis_drop(visual_root: Node) -> void:
 		node.position = local_position
 
 
+static func sync_wheel_socket_heights(visual_root: Node, wheel_sockets: Array[Node3D], state: RefCounted) -> void:
+	var physics_body: Node3D = null
+	if visual_root != null:
+		physics_body = visual_root.get_parent() as Node3D
+	var hit_points: Array[Vector3] = []
+	var wheel_contacts: Array[bool] = []
+	if state != null:
+		hit_points = state.get("wheel_hit_point")
+		wheel_contacts = state.get("wheel_contact")
+	var droop_y: float = -(GameConfig.susp_rest_length + GameConfig.susp_travel)
+	var compressed_y: float = -GameConfig.susp_rest_length
+	for i in range(wheel_sockets.size()):
+		var socket: Node3D = wheel_sockets[i]
+		if socket == null:
+			continue
+		var local_position: Vector3 = socket.position
+		if physics_body != null and i < hit_points.size() and i < wheel_contacts.size() and wheel_contacts[i]:
+			var hit_local: Vector3 = physics_body.to_local(hit_points[i])
+			local_position.y = clampf(hit_local.y + GameConfig.wheel_radius, droop_y, compressed_y)
+		else:
+			local_position.y = droop_y
+		socket.position = local_position
+
+
 static func _apply_vehicle_render_tuning(node: Node) -> void:
 	var geometry: GeometryInstance3D = node as GeometryInstance3D
 	if geometry != null:
