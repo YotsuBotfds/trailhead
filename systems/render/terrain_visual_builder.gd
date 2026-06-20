@@ -54,7 +54,7 @@ const REGION_TILE_SURFACE_ID_FILE: String = "surface_id.png"
 const PIPELINE_WARMUP_TERRAIN_MATERIAL_COUNT_META: StringName = &"trailhead_pipeline_warmup_terrain_material_count"
 const PIPELINE_WARMUP_FOLIAGE_LOD_COUNT_META: StringName = &"trailhead_pipeline_warmup_foliage_lod_count"
 const HEIGHTMAP_FLOAT_BYTE_SIZE: int = 4
-const REGION_DETAIL_SAMPLE_STEP: int = 1
+const REGION_DETAIL_SAMPLE_STEP: int = 5
 const REGION_HLOD_SAMPLE_STEP: int = 5
 const REGION_STREAM_MIDLOD_SAMPLE_STEP: int = 4
 const REGION_STREAM_HLOD_SAMPLE_STEP: int = 20
@@ -62,8 +62,8 @@ const REGION_STREAM_MIDLOD_RANGE_END_M: float = 700.0
 const REGION_VERTEX_KEY_CELL_OFFSET: int = 32768
 const REGION_VERTEX_KEY_CELL_STRIDE: int = 65536
 const REGION_FOLIAGE_CELL_SIZE_M: float = 32.0
-const REGION_FOLIAGE_LOD0_BASE_COUNT: int = 48
-const REGION_FOLIAGE_LOD1_BASE_COUNT: int = 16
+const REGION_FOLIAGE_LOD0_BASE_COUNT: int = 56
+const REGION_FOLIAGE_LOD1_BASE_COUNT: int = 4
 const REGION_FOLIAGE_PATTERN_MODULUS: int = 1009
 const REGION_FOLIAGE_CELL_X_MULTIPLIER: int = 97
 const REGION_FOLIAGE_CELL_Z_MULTIPLIER: int = 193
@@ -135,9 +135,9 @@ const FOLIAGE_BOULDER_TALUS_STEEP_NORMAL_Y: float = 0.34
 # and grass-clump salts 20-28.
 const FOLIAGE_BOULDER_TILT_AXIS_SALT: int = 14
 const FOLIAGE_BOULDER_TILT_SALT: int = 15
-const FOLIAGE_DENSITY_PACKED_DIRT: float = 0.60
+const FOLIAGE_DENSITY_PACKED_DIRT: float = 0.85
 const FOLIAGE_DENSITY_TALL_GRASS: float = 0.78
-const FOLIAGE_DENSITY_LOOSE_ROCK: float = 0.60
+const FOLIAGE_DENSITY_LOOSE_ROCK: float = 0.85
 const FOLIAGE_DENSITY_MUD: float = 0.30
 # Distance-LOD fade for foliage. Every foliage MultiMeshInstance3D used to ship with
 # VISIBILITY_RANGE_FADE_DISABLED, so foliage popped hard at the streaming/visibility boundary.
@@ -149,14 +149,15 @@ const FOLIAGE_DENSITY_MUD: float = 0.30
 # Per species: trees (tall, sparse) reach farther and cross-fade slowly; grass (small, dense)
 # keeps the existing closer range with a quick fade so distant draw cost stays low; boulders
 # sit between. Bases are the LOD0 range before adding the cell radius; margins are the fade width.
-const FOLIAGE_VIS_RANGE_BASE_TREE: float = 270.0
-const FOLIAGE_VIS_RANGE_BASE_BOULDER: float = 240.0
+const FOLIAGE_VIS_RANGE_BASE_TREE: float = 70.0
+const FOLIAGE_VIS_RANGE_BASE_BOULDER: float = 60.0
+const FOLIAGE_VIS_RANGE_BASE_GRASS_LOD1_END: float = 60.0
 const FOLIAGE_FADE_MARGIN_GRASS: float = 28.0
 const FOLIAGE_FADE_MARGIN_TREE: float = 55.0
 const FOLIAGE_FADE_MARGIN_BOULDER: float = 35.0
-const FOLIAGE_BENCH_SHRUB_SHARE: float = 0.55
-const FOLIAGE_BENCH_GRASS_SHARE: float = 0.25
-const FOLIAGE_BENCH_JUNIPER_SHARE: float = 0.12
+const FOLIAGE_BENCH_SHRUB_SHARE: float = 0.30
+const FOLIAGE_BENCH_GRASS_SHARE: float = 0.56
+const FOLIAGE_BENCH_JUNIPER_SHARE: float = 0.08
 const FOLIAGE_BENCH_SELECTOR_SALT_A: int = 18
 const FOLIAGE_BENCH_SELECTOR_SALT_B: int = 30
 # Region-foliage grass/riparian_grass/shrub de-uniforming. The live band read as an even grid of
@@ -833,8 +834,10 @@ static func foliage_lod1_visibility_range_begin_for_species(cell_radius: float, 
 
 
 static func foliage_lod1_visibility_range_end_for_species(cell_radius: float, species_id: StringName) -> float:
-	# LOD1 runs out to the far clip (cam_far) so distant foliage is removed by the camera far plane
-	# (consistent with terrain/HLOD), not by a hard pop at its own range end.
+	if not _foliage_species_uses_source_material(species_id) and species_id != FOLIAGE_SPECIES_BOULDER:
+		return maxf(FOLIAGE_VIS_RANGE_BASE_GRASS_LOD1_END + cell_radius, foliage_lod1_visibility_range_begin_for_species(cell_radius, species_id))
+	# Trees and boulders run out to the far clip (cam_far) so distant silhouettes are removed by
+	# the camera far plane (consistent with terrain/HLOD), not by a hard pop at their own range end.
 	return maxf(GameConfig.cam_far + cell_radius, foliage_lod1_visibility_range_begin_for_species(cell_radius, species_id))
 
 
@@ -1433,9 +1436,9 @@ static func _apply_zion_surface_index_tuning(material: ShaderMaterial) -> void:
 	material.set_shader_parameter(ZION_STRATA_LIGHT_COLOR_UNIFORM, Color(0.86, 0.62, 0.38, 1.0))
 	material.set_shader_parameter(ZION_STRATA_DIP_UNIFORM, Vector2(0.15, 0.15))
 	material.set_shader_parameter(ZION_DETILE_STRENGTH_UNIFORM, 0.18)
-	material.set_shader_parameter(ZION_FLOOR_DARK_COLOR_UNIFORM, Color(0.26, 0.21, 0.17, 1.0))
+	material.set_shader_parameter(ZION_FLOOR_DARK_COLOR_UNIFORM, Color(0.20, 0.16, 0.13, 1.0))
 	material.set_shader_parameter(ZION_FLOOR_SEDIMENT_COLOR_UNIFORM, Color(0.55, 0.34, 0.24, 1.0))
-	material.set_shader_parameter(ZION_FLOOR_SCATTER_STRENGTH_UNIFORM, 0.62)
+	material.set_shader_parameter(ZION_FLOOR_SCATTER_STRENGTH_UNIFORM, 0.80)
 	material.set_shader_parameter(ZION_FLOOR_DETILE_STRENGTH_UNIFORM, 0.24)
 	material.set_shader_parameter(ZION_RIPARIAN_TINT_COLOR_UNIFORM, Color(0.31, 0.44, 0.24, 1.0))
 	material.set_shader_parameter(ZION_RIPARIAN_TINT_STRENGTH_UNIFORM, 0.24)
@@ -2051,8 +2054,9 @@ static func _add_foliage_species_cell_from_data(parent: Node3D, cell_data: Folia
 		instance.visibility_range_begin_margin = 0.0
 		instance.visibility_range_end_margin = fade_margin
 	else:
-		# LOD1: fades in over the begin margin, runs to the far clip (cam_far). LOD1.begin ==
-		# LOD0.end preserves the manual-LOD handoff invariant (see helper doc).
+		# LOD1: fades in over the begin margin. Grass/scrub fade out after the near-field band;
+		# trees and boulders run to cam_far. LOD1.begin == LOD0.end preserves the manual-LOD
+		# handoff invariant (see helper doc).
 		instance.visibility_range_begin = foliage_lod1_visibility_range_begin_for_species(cell_radius, species_id)
 		instance.visibility_range_end = foliage_lod1_visibility_range_end_for_species(cell_radius, species_id)
 		instance.visibility_range_begin_margin = fade_margin
