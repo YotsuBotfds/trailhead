@@ -2117,7 +2117,7 @@ static func _region_foliage_material_for_lod_species(lod_index: int, species_id:
 	if safe_lod_index > 0:
 		material_color = material_color.lerp(Color(0.30, 0.32, 0.24, material_color.a), 0.22)
 	var blade_height_reference: float = _foliage_base_scale_for_lod_species(safe_lod_index, species_id).y
-	var material: Material = _region_foliage_material("region_foliage_" + String(species_id) + "_lod" + str(safe_lod_index) + "_material", material_color, blade_height_reference)
+	var material: Material = _region_foliage_material("region_foliage_" + String(species_id) + "_lod" + str(safe_lod_index) + "_material", material_color, blade_height_reference, species_id)
 	_foliage_material_cache[cache_key] = material
 	return material
 
@@ -2292,7 +2292,7 @@ static func _append_boulder_triangle(vertices: PackedVector3Array, normals: Pack
 	indices.append(vertex_start + 2)
 
 
-static func _region_foliage_material(material_name: String, color: Color, blade_height_reference: float) -> ShaderMaterial:
+static func _region_foliage_material(material_name: String, color: Color, blade_height_reference: float, species_id: StringName) -> ShaderMaterial:
 	var material: ShaderMaterial = ShaderMaterial.new()
 	material.resource_name = material_name
 	material.shader = GrassShader
@@ -2312,6 +2312,8 @@ static func _region_foliage_material(material_name: String, color: Color, blade_
 	material.set_shader_parameter("wind_time_factor", 0.018)
 	material.set_shader_parameter("backlight_color", Color(0.95, 0.74, 0.42, 1.0))
 	material.set_shader_parameter("backlight_energy", FOLIAGE_NEON_TAME_BACKLIGHT_ENERGY)
+	var is_tree: bool = (species_id == FOLIAGE_SPECIES_WILLOW or species_id == FOLIAGE_SPECIES_COTTONWOOD)
+	material.set_shader_parameter("canopy_cutout", 1.0 if is_tree else 0.0)
 	return material
 
 
