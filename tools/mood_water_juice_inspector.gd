@@ -5,6 +5,7 @@ const AtmosphereVisualBuilderScript: GDScript = preload("res://systems/render/at
 const FLOAT_EPSILON: float = 0.001
 const COLOR_TOLERANCE: float = 0.02
 const WATER_SHADER_PATH: String = "res://systems/render/water_visual.gdshader"
+const DUSK_GOLDEN_SKY_SHADER_PATH: String = "res://systems/render/dusk_golden_sky.gdshader"
 const ZION_REGION_ID: String = "cedar_hollow_zion"
 const WORLD_REGION_ID_META: StringName = &"trailhead_world_region_id"
 const TILT_SHIFT_SHADER_PATH: String = "res://systems/render/tilt_shift.gdshader"
@@ -48,7 +49,7 @@ func _inspect() -> void:
 	var sun: DirectionalLight3D = _require_node(_scene_root, "GoldenHourSun") as DirectionalLight3D
 	_inspect_atmosphere(world_environment, sun)
 	_inspect_viewport_antialiasing()
-	_inspect_mood_toggle(world_environment)
+	_inspect_mood_toggle(world_environment, sun)
 	_inspect_dust_and_tilt_shift()
 	_inspect_contact_fill_light()
 	_inspect_vehicle_juice()
@@ -177,11 +178,11 @@ func _inspect_viewport_antialiasing() -> void:
 		_errors.append("Cedar project " + VOLUMETRIC_FOG_USE_FILTER_SETTING_PATH + " expected " + str(EXPECTED_VOLUMETRIC_FOG_USE_FILTER) + ", got " + str(volumetric_fog_use_filter))
 
 
-func _inspect_mood_toggle(world_environment: WorldEnvironment) -> void:
+func _inspect_mood_toggle(world_environment: WorldEnvironment, sun: DirectionalLight3D) -> void:
 	if world_environment == null or world_environment.environment == null:
 		return
 	var environment: Environment = world_environment.environment
-	_require_physical_sky_environment(environment, "dusk")
+	_require_dusk_golden_sky_environment(environment, sun, "dusk")
 	_scene_root.call("toggle_mood")
 	_require_physical_sky_environment(environment, "dawn")
 	if environment.fog_light_color != GameConfig.dawn_fog_light_color:
@@ -196,7 +197,7 @@ func _inspect_mood_toggle(world_environment: WorldEnvironment) -> void:
 	_require_float_close("night ambient energy", environment.ambient_light_energy, AtmosphereVisualBuilderScript.NIGHT_AMBIENT_ENERGY, FLOAT_EPSILON)
 	_require_color_close("night fog light color", environment.fog_light_color, AtmosphereVisualBuilderScript.NIGHT_FOG_LIGHT_COLOR, COLOR_TOLERANCE)
 	_scene_root.call("toggle_mood")
-	_require_physical_sky_environment(environment, "dusk restore")
+	_require_dusk_golden_sky_environment(environment, sun, "dusk restore")
 
 
 func _require_physical_sky_environment(environment: Environment, label: String) -> void:
@@ -219,6 +220,38 @@ func _require_night_sky_environment(environment: Environment) -> void:
 		_errors.append("night mood should assign a Sky resource")
 	elif not (environment.sky.sky_material is ShaderMaterial):
 		_errors.append("night mood should use ShaderMaterial star sky")
+
+
+func _require_dusk_golden_sky_environment(environment: Environment, sun: DirectionalLight3D, label: String) -> void:
+	# zionfid/sky: dusk now uses the golden-hour ShaderMaterial sky instead of a
+	# PhysicalSkyMaterial. This asserts the contract headlessly: the right shader
+	# is attached, the blue zenith is preserved (de-orange invariant), and the
+	# sun disk/halo is placed at the real GoldenHourSun direction (the one thing
+	# a PhysicalSkyMaterial got for free). The sun direction is derived the same
+	# way the host derives it (light basis.z), so a mismatch proves a wiring bug.
+	if environment.background_mode != Environment.BG_SKY:
+		_errors.append(label + " mood should use sky background mode")
+	if environment.ambient_light_source != Environment.AMBIENT_SOURCE_BG:
+		_errors.append(label + " mood should use sky ambient source")
+	if environment.sky == null:
+		_errors.append(label + " mood should assign a Sky resource")
+		return
+	var sky_material: ShaderMaterial = environment.sky.sky_material as ShaderMaterial
+	if sky_material == null:
+		_errors.append(label + " mood should use the dusk golden sky ShaderMaterial")
+		return
+	if sky_material.shader == null or sky_material.shader.resource_path != DUSK_GOLDEN_SKY_SHADER_PATH:
+		_errors.append(label + " mood sky shader expected " + DUSK_GOLDEN_SKY_SHADER_PATH + ", got " + (sky_material.shader.resource_path if sky_material.shader != null else "<null>"))
+	var zenith: Vector3 = sky_material.get_shader_parameter("zenith_color") as Vector3
+	if zenith.z <= zenith.x:
+		_errors.append(label + " mood sky zenith must stay blue (de-orange): " + str(zenith))
+	if sun != null:
+		var expected_sun_dir: Vector3 = sun.global_transform.basis.z.normalized()
+		var actual_sun_dir: Vector3 = sky_material.get_shader_parameter("sun_direction") as Vector3
+		if expected_sun_dir.distance_to(actual_sun_dir) > FLOAT_EPSILON:
+			_errors.append(label + " mood sky sun_direction expected " + str(expected_sun_dir) + ", got " + str(actual_sun_dir))
+		if actual_sun_dir.y <= 0.0:
+			_errors.append(label + " mood sky sun should sit above the horizon, got y=" + str(actual_sun_dir.y))
 
 
 func _inspect_dust_and_tilt_shift() -> void:

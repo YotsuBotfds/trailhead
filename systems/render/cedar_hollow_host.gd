@@ -16,6 +16,7 @@ const DustTiltShiftVisualBuilderScript: GDScript = preload("res://systems/render
 const ProceduralBuggyVisualScript: GDScript = preload("res://systems/render/procedural_buggy_visual.gd")
 const RenderRuntimeConfigScript: GDScript = preload("res://systems/render/render_runtime_config.gd")
 const NightStarSkyShader: Shader = preload("res://systems/render/night_star_sky.gdshader")
+const DuskGoldenSkyShader: Shader = preload("res://systems/render/dusk_golden_sky.gdshader")
 const VehicleResidueVisualScript: GDScript = preload("res://systems/render/vehicle_residue_visual.gd")
 const VehicleJuiceRigScript: GDScript = preload("res://systems/render/vehicle_juice_rig.gd")
 const CedarAudioRigScript: GDScript = preload("res://systems/render/cedar_audio_rig.gd")
@@ -47,6 +48,20 @@ const ZION_FOG_AERIAL_PERSPECTIVE: float = 0.08
 const ZION_FOG_SKY_AFFECT: float = 0.28
 const ZION_VOLUMETRIC_FOG_SKY_AFFECT: float = 0.16
 const ZION_NIGHT_FOG_SKY_AFFECT: float = 0.18
+# Dusk golden-hour sky (zionfid/sky). The dusk PhysicalSkyMaterial was a plain
+# two-stop gradient; this ShaderMaterial sky adds a soft cyan mid band, a sun
+# disk + aureole at the real GoldenHourSun direction, and subtle cirrus streaks.
+# Zenith/horizon/ground reuse the existing GameConfig dusk_sky_* values so the
+# blue zenith + de-orange direction are preserved (sky drives ambient via
+# AMBIENT_SOURCE_BG, so the warm color stays confined to a thin horizon band).
+const DUSK_GOLDEN_MID_COLOR: Color = Color(0.32, 0.55, 0.72)
+const DUSK_GOLDEN_SUN_COLOR: Color = Color(1.00, 0.80, 0.52)
+const DUSK_GOLDEN_CIRRUS_COLOR: Color = Color(0.82, 0.78, 0.72)
+const DUSK_GOLDEN_SUN_HALO_STRENGTH: float = 0.55
+const DUSK_GOLDEN_HORIZON_BAND_WIDTH: float = 0.34
+const DUSK_GOLDEN_CIRRUS_COVERAGE: float = 0.62
+const DUSK_GOLDEN_CIRRUS_INTENSITY: float = 0.16
+const DUSK_GOLDEN_ENERGY_MULTIPLIER: float = 1.20
 const ZION_SHADOW_ATLAS_SIZE: int = 8192
 const ZION_REGION_ID: String = "cedar_hollow_zion"
 const ZION_SPAWN_ID: StringName = &"demo_canyon_junction"
@@ -867,10 +882,21 @@ func _ensure_mood_sky(environment: Environment) -> Material:
 	if sky == null:
 		sky = Sky.new()
 	sky.radiance_size = Sky.RADIANCE_SIZE_2048
+	# NIGHT and DUSK both use ShaderMaterials but different shaders, so the
+	# resource identity (not just the type) decides whether to rebuild the
+	# material. Checking only `is ShaderMaterial` (the old dusk path) would keep
+	# the wrong shader when toggling between two shader moods. DAWN keeps the
+	# PhysicalSkyMaterial (dawn is unchanged).
+	var desired_shader: Shader = null
 	if _mood == MOOD_NIGHT:
-		if not (sky.sky_material is ShaderMaterial):
-			var shader_material: ShaderMaterial = ShaderMaterial.new()
-			shader_material.shader = NightStarSkyShader
+		desired_shader = NightStarSkyShader
+	elif _mood == MOOD_DUSK:
+		desired_shader = DuskGoldenSkyShader
+	if desired_shader != null:
+		var shader_material: ShaderMaterial = sky.sky_material as ShaderMaterial
+		if shader_material == null or shader_material.shader != desired_shader:
+			shader_material = ShaderMaterial.new()
+			shader_material.shader = desired_shader
 			sky.sky_material = shader_material
 	else:
 		if not (sky.sky_material is PhysicalSkyMaterial):
@@ -890,30 +916,58 @@ func _apply_zion_vista_mood(environment: Environment, sky_material: Material) ->
 		environment.fog_sky_affect = ZION_NIGHT_FOG_SKY_AFFECT
 		environment.volumetric_fog_sky_affect = ZION_NIGHT_FOG_SKY_AFFECT
 		return
+	if _mood == MOOD_DUSK:
+		environment.fog_density = ZION_DUSK_FOG_DENSITY
+		_apply_dusk_golden_sky(sky_material)
+		return
+	# MOOD_DAWN keeps the PhysicalSkyMaterial path (unchanged).
+	environment.fog_density = ZION_DAWN_FOG_DENSITY
 	var physical_sky_material: PhysicalSkyMaterial = sky_material as PhysicalSkyMaterial
 	if physical_sky_material == null:
 		return
 	physical_sky_material.use_debanding = true
-	if _mood == MOOD_DAWN:
-		environment.fog_density = ZION_DAWN_FOG_DENSITY
-		physical_sky_material.rayleigh_color = GameConfig.dawn_sky_top_color
-		physical_sky_material.mie_color = GameConfig.dawn_sky_horizon_color
-		physical_sky_material.ground_color = GameConfig.dawn_sky_ground_color
-		physical_sky_material.turbidity = GameConfig.dawn_sky_turbidity
-		physical_sky_material.sun_disk_scale = 1.0
-		physical_sky_material.mie_coefficient = 0.0045
-		physical_sky_material.mie_eccentricity = 0.80
-		physical_sky_material.energy_multiplier = 1.15
-	else:
-		environment.fog_density = ZION_DUSK_FOG_DENSITY
-		physical_sky_material.rayleigh_color = GameConfig.dusk_sky_top_color
-		physical_sky_material.mie_color = GameConfig.dusk_sky_horizon_color
-		physical_sky_material.ground_color = GameConfig.dusk_sky_ground_color
-		physical_sky_material.turbidity = GameConfig.dusk_sky_turbidity
-		physical_sky_material.sun_disk_scale = GameConfig.dusk_sky_sun_disk_scale
-		physical_sky_material.mie_coefficient = GameConfig.dusk_sky_mie_coefficient
-		physical_sky_material.mie_eccentricity = GameConfig.dusk_sky_mie_eccentricity
-		physical_sky_material.energy_multiplier = 1.22
+	physical_sky_material.rayleigh_color = GameConfig.dawn_sky_top_color
+	physical_sky_material.mie_color = GameConfig.dawn_sky_horizon_color
+	physical_sky_material.ground_color = GameConfig.dawn_sky_ground_color
+	physical_sky_material.turbidity = GameConfig.dawn_sky_turbidity
+	physical_sky_material.sun_disk_scale = 1.0
+	physical_sky_material.mie_coefficient = 0.0045
+	physical_sky_material.mie_eccentricity = 0.80
+	physical_sky_material.energy_multiplier = 1.15
+
+
+func _apply_dusk_golden_sky(sky_material: Material) -> void:
+	# Feeds the dusk_golden_sky.gdshader. Zenith/horizon/ground reuse the tuned
+	# GameConfig dusk_sky_* values (blue zenith + de-orange preserved); the cyan
+	# mid band, gold sun, and cirrus are the zionfid/sky enrichment. The sun
+	# direction is derived from the real GoldenHourSun transform so the disk +
+	# aureole sit exactly where PhysicalSkyMaterial placed them (sun source =
+	# light basis.z, the direction opposite the light's -Z emission axis).
+	var dusk_material: ShaderMaterial = sky_material as ShaderMaterial
+	if dusk_material == null:
+		return
+	dusk_material.set_shader_parameter("zenith_color", _rgb(GameConfig.dusk_sky_top_color))
+	dusk_material.set_shader_parameter("mid_color", _rgb(DUSK_GOLDEN_MID_COLOR))
+	dusk_material.set_shader_parameter("horizon_color", _rgb(GameConfig.dusk_sky_horizon_color))
+	dusk_material.set_shader_parameter("ground_color", _rgb(GameConfig.dusk_sky_ground_color))
+	dusk_material.set_shader_parameter("sun_color", _rgb(DUSK_GOLDEN_SUN_COLOR))
+	dusk_material.set_shader_parameter("cirrus_color", _rgb(DUSK_GOLDEN_CIRRUS_COLOR))
+	var sun_dir: Vector3 = Vector3(0.0, 1.0, 0.0)
+	if _sun != null:
+		sun_dir = _sun.global_transform.basis.z.normalized()
+	dusk_material.set_shader_parameter("sun_direction", sun_dir)
+	dusk_material.set_shader_parameter("sun_disk_scale", maxf(GameConfig.dusk_sky_sun_disk_scale, 0.05))
+	dusk_material.set_shader_parameter("sun_halo_strength", DUSK_GOLDEN_SUN_HALO_STRENGTH)
+	dusk_material.set_shader_parameter("horizon_band_width", DUSK_GOLDEN_HORIZON_BAND_WIDTH)
+	dusk_material.set_shader_parameter("cirrus_coverage", DUSK_GOLDEN_CIRRUS_COVERAGE)
+	dusk_material.set_shader_parameter("cirrus_intensity", DUSK_GOLDEN_CIRRUS_INTENSITY)
+	dusk_material.set_shader_parameter("energy_multiplier", DUSK_GOLDEN_ENERGY_MULTIPLIER)
+
+
+static func _rgb(color: Color) -> Vector3:
+	# Plain-vec3 sky uniforms receive linear Vector3 values directly (no
+	# source_color hint), so the art-bible linear colors are used verbatim.
+	return Vector3(color.r, color.g, color.b)
 
 
 func _collect_visual_wheels() -> void:

@@ -2311,8 +2311,10 @@ func _require_environment_mood(environment: Environment, mood_name: String, back
 		_errors.append("GoldenHourEnvironment " + mood_name + " should use sky ambient source")
 	if environment.sky == null:
 		_errors.append("GoldenHourEnvironment " + mood_name + " should assign Sky")
-	elif mood_name != "night" and not (environment.sky.sky_material is PhysicalSkyMaterial):
+	elif mood_name == "dawn" and not (environment.sky.sky_material is PhysicalSkyMaterial):
 		_errors.append("GoldenHourEnvironment " + mood_name + " should use PhysicalSkyMaterial")
+	elif mood_name == "dusk" and not (environment.sky.sky_material is ShaderMaterial):
+		_errors.append("GoldenHourEnvironment " + mood_name + " should use the golden-hour sky ShaderMaterial")
 	if not environment.fog_enabled:
 		_errors.append("GoldenHourEnvironment " + mood_name + " should enable fog")
 	_require_color_close("GoldenHourEnvironment " + mood_name + " ambient color", environment.ambient_light_color, ambient_color, LIGHTING_BAR_COLOR_TOLERANCE)
