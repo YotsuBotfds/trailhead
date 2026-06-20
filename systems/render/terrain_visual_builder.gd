@@ -242,10 +242,12 @@ const ZION_STRATA_LIGHT_COLOR_UNIFORM: StringName = &"zion_strata_light_color"
 const ZION_STRATA_DIP_UNIFORM: StringName = &"zion_strata_dip"
 const ZION_DETILE_STRENGTH_UNIFORM: StringName = &"zion_detile_strength"
 const ZION_FLOOR_DARK_COLOR_UNIFORM: StringName = &"zion_floor_dark_color"
+const ZION_FLOOR_SEDIMENT_COLOR_UNIFORM: StringName = &"zion_floor_sediment_color"
 const ZION_FLOOR_SCATTER_STRENGTH_UNIFORM: StringName = &"zion_floor_scatter_strength"
 const ZION_FLOOR_DETILE_STRENGTH_UNIFORM: StringName = &"zion_floor_detile_strength"
 const ZION_RIPARIAN_TINT_COLOR_UNIFORM: StringName = &"zion_riparian_tint_color"
 const ZION_RIPARIAN_TINT_STRENGTH_UNIFORM: StringName = &"zion_riparian_tint_strength"
+const ZION_RIPARIAN_OUTER_M_UNIFORM: StringName = &"zion_riparian_outer_m"
 const ZION_BANK_WET_WIDTH_UNIFORM: StringName = &"zion_bank_wet_width_m"
 const ZION_BANK_WET_DARKNESS_UNIFORM: StringName = &"zion_bank_wet_darkness"
 const ZION_BANK_WET_ROUGHNESS_UNIFORM: StringName = &"zion_bank_wet_roughness"
@@ -1405,7 +1407,7 @@ static func _apply_surface_index_palette(material: ShaderMaterial) -> void:
 
 static func _apply_zion_surface_index_tuning(material: ShaderMaterial) -> void:
 	material.set_shader_parameter(ZION_SANDSTONE_COLOR_UNIFORM, Color(0.82, 0.42, 0.20, 1.0))
-	material.set_shader_parameter(ZION_SAND_COLOR_UNIFORM, Color(0.86, 0.74, 0.54, 1.0))
+	material.set_shader_parameter(ZION_SAND_COLOR_UNIFORM, Color(0.78, 0.68, 0.52, 1.0))
 	material.set_shader_parameter(ZION_STRATA_DARK_COLOR_UNIFORM, Color(0.36, 0.14, 0.08, 1.0))
 	material.set_shader_parameter(ZION_SANDSTONE_SLOPE_START_UNIFORM, 0.08)
 	material.set_shader_parameter(ZION_SANDSTONE_SLOPE_END_UNIFORM, 0.38)
@@ -1416,11 +1418,13 @@ static func _apply_zion_surface_index_tuning(material: ShaderMaterial) -> void:
 	material.set_shader_parameter(ZION_STRATA_LIGHT_COLOR_UNIFORM, Color(0.86, 0.62, 0.38, 1.0))
 	material.set_shader_parameter(ZION_STRATA_DIP_UNIFORM, Vector2(0.15, 0.15))
 	material.set_shader_parameter(ZION_DETILE_STRENGTH_UNIFORM, 0.18)
-	material.set_shader_parameter(ZION_FLOOR_DARK_COLOR_UNIFORM, Color(0.36, 0.28, 0.22, 1.0))
-	material.set_shader_parameter(ZION_FLOOR_SCATTER_STRENGTH_UNIFORM, 0.36)
+	material.set_shader_parameter(ZION_FLOOR_DARK_COLOR_UNIFORM, Color(0.26, 0.21, 0.17, 1.0))
+	material.set_shader_parameter(ZION_FLOOR_SEDIMENT_COLOR_UNIFORM, Color(0.55, 0.34, 0.24, 1.0))
+	material.set_shader_parameter(ZION_FLOOR_SCATTER_STRENGTH_UNIFORM, 0.62)
 	material.set_shader_parameter(ZION_FLOOR_DETILE_STRENGTH_UNIFORM, 0.24)
 	material.set_shader_parameter(ZION_RIPARIAN_TINT_COLOR_UNIFORM, Color(0.31, 0.44, 0.24, 1.0))
 	material.set_shader_parameter(ZION_RIPARIAN_TINT_STRENGTH_UNIFORM, 0.24)
+	material.set_shader_parameter(ZION_RIPARIAN_OUTER_M_UNIFORM, 130.0)
 	material.set_shader_parameter(ZION_BANK_WET_WIDTH_UNIFORM, 14.0)
 	material.set_shader_parameter(ZION_BANK_WET_DARKNESS_UNIFORM, 0.16)
 	material.set_shader_parameter(ZION_BANK_WET_ROUGHNESS_UNIFORM, 0.36)
