@@ -136,6 +136,34 @@ uniform float micro_fine_scale = 2.6;              // ~0.38 m sand-grain frequen
 uniform float micro_fine_strength = 0.45;          // relative amplitude of the fine octave
 uniform float micro_roughness_floor_variation = 0.05;   // +/- extra floor roughness wobble
 uniform float micro_albedo_grain_strength = 0.045;      // subtle fine albedo break-up on floor
+// FLOOR-PBR: real CC0 ambientCG PBR textures (albedo + normal) sampled TRIPLANAR in world
+// space and detail-blended onto the drivable floor, so the close-up reads as real Zion
+// sand / slickrock / packed wash instead of a flat procedural tint. Cliffs/strata stay on
+// the existing procedural path: a slope + height gate drives floor_pbr_gate to ~0 off the
+// low drivable surface, so the Navajo/Kayenta/varnish cliff palette is untouched. Slope-safe
+// via triplanar axis weighting off the world geometric normal (no stretching on slickrock
+// bumps). Reuses the existing per-surface-id albedo_array + normal_array (already bound by
+// terrain_visual_builder.gd), so the surface-id picks the texture (sand/dirt vs slickrock/
+// rock vs gravel/wash) and the procedural floor masks keep supplying the de-orange TINT.
+// No dedicated roughness map ships in the ambientCG set (albedo+normal only), so floor
+// roughness is nudged by the triplanar NORMAL relief (bumpier grain -> slightly rougher).
+uniform bool use_floor_pbr = true;
+uniform float floor_pbr_blend = 0.55;               // detail-blend authority of the real albedo on the floor
+uniform float floor_pbr_normal_strength = 0.50;     // world-space floor normal-map authority
+uniform float floor_pbr_roughness_strength = 0.10;  // roughness lift driven by normal relief
+uniform vec2 floor_pbr_uv_scale = vec2(0.45, 0.45); // world repeats/meter (sand-fine ~2.2 m/tile default)
+uniform float floor_pbr_slickrock_scale_mul = 0.5;  // broader tiling where the floor reads as slickrock
+uniform float floor_pbr_triplanar_blend = 6.0;      // axis-weight power (higher = harder triplanar seams)
+uniform float floor_pbr_slope_flat_ny = 0.86;       // local_normal_y >= this = full floor texture (~30 deg)
+uniform float floor_pbr_slope_steep_ny = 0.55;      // local_normal_y <= this = no floor texture (~57 deg, cliff)
+uniform float floor_pbr_height_start_offset = 6.0;  // m above zion_sand_height_end where PBR begins to fade
+uniform float floor_pbr_height_end_offset = 22.0;   // m above zion_sand_height_end where PBR is fully gone (floor + low slickrock only)
+// PERF: when the top (Y) plane's triplanar weight is >= this threshold, sample ONLY the top
+// plane (2 fetches) instead of all three (6 fetches). The flat floor -- the overwhelming
+// majority of drivable pixels -- is near-horizontal so the side planes contribute <10% each
+// there and are not worth 4 extra texture fetches. Real slopes (slickrock bumps), where the
+// side planes are needed for slope-safety, fall below the threshold and pay for full triplanar.
+uniform float floor_pbr_single_plane_threshold = 0.90;
 
 varying vec2 world_xz;
 varying float world_y;
@@ -384,6 +412,61 @@ vec3 apply_array_normal(vec3 geo_world_normal, vec3 sampled_normal, float streng
 	return normalize(perturbed);
 }
 
+// FLOOR-PBR triplanar sample. Projects the per-surface-id albedo_array + normal_array onto
+// the three world planes and weight-blends them by the (powered) absolute geometric normal,
+// so the drivable floor reads as real sand/slickrock/gravel up close without stretching on
+// slickrock bumps. Each plane's tangent-space normal is rebuilt into world space on its own
+// T/B/N basis (matching the top-projected convention apply_array_normal uses) before blending,
+// so the relief points the right way regardless of which plane dominates. out_bump is how far
+// the texture normal leans off the geo normal (0 = flat grain, 1 = strongly relief'd); it is
+// reused to nudge ROUGHNESS because no dedicated roughness map ships in the ambientCG set.
+void sample_floor_pbr_triplanar(
+		vec3 geo_world_normal,
+		vec2 world_xz_pos,
+		float world_y_pos,
+		float surface_id_value,
+		float uv_scale,
+		float triplanar_power,
+		out vec3 out_albedo,
+		out vec3 out_world_normal,
+		out float out_bump
+	) {
+	float layer = clamp(surface_id_value, 0.0, 7.0);
+	vec2 scale = vec2(max(uv_scale, 0.0001));
+	vec3 w = pow(abs(geo_world_normal), vec3(max(triplanar_power, 0.0001)));
+	float w_sum = max(dot(w, vec3(1.0)), 1e-4);
+	w /= w_sum;
+	vec2 uv_y = world_xz_pos * scale;                       // top plane (normal +Y): xz
+	// PERF (single-plane on flats): the triplanar axis weights are cheap (no fetches), so
+	// decide here. When the top plane dominates beyond floor_pbr_single_plane_threshold the
+	// side planes would contribute <10% each -- not worth 4 extra fetches -- so sample only
+	// the Y plane (2 fetches). Real slopes (slickrock bumps), where the side planes are
+	// needed for slope-safety, fall below the threshold and run the full 3-plane blend.
+	if (w.y >= floor_pbr_single_plane_threshold) {
+		out_albedo = texture(albedo_array, vec3(uv_y, layer)).rgb;
+		vec3 n_t = texture(normal_array, vec3(uv_y, layer)).rgb * 2.0 - 1.0;
+		vec3 n_w = normalize(vec3(n_t.x, n_t.z, n_t.y));  // T=+X, B=+Z, N=+Y
+		out_world_normal = n_w;
+		out_bump = clamp(1.0 - max(dot(n_w, geo_world_normal), 0.0), 0.0, 1.0);
+		return;
+	}
+	vec2 uv_x = vec2(world_y_pos, world_xz_pos.y) * scale;  // +X plane: yz
+	vec2 uv_z = vec2(world_xz_pos.x, world_y_pos) * scale;  // +Z plane: xy
+	vec3 a_y = texture(albedo_array, vec3(uv_y, layer)).rgb;
+	vec3 a_x = texture(albedo_array, vec3(uv_x, layer)).rgb;
+	vec3 a_z = texture(albedo_array, vec3(uv_z, layer)).rgb;
+	out_albedo = a_y * w.y + a_x * w.x + a_z * w.z;
+	vec3 n_y_t = texture(normal_array, vec3(uv_y, layer)).rgb * 2.0 - 1.0;
+	vec3 n_x_t = texture(normal_array, vec3(uv_x, layer)).rgb * 2.0 - 1.0;
+	vec3 n_z_t = texture(normal_array, vec3(uv_z, layer)).rgb * 2.0 - 1.0;
+	vec3 n_y_w = normalize(vec3(n_y_t.x, n_y_t.z, n_y_t.y));  // T=+X, B=+Z, N=+Y
+	vec3 n_x_w = normalize(vec3(n_x_t.z, n_x_t.x, n_x_t.y));  // T=+Y, B=+Z, N=+X
+	vec3 n_z_w = normalize(vec3(n_z_t.x, n_z_t.y, n_z_t.z));  // T=+X, B=+Y, N=+Z
+	vec3 blended = normalize(n_y_w * w.y + n_x_w * w.x + n_z_w * w.z);
+	out_world_normal = blended;
+	out_bump = clamp(1.0 - max(dot(blended, geo_world_normal), 0.0), 0.0, 1.0);
+}
+
 void vertex() {
 	vec4 world_position = MODEL_MATRIX * vec4(VERTEX, 1.0);
 	world_xz = world_position.xz;
@@ -394,8 +477,21 @@ void vertex() {
 void fragment() {
 	vec2 control_uv = clamp((world_xz - control_origin_xz) / control_size_xz, vec2(0.0), vec2(1.0));
 	float surface_id_value = floor(texture(surface_id_texture, control_uv).r * 255.0 + 0.5);
+	vec3 world_geo_normal_now = normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
 	vec4 surface_color = surface_color_for_id(surface_id_value);
-	if (use_albedo_array) {
+	// FLOOR-PBR eligibility, computed early so the planar array fetch below can be skipped on
+	// floor pixels: there the triplanar inject later supplies the real texture, so the planar
+	// fetch would be wasted work + texture-cache contention (a source of frame spikes). Gate
+	// = slope * height and is ~= 0 off the low drivable floor, so cliffs/strata are untouched
+	// and keep the planar array path. floor_pbr_uv broadens with slope (sand fine, slickrock
+	// broader), derived from local_normal_y so it is available here without the late masks.
+	float floor_pbr_slope_gate = smoothstep(floor_pbr_slope_steep_ny, floor_pbr_slope_flat_ny, local_normal_y);
+	float floor_pbr_gate = clamp(floor_pbr_slope_gate * (1.0 - smoothstep(zion_sand_height_end + floor_pbr_height_start_offset, zion_sand_height_end + floor_pbr_height_end_offset, world_y)), 0.0, 1.0);
+	bool floor_pbr_active = use_floor_pbr && use_albedo_array && use_normal_array && (floor_pbr_gate > 0.5);
+	vec3 floor_pbr_normal_w = world_geo_normal_now;
+	float floor_pbr_bump = 0.0;
+	float floor_pbr_uv = floor_pbr_uv_scale.x * mix(1.0, floor_pbr_slickrock_scale_mul, 1.0 - floor_pbr_slope_gate);
+	if (use_albedo_array && !floor_pbr_active) {
 		float albedo_layer = clamp(surface_id_value, 0.0, 7.0);
 		vec2 albedo_uv = world_xz * surface_uv_scale_for_id(surface_id_value);
 		vec3 albedo_sample = texture(albedo_array, vec3(albedo_uv, albedo_layer)).rgb;
@@ -478,6 +574,16 @@ void fragment() {
 	zion_albedo = mix(zion_albedo, kayenta_base, kayenta_mask * cliff_face_mask * zion_kayenta_strength * 0.35);
 	zion_albedo *= 1.0 + detile * zion_detile_strength * max(cliff_mask, low_flat_mask * 0.5);
 	ALBEDO = clamp(zion_albedo, vec3(0.0), vec3(1.0));
+	// FLOOR-PBR inject: detail-blend the real CC0 PBR triplanar albedo into the floor. The
+	// procedural tints above (de-orange, wash/slickrock/sand patches) keep supplying the Zion
+	// COLOR; this adds the real close-up grain/structure the flat floor was missing. Gate is
+	// ~= 0 off the low drivable surface, so wetrock/varnish/macro/bleach below run unaltered.
+	if (floor_pbr_gate > 0.001) {
+		vec3 floor_pbr_albedo = vec3(0.5);
+		sample_floor_pbr_triplanar(world_geo_normal_now, world_xz, world_y, surface_id_value, floor_pbr_uv, floor_pbr_triplanar_blend, floor_pbr_albedo, floor_pbr_normal_w, floor_pbr_bump);
+		ALBEDO = mix(ALBEDO, floor_pbr_albedo, floor_pbr_blend * floor_pbr_gate);
+		ALBEDO = clamp(ALBEDO, vec3(0.0), vec3(1.0));
+	}
 	if (zion_wetrock_enabled) {
 		float wetrock_wall = step(local_normal_y, 0.25);
 		float wetrock_height = smoothstep(zion_wetrock_height_start, zion_wetrock_height_start + 15.0, world_y)
@@ -525,14 +631,19 @@ void fragment() {
 	// scales per surface -- more on packed_gravel/loose_rock, near-zero on paved_road,
 	// with the normal array adding extra sandstone grain on cliff/strata bands.
 	float micro_strength = surface_micro_strength_for_id(surface_id_value);
-	vec3 world_geo_normal_now = normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
 	vec3 world_detail_normal = world_geo_normal_now;
-	if (use_normal_array) {
+	float normal_mask = max(strata_cliff_mask, cliff_mask * 0.35);
+	if (use_normal_array && normal_mask > 0.01) {
 		float normal_layer = clamp(surface_id_value, 0.0, 7.0);
 		vec2 normal_uv = world_xz * surface_uv_scale_for_id(surface_id_value);
 		vec3 sampled_normal = texture(normal_array, vec3(normal_uv, normal_layer)).rgb * 2.0 - 1.0;
-		float normal_mask = max(strata_cliff_mask, cliff_mask * 0.35);
 		world_detail_normal = apply_array_normal(world_detail_normal, sampled_normal, normal_array_strength * normal_mask);
+	}
+	// FLOOR-PBR normal: slope-safe triplanar world-space normal from the real PBR normal
+	// map, gated to the drivable floor. Cliffs keep the strata/cliff normal above; the
+	// floor finally gets real sand/rock grain that raking golden-hour light can catch.
+	if (floor_pbr_gate > 0.001) {
+		world_detail_normal = normalize(mix(world_detail_normal, floor_pbr_normal_w, floor_pbr_normal_strength * floor_pbr_gate));
 	}
 	vec3 world_micro_normal = apply_micro_normal(world_detail_normal, world_xz, micro_strength);
 	world_micro_normal = apply_floor_fine_normal(world_micro_normal, world_xz, micro_strength, low_flat_mask);
@@ -540,6 +651,6 @@ void fragment() {
 	float roughness_wobble = (hash21_smooth(world_xz * 0.31) * 2.0 - 1.0) * micro_roughness_variation * (0.5 + micro_strength);
 	float floor_roughness_wobble = (hash21_smooth(world_xz * 0.9 + vec2(5.7, 2.4)) * 2.0 - 1.0) * micro_roughness_floor_variation * low_flat_mask;
 	float floor_roughness_shift = floor_wash_mask * 0.035 + floor_sand_patch_mask * 0.055 - floor_slickrock_mask * 0.08 + low_flat_mask * detile_floor * 0.025;
-	ROUGHNESS = clamp(mix(terrain_roughness + roughness_wobble + floor_roughness_shift + floor_roughness_wobble, zion_bank_wet_roughness, bank_wet_mask), 0.05, 1.0);
+	ROUGHNESS = clamp(mix(terrain_roughness + roughness_wobble + floor_roughness_shift + floor_roughness_wobble + floor_pbr_bump * floor_pbr_roughness_strength * floor_pbr_gate, zion_bank_wet_roughness, bank_wet_mask), 0.05, 1.0);
 	SPECULAR = terrain_specular;
 }
