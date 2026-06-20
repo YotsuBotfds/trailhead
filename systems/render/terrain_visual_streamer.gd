@@ -172,9 +172,13 @@ func _process(_delta: float) -> void:
 	if _workers.is_empty():
 		_process_build_queue_synchronously()
 	_drain_worker_results()
-	var committed_visual_tiles: int = _drain_commit_queue()
-	if committed_visual_tiles <= 0:
-		_drain_foliage_subcommit_queue()
+	# Drain visual tiles AND foliage subcommits every frame. The old gate only drained
+	# foliage when zero visual tiles committed that frame; while driving, visual tiles
+	# commit continuously, so foliage starved to a trickle and the floor ahead of the
+	# moving car stayed bare. Foliage drain is already bounded by its own per-frame budget
+	# (GameConfig.render_visual_foliage_subcommits_per_frame), so ungating does not uncap work.
+	_drain_commit_queue()
+	_drain_foliage_subcommit_queue()
 	_drain_midlod_commit_queue()
 	_drain_pending_frees()
 
