@@ -241,9 +241,7 @@ func _inspect_stamp_materials(stamp_root: Node, pixels_per_meter: float) -> void
 
 func _inspect_terrain_track_materials(terrain_root: Node, painter: Node) -> void:
 	if _is_streamed_zion_host():
-		var streamed_material_count: int = _streamed_track_material_count()
-		if streamed_material_count <= 0:
-			_errors.append("streamed Zion detail tiles should expose terrain track RT materials")
+		_inspect_streamed_terrain_track_materials(painter)
 		return
 	var track_texture: Texture2D = painter.call("track_texture") as Texture2D
 	var expected_bounds_min: Vector2 = painter.call("render_bounds_min")
@@ -327,21 +325,78 @@ func _wait_for_streamed_zion_tracks() -> void:
 	if streamer == null:
 		return
 	for _frame in range(STREAM_WAIT_FRAMES):
-		if int(streamer.call("visual_cell_count")) > 0 and _streamed_track_material_count() > 0:
+		if _streamed_track_overlay_state_ready():
 			return
 		await get_tree().process_frame
 		await get_tree().physics_frame
 
 
-func _streamed_track_material_count() -> int:
+func _streamed_track_overlay_state_ready() -> bool:
 	var painter: Node = _scene_root.get_node_or_null("CedarHollow/TerrainTrackVisualPainter")
-	var terrain_root: Node = _scene_root.get_node_or_null("CedarHollow/TerrainVisualStreamer/TerrainVisuals/TerrainDetailTiles")
-	if painter == null or terrain_root == null:
-		return 0
+	var streamer: Node = _scene_root.get_node_or_null("CedarHollow/TerrainVisualStreamer")
+	if painter == null or streamer == null:
+		return false
 	var track_texture: Texture2D = painter.call("track_texture") as Texture2D
 	if track_texture == null:
-		return 0
-	return _count_track_materials(terrain_root, track_texture)
+		return false
+	var bounds_min: Vector2 = painter.call("render_bounds_min")
+	var bounds_max: Vector2 = painter.call("render_bounds_max")
+	var active_cells: Array = streamer.call("active_visual_cells")
+	var has_intersecting_tracked_cell: bool = false
+	var has_outside_untracked_cell: bool = false
+	for cell_variant in active_cells:
+		var cell: Vector2i = cell_variant
+		var visual_cell: Node = streamer.call("visual_cell_node", cell) as Node
+		if visual_cell == null:
+			continue
+		var track_material_count: int = _count_track_materials(visual_cell, track_texture)
+		if _cell_intersects_track_bounds(cell, bounds_min, bounds_max):
+			if track_material_count <= 0:
+				return false
+			has_intersecting_tracked_cell = true
+		else:
+			if track_material_count > 0:
+				return false
+			has_outside_untracked_cell = true
+	return has_intersecting_tracked_cell and has_outside_untracked_cell
+
+
+func _inspect_streamed_terrain_track_materials(painter: Node) -> void:
+	var streamer: Node = _scene_root.get_node_or_null("CedarHollow/TerrainVisualStreamer")
+	if streamer == null:
+		_errors.append("missing node: CedarHollow/TerrainVisualStreamer")
+		return
+	var track_texture: Texture2D = painter.call("track_texture") as Texture2D
+	if track_texture == null:
+		_errors.append("streamed Zion track painter should expose a texture")
+		return
+	var bounds_min: Vector2 = painter.call("render_bounds_min")
+	var bounds_max: Vector2 = painter.call("render_bounds_max")
+	var active_cells: Array = streamer.call("active_visual_cells")
+	var intersecting_cell_count: int = 0
+	var outside_cell_count: int = 0
+	var tracked_material_count: int = 0
+	for cell_variant in active_cells:
+		var cell: Vector2i = cell_variant
+		var visual_cell: Node = streamer.call("visual_cell_node", cell) as Node
+		if visual_cell == null:
+			continue
+		var cell_track_material_count: int = _count_track_materials(visual_cell, track_texture)
+		if _cell_intersects_track_bounds(cell, bounds_min, bounds_max):
+			intersecting_cell_count += 1
+			if cell_track_material_count <= 0:
+				_errors.append("streamed Zion track-intersecting cell " + str(cell) + " should expose terrain track RT materials")
+			tracked_material_count += cell_track_material_count
+		else:
+			outside_cell_count += 1
+			if cell_track_material_count > 0:
+				_errors.append("streamed Zion non-intersecting cell " + str(cell) + " should not carry a terrain track next_pass")
+	if intersecting_cell_count <= 0:
+		_errors.append("streamed Zion should have loaded detail cells intersecting the track painter window")
+	if outside_cell_count <= 0:
+		_errors.append("streamed Zion should leave at least one loaded detail cell outside the track painter window un-overlaid")
+	if tracked_material_count <= 0:
+		_errors.append("streamed Zion detail tiles should expose terrain track RT materials inside the track painter window")
 
 
 func _count_track_materials(parent: Node, track_texture: Texture2D) -> int:
@@ -363,6 +418,16 @@ func _count_track_materials(parent: Node, track_texture: Texture2D) -> int:
 	for child in parent.get_children():
 		count += _count_track_materials(child, track_texture)
 	return count
+
+
+func _cell_intersects_track_bounds(cell: Vector2i, bounds_min: Vector2, bounds_max: Vector2) -> bool:
+	var tile_size_m: float = GameConfig.STREAM_TILE_SIZE_M
+	var cell_min: Vector2 = Vector2(float(cell.x) * tile_size_m, float(cell.y) * tile_size_m)
+	var cell_max: Vector2 = cell_min + Vector2(tile_size_m, tile_size_m)
+	return cell_max.x >= bounds_min.x \
+		and cell_min.x <= bounds_max.x \
+		and cell_max.y >= bounds_min.y \
+		and cell_min.y <= bounds_max.y
 
 
 func _count_collision_objects(parent: Node) -> int:

@@ -2171,6 +2171,16 @@ static func _region_foliage_mesh(mesh_name: String) -> ArrayMesh:
 	indices.append(5)
 	indices.append(6)
 	indices.append(7)
+	var original_vertex_count: int = vertices.size()
+	var original_index_count: int = indices.size()
+	for vertex_index in range(original_vertex_count):
+		vertices.append(vertices[vertex_index])
+		normals.append(-normals[vertex_index])
+		uvs.append(uvs[vertex_index])
+	for index in range(0, original_index_count, 3):
+		indices.append(indices[index] + original_vertex_count)
+		indices.append(indices[index + 2] + original_vertex_count)
+		indices.append(indices[index + 1] + original_vertex_count)
 	var arrays: Array = []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = vertices
@@ -2919,6 +2929,16 @@ static func apply_track_texture(parent: Node, track_texture: Texture2D, bounds_m
 		apply_track_texture(child, track_texture, bounds_min, bounds_max)
 
 
+static func clear_track_texture(parent: Node, track_texture: Texture2D) -> void:
+	if track_texture == null:
+		return
+	var mesh_instance: MeshInstance3D = parent as MeshInstance3D
+	if mesh_instance != null:
+		_clear_track_texture_from_mesh(mesh_instance, track_texture)
+	for child in parent.get_children():
+		clear_track_texture(child, track_texture)
+
+
 static func _apply_surface_visuals_to_mesh(mesh_instance: MeshInstance3D) -> void:
 	var mesh: Mesh = mesh_instance.mesh
 	if mesh == null:
@@ -3055,6 +3075,25 @@ static func _apply_track_texture_to_mesh(mesh_instance: MeshInstance3D, track_te
 		if material == null:
 			continue
 		material.next_pass = _track_overlay_material(material.resource_name, track_texture, bounds_min, bounds_max)
+		mesh_instance.set_surface_override_material(surface_index, material)
+
+
+static func _clear_track_texture_from_mesh(mesh_instance: MeshInstance3D, track_texture: Texture2D) -> void:
+	var mesh: Mesh = mesh_instance.mesh
+	if mesh == null:
+		return
+	for surface_index in range(mesh.get_surface_count()):
+		var material: Material = mesh_instance.get_surface_override_material(surface_index)
+		if material == null:
+			material = mesh.surface_get_material(surface_index)
+		if material == null:
+			continue
+		if not _material_has_track_texture(material, track_texture):
+			continue
+		material = material.duplicate() as Material
+		if material == null:
+			continue
+		material.next_pass = null
 		mesh_instance.set_surface_override_material(surface_index, material)
 
 
