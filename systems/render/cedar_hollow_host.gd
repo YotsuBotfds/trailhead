@@ -386,7 +386,6 @@ func _setup_terrain_tracks(terrain_root: Node3D) -> void:
 	var track_bounds_min: Vector2 = _terrain_track_painter.call("render_bounds_min")
 	var track_bounds_max: Vector2 = _terrain_track_painter.call("render_bounds_max")
 	_remember_track_texture_state(track_texture, track_bounds_min, track_bounds_max)
-	TerrainVisualBuilderScript.apply_track_texture(terrain_root, track_texture, track_bounds_min, track_bounds_max)
 
 
 func _setup_demo_props() -> void:
@@ -1298,15 +1297,15 @@ func _apply_terrain_tracks_to_streamed_tiles() -> void:
 		return
 	var track_bounds_min: Vector2 = _terrain_track_painter.call("render_bounds_min")
 	var track_bounds_max: Vector2 = _terrain_track_painter.call("render_bounds_max")
-	if _track_texture_state_changed(track_texture, track_bounds_min, track_bounds_max):
+	var track_state_changed: bool = _track_texture_state_changed(track_texture, track_bounds_min, track_bounds_max)
+	if track_state_changed:
 		_remember_track_texture_state(track_texture, track_bounds_min, track_bounds_max)
-		_track_applied_cells.clear()
 		_track_apply_queue.clear()
 		_track_apply_queue_lookup.clear()
 	if not _terrain_visual_streamer.has_method("active_visual_cells"):
 		return
 	var active_cells: Array = _terrain_visual_streamer.call("active_visual_cells")
-	_sync_track_apply_queue(active_cells)
+	_sync_track_apply_queue(active_cells, track_bounds_min, track_bounds_max, track_state_changed)
 	_drain_track_apply_queue(track_texture, track_bounds_min, track_bounds_max)
 
 
@@ -1324,17 +1323,24 @@ func _track_texture_state_changed(track_texture: Texture2D, bounds_min: Vector2,
 		or _track_last_bounds_max != bounds_max
 
 
-func _sync_track_apply_queue(active_cells: Array) -> void:
+func _sync_track_apply_queue(active_cells: Array, bounds_min: Vector2, bounds_max: Vector2, force_refresh: bool) -> void:
 	var active_lookup: Dictionary[Vector2i, bool] = {}
 	for cell_variant in active_cells:
 		var cell: Vector2i = cell_variant
 		active_lookup[cell] = true
-		if not _track_applied_cells.has(cell):
+		if not _track_cell_intersects_bounds(cell, bounds_min, bounds_max):
+			if _track_applied_cells.has(cell):
+				_clear_track_apply_cell(cell)
+			_unqueue_track_apply_cell(cell)
+			continue
+		if force_refresh or not _track_applied_cells.has(cell):
 			_queue_track_apply_cell(cell)
 	for applied_cell_variant in _track_applied_cells.keys():
 		var applied_cell: Vector2i = applied_cell_variant
 		if not active_lookup.has(applied_cell):
 			_track_applied_cells.erase(applied_cell)
+		elif not _track_cell_intersects_bounds(applied_cell, bounds_min, bounds_max):
+			_clear_track_apply_cell(applied_cell)
 
 
 func _queue_track_apply_cell(cell: Vector2i) -> void:
@@ -1344,12 +1350,26 @@ func _queue_track_apply_cell(cell: Vector2i) -> void:
 	_track_apply_queue_lookup[cell] = true
 
 
+func _unqueue_track_apply_cell(cell: Vector2i) -> void:
+	if not _track_apply_queue_lookup.has(cell):
+		return
+	_track_apply_queue.erase(cell)
+	_track_apply_queue_lookup.erase(cell)
+
+
+func _clear_track_apply_cell(cell: Vector2i) -> void:
+	var visual_cell: Node = _visual_cell_node(cell)
+	if visual_cell != null:
+		TerrainVisualBuilderScript.clear_track_texture(visual_cell, _track_last_texture)
+	_track_applied_cells.erase(cell)
+
+
 func _drain_track_apply_queue(track_texture: Texture2D, bounds_min: Vector2, bounds_max: Vector2) -> void:
 	var applied_count: int = 0
 	while applied_count < TRACK_APPLY_CELLS_PER_FRAME and not _track_apply_queue.is_empty():
 		var cell: Vector2i = _track_apply_queue.pop_front()
 		_track_apply_queue_lookup.erase(cell)
-		if _track_applied_cells.has(cell):
+		if not _track_cell_intersects_bounds(cell, bounds_min, bounds_max):
 			continue
 		var visual_cell: Node = _visual_cell_node(cell)
 		if visual_cell == null:
@@ -1363,6 +1383,16 @@ func _visual_cell_node(cell: Vector2i) -> Node:
 	if _terrain_visual_streamer == null or not _terrain_visual_streamer.has_method("visual_cell_node"):
 		return null
 	return _terrain_visual_streamer.call("visual_cell_node", cell) as Node
+
+
+func _track_cell_intersects_bounds(cell: Vector2i, bounds_min: Vector2, bounds_max: Vector2) -> bool:
+	var tile_size_m: float = GameConfig.STREAM_TILE_SIZE_M
+	var cell_min: Vector2 = Vector2(float(cell.x) * tile_size_m, float(cell.y) * tile_size_m)
+	var cell_max: Vector2 = cell_min + Vector2(tile_size_m, tile_size_m)
+	return cell_max.x >= bounds_min.x \
+		and cell_min.x <= bounds_max.x \
+		and cell_max.y >= bounds_min.y \
+		and cell_min.y <= bounds_max.y
 
 
 func _wheel_mesh_for_socket(socket: Node3D) -> Node3D:
