@@ -1,7 +1,7 @@
 extends Node3D
 
 const TerrainVisualBuilderScript: GDScript = preload("res://systems/render/terrain_visual_builder.gd")
-const MAX_BUILD_WORKERS: int = 4
+const MAX_BUILD_WORKERS: int = 7
 const MIDLOD_COMMIT_BUDGET_PER_FRAME: int = 2
 
 
@@ -38,7 +38,7 @@ var _midlod_root: Node3D = null
 var _foliage_root: Node3D = null
 var _hlod_instance: MeshInstance3D = null
 var _stream_generation: int = 0
-var _worker_count: int = clampi(OS.get_processor_count() / 4, DEFAULT_WORKER_COUNT, MAX_BUILD_WORKERS)
+var _worker_count: int = clampi(OS.get_processor_count() / 2, DEFAULT_WORKER_COUNT, MAX_BUILD_WORKERS)
 var _configured: bool = false
 var _events_connected: bool = false
 var _hlod_dirty: bool = false
