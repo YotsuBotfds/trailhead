@@ -15,6 +15,12 @@ steer_strength="${STEER_STRENGTH:-0.18}"
 # The harness (perf_autodrive.gd) additionally pulls the window foreground + on-top.
 defaults write org.godotengine.godot NSAppSleepDisabled -bool true || true
 
+# Warm the asset import cache FIRST. A fresh/cold worktree has no .godot/imported/*.scn,
+# so GLB foliage preloads fail, cedar_hollow_host.gd cannot compile, the world never renders,
+# and the drive silently measures a BLANK scene (bogus "0 hitches"/low draw-calls). This is
+# idempotent and near-instant when the cache is already warm.
+"$godot_bin" --headless --import --path . >/dev/null 2>&1 || true
+
 # Runs windowed, not --headless, because this tool measures real rendered frames.
 caffeinate -dimsu "$godot_bin" --audio-driver Dummy --path . res://tools/perf_autodrive.tscn -- \
   --out-root="$out_root" \
