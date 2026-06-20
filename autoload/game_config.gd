@@ -36,8 +36,8 @@ const SCALING_3D_MODE_FSR2: int = Viewport.SCALING_3D_MODE_FSR2
 
 var render_frame_cap_enabled: bool = true
 var render_max_fps: int = 60
-var render_visual_tile_commits_per_frame: int = 1
-var render_visual_foliage_subcommits_per_frame: int = 4
+var render_visual_tile_commits_per_frame: int = 2
+var render_visual_foliage_subcommits_per_frame: int = 16
 var stream_collision_activations_per_tick: int = 3
 var stream_collision_prebuild_per_tick: int = 1
 var stream_collision_evictions_per_tick: int = 3
@@ -58,11 +58,11 @@ var render_visual_tile_frees_per_frame: int = 2
 # budget allows; use_taa stays true (FSR2 needs its velocity buffer; headless
 # visual inspectors assert it).
 var render_scaling_3d_mode: int = SCALING_3D_MODE_FSR
-var render_scaling_3d_scale: float = 0.65
+var render_scaling_3d_scale: float = 0.85
 var render_use_taa: bool = true
 var render_dynamic_resolution_enabled: bool = true
-var render_dynamic_resolution_min_scale: float = 0.65
-var render_dynamic_resolution_max_scale: float = 0.65
+var render_dynamic_resolution_min_scale: float = 0.85
+var render_dynamic_resolution_max_scale: float = 0.85
 var render_dynamic_resolution_step_down: float = 0.03
 var render_dynamic_resolution_step_up: float = 0.01
 var render_dynamic_resolution_ema_alpha: float = 0.18
