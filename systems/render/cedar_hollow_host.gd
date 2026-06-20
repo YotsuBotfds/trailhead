@@ -1096,6 +1096,7 @@ func _update_visual_wheels(delta: float) -> void:
 		tail_material.emission_energy_multiplier = GameConfig.brake_light_energy if glowing else 0.0
 	if _wheel_sockets.is_empty():
 		return
+	ProceduralBuggyVisualScript.sync_wheel_socket_heights(_vehicle_visual_root, _wheel_sockets, state)
 	var speed: float = float(state.call("speed"))
 	var spin_step: float = speed * delta / maxf(GameConfig.wheel_radius, 0.001)
 	var throttle: float = float(_vehicle_input.get("throttle"))
@@ -1110,8 +1111,7 @@ func _update_visual_wheels(delta: float) -> void:
 		var wheel_mesh: Node3D = _wheel_mesh_for_socket(socket)
 		if wheel_mesh != null:
 			wheel_mesh.rotation = Vector3(_wheel_spin, 0.0, deg_to_rad(90.0))
-	var state_ref: RefCounted = _vehicle.call("get_state")
-	var hit_points: Array[Vector3] = state_ref.get("wheel_hit_point")
+	var hit_points: Array[Vector3] = state.get("wheel_hit_point")
 	for i in range(mini(ProceduralBuggyVisualScript.SHOCK_NODE_NAMES.size(), hit_points.size())):
 		var shock_name: String = String(ProceduralBuggyVisualScript.SHOCK_NODE_NAMES[i])
 		var shock: Node3D = _vehicle_visual_root.find_child(shock_name, true, false) as Node3D

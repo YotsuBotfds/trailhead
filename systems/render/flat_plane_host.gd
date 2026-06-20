@@ -161,6 +161,7 @@ func _update_visual_wheels(delta: float) -> void:
 	_update_vehicle_residue_visual(state)
 	if _wheel_sockets.is_empty():
 		return
+	ProceduralBuggyVisualScript.sync_wheel_socket_heights(_vehicle_visual_root, _wheel_sockets, state)
 	var speed: float = float(state.call("speed"))
 	var spin_step: float = speed * delta / maxf(GameConfig.wheel_radius, 0.001)
 	var throttle: float = float(_vehicle_input.get("throttle"))

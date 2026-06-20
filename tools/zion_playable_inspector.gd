@@ -3,6 +3,8 @@ extends Node
 const CedarHollowPlayableScene: PackedScene = preload("res://scenes/cedar_hollow_playable.tscn")
 const CedarHollowHostScript: GDScript = preload("res://systems/render/cedar_hollow_host.gd")
 const CedarRoute: Resource = preload("res://data/routes/cedar_hollow_zion_stream_route.tres")
+const VehicleStateScript: GDScript = preload("res://systems/vehicle/vehicle_state.gd")
+const ProceduralBuggyVisualScript: GDScript = preload("res://systems/render/procedural_buggy_visual.gd")
 const TerrainVisualBuilderScript: GDScript = preload("res://systems/render/terrain_visual_builder.gd")
 const WaterVisualBuilderScript: GDScript = preload("res://systems/render/water_visual_builder.gd")
 const SurfaceMapScript: GDScript = preload("res://systems/world/surface_map.gd")
@@ -22,8 +24,19 @@ const FOLIAGE_MAX_TALUS_INSTANCES: int = 120
 const FOLIAGE_MIN_WOODLAND_TO_TALUS_RATIO: float = 1.5
 const WAIT_FRAMES: int = 1800
 const POSITION_TOLERANCE_M: float = 0.45
+const FLOAT_EPSILON: float = 0.001
 const YAW_TOLERANCE_DEGREES: float = 1.0
 const MIN_VISTA_CAMERA_FAR_M: float = 1200.0
+const VEHICLE_BODY_BASE_POSITION: Vector3 = Vector3(0.0, 0.010, 0.015)
+const VEHICLE_NOSE_BASE_POSITION: Vector3 = Vector3(0.0, 0.018, -0.155)
+const VEHICLE_FRONT_LEFT_WHEEL_SOCKET_POSITION: Vector3 = Vector3(-0.08, -0.015, -0.10)
+const VEHICLE_CHASSIS_CLEARANCE_MIN: float = 0.012
+const WHEEL_SOCKET_NAMES: Array[String] = [
+	"wheel_front_left",
+	"wheel_front_right",
+	"wheel_rear_left",
+	"wheel_rear_right",
+]
 const STRIP_ONLY_ROOTS: Array[String] = [
 	"GroundDetailVisuals",
 	"FeatureVisuals",
@@ -324,6 +337,128 @@ func _require_vehicle_spawn() -> void:
 	var yaw_degrees: float = rad_to_deg(basis.get_euler().y)
 	if absf(angle_difference(deg_to_rad(_expected_spawn_yaw_degrees), deg_to_rad(yaw_degrees))) > deg_to_rad(YAW_TOLERANCE_DEGREES):
 		_errors.append("Zion vehicle yaw expected " + str(_expected_spawn_yaw_degrees) + ", got " + str(yaw_degrees))
+	_require_vehicle_visual_ride_height(vehicle)
+
+
+func _require_vehicle_visual_ride_height(vehicle: Node) -> void:
+	var visual_root: Node = _require_node(vehicle, "PhysicsBody/VisualRoot")
+	if visual_root == null:
+		return
+	var drop_offset: Vector3 = Vector3(0.0, GameConfig.vehicle_visual_chassis_drop, 0.0)
+	_require_node_position(visual_root, "body", VEHICLE_BODY_BASE_POSITION - drop_offset, FLOAT_EPSILON)
+	_require_node_position(visual_root, "nose", VEHICLE_NOSE_BASE_POSITION - drop_offset, FLOAT_EPSILON)
+	_require_wheel_socket_position(visual_root, "wheel_front_left", VEHICLE_FRONT_LEFT_WHEEL_SOCKET_POSITION)
+	_require_wheel_socket_position(visual_root, "wheel_front_right", Vector3(0.08, -0.015, -0.10))
+	_require_wheel_socket_position(visual_root, "wheel_rear_left", Vector3(-0.08, -0.015, 0.10))
+	_require_wheel_socket_position(visual_root, "wheel_rear_right", Vector3(0.08, -0.015, 0.10))
+	_require_visual_wheel_socket_contact_follow(visual_root)
+	_require_vehicle_chassis_clearance(visual_root)
+
+
+func _require_wheel_socket_position(visual_root: Node, path: String, expected: Vector3) -> void:
+	var socket: Node3D = _require_node(visual_root, path) as Node3D
+	if socket == null:
+		return
+	if absf(socket.position.x - expected.x) > FLOAT_EPSILON or absf(socket.position.z - expected.z) > FLOAT_EPSILON:
+		_errors.append(path + " socket x/z expected " + str(Vector2(expected.x, expected.z)) + ", got " + str(Vector2(socket.position.x, socket.position.z)))
+	var droop_y: float = -(GameConfig.susp_rest_length + GameConfig.susp_travel)
+	var compressed_y: float = -GameConfig.susp_rest_length
+	if socket.position.y < droop_y - FLOAT_EPSILON or socket.position.y > compressed_y + FLOAT_EPSILON:
+		_errors.append(path + " socket y expected within suspension range [" + str(droop_y) + ", " + str(compressed_y) + "], got " + str(socket.position.y))
+
+
+func _require_visual_wheel_socket_contact_follow(visual_root: Node) -> void:
+	var physics_body: Node3D = visual_root.get_parent() as Node3D
+	if physics_body == null:
+		return
+	var sockets: Array[Node3D] = []
+	var original_positions: Array[Vector3] = []
+	for socket_name in WHEEL_SOCKET_NAMES:
+		var socket: Node3D = visual_root.get_node_or_null(socket_name) as Node3D
+		if socket == null:
+			_errors.append("missing wheel socket for contact-follow check: " + socket_name)
+			return
+		sockets.append(socket)
+		original_positions.append(socket.position)
+	var compressed_y: float = -GameConfig.susp_rest_length
+	var droop_y: float = -(GameConfig.susp_rest_length + GameConfig.susp_travel)
+	var mid_y: float = lerpf(droop_y, compressed_y, 0.5)
+	var expected_y_values: Array[float] = [compressed_y, mid_y, droop_y, droop_y]
+	var contacts: Array[bool] = [true, true, true, false]
+	var hit_points: Array[Vector3] = []
+	for i in range(sockets.size()):
+		var socket: Node3D = sockets[i]
+		var local_hit: Vector3 = Vector3(socket.position.x, expected_y_values[i] - GameConfig.wheel_radius, socket.position.z)
+		hit_points.append(physics_body.to_global(local_hit))
+	var state: RefCounted = VehicleStateScript.new()
+	state.set("wheel_contact", contacts)
+	state.set("wheel_hit_point", hit_points)
+	ProceduralBuggyVisualScript.sync_wheel_socket_heights(visual_root, sockets, state)
+	for i in range(sockets.size()):
+		var socket: Node3D = sockets[i]
+		if absf(socket.position.y - expected_y_values[i]) > FLOAT_EPSILON:
+			_errors.append(String(socket.name) + " visual socket y should follow recorded contact; expected " + str(expected_y_values[i]) + ", got " + str(socket.position.y))
+		socket.position = original_positions[i]
+
+
+func _require_vehicle_chassis_clearance(visual_root: Node) -> void:
+	var body: Node3D = _require_node(visual_root, "body") as Node3D
+	var wheel_socket: Node3D = _require_node(visual_root, "wheel_front_left") as Node3D
+	if body == null or wheel_socket == null:
+		return
+	var visual_gap: float = body.position.y - wheel_socket.position.y
+	if visual_gap > GameConfig.vehicle_visual_chassis_wheel_socket_max_gap:
+		_errors.append("Zion vehicle visual chassis-to-wheel socket gap expected <= " + str(GameConfig.vehicle_visual_chassis_wheel_socket_max_gap) + ", got " + str(visual_gap))
+	var chassis_min_y: float = _chassis_lowest_global_y(visual_root)
+	var contact_plane_y: float = _wheel_contact_plane_global_y(visual_root)
+	if chassis_min_y > 999999.0 or contact_plane_y < -999999.0:
+		return
+	var clearance: float = chassis_min_y - contact_plane_y
+	if clearance < VEHICLE_CHASSIS_CLEARANCE_MIN:
+		_errors.append("Zion vehicle visual chassis clearance expected >= " + str(VEHICLE_CHASSIS_CLEARANCE_MIN) + "m, got " + str(clearance))
+
+
+func _chassis_lowest_global_y(visual_root: Node) -> float:
+	var min_y: float = 1000000.0
+	for node_name in ProceduralBuggyVisualScript.CHASSIS_DROP_NODE_NAMES:
+		var node: Node = visual_root.get_node_or_null(String(node_name))
+		if node != null:
+			min_y = _lowest_mesh_global_y(node, min_y)
+	return min_y
+
+
+func _lowest_mesh_global_y(parent: Node, current_min: float) -> float:
+	var mesh_instance: MeshInstance3D = parent as MeshInstance3D
+	if mesh_instance != null and mesh_instance.mesh != null:
+		current_min = minf(current_min, _mesh_global_min_y(mesh_instance))
+	for child in parent.get_children():
+		current_min = _lowest_mesh_global_y(child, current_min)
+	return current_min
+
+
+func _mesh_global_min_y(mesh_instance: MeshInstance3D) -> float:
+	var aabb: AABB = mesh_instance.get_aabb()
+	var min_y: float = 1000000.0
+	for x_index in range(2):
+		for y_index in range(2):
+			for z_index in range(2):
+				var corner: Vector3 = aabb.position + Vector3(
+						aabb.size.x if x_index == 1 else 0.0,
+						aabb.size.y if y_index == 1 else 0.0,
+						aabb.size.z if z_index == 1 else 0.0
+				)
+				var global_corner: Vector3 = mesh_instance.global_transform * corner
+				min_y = minf(min_y, global_corner.y)
+	return min_y
+
+
+func _wheel_contact_plane_global_y(visual_root: Node) -> float:
+	var contact_y: float = -1000000.0
+	for socket_name in WHEEL_SOCKET_NAMES:
+		var socket: Node3D = visual_root.get_node_or_null(socket_name) as Node3D
+		if socket != null:
+			contact_y = maxf(contact_y, socket.global_position.y - GameConfig.wheel_radius)
+	return contact_y
 
 
 func _require_surface_map() -> void:
@@ -587,6 +722,14 @@ func _require_node(parent: Node, path: String) -> Node:
 	if node == null:
 		_errors.append("missing node: " + path)
 	return node
+
+
+func _require_node_position(parent: Node, path: String, expected: Vector3, tolerance: float) -> void:
+	var node: Node3D = _require_node(parent, path) as Node3D
+	if node == null:
+		return
+	if node.position.distance_to(expected) > tolerance:
+		_errors.append(path + " position expected " + str(expected) + ", got " + str(node.position))
 
 
 func _finish() -> void:
