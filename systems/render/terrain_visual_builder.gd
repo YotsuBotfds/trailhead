@@ -62,8 +62,8 @@ const REGION_STREAM_MIDLOD_RANGE_END_M: float = 700.0
 const REGION_VERTEX_KEY_CELL_OFFSET: int = 32768
 const REGION_VERTEX_KEY_CELL_STRIDE: int = 65536
 const REGION_FOLIAGE_CELL_SIZE_M: float = 32.0
-const REGION_FOLIAGE_LOD0_BASE_COUNT: int = 28
-const REGION_FOLIAGE_LOD1_BASE_COUNT: int = 9
+const REGION_FOLIAGE_LOD0_BASE_COUNT: int = 48
+const REGION_FOLIAGE_LOD1_BASE_COUNT: int = 16
 const REGION_FOLIAGE_PATTERN_MODULUS: int = 1009
 const REGION_FOLIAGE_CELL_X_MULTIPLIER: int = 97
 const REGION_FOLIAGE_CELL_Z_MULTIPLIER: int = 193
@@ -105,8 +105,8 @@ const FOLIAGE_SPECIES_BOULDER_COLOR: Color = Color(0.69, 0.47, 0.31, 1.0)
 const FOLIAGE_NEON_TAME_TIP_BOOST: Vector3 = Vector3(1.12, 1.08, 1.02)
 const FOLIAGE_NEON_TAME_BACKLIGHT_ENERGY: float = 0.10
 const FOLIAGE_TREE_REAL_MESH_SCALE: Vector3 = Vector3.ONE
-const FOLIAGE_SHRUB_LOD0_SCALE: Vector3 = Vector3(0.72, 1.18, 0.72)
-const FOLIAGE_SHRUB_LOD1_SCALE: Vector3 = Vector3(0.78, 0.92, 0.78)
+const FOLIAGE_SHRUB_LOD0_SCALE: Vector3 = Vector3(0.90, 1.22, 0.90)
+const FOLIAGE_SHRUB_LOD1_SCALE: Vector3 = Vector3(0.86, 0.94, 0.86)
 const FOLIAGE_BOULDER_LOD0_SCALE: Vector3 = Vector3(1.0, 1.0, 1.0)
 const FOLIAGE_BOULDER_LOD1_SCALE: Vector3 = Vector3(0.82, 0.82, 0.82)
 # Boulder/talus enrichment (Zion art-direction bible §1.1, §2.3): real lower Zion carpets
@@ -126,6 +126,7 @@ const FOLIAGE_BOULDER_GROUND_SINK_MAX_M: float = 0.15
 # FOLIAGE_BOULDER_TALUS_DENSITY_BOOST so rock piles where the slopes are. Capped so a near-
 # vertical wall never forces keep-probability above 1.0.
 const FOLIAGE_BOULDER_TALUS_DENSITY_BOOST: float = 3.2
+const FOLIAGE_BOULDER_FLAT_DENSITY_MUL: float = 0.35
 const FOLIAGE_BOULDER_DENSITY_CAP: float = 0.55
 # normal.y floor at which the talus density boost saturates (~70 degrees); below this a
 # near-vertical wall holds at the boost ceiling instead of stacking further.
@@ -134,9 +135,9 @@ const FOLIAGE_BOULDER_TALUS_STEEP_NORMAL_Y: float = 0.34
 # and grass-clump salts 20-28.
 const FOLIAGE_BOULDER_TILT_AXIS_SALT: int = 14
 const FOLIAGE_BOULDER_TILT_SALT: int = 15
-const FOLIAGE_DENSITY_PACKED_DIRT: float = 0.30
-const FOLIAGE_DENSITY_TALL_GRASS: float = 0.62
-const FOLIAGE_DENSITY_LOOSE_ROCK: float = 0.18
+const FOLIAGE_DENSITY_PACKED_DIRT: float = 0.60
+const FOLIAGE_DENSITY_TALL_GRASS: float = 0.78
+const FOLIAGE_DENSITY_LOOSE_ROCK: float = 0.60
 const FOLIAGE_DENSITY_MUD: float = 0.30
 # Distance-LOD fade for foliage. Every foliage MultiMeshInstance3D used to ship with
 # VISIBILITY_RANGE_FADE_DISABLED, so foliage popped hard at the streaming/visibility boundary.
@@ -196,11 +197,11 @@ const RIPARIAN_GRASS_OUTER_M: float = 130.0
 #     RIPARIAN_GRASS_OUTER_M the bench selector takes back over; cells outside the core keep the
 #     default cap.
 const RIPARIAN_GALLERY_CORE_OUTER_M: float = 70.0
-const RIPARIAN_GALLERY_LOD0_CORE_BASE_COUNT: int = 28
-const RIPARIAN_GALLERY_LOD1_CORE_BASE_COUNT: int = 7
-const RIPARIAN_COTTONWOOD_CORE_DENSITY_MUL: float = 2.6
-const RIPARIAN_WILLOW_CORE_DENSITY_MUL: float = 2.2
-const RIPARIAN_GRASS_CORE_DENSITY_MUL: float = 1.35
+const RIPARIAN_GALLERY_LOD0_CORE_BASE_COUNT: int = 64
+const RIPARIAN_GALLERY_LOD1_CORE_BASE_COUNT: int = 20
+const RIPARIAN_COTTONWOOD_CORE_DENSITY_MUL: float = 3.0
+const RIPARIAN_WILLOW_CORE_DENSITY_MUL: float = 2.6
+const RIPARIAN_GRASS_CORE_DENSITY_MUL: float = 1.55
 const ZION_RIVER_THALWEG_XZ: Array[Vector2] = [
 	Vector2(910.0, 500.0),
 	Vector2(900.0, 700.0),
@@ -2504,16 +2505,14 @@ static func _record_foliage_species_acceptance(audit: Dictionary[String, Variant
 
 
 static func _boulder_slope_density_multiplier(normal_y: float) -> float:
-	# Flat ground (normal.y at/above the foliage slope gate) keeps the baseline boulder
-	# keep-probability; steeper ground (lower normal.y -- cliff bases / talus aprons) ramps
-	# it up to FOLIAGE_BOULDER_TALUS_DENSITY_BOOST so rock piles where real Zion piles it,
-	# saturating below FOLIAGE_BOULDER_TALUS_STEEP_NORMAL_Y. Pure function of the terrain
-	# normal -- deterministic, no Time/randi.
+	# Flat ground should read as vegetation, not a boulder carpet; steeper ground (lower
+	# normal.y -- cliff bases / talus aprons) ramps boulders up to the talus boost, saturating
+	# below FOLIAGE_BOULDER_TALUS_STEEP_NORMAL_Y. Pure function of the terrain normal.
 	var flat_y: float = FOLIAGE_MAX_SLOPE_NORMAL_Y
 	if normal_y >= flat_y:
-		return 1.0
+		return FOLIAGE_BOULDER_FLAT_DENSITY_MUL
 	var steep_t: float = clampf((flat_y - normal_y) / maxf(flat_y - FOLIAGE_BOULDER_TALUS_STEEP_NORMAL_Y, 0.0001), 0.0, 1.0)
-	return lerpf(1.0, FOLIAGE_BOULDER_TALUS_DENSITY_BOOST, steep_t)
+	return lerpf(FOLIAGE_BOULDER_FLAT_DENSITY_MUL, FOLIAGE_BOULDER_TALUS_DENSITY_BOOST, steep_t)
 
 
 static func _boulder_instance_basis(base_scale: Vector3, width_scale: float, height_scale: float, foliage_cell: Vector2i, lod_index: int, attempt: int, yaw: float) -> Basis:
