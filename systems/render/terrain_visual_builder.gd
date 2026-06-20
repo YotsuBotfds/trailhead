@@ -168,6 +168,25 @@ const RIPARIAN_TREE_MIN_DISTANCE_M: float = 10.0
 const RIPARIAN_WILLOW_OUTER_M: float = 28.0
 const RIPARIAN_COTTONWOOD_OUTER_M: float = 62.0
 const RIPARIAN_GRASS_OUTER_M: float = 86.0
+# Fremont cottonwood gallery forest along ZION_RIVER_THALWEG_XZ (Zion art-direction bible §2.1-
+# §2.3). The default per-cell accepted-instance cap (REGION_FOLIAGE_LOD0/1_BASE_COUNT) is the
+# bottleneck for a gallery read, and the species keep-probabilities (GameConfig.riparian_*_density)
+# leave the cottonwood/willow grove thin. Two levers push the green where the river is, both pure
+# functions of candidate/cell world position (deterministic -- no Time/randi):
+#  1. RIPARIAN_GALLERY_CORE_OUTER_M -- cells whose center is within this distance of the thalweg
+#     get a raised accepted-instance cap (_riparian_gallery_base_count) so the cottonwood/willow
+#     canopy + lush sedge understory can actually fill in along the river.
+#  2. Per-species density multipliers (_riparian_gallery_density_multiplier) that ramp the keep-
+#     probability up inside the core and taper back to 1.0 by the fringe, so the corridor reads as
+#     a dense gallery with a thinning edge -- a green RIBBON, not a floor-wide blanket. Beyond
+#     RIPARIAN_GRASS_OUTER_M the species selector already returns "" so desert/bench foliage is
+#     byte-identical to before; cells outside the core keep the default cap.
+const RIPARIAN_GALLERY_CORE_OUTER_M: float = 40.0
+const RIPARIAN_GALLERY_LOD0_CORE_BASE_COUNT: int = 20
+const RIPARIAN_GALLERY_LOD1_CORE_BASE_COUNT: int = 7
+const RIPARIAN_COTTONWOOD_CORE_DENSITY_MUL: float = 2.6
+const RIPARIAN_WILLOW_CORE_DENSITY_MUL: float = 2.2
+const RIPARIAN_GRASS_CORE_DENSITY_MUL: float = 1.35
 const ZION_RIVER_THALWEG_XZ: Array[Vector2] = [
 	Vector2(910.0, 500.0),
 	Vector2(900.0, 700.0),
@@ -614,12 +633,14 @@ static func _build_region_foliage_tile_data(region_id: String, cell: Vector2i, a
 				Vector2(maxf(cell_max_x - cell_min_x, 0.0), maxf(cell_max_z - cell_min_z, 0.0))
 			)
 			var foliage_cell: Vector2i = Vector2i(cell.x * 1000 + cell_x, cell.y * 1000 + cell_z)
-			var lod0_data: FoliageCellData = _build_region_foliage_cell_data_with_audit(tile_data_by_cell, cell_rect, foliage_cell, 0, REGION_FOLIAGE_LOD0_BASE_COUNT, audit)
+			var lod0_base_count: int = _riparian_gallery_base_count(cell_rect, 0, REGION_FOLIAGE_LOD0_BASE_COUNT)
+			var lod0_data: FoliageCellData = _build_region_foliage_cell_data_with_audit(tile_data_by_cell, cell_rect, foliage_cell, 0, lod0_base_count, audit)
 			if lod0_data != null:
 				_prepare_streamed_foliage_cell_data(lod0_data, tile_origin_xz, tile_custom_aabb, tile_radius)
 				_build_foliage_cell_multimeshes(lod0_data)
 				lod0_cell_data_list.append(lod0_data)
-			var lod1_data: FoliageCellData = _build_region_foliage_cell_data_with_audit(tile_data_by_cell, cell_rect, foliage_cell, 1, REGION_FOLIAGE_LOD1_BASE_COUNT, audit)
+			var lod1_base_count: int = _riparian_gallery_base_count(cell_rect, 1, REGION_FOLIAGE_LOD1_BASE_COUNT)
+			var lod1_data: FoliageCellData = _build_region_foliage_cell_data_with_audit(tile_data_by_cell, cell_rect, foliage_cell, 1, lod1_base_count, audit)
 			if lod1_data != null:
 				_prepare_streamed_foliage_cell_data(lod1_data, tile_origin_xz, tile_custom_aabb, tile_radius)
 				_build_foliage_cell_multimeshes(lod1_data)
@@ -1824,6 +1845,13 @@ static func _build_region_foliage_cell_data_with_audit(tile_data_by_cell: Dictio
 		if species_id == FOLIAGE_SPECIES_BOULDER:
 			var boulder_candidate_normal_y: float = _normal_at_region_xz(tile_data_by_cell, world_x, world_z).y
 			density = minf(density * _boulder_slope_density_multiplier(boulder_candidate_normal_y), FOLIAGE_BOULDER_DENSITY_CAP)
+		# Riparian gallery density band (Zion art-direction bible §2.3): ramp the cottonwood/willow/
+		# riparian_grass keep-probability up inside the gallery core along the river so the corridor
+		# reads as a continuous grove with a lush sedge understory; the multiplier tapers back to 1.0
+		# by the fringe (RIPARIAN_GRASS_OUTER_M) so the green stays a ribbon and never blankets the
+		# benches. Non-riparian species return 1.0 (untouched). Deterministic -- pure function of
+		# species + candidate world position, no Time/randi.
+		density = minf(density * _riparian_gallery_density_multiplier(species_id, world_x, world_z), 1.0)
 		var keep_value: float = _region_foliage_unit(foliage_cell, lod_index, attempt, 3)
 		if keep_value > density:
 			continue
@@ -2587,6 +2615,44 @@ static func _riparian_species_for_candidate(foliage_cell: Vector2i, lod_index: i
 	if selector <= 0.62:
 		return FOLIAGE_SPECIES_RIPARIAN_GRASS
 	return &""
+
+
+static func _riparian_gallery_density_multiplier(species_id: StringName, world_x: float, world_z: float) -> float:
+	# Keep-probability multiplier for the Fremont cottonwood gallery band. Returns >1.0 inside the
+	# dense core along the river (push the green where the water is), tapering linearly back to 1.0
+	# by RIPARIAN_GRASS_OUTER_M so the fringe stays thin. Non-riparian species and any candidate
+	# outside the riparian fringe return 1.0 -- desert/bench foliage is byte-identical to before.
+	# Pure function of species + world position (deterministic, no Time/randi).
+	if species_id != FOLIAGE_SPECIES_COTTONWOOD and species_id != FOLIAGE_SPECIES_WILLOW and species_id != FOLIAGE_SPECIES_RIPARIAN_GRASS:
+		return 1.0
+	var river_distance_m: float = _distance_to_zion_river_xz(Vector2(world_x, world_z))
+	if river_distance_m >= RIPARIAN_GRASS_OUTER_M:
+		return 1.0
+	var core_boost: float = RIPARIAN_GRASS_CORE_DENSITY_MUL
+	if species_id == FOLIAGE_SPECIES_COTTONWOOD:
+		core_boost = RIPARIAN_COTTONWOOD_CORE_DENSITY_MUL
+	elif species_id == FOLIAGE_SPECIES_WILLOW:
+		core_boost = RIPARIAN_WILLOW_CORE_DENSITY_MUL
+	if river_distance_m <= RIPARIAN_GALLERY_CORE_OUTER_M:
+		return core_boost
+	# Fringe: taper core_boost -> 1.0 across [core_outer, grass_outer] so the corridor edge
+	# desaturates into sparse desert rather than carpeting the bench in green.
+	var taper_t: float = clampf((river_distance_m - RIPARIAN_GALLERY_CORE_OUTER_M) / maxf(RIPARIAN_GRASS_OUTER_M - RIPARIAN_GALLERY_CORE_OUTER_M, 0.0001), 0.0, 1.0)
+	return lerpf(core_boost, 1.0, taper_t)
+
+
+static func _riparian_gallery_base_count(cell_rect: Rect2, lod_index: int, base_count: int) -> int:
+	# Per-cell accepted-instance cap for the gallery core. A foliage cell whose center sits within
+	# RIPARIAN_GALLERY_CORE_OUTER_M of the thalweg gets a raised cap so the cottonwood/willow canopy
+	# + lush sedge understory can actually fill in along the river (the default cap is the gallery
+	# bottleneck). Cells outside the core return base_count unchanged, so the ribbon stays dense at
+	# the river and sparse everywhere else. Pure function of cell rect + LOD (deterministic).
+	var cell_center: Vector2 = cell_rect.position + cell_rect.size * 0.5
+	if _distance_to_zion_river_xz(cell_center) > RIPARIAN_GALLERY_CORE_OUTER_M:
+		return base_count
+	if lod_index <= 0:
+		return RIPARIAN_GALLERY_LOD0_CORE_BASE_COUNT
+	return RIPARIAN_GALLERY_LOD1_CORE_BASE_COUNT
 
 
 static func _distance_to_zion_river_xz(point: Vector2) -> float:
