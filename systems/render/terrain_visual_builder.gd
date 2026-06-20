@@ -62,8 +62,8 @@ const REGION_STREAM_MIDLOD_RANGE_END_M: float = 700.0
 const REGION_VERTEX_KEY_CELL_OFFSET: int = 32768
 const REGION_VERTEX_KEY_CELL_STRIDE: int = 65536
 const REGION_FOLIAGE_CELL_SIZE_M: float = 32.0
-const REGION_FOLIAGE_LOD0_BASE_COUNT: int = 8
-const REGION_FOLIAGE_LOD1_BASE_COUNT: int = 3
+const REGION_FOLIAGE_LOD0_BASE_COUNT: int = 28
+const REGION_FOLIAGE_LOD1_BASE_COUNT: int = 9
 const REGION_FOLIAGE_PATTERN_MODULUS: int = 1009
 const REGION_FOLIAGE_CELL_X_MULTIPLIER: int = 97
 const REGION_FOLIAGE_CELL_Z_MULTIPLIER: int = 193
@@ -83,14 +83,19 @@ const REGION_FOLIAGE_LOD0_COLOR: Color = Color(0.24, 0.38, 0.14, 0.92)
 const REGION_FOLIAGE_LOD1_COLOR: Color = Color(0.28, 0.34, 0.16, 0.86)
 const FOLIAGE_SPECIES_GRASS: StringName = &"grass"
 const FOLIAGE_SPECIES_RIPARIAN_GRASS: StringName = &"riparian_grass"
+const FOLIAGE_SPECIES_SHRUB: StringName = &"shrub"
 const FOLIAGE_SPECIES_YUCCA: StringName = &"yucca"
 const FOLIAGE_SPECIES_JUNIPER: StringName = &"juniper"
 const FOLIAGE_SPECIES_WILLOW: StringName = &"willow"
 const FOLIAGE_SPECIES_COTTONWOOD: StringName = &"cottonwood"
 const FOLIAGE_SPECIES_BOULDER: StringName = &"boulder"
-const FOLIAGE_SPECIES_LIST: Array[StringName] = [FOLIAGE_SPECIES_GRASS, FOLIAGE_SPECIES_RIPARIAN_GRASS, FOLIAGE_SPECIES_YUCCA, FOLIAGE_SPECIES_JUNIPER, FOLIAGE_SPECIES_WILLOW, FOLIAGE_SPECIES_COTTONWOOD, FOLIAGE_SPECIES_BOULDER]
+const FOLIAGE_SPECIES_LIST: Array[StringName] = [FOLIAGE_SPECIES_GRASS, FOLIAGE_SPECIES_RIPARIAN_GRASS, FOLIAGE_SPECIES_SHRUB, FOLIAGE_SPECIES_YUCCA, FOLIAGE_SPECIES_JUNIPER, FOLIAGE_SPECIES_WILLOW, FOLIAGE_SPECIES_COTTONWOOD, FOLIAGE_SPECIES_BOULDER]
 const FOLIAGE_SPECIES_GRASS_COLOR: Color = Color(0.58, 0.66, 0.38, 0.92)
 const FOLIAGE_SPECIES_RIPARIAN_GRASS_COLOR: Color = Color(0.42, 0.55, 0.28, 0.92)
+const FOLIAGE_SPECIES_SHRUB_COLOR: Color = Color(0.62, 0.58, 0.34, 0.94)
+const FOLIAGE_SHRUB_RABBITBRUSH_COLOR: Color = Color(0.80, 0.70, 0.30, 0.95)
+const FOLIAGE_SHRUB_SAGE_COLOR: Color = Color(0.55, 0.58, 0.45, 0.95)
+const FOLIAGE_SHRUB_MORMON_TEA_COLOR: Color = Color(0.42, 0.46, 0.30, 0.95)
 const FOLIAGE_SPECIES_YUCCA_COLOR: Color = Color(0.557, 0.608, 0.471, 0.95)
 const FOLIAGE_SPECIES_JUNIPER_COLOR: Color = Color(0.165, 0.259, 0.157, 0.97)
 const FOLIAGE_SPECIES_WILLOW_COLOR: Color = Color(0.29, 0.45, 0.22, 0.95)
@@ -100,6 +105,8 @@ const FOLIAGE_SPECIES_BOULDER_COLOR: Color = Color(0.69, 0.47, 0.31, 1.0)
 const FOLIAGE_NEON_TAME_TIP_BOOST: Vector3 = Vector3(1.12, 1.08, 1.02)
 const FOLIAGE_NEON_TAME_BACKLIGHT_ENERGY: float = 0.10
 const FOLIAGE_TREE_REAL_MESH_SCALE: Vector3 = Vector3.ONE
+const FOLIAGE_SHRUB_LOD0_SCALE: Vector3 = Vector3(0.72, 1.18, 0.72)
+const FOLIAGE_SHRUB_LOD1_SCALE: Vector3 = Vector3(0.78, 0.92, 0.78)
 const FOLIAGE_BOULDER_LOD0_SCALE: Vector3 = Vector3(1.0, 1.0, 1.0)
 const FOLIAGE_BOULDER_LOD1_SCALE: Vector3 = Vector3(0.82, 0.82, 0.82)
 # Boulder/talus enrichment (Zion art-direction bible §1.1, §2.3): real lower Zion carpets
@@ -123,7 +130,8 @@ const FOLIAGE_BOULDER_DENSITY_CAP: float = 0.55
 # normal.y floor at which the talus density boost saturates (~70 degrees); below this a
 # near-vertical wall holds at the boost ceiling instead of stacking further.
 const FOLIAGE_BOULDER_TALUS_STEEP_NORMAL_Y: float = 0.34
-# Salts 14-15 stay disjoint from candidate slots 1-13 and grass-clump salts 20-28.
+# Salts 14-15 stay disjoint from candidate slots 1-13, the bench selector at 18/30,
+# and grass-clump salts 20-28.
 const FOLIAGE_BOULDER_TILT_AXIS_SALT: int = 14
 const FOLIAGE_BOULDER_TILT_SALT: int = 15
 const FOLIAGE_DENSITY_PACKED_DIRT: float = 0.30
@@ -140,16 +148,22 @@ const FOLIAGE_DENSITY_MUD: float = 0.30
 # Per species: trees (tall, sparse) reach farther and cross-fade slowly; grass (small, dense)
 # keeps the existing closer range with a quick fade so distant draw cost stays low; boulders
 # sit between. Bases are the LOD0 range before adding the cell radius; margins are the fade width.
-const FOLIAGE_VIS_RANGE_BASE_TREE: float = 360.0
+const FOLIAGE_VIS_RANGE_BASE_TREE: float = 270.0
 const FOLIAGE_VIS_RANGE_BASE_BOULDER: float = 240.0
-const FOLIAGE_FADE_MARGIN_GRASS: float = 14.0
-const FOLIAGE_FADE_MARGIN_TREE: float = 45.0
-const FOLIAGE_FADE_MARGIN_BOULDER: float = 22.0
-# Region-foliage grass/riparian_grass de-uniforming. The live band read as an even grid of
+const FOLIAGE_FADE_MARGIN_GRASS: float = 28.0
+const FOLIAGE_FADE_MARGIN_TREE: float = 55.0
+const FOLIAGE_FADE_MARGIN_BOULDER: float = 35.0
+const FOLIAGE_BENCH_SHRUB_SHARE: float = 0.55
+const FOLIAGE_BENCH_GRASS_SHARE: float = 0.25
+const FOLIAGE_BENCH_JUNIPER_SHARE: float = 0.12
+const FOLIAGE_BENCH_SELECTOR_SALT_A: int = 18
+const FOLIAGE_BENCH_SELECTOR_SALT_B: int = 30
+# Region-foliage grass/riparian_grass/shrub de-uniforming. The live band read as an even grid of
 # identical single crosses ("fence"). These gather accepted grass candidates around deterministic
 # clump centers (so instances form tussocks with bare ground between) and add non-uniform per-
 # instance scale, a small lean, and hue/value COLOR jitter. Salts are >= 20 to stay disjoint from
-# the 1-13 candidate slots already consumed in _build_region_foliage_cell_data_with_audit.
+# the 1-13 candidate slots plus the bench selector salts consumed in
+# _build_region_foliage_cell_data_with_audit.
 const GRASS_CLUMP_ATTEMPTS_PER_CLUMP: int = 4
 const GRASS_CLUMP_RADIUS_M: float = 1.6
 const GRASS_TILT_MAX_DEG: float = 9.0
@@ -167,7 +181,7 @@ const GRASS_VALUE_SALT: int = 28
 const RIPARIAN_TREE_MIN_DISTANCE_M: float = 10.0
 const RIPARIAN_WILLOW_OUTER_M: float = 28.0
 const RIPARIAN_COTTONWOOD_OUTER_M: float = 62.0
-const RIPARIAN_GRASS_OUTER_M: float = 86.0
+const RIPARIAN_GRASS_OUTER_M: float = 130.0
 # Fremont cottonwood gallery forest along ZION_RIVER_THALWEG_XZ (Zion art-direction bible §2.1-
 # §2.3). The default per-cell accepted-instance cap (REGION_FOLIAGE_LOD0/1_BASE_COUNT) is the
 # bottleneck for a gallery read, and the species keep-probabilities (GameConfig.riparian_*_density)
@@ -179,10 +193,10 @@ const RIPARIAN_GRASS_OUTER_M: float = 86.0
 #  2. Per-species density multipliers (_riparian_gallery_density_multiplier) that ramp the keep-
 #     probability up inside the core and taper back to 1.0 by the fringe, so the corridor reads as
 #     a dense gallery with a thinning edge -- a green RIBBON, not a floor-wide blanket. Beyond
-#     RIPARIAN_GRASS_OUTER_M the species selector already returns "" so desert/bench foliage is
-#     byte-identical to before; cells outside the core keep the default cap.
-const RIPARIAN_GALLERY_CORE_OUTER_M: float = 40.0
-const RIPARIAN_GALLERY_LOD0_CORE_BASE_COUNT: int = 20
+#     RIPARIAN_GRASS_OUTER_M the bench selector takes back over; cells outside the core keep the
+#     default cap.
+const RIPARIAN_GALLERY_CORE_OUTER_M: float = 70.0
+const RIPARIAN_GALLERY_LOD0_CORE_BASE_COUNT: int = 28
 const RIPARIAN_GALLERY_LOD1_CORE_BASE_COUNT: int = 7
 const RIPARIAN_COTTONWOOD_CORE_DENSITY_MUL: float = 2.6
 const RIPARIAN_WILLOW_CORE_DENSITY_MUL: float = 2.2
@@ -1855,12 +1869,12 @@ static func _build_region_foliage_cell_data_with_audit(tile_data_by_cell: Dictio
 		var keep_value: float = _region_foliage_unit(foliage_cell, lod_index, attempt, 3)
 		if keep_value > density:
 			continue
-		# Grass/riparian_grass gather into deterministic clumps (cluster centers + jittered
+		# Grass/riparian_grass/shrub gather into deterministic clumps (cluster centers + jittered
 		# offsets) instead of an even per-cell fill, so the live band reads as tussocks with
 		# bare gaps rather than a uniform fence. Species/density stay anchored to the candidate
-		# sample (so non-grass species and accepted counts are unchanged); only the render
+		# sample (so non-clumped species and accepted counts are unchanged); only the render
 		# transform is relocated and re-grounded on the clumped position.
-		var is_grass_clump: bool = species_id == FOLIAGE_SPECIES_GRASS or species_id == FOLIAGE_SPECIES_RIPARIAN_GRASS
+		var is_grass_clump: bool = species_id == FOLIAGE_SPECIES_GRASS or species_id == FOLIAGE_SPECIES_RIPARIAN_GRASS or species_id == FOLIAGE_SPECIES_SHRUB
 		var place_x: float = world_x
 		var place_z: float = world_z
 		if is_grass_clump:
@@ -2074,7 +2088,7 @@ static func _region_foliage_mesh_for_lod_species(lod_index: int, species_id: Str
 	elif species_id == FOLIAGE_SPECIES_BOULDER:
 		mesh = _region_boulder_mesh("region_foliage_boulder_lod" + str(safe_lod_index) + "_mesh", safe_lod_index)
 	else:
-		mesh = _region_foliage_mesh("region_foliage_grass_lod" + str(safe_lod_index) + "_mesh")
+		mesh = _region_foliage_mesh("region_foliage_" + String(species_id) + "_lod" + str(safe_lod_index) + "_mesh")
 	_foliage_mesh_cache[cache_key] = mesh
 	return mesh
 
@@ -2400,6 +2414,7 @@ static func _new_region_foliage_tile_audit(cell: Vector2i) -> Dictionary[String,
 		"instance_count": 0,
 		"grass_instance_count": 0,
 		"riparian_grass_instance_count": 0,
+		"shrub_instance_count": 0,
 		"yucca_instance_count": 0,
 		"juniper_instance_count": 0,
 		"willow_instance_count": 0,
@@ -2527,6 +2542,8 @@ static func _foliage_density_for_surface_species(surface_id_value: int, species_
 		if surface_id == &"wet_stone":
 			return 0.0
 		return GameConfig.riparian_cottonwood_density
+	if species_id == FOLIAGE_SPECIES_SHRUB and _foliage_is_bench_surface(surface_id):
+		return GameConfig.scrub_density_bench_shrub
 	if species_id == FOLIAGE_SPECIES_GRASS and surface_id == &"packed_gravel":
 		return GameConfig.scrub_density_packed_gravel
 	if species_id == FOLIAGE_SPECIES_GRASS and surface_id == &"paved_road":
@@ -2550,21 +2567,37 @@ static func _foliage_density_for_surface_species(surface_id_value: int, species_
 	return 0.0
 
 
+static func _foliage_is_bench_surface(surface_id: StringName) -> bool:
+	return surface_id == &"packed_dirt" or surface_id == &"loose_rock" or surface_id == &"packed_gravel"
+
+
 static func _foliage_species_for_surface_value(surface_id_value: int) -> StringName:
 	if not bool(TerrainSurfacePaletteResource.call("has_surface_id_value", surface_id_value)):
 		return &""
 	var surface_id: StringName = _surface_id_for_value(surface_id_value)
-	if surface_id == &"packed_gravel":
-		return FOLIAGE_SPECIES_BOULDER
+	if _foliage_is_bench_surface(surface_id):
+		return FOLIAGE_SPECIES_SHRUB
 	if surface_id == &"paved_road" or surface_id == &"wet_stone" or surface_id == &"mud":
 		return FOLIAGE_SPECIES_GRASS
-	if surface_id == &"packed_dirt":
-		return FOLIAGE_SPECIES_JUNIPER
 	if surface_id == &"tall_grass":
 		return FOLIAGE_SPECIES_GRASS
-	if surface_id == &"loose_rock":
-		return FOLIAGE_SPECIES_YUCCA
 	return &""
+
+
+static func _bench_foliage_species_for_selector(selector: float) -> StringName:
+	if selector <= FOLIAGE_BENCH_SHRUB_SHARE:
+		return FOLIAGE_SPECIES_SHRUB
+	if selector <= FOLIAGE_BENCH_SHRUB_SHARE + FOLIAGE_BENCH_GRASS_SHARE:
+		return FOLIAGE_SPECIES_GRASS
+	if selector <= FOLIAGE_BENCH_SHRUB_SHARE + FOLIAGE_BENCH_GRASS_SHARE + FOLIAGE_BENCH_JUNIPER_SHARE:
+		return FOLIAGE_SPECIES_JUNIPER
+	return FOLIAGE_SPECIES_YUCCA
+
+
+static func _bench_foliage_selector(foliage_cell: Vector2i, lod_index: int, attempt: int) -> float:
+	var selector_a: float = _region_foliage_unit(foliage_cell, lod_index, attempt, FOLIAGE_BENCH_SELECTOR_SALT_A)
+	var selector_b: float = _region_foliage_unit(foliage_cell, lod_index, attempt, FOLIAGE_BENCH_SELECTOR_SALT_B)
+	return fmod(selector_a + selector_b, 1.0)
 
 
 static func _foliage_species_for_candidate(surface_id_value: int, foliage_cell: Vector2i, lod_index: int, attempt: int, world_x: float, world_z: float) -> StringName:
@@ -2574,12 +2607,18 @@ static func _foliage_species_for_candidate(surface_id_value: int, foliage_cell: 
 	var riparian_species: StringName = _riparian_species_for_candidate(foliage_cell, lod_index, attempt, world_x, world_z)
 	if riparian_species != &"":
 		return riparian_species
+	var boulder_selector: float = _region_foliage_unit(foliage_cell, lod_index, attempt, 12)
+	var bench_selector: float = _bench_foliage_selector(foliage_cell, lod_index, attempt)
 	if surface_id == &"packed_gravel":
-		if _region_foliage_unit(foliage_cell, lod_index, attempt, 12) <= GameConfig.boulder_packed_gravel_candidate_share:
+		if boulder_selector <= GameConfig.boulder_packed_gravel_candidate_share:
 			return FOLIAGE_SPECIES_BOULDER
-		return FOLIAGE_SPECIES_GRASS
-	if surface_id == &"loose_rock" and _region_foliage_unit(foliage_cell, lod_index, attempt, 12) <= GameConfig.boulder_loose_rock_candidate_share:
-		return FOLIAGE_SPECIES_BOULDER
+		return _bench_foliage_species_for_selector(bench_selector)
+	if surface_id == &"loose_rock":
+		if boulder_selector <= GameConfig.boulder_loose_rock_candidate_share:
+			return FOLIAGE_SPECIES_BOULDER
+		return _bench_foliage_species_for_selector(bench_selector)
+	if surface_id == &"packed_dirt":
+		return _bench_foliage_species_for_selector(bench_selector)
 	return _foliage_species_for_surface_value(surface_id_value)
 
 
@@ -2702,6 +2741,8 @@ static func _foliage_species_total_count(species_data_list: Array[FoliageSpecies
 static func _foliage_color_for_species(species_id: StringName) -> Color:
 	if species_id == FOLIAGE_SPECIES_RIPARIAN_GRASS:
 		return FOLIAGE_SPECIES_RIPARIAN_GRASS_COLOR
+	if species_id == FOLIAGE_SPECIES_SHRUB:
+		return FOLIAGE_SPECIES_SHRUB_COLOR
 	if species_id == FOLIAGE_SPECIES_YUCCA:
 		return FOLIAGE_SPECIES_YUCCA_COLOR
 	if species_id == FOLIAGE_SPECIES_JUNIPER:
@@ -2715,8 +2756,18 @@ static func _foliage_color_for_species(species_id: StringName) -> Color:
 	return FOLIAGE_SPECIES_GRASS_COLOR
 
 
+static func _foliage_shrub_variant_color(selector: float) -> Color:
+	if selector < 0.34:
+		return FOLIAGE_SHRUB_RABBITBRUSH_COLOR
+	if selector < 0.67:
+		return FOLIAGE_SHRUB_SAGE_COLOR
+	return FOLIAGE_SHRUB_MORMON_TEA_COLOR
+
+
 static func _foliage_instance_color(species_id: StringName, color_warmth: float) -> Color:
 	var base_color: Color = _foliage_color_for_species(species_id)
+	if species_id == FOLIAGE_SPECIES_SHRUB:
+		base_color = _foliage_shrub_variant_color(color_warmth)
 	var warm_color: Color = Color(minf(base_color.r * 1.16, 1.0), minf(base_color.g * 1.10, 1.0), minf(base_color.b * 1.06, 1.0), 1.0)
 	return base_color.lerp(warm_color, color_warmth)
 
@@ -2772,6 +2823,10 @@ static func _foliage_base_scale_for_lod_species(lod_index: int, species_id: Stri
 		if lod_index > 0:
 			return FOLIAGE_BOULDER_LOD1_SCALE
 		return FOLIAGE_BOULDER_LOD0_SCALE
+	if species_id == FOLIAGE_SPECIES_SHRUB:
+		if lod_index > 0:
+			return FOLIAGE_SHRUB_LOD1_SCALE
+		return FOLIAGE_SHRUB_LOD0_SCALE
 	if _foliage_species_uses_source_material(species_id):
 		return FOLIAGE_TREE_REAL_MESH_SCALE
 	if lod_index > 0:
