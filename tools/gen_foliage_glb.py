@@ -339,7 +339,7 @@ def add_cottonwood_canopy(objects: list[bpy.types.Object], leaves: bpy.types.Mat
 def build_cottonwood() -> bpy.types.Object:
     clear_scene()
     bark = make_material("cottonwood_bark", (0.42, 0.33, 0.23, 1.0), 0.92, False)
-    leaves = make_material("cottonwood_yellow_green_leaves", (0.42, 0.55, 0.26, 1.0), 0.86, True)
+    leaves = make_material("cottonwood_yellow_green_leaves", (0.30, 0.38, 0.22, 1.0), 0.86, True)
     objects: list[bpy.types.Object] = []
     trunk_points = [
         Vector((0.0, 0.0, 0.0)),
@@ -377,7 +377,7 @@ def willow_stem_end(index: int, count: int) -> tuple[Vector, Vector, Vector]:
 def build_willow() -> bpy.types.Object:
     clear_scene()
     bark = make_material("willow_bark", (0.30, 0.22, 0.13, 1.0), 0.94, False)
-    leaves = make_material("willow_silvery_green_leaves", (0.46, 0.54, 0.34, 1.0), 0.88, True)
+    leaves = make_material("willow_silvery_green_leaves", (0.26, 0.36, 0.22, 1.0), 0.88, True)
     objects: list[bpy.types.Object] = []
     stem_count = 13
     cluster_index = 0
@@ -516,7 +516,7 @@ def add_juniper_canopy(objects: list[bpy.types.Object], leaves: bpy.types.Materi
 def build_juniper() -> bpy.types.Object:
     clear_scene()
     bark = make_material("juniper_shaggy_bark", (0.32, 0.26, 0.18, 1.0), 0.96, False)
-    leaves = make_material("juniper_blue_green_leaves", (0.24, 0.34, 0.24, 1.0), 0.90, True)
+    leaves = make_material("juniper_blue_green_leaves", (0.18, 0.27, 0.19, 1.0), 0.90, True)
     objects: list[bpy.types.Object] = []
     trunk_points = [
         Vector((0.0, 0.0, 0.0)),
@@ -542,7 +542,7 @@ def build_juniper() -> bpy.types.Object:
 
 def build_yucca() -> bpy.types.Object:
     clear_scene()
-    leaves = make_material("yucca_blue_green_leaves", (0.42, 0.50, 0.36, 1.0), 0.90, True)
+    leaves = make_material("yucca_blue_green_leaves", (0.30, 0.38, 0.28, 1.0), 0.90, True)
     spine_tips = make_material("yucca_dry_spine_tips", (0.47, 0.42, 0.28, 1.0), 0.94, True)
     stalk = make_material("yucca_flower_stalk", (0.44, 0.36, 0.23, 1.0), 0.96, False)
     flowers = make_material("yucca_cream_flowers", (0.78, 0.73, 0.56, 1.0), 0.88, True)
