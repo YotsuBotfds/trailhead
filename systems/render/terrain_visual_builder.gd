@@ -54,7 +54,16 @@ const REGION_TILE_SURFACE_ID_FILE: String = "surface_id.png"
 const PIPELINE_WARMUP_TERRAIN_MATERIAL_COUNT_META: StringName = &"trailhead_pipeline_warmup_terrain_material_count"
 const PIPELINE_WARMUP_FOLIAGE_LOD_COUNT_META: StringName = &"trailhead_pipeline_warmup_foliage_lod_count"
 const HEIGHTMAP_FLOAT_BYTE_SIZE: int = 4
+# Detail (near-vehicle) terrain visual sample step. The visual mesh is built by
+# striding through the full-resolution collision heightmap; step=5 downsamples
+# 5x along each axis (~25x fewer verts) which lets slope tiles wander several cm
+# above/below the collision surface the wheels actually touch. Near the vehicle
+# that visual/collision mismatch reads as the tires sinking or floating, so the
+# active (vehicle-near) tiles use step=1 (full collision resolution) while
+# distant/prefetched tiles keep the cheaper step=5. Render-only: the collision
+# HeightMapShape3D and heightmap source are untouched (D30/D35).
 const REGION_DETAIL_SAMPLE_STEP: int = 5
+const REGION_DETAIL_FULLRES_SAMPLE_STEP: int = 1
 const REGION_HLOD_SAMPLE_STEP: int = 5
 const REGION_STREAM_MIDLOD_SAMPLE_STEP: int = 4
 const REGION_STREAM_HLOD_SAMPLE_STEP: int = 20
@@ -503,7 +512,7 @@ static func add_region_visual_tile(parent: Node3D, region_id: String, cell: Vect
 	return region_visual_tile_from_data(parent, visual_tile_data, null)
 
 
-static func build_region_visual_tile_data(region_id: String, cell: Vector2i) -> RegionVisualTileData:
+static func build_region_visual_tile_data(region_id: String, cell: Vector2i, sample_step: int = REGION_DETAIL_SAMPLE_STEP) -> RegionVisualTileData:
 	var visual_tile_data: RegionVisualTileData = RegionVisualTileData.new()
 	visual_tile_data.cell = cell
 
@@ -512,10 +521,11 @@ static func build_region_visual_tile_data(region_id: String, cell: Vector2i) -> 
 		visual_tile_data.message = "visual tile failed to load: " + region_id + " " + str(cell)
 		return visual_tile_data
 
+	var effective_step: int = maxi(sample_step, 1)
 	var tile_origin_xz: Vector2 = _tile_origin_xz(tile_data)
 	visual_tile_data.node_name = region_detail_tile_node_name(region_id, tile_data.cell)
 	visual_tile_data.position = Vector3(tile_origin_xz.x, 0.0, tile_origin_xz.y)
-	visual_tile_data.mesh_data = build_region_surface_index_mesh_data(tile_data, REGION_DETAIL_SAMPLE_STEP, tile_data.key + "_terrain_detail_mesh", tile_origin_xz)
+	visual_tile_data.mesh_data = build_region_surface_index_mesh_data(tile_data, effective_step, tile_data.key + "_terrain_detail_mesh", tile_origin_xz)
 	if visual_tile_data.mesh_data != null and visual_tile_data.mesh_data.surfaces.size() > 0:
 		visual_tile_data.mesh = region_mesh_from_data(visual_tile_data.mesh_data, false)
 	visual_tile_data.visibility_range_end = _detail_visibility_range_end(tile_data)

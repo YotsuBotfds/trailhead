@@ -332,7 +332,12 @@ func _on_world_tile_activated(cell: Vector2i) -> void:
 		return
 	if _queued_builds.has(cell):
 		return
-	_enqueue_build(cell)
+	# Active cells are the vehicle-near loaded physics tiles (STREAM_ACTIVE_RADIUS
+	# around the car). Build their visual mesh at full collision resolution
+	# (step=1) so the visible ground matches the surface the wheels actually
+	# touch; the 5x downsample on near tiles let the visual mesh wander several
+	# cm above/below the collision heightmap on slopes, reading as tire sink/float.
+	_enqueue_build(cell, TerrainVisualBuilderScript.REGION_DETAIL_FULLRES_SAMPLE_STEP)
 	if _workers.is_empty():
 		_process_build_queue_synchronously()
 		_drain_worker_results()
@@ -360,6 +365,9 @@ func _on_world_tile_prefetched(cell: Vector2i) -> void:
 		return
 	if _queued_builds.has(cell):
 		return
+	# Prefetched cells are distant (beyond STREAM_ACTIVE_RADIUS): keep the cheap
+	# 5x downsample (REGION_DETAIL_SAMPLE_STEP). Full-res is reserved for active
+	# vehicle-near tiles (see _on_world_tile_activated).
 	_enqueue_build(cell)
 	if _workers.is_empty():
 		_process_build_queue_synchronously()
@@ -383,7 +391,7 @@ func _on_world_tile_unprefetched(cell: Vector2i) -> void:
 	_midlod_load_failures_by_cell.erase(cell)
 
 
-func _enqueue_build(cell: Vector2i) -> void:
+func _enqueue_build(cell: Vector2i, sample_step: int = TerrainVisualBuilderScript.REGION_DETAIL_SAMPLE_STEP) -> void:
 	if _visual_tiles_by_cell.has(cell):
 		return
 	if _ready_tile_data_by_cell.has(cell):
@@ -398,6 +406,7 @@ func _enqueue_build(cell: Vector2i) -> void:
 		"generation": _stream_generation,
 		"kind": "visual",
 		"region_id": _region_id,
+		"sample_step": sample_step,
 	}
 	_work_mutex.lock()
 	_cancelled_builds.erase(cell)
@@ -1103,7 +1112,8 @@ func _build_visual_tile_result(job: Dictionary) -> Dictionary:
 			"visual_tile_data": null,
 		}
 
-	var visual_tile_data: Variant = TerrainVisualBuilderScript.build_region_visual_tile_data(region_id, cell)
+	var sample_step: int = int(job.get("sample_step", TerrainVisualBuilderScript.REGION_DETAIL_SAMPLE_STEP))
+	var visual_tile_data: Variant = TerrainVisualBuilderScript.build_region_visual_tile_data(region_id, cell, sample_step)
 	var foliage_tile_data: Variant = TerrainVisualBuilderScript.build_region_foliage_tile_data(region_id, cell)
 	var ok: bool = visual_tile_data != null and bool(visual_tile_data.ok)
 	var message: String = ""
