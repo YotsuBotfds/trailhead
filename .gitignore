@@ -13,3 +13,4 @@ data/terrain/*surface_id.png.import
 
 # Orchestration run logs (large, scratch)
 planning/blast-logs/*.log
+planning/archive/blast-logs/*.log
