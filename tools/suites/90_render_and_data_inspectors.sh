@@ -30,3 +30,6 @@ printf 'run: data resources\n'
 
 printf 'run: chase camera rod (FX-25 horizontal-rod guard)\n'
 "$godot_bin" --headless --path . --script res://tools/chase_camera_rod_fixture.gd
+
+printf 'run: chase camera stop-lock (stationary freeze guard)\n'
+"$godot_bin" --headless --path . res://tools/chase_camera_stop_lock_fixture.tscn

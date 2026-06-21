@@ -115,6 +115,7 @@ var _chase_up_current: Vector3 = Vector3.UP
 var _chase_vehicle_y_current: float = 0.0
 var _chase_bank_current_deg: float = 0.0
 var _chase_pitch_current_deg: float = 0.0
+var _chase_stop_locked: bool = false
 var _chase_last_velocity: Vector3 = Vector3.ZERO
 var _chase_last_velocity_valid: bool = false
 var _orbit_camera_initialized: bool = false
@@ -1230,6 +1231,14 @@ func _chase_acceleration(state: RefCounted, delta: float) -> Vector3:
 		_chase_last_velocity = velocity
 		_chase_last_velocity_valid = true
 		return Vector3.ZERO
+	# Stop-lock: when the vehicle is essentially stationary, the velocity carries
+	# only never-sleeping rigid-body jitter; dividing that by ~delta amplifies it
+	# ~60x and pumps the camera's bank/pitch. Return zero AND re-pin the last
+	# velocity to the current reading so the post-release first delta doesn't
+	# explode from a stale accumulated difference.
+	if velocity.length() < GameConfig.cam_stop_lock_speed:
+		_chase_last_velocity = velocity
+		return Vector3.ZERO
 	var safe_delta: float = maxf(delta, GameConfig.FIXED_DT)
 	var acceleration: Vector3 = (velocity - _chase_last_velocity) / safe_delta
 	_chase_last_velocity = velocity
@@ -1495,6 +1504,7 @@ func _sync_chase_camera_rig_from_legacy() -> void:
 	_chase_camera_rig.set("vehicle_y_current", _chase_vehicle_y_current)
 	_chase_camera_rig.set("_bank_current_deg", _chase_bank_current_deg)
 	_chase_camera_rig.set("_pitch_current_deg", _chase_pitch_current_deg)
+	_chase_camera_rig.set("_stop_locked", _chase_stop_locked)
 
 
 func _sync_chase_camera_legacy_from_rig() -> void:
@@ -1505,6 +1515,7 @@ func _sync_chase_camera_legacy_from_rig() -> void:
 	_chase_vehicle_y_current = float(_chase_camera_rig.get("vehicle_y_current"))
 	_chase_bank_current_deg = float(_chase_camera_rig.get("_bank_current_deg"))
 	_chase_pitch_current_deg = float(_chase_camera_rig.get("_pitch_current_deg"))
+	_chase_stop_locked = bool(_chase_camera_rig.get("_stop_locked"))
 
 
 func _update_orbit_camera(delta: float, state: RefCounted) -> void:

@@ -235,6 +235,17 @@ var cam_pitch_accel_gain: float = 0.35
 var cam_pitch_max_deg: float = 2.0
 var cam_bank_smooth: float = 8.0
 var cam_gimbal_up_smooth: float = 1.0
+# Stop-lock: when the vehicle is nearly stationary, FREEZE the chase camera's
+# position AND orientation (not just position). The rigid-body vehicle is forced
+# never-sleeping (raycast_vehicle_controller), so its basis/velocity carry
+# sub-tick jitter every physics frame; the chase cam hard-follows that pose 1:1
+# and the accel term divides velocity delta by ~delta (~60x noise gain), so the
+# stationary cam visibly jitters. Freeze below cam_stop_lock_speed; release above
+# the higher cam_stop_lock_release_speed (hysteresis) and SNAP to the current
+# pose on release so the camera never lerps from a stale frozen state. Host-only:
+# the sim never reads these.
+var cam_stop_lock_speed: float = 0.15
+var cam_stop_lock_release_speed: float = 0.25
 var cam_vertical_follow_softness: float = 7.5
 var orbit_cam_height: float = 0.65
 var orbit_cam_distance: float = 1.05
