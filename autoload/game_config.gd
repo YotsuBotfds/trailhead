@@ -58,11 +58,18 @@ var render_visual_tile_frees_per_frame: int = 2
 # budget allows; use_taa stays true (FSR2 needs its velocity buffer; headless
 # visual inspectors assert it).
 var render_scaling_3d_mode: int = SCALING_3D_MODE_FSR
-var render_scaling_3d_scale: float = 0.85
+# Native 1.0 baseline (Phase 4 display fix): the owner-confirmed target is crisp
+# 1080p native. The dynamic-resolution controller (below) re-pins scale each
+# frame, so the steady-state band is min..max; both are 1.0 here = native at
+# rest, with the band left as a fallback hook (loosen min if 1080p drops frames
+# on a given machine). project.godot's scaling_3d/scale mirrors this at 1.0.
+var render_scaling_3d_scale: float = 1.0
 var render_use_taa: bool = true
 var render_dynamic_resolution_enabled: bool = true
+# min below 1.0 so the controller can still drop under load (fallback); max=1.0
+# so the steady-state/rest target is native 1080p.
 var render_dynamic_resolution_min_scale: float = 0.85
-var render_dynamic_resolution_max_scale: float = 0.85
+var render_dynamic_resolution_max_scale: float = 1.0
 var render_dynamic_resolution_step_down: float = 0.03
 var render_dynamic_resolution_step_up: float = 0.01
 var render_dynamic_resolution_ema_alpha: float = 0.18
@@ -289,7 +296,16 @@ var controls_hint_hud_enabled: bool = true
 var controls_hint_hud_auto_dismiss_seconds: float = 16.0
 var controls_hint_hud_fade_seconds: float = 0.6
 var debug_overlay_enabled_by_default: bool = false
+# Separate "start visible" knob so the capture/recording toolchain can force the
+# overlay ON at startup (telemetry + hitch red-flash baked into the recording)
+# without flipping the player-facing default. The host reads this in _ready().
+var debug_overlay_start_visible: bool = false
 var debug_overlay_frame_sample_count: int = 72
+# Reference resolution for the debug overlay's viewport-relative scaling. The
+# overlay computes a uniform scale from the shorter viewport axis over 1080 so
+# its compact left-top panel reads at a consistent size across 1080p/1440p/4K
+# instead of the old hard-coded pixels (which looked tiny at 4K).
+var debug_overlay_reference_resolution: int = 1080
 var debug_overlay_hitch_ms: float = 33.3
 var debug_overlay_chunk_flash_seconds: float = 0.45
 var debug_overlay_hitch_flash_seconds: float = 0.25

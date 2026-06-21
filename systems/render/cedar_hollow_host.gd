@@ -233,21 +233,25 @@ func _process(delta: float) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	# Render/window-only fullscreen toggle (F11, or \ as a fallback if macOS Mission
-	# Control grabs F11). Raw-key handling instead of an InputMap action; F is already
-	# bound to `photograph` (see Q66), so the toggle must NOT use F.
-	# DisplayServer is window-side only; this path is inert under the headless
-	# DisplayServer and never touches sim/physics/deterministic state.
-	var key_event: InputEventKey = event as InputEventKey
-	if key_event == null or not key_event.pressed or key_event.echo:
-		return
-	if key_event.keycode != KEY_F11 and key_event.keycode != KEY_BACKSLASH:
+	# Render/window-only fullscreen toggle. The action is bound to F11 AND
+	# backslash in project.godot (backslash is a fallback for macOS Mission
+	# Control grabbing F11). Uses WINDOW_MODE_FULLSCREEN (borderless fullscreen
+	# in Godot 4.x) rather than EXCLUSIVE_FULLSCREEN -- borderless avoids the
+	# display-mode switch flicker and stays at the desktop resolution. DisplayServer
+	# is window-side only; this whole path is inert under the headless DisplayServer
+	# and never touches sim/physics/deterministic state.
+	if event.is_action_pressed(&"toggle_fullscreen"):
+		_toggle_fullscreen()
+
+
+func _toggle_fullscreen() -> void:
+	if DisplayServer.get_name() == &"headless":
 		return
 	var mode: DisplayServer.WindowMode = DisplayServer.window_get_mode()
-	if mode == DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN:
+	if mode == DisplayServer.WINDOW_MODE_FULLSCREEN or mode == DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN:
 		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
 	else:
-		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN)
+		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
 
 
 func _ensure_default_input_map() -> void:
@@ -267,6 +271,7 @@ func _ensure_default_input_map() -> void:
 	_ensure_action(&"photo_mode", [KEY_V])
 	_ensure_action(&"cinematic_tour", [KEY_T])
 	_ensure_action(&"debug_overlay", [KEY_F3])
+	_ensure_action(&"toggle_fullscreen", [KEY_F11, KEY_BACKSLASH])
 	_ensure_joypad_bindings()
 
 
@@ -584,7 +589,11 @@ func _setup_hud() -> void:
 	add_child(_controls_hint_hud)
 	_debug_overlay_hud = DebugOverlayHudScript.new() as CanvasLayer
 	_debug_overlay_hud.name = "DebugOverlayHud"
-	_debug_overlay_hud.visible = GameConfig.debug_overlay_enabled_by_default
+	# Start-visible is a separate knob from the player-facing default so the
+	# recording/capture toolchain can bake telemetry + the hitch red-flash into
+	# the recording (debug_overlay_start_visible) without flipping the in-game
+	# default (debug_overlay_enabled_by_default). Either true -> visible.
+	_debug_overlay_hud.visible = GameConfig.debug_overlay_enabled_by_default or GameConfig.debug_overlay_start_visible
 	add_child(_debug_overlay_hud)
 	_debug_overlay_hud.call("configure", self)
 

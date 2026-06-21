@@ -51,6 +51,11 @@ class _DebugOverlayPanel:
 	var _last_cell: Vector2i = Vector2i(2147483647, 2147483647)
 	var _chunk_flash_seconds: float = 0.0
 	var _hitch_flash_seconds: float = 0.0
+	# Viewport-relative scale: recomputed each frame from the shorter viewport
+	# axis vs debug_overlay_reference_resolution. All dimensions/fonts in _draw
+	# multiply the BASE constants by this so the panel reads at a consistent
+	# size on 1080p/1440p/4K instead of the old hard pixels (tiny at 4K).
+	var _scale: float = 1.0
 
 
 	func configure(host: Node) -> void:
@@ -61,6 +66,7 @@ class _DebugOverlayPanel:
 	func _process(delta: float) -> void:
 		if not visible:
 			return
+		_update_scale()
 		var frame_ms: float = delta * 1000.0
 		_frame_ms_samples.append(frame_ms)
 		var sample_count: int = maxi(GameConfig.debug_overlay_frame_sample_count, 1)
@@ -78,42 +84,62 @@ class _DebugOverlayPanel:
 		queue_redraw()
 
 
+	func _update_scale() -> void:
+		var viewport: Viewport = get_viewport()
+		if viewport == null:
+			_scale = 1.0
+			return
+		var ref: int = maxi(GameConfig.debug_overlay_reference_resolution, 1)
+		var shorter: float = minf(float(viewport.size.x), float(viewport.size.y))
+		# Clamp to [0.75, 2.5] so the overlay never gets unreadably small or huge.
+		_scale = clampf(shorter / float(ref), 0.75, 2.5)
+
+
 	func _draw() -> void:
 		if not visible:
 			return
-		var origin: Vector2 = Vector2(MARGIN, MARGIN)
-		var rect: Rect2 = Rect2(origin, Vector2(PANEL_WIDTH, PANEL_HEIGHT))
+		var s: float = _scale
+		var margin: float = MARGIN * s
+		var padding: float = PADDING * s
+		var panel_w: float = PANEL_WIDTH * s
+		var panel_h: float = PANEL_HEIGHT * s
+		var line_h: float = LINE_HEIGHT * s
+		var font_size: int = maxi(int(roundf(float(FONT_SIZE) * s)), 8)
+		var title_font_size: int = maxi(int(roundf(float(TITLE_FONT_SIZE) * s)), 8)
+		var graph_h: float = GRAPH_HEIGHT * s
+		var origin: Vector2 = Vector2(margin, margin)
+		var rect: Rect2 = Rect2(origin, Vector2(panel_w, panel_h))
 		var bg: Color = HITCH_COLOR if _hitch_flash_seconds > 0.0 else BG_COLOR
 		draw_rect(rect, bg, true)
 		draw_rect(rect, BORDER_COLOR, false, 1.0)
 		var font: Font = get_theme_default_font()
-		var y: float = origin.y + PADDING
-		draw_string(font, Vector2(origin.x + PADDING, y), "DEBUG  F3", HORIZONTAL_ALIGNMENT_LEFT, 0.0, TITLE_FONT_SIZE, TEXT_COLOR)
-		y += LINE_HEIGHT + 3.0
+		var y: float = origin.y + padding
+		draw_string(font, Vector2(origin.x + padding, y), "DEBUG  F3", HORIZONTAL_ALIGNMENT_LEFT, 0.0, title_font_size, TEXT_COLOR)
+		y += line_h + 3.0 * s
 		var frame_ms: float = _latest_frame_ms()
 		var fps: int = Engine.get_frames_per_second()
 		var perf_color: Color = HITCH_COLOR if frame_ms >= GameConfig.debug_overlay_hitch_ms else TEXT_COLOR
-		draw_string(font, Vector2(origin.x + PADDING, y), "fps " + str(fps) + "   frame " + _format_float(frame_ms, 2) + " ms", HORIZONTAL_ALIGNMENT_LEFT, 0.0, FONT_SIZE, perf_color)
-		y += LINE_HEIGHT
-		_draw_frame_graph(Rect2(origin.x + PADDING, y, PANEL_WIDTH - PADDING * 2.0, GRAPH_HEIGHT))
-		y += GRAPH_HEIGHT + 8.0
+		draw_string(font, Vector2(origin.x + padding, y), "fps " + str(fps) + "   frame " + _format_float(frame_ms, 2) + " ms", HORIZONTAL_ALIGNMENT_LEFT, 0.0, font_size, perf_color)
+		y += line_h
+		_draw_frame_graph(Rect2(origin.x + padding, y, panel_w - padding * 2.0, graph_h))
+		y += graph_h + 8.0 * s
 		var cell: Vector2i = _stream_current_cell()
 		var cell_color: Color = CHUNK_COLOR if _chunk_flash_seconds > 0.0 else TEXT_COLOR
-		draw_string(font, Vector2(origin.x + PADDING, y), "cell " + _cell_text(cell) + "   stream tick " + str(_stream_tick()), HORIZONTAL_ALIGNMENT_LEFT, 0.0, FONT_SIZE, cell_color)
-		y += LINE_HEIGHT
-		draw_string(font, Vector2(origin.x + PADDING, y), "active " + str(_active_count()) + "   ready " + str(_ready_count()) + "   prefetch " + str(_prefetch_ready_count()), HORIZONTAL_ALIGNMENT_LEFT, 0.0, FONT_SIZE, TEXT_COLOR)
-		y += LINE_HEIGHT + 3.0
-		draw_string(font, Vector2(origin.x + PADDING, y), "draws " + str(_monitor_int(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)) + "   prims " + str(_monitor_int(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME)), HORIZONTAL_ALIGNMENT_LEFT, 0.0, FONT_SIZE, TEXT_COLOR)
-		y += LINE_HEIGHT
-		draw_string(font, Vector2(origin.x + PADDING, y), "objects " + str(_monitor_int(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME)) + "   materials/tex " + _format_float(_monitor_mb(Performance.RENDER_TEXTURE_MEM_USED), 1) + " MB", HORIZONTAL_ALIGNMENT_LEFT, 0.0, FONT_SIZE, TEXT_COLOR)
-		y += LINE_HEIGHT
-		draw_string(font, Vector2(origin.x + PADDING, y), "video " + _format_float(_monitor_mb(Performance.RENDER_VIDEO_MEM_USED), 1) + " MB   tex " + _format_float(_monitor_mb(Performance.RENDER_TEXTURE_MEM_USED), 1) + " MB", HORIZONTAL_ALIGNMENT_LEFT, 0.0, FONT_SIZE, TEXT_COLOR)
-		y += LINE_HEIGHT
-		draw_string(font, Vector2(origin.x + PADDING, y), "buffers " + _format_float(_monitor_mb(Performance.RENDER_BUFFER_MEM_USED), 1) + " MB", HORIZONTAL_ALIGNMENT_LEFT, 0.0, FONT_SIZE, MUTED_COLOR)
-		y += LINE_HEIGHT + 3.0
-		draw_string(font, Vector2(origin.x + PADDING, y), "mood " + _mood_text() + "   camera " + _camera_text(), HORIZONTAL_ALIGNMENT_LEFT, 0.0, FONT_SIZE, GOOD_COLOR)
+		draw_string(font, Vector2(origin.x + padding, y), "cell " + _cell_text(cell) + "   stream tick " + str(_stream_tick()), HORIZONTAL_ALIGNMENT_LEFT, 0.0, font_size, cell_color)
+		y += line_h
+		draw_string(font, Vector2(origin.x + padding, y), "active " + str(_active_count()) + "   ready " + str(_ready_count()) + "   prefetch " + str(_prefetch_ready_count()), HORIZONTAL_ALIGNMENT_LEFT, 0.0, font_size, TEXT_COLOR)
+		y += line_h + 3.0 * s
+		draw_string(font, Vector2(origin.x + padding, y), "draws " + str(_monitor_int(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)) + "   prims " + str(_monitor_int(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME)), HORIZONTAL_ALIGNMENT_LEFT, 0.0, font_size, TEXT_COLOR)
+		y += line_h
+		draw_string(font, Vector2(origin.x + padding, y), "objects " + str(_monitor_int(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME)) + "   materials/tex " + _format_float(_monitor_mb(Performance.RENDER_TEXTURE_MEM_USED), 1) + " MB", HORIZONTAL_ALIGNMENT_LEFT, 0.0, font_size, TEXT_COLOR)
+		y += line_h
+		draw_string(font, Vector2(origin.x + padding, y), "video " + _format_float(_monitor_mb(Performance.RENDER_VIDEO_MEM_USED), 1) + " MB   tex " + _format_float(_monitor_mb(Performance.RENDER_TEXTURE_MEM_USED), 1) + " MB", HORIZONTAL_ALIGNMENT_LEFT, 0.0, font_size, TEXT_COLOR)
+		y += line_h
+		draw_string(font, Vector2(origin.x + padding, y), "buffers " + _format_float(_monitor_mb(Performance.RENDER_BUFFER_MEM_USED), 1) + " MB", HORIZONTAL_ALIGNMENT_LEFT, 0.0, font_size, MUTED_COLOR)
+		y += line_h + 3.0 * s
+		draw_string(font, Vector2(origin.x + padding, y), "mood " + _mood_text() + "   camera " + _camera_text(), HORIZONTAL_ALIGNMENT_LEFT, 0.0, font_size, GOOD_COLOR)
 		if _chunk_flash_seconds > 0.0:
-			draw_rect(Rect2(origin.x + PANEL_WIDTH - PADDING - 52.0, origin.y + PADDING, 52.0, 5.0), CHUNK_COLOR, true)
+			draw_rect(Rect2(origin.x + panel_w - padding - 52.0 * s, origin.y + padding, 52.0 * s, 5.0 * s), CHUNK_COLOR, true)
 
 
 	func _draw_frame_graph(rect: Rect2) -> void:
@@ -121,14 +147,14 @@ class _DebugOverlayPanel:
 		if _frame_ms_samples.is_empty():
 			return
 		var sample_count: int = _frame_ms_samples.size()
-		var bar_w: float = maxf((rect.size.x - GRAPH_GAP * float(sample_count - 1)) / float(sample_count), 1.0)
+		var bar_w: float = maxf((rect.size.x - GRAPH_GAP * _scale * float(sample_count - 1)) / float(sample_count), 1.0)
 		var x: float = rect.position.x
 		for sample in _frame_ms_samples:
 			var ratio: float = clampf(sample / GRAPH_MS_MAX, 0.0, 1.0)
 			var h: float = maxf(rect.size.y * ratio, 1.0)
 			var color: Color = HITCH_COLOR if sample >= GameConfig.debug_overlay_hitch_ms else WARN_COLOR if sample >= 16.7 else GOOD_COLOR
 			draw_rect(Rect2(x, rect.position.y + rect.size.y - h, bar_w, h), color, true)
-			x += bar_w + GRAPH_GAP
+			x += bar_w + GRAPH_GAP * _scale
 
 
 	func _latest_frame_ms() -> float:

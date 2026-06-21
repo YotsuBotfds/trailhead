@@ -1946,8 +1946,8 @@ func _inspect_project_scaling_settings(context: String) -> void:
 	var sharpness_value: float = float(ProjectSettings.get_setting("rendering/scaling_3d/fsr_sharpness", -1.0))
 	if mode_value != 2:
 		_errors.append(context + " project scaling_3d/mode expected 2, got " + str(mode_value))
-	if absf(scale_value - 0.71) > FLOAT_EPSILON:
-		_errors.append(context + " project scaling_3d/scale expected 0.71, got " + str(scale_value))
+	if absf(scale_value - 1.0) > FLOAT_EPSILON:
+		_errors.append(context + " project scaling_3d/scale expected 1.0, got " + str(scale_value))
 	if absf(sharpness_value - 0.1) > FLOAT_EPSILON:
 		_errors.append(context + " project scaling_3d/fsr_sharpness expected 0.1, got " + str(sharpness_value))
 	var soft_shadow_quality: int = int(ProjectSettings.get_setting(SOFT_SHADOW_FILTER_QUALITY_SETTING_PATH, -1))
