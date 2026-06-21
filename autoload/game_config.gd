@@ -138,7 +138,14 @@ var susp_damping_force_ratio: float = 0.6
 var susp_contact_angular_velocity_weight: float = 0.35
 var susp_ray_length_headroom: float = 0.0
 var susp_last_good_contact_ticks: int = 0
-var wheel_radius: float = 0.03
+# Calibrated to the GLB wheel mesh (assets/models/vehicle/rc_buggy.glb, mesh
+# `wheel_tire` POSITION accessor min/max X/Z = ±0.03765). The old 0.03 constant
+# was ~7.65 mm short of the real tire radius, so every wheel ray was that much
+# too short and the visual chassis dropped to compensate — visible as the tires
+# sinking 7.65 mm through the ground. Mesh-as-truth: the GLB is the authority
+# (see tools/check_glb.py wheel-radius contract + the de-circularized socket
+# assertion in the render inspectors, both read the accessor min/max directly).
+var wheel_radius: float = 0.03765
 
 var default_friction: float = 1.0
 var default_rolling_drag: float = 0.1
@@ -599,8 +606,15 @@ var suspension_drop_max_settle_vertical_speed: float = 0.08
 var resting_ride_height_probe_ticks: int = 360
 var resting_ride_height_settle_start_tick: int = 240
 var resting_ride_height_min_sample_ticks: int = 80
-var resting_ride_height_min_y: float = 0.040
-var resting_ride_height_max_y: float = 0.055
+var resting_ride_height_min_y: float = 0.047
+var resting_ride_height_max_y: float = 0.062
+# Rest-height band shifted up ~7.65 mm vs the prior [0.040, 0.055] to track the
+# calibrated wheel_radius (0.03 -> 0.03765, the real GLB wheel_tire radius). The
+# buggy now rests at its correct ride height (~0.055 m) instead of 7.65 mm low;
+# the 15 mm tolerance window is unchanged, only its center moved. This bound
+# drives the resting_ride_height scenario predicate (sim_runner.gd); the suite
+# assertion in 13_feel_control_probes.sh mirrors it. See Phase 1 of the vehicle
+# visual-fixes plan.
 var roll_stability_probe_ticks: int = 260
 var roll_stability_side_slope_deg: float = 18.0
 var roll_stability_ground_size: Vector3 = Vector3(7.0, 0.1, 10.0)

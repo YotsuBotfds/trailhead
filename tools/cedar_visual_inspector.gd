@@ -9,6 +9,7 @@ const SurfaceMapScript: GDScript = preload("res://systems/world/surface_map.gd")
 const TerrainVisualBuilderScript: GDScript = preload("res://systems/render/terrain_visual_builder.gd")
 const CedarHollowHostScript: GDScript = preload("res://systems/render/cedar_hollow_host.gd")
 const ProceduralBuggyVisualScript: GDScript = preload("res://systems/render/procedural_buggy_visual.gd")
+const GlbWheelRadiusScript: GDScript = preload("res://tools/glb_wheel_radius.gd")
 const FeatureVisualBuilderScript: GDScript = preload("res://systems/render/feature_visual_builder.gd")
 const ScatterVisualBuilderScript: GDScript = preload("res://systems/render/scatter_visual_builder.gd")
 const GroundDetailVisualBuilderScript: GDScript = preload("res://systems/render/ground_detail_visual_builder.gd")
@@ -1401,6 +1402,7 @@ func _inspect_vehicle_visuals(host: Node, vehicle: Node) -> void:
 	_require_wheel_socket_position(visual_root, "wheel_rear_left", Vector3(-0.08, -0.015, 0.10))
 	_require_wheel_socket_position(visual_root, "wheel_rear_right", Vector3(0.08, -0.015, 0.10))
 	_require_visual_wheel_socket_contact_follow(visual_root)
+	_require_wheel_radius_matches_glb()
 	_require_wheel_socket_mesh(visual_root, "wheel_front_left")
 	_require_wheel_socket_mesh(visual_root, "wheel_front_right")
 	_require_wheel_socket_mesh(visual_root, "wheel_rear_left")
@@ -1474,6 +1476,22 @@ func _require_visual_wheel_socket_contact_follow(visual_root: Node) -> void:
 		if absf(socket.position.y - expected_y_values[i]) > FLOAT_EPSILON:
 			_errors.append(String(socket.name) + " visual socket y should follow recorded contact; expected " + str(expected_y_values[i]) + ", got " + str(socket.position.y))
 		socket.position = original_positions[i]
+
+
+# De-circularized wheel-radius contract (Phase 1 vehicle-intersection fix).
+# The contact-follow check above is intentionally still in place but it
+# self-cancels (fabricated hit point minus wheel_radius, then plus wheel_radius).
+# This assertion is the real authority: it reads the GLB `wheel_tire` mesh
+# bounding box directly and requires GameConfig.wheel_radius to match the mesh's
+# rolling radius. A drift in EITHER the constant OR the mesh now turns this red.
+func _require_wheel_radius_matches_glb() -> void:
+	var mesh_radius: float = GlbWheelRadiusScript.read_wheel_radius()
+	if mesh_radius <= 0.0:
+		_errors.append("could not read wheel_tire rolling radius from GLB")
+		return
+	var tolerance: float = 1e-4
+	if absf(GameConfig.wheel_radius - mesh_radius) > tolerance:
+		_errors.append("GameConfig.wheel_radius " + str(GameConfig.wheel_radius) + " does not match GLB wheel_tire rolling radius " + str(mesh_radius) + " (tolerance " + str(tolerance) + ")")
 
 
 func _require_vehicle_chassis_clearance(visual_root: Node) -> void:

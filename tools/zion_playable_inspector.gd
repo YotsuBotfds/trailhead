@@ -8,6 +8,7 @@ const ProceduralBuggyVisualScript: GDScript = preload("res://systems/render/proc
 const TerrainVisualBuilderScript: GDScript = preload("res://systems/render/terrain_visual_builder.gd")
 const WaterVisualBuilderScript: GDScript = preload("res://systems/render/water_visual_builder.gd")
 const SurfaceMapScript: GDScript = preload("res://systems/world/surface_map.gd")
+const GlbWheelRadiusScript: GDScript = preload("res://tools/glb_wheel_radius.gd")
 const WATER_SHADER_PATH: String = "res://systems/render/water_visual.gdshader"
 const ZION_REGION_ID: String = "cedar_hollow_zion"
 const WORLD_REGION_ID_META: StringName = &"trailhead_world_region_id"
@@ -352,6 +353,7 @@ func _require_vehicle_visual_ride_height(vehicle: Node) -> void:
 	_require_wheel_socket_position(visual_root, "wheel_rear_left", Vector3(-0.08, -0.015, 0.10))
 	_require_wheel_socket_position(visual_root, "wheel_rear_right", Vector3(0.08, -0.015, 0.10))
 	_require_visual_wheel_socket_contact_follow(visual_root)
+	_require_wheel_radius_matches_glb()
 	_require_vehicle_chassis_clearance(visual_root)
 
 
@@ -399,6 +401,21 @@ func _require_visual_wheel_socket_contact_follow(visual_root: Node) -> void:
 		if absf(socket.position.y - expected_y_values[i]) > FLOAT_EPSILON:
 			_errors.append(String(socket.name) + " visual socket y should follow recorded contact; expected " + str(expected_y_values[i]) + ", got " + str(socket.position.y))
 		socket.position = original_positions[i]
+
+
+# De-circularized wheel-radius contract (Phase 1 vehicle-intersection fix).
+# Reads the GLB `wheel_tire` mesh bounding box directly and requires
+# GameConfig.wheel_radius to match the mesh's rolling radius. A drift in EITHER
+# the constant OR the mesh turns this red (the contact-follow check above
+# self-cancels and cannot catch such drift on its own).
+func _require_wheel_radius_matches_glb() -> void:
+	var mesh_radius: float = GlbWheelRadiusScript.read_wheel_radius()
+	if mesh_radius <= 0.0:
+		_errors.append("could not read wheel_tire rolling radius from GLB")
+		return
+	var tolerance: float = 1e-4
+	if absf(GameConfig.wheel_radius - mesh_radius) > tolerance:
+		_errors.append("GameConfig.wheel_radius " + str(GameConfig.wheel_radius) + " does not match GLB wheel_tire rolling radius " + str(mesh_radius) + " (tolerance " + str(tolerance) + ")")
 
 
 func _require_vehicle_chassis_clearance(visual_root: Node) -> void:

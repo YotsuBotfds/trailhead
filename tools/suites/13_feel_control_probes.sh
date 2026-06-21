@@ -164,8 +164,13 @@ assert_metrics "$out_dir/resting_ride_height.json" \
 	--surface=packed_dirt:40 \
 	--metric-min=resting_ride_height_sample_ticks:80 \
 	--metric-min=resting_ride_height_all_contact_ticks:80 \
-	--metric-min=resting_ride_height_min_y:0.040 \
-	--metric-max=resting_ride_height_max_y:0.055
+	--metric-min=resting_ride_height_min_y:0.047 \
+	--metric-max=resting_ride_height_max_y:0.062
+# Rest-height band shifted up ~7.65 mm vs the prior [0.040, 0.055] to track the
+# calibrated wheel_radius (0.03 -> 0.03765, the real GLB wheel_tire radius). The
+# buggy now sits at its correct ride height instead of 7.65 mm low; the tolerance
+# window (15 mm) is unchanged, only its center moved. See Phase 1 of the vehicle
+# visual-fixes plan.
 
 airborne_brake_control_replay="$out_dir/airborne_brake_control_replay.json"
 airborne_brake_probe_replay="$out_dir/airborne_brake_probe_replay.json"

@@ -1422,6 +1422,7 @@ func _record(state: RefCounted, input: RefCounted) -> void:
 		"position": _vec3_to_array(state_position),
 		"linear_velocity": _vec3_to_array(state_velocity),
 		"angular_velocity": _vec3_to_array(state_angular_velocity),
+		"basis": [_vec3_to_array(state_basis.x), _vec3_to_array(state_basis.y), _vec3_to_array(state_basis.z)],
 		"yaw_rate": yaw_rate,
 		"lateral_speed": lateral_speed,
 		"pitch_deg": pitch_deg,
