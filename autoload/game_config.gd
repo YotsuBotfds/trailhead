@@ -42,7 +42,7 @@ var stream_collision_activations_per_tick: int = 3
 var stream_collision_prebuild_per_tick: int = 1
 var stream_collision_evictions_per_tick: int = 3
 var stream_spawn_no_fall_probe_ticks: int = 840
-var render_visual_tile_frees_per_frame: int = 2
+var render_visual_tile_frees_per_frame: int = 8
 # --- Render quality baseline (GLM perf-opt): explicit, GameConfig-driven 3D
 # scaling + temporal AA. CedarHollowHost._apply_render_quality() pushes these to
 # the game viewport once in _ready(). DEFAULT IS FSR1 (spatial), NOT FSR2:

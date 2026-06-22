@@ -786,7 +786,7 @@ static func _region_stream_midlod_tile_node_name(region_id: String, tile_index: 
 
 
 static func _detail_visibility_range_end(tile_data: RegionTileData) -> float:
-	return maxf(maxf(GameConfig.cam_far, GameConfig.vis_range_terrain) + _tile_visibility_radius(tile_data), 0.0)
+	return maxf(GameConfig.vis_range_terrain + _tile_visibility_radius(tile_data), 0.0)
 
 
 static func _hlod_visibility_range_begin() -> float:

@@ -299,7 +299,7 @@ func _require_visual_tile(cell: Vector2i) -> MeshInstance3D:
 		_errors.append("streamed visual cell missing visibility radius metadata: " + String(mesh_instance.name))
 	else:
 		var visibility_radius: float = float(mesh_instance.get_meta(TerrainVisualBuilderScript.VISIBILITY_RADIUS_META))
-		var expected_range_end: float = maxf(maxf(GameConfig.cam_far, GameConfig.vis_range_terrain) + visibility_radius, 0.0)
+		var expected_range_end: float = maxf(GameConfig.vis_range_terrain + visibility_radius, 0.0)
 		if absf(mesh_instance.visibility_range_end - expected_range_end) > FLOAT_EPSILON:
 			_errors.append("streamed visual cell visibility_range_end expected " + str(expected_range_end) + ", got " + str(mesh_instance.visibility_range_end) + ": " + String(mesh_instance.name))
 	if mesh_instance.visibility_range_fade_mode != GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED:

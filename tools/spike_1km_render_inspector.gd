@@ -289,7 +289,7 @@ func _visibility_radius(node: Node, label: String) -> float:
 
 
 func _detail_visibility_range_end(visibility_radius: float) -> float:
-	return maxf(maxf(GameConfig.cam_far, GameConfig.vis_range_terrain) + visibility_radius, 0.0)
+	return maxf(GameConfig.vis_range_terrain + visibility_radius, 0.0)
 
 
 func _require_mesh_surfaces(mesh_instance: MeshInstance3D, label: String) -> void:

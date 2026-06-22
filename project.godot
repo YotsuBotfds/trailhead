@@ -128,9 +128,3 @@ lights_and_shadows/directional_shadow/soft_shadow_filter_quality=2
 environment/volumetric_fog/volume_size=24
 environment/volumetric_fog/volume_depth=24
 environment/volumetric_fog/use_filter=1
-
-[trailhead_render]
-
-height_fog_density=0.018
-height_fog_falloff=1.0
-camera_far=42.0
