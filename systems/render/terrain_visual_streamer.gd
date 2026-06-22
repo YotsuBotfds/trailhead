@@ -53,11 +53,14 @@ var _ready_tile_data_by_cell: Dictionary[Vector2i, Variant] = {}
 var _ready_tile_step_by_cell: Dictionary[Vector2i, int] = {}
 var _ready_midlod_data_by_cell: Dictionary[Vector2i, Variant] = {}
 var _ready_foliage_data_by_cell: Dictionary[Vector2i, Variant] = {}
+var _committed_tile_step_by_cell: Dictionary[Vector2i, int] = {}
 var _load_failures_by_cell: Dictionary[Vector2i, String] = {}
 var _midlod_load_failures_by_cell: Dictionary[Vector2i, String] = {}
 var _queued_builds: Dictionary[Vector2i, bool] = {}
+var _queued_build_step_by_cell: Dictionary[Vector2i, int] = {}
+var _queued_build_id_by_cell: Dictionary[Vector2i, int] = {}
 var _queued_midlod_builds: Dictionary[Vector2i, bool] = {}
-var _cancelled_builds: Dictionary[Vector2i, bool] = {}
+var _cancelled_builds: Dictionary[int, bool] = {}
 var _cancelled_midlod_builds: Dictionary[Vector2i, bool] = {}
 var _commit_queue: Array[Vector2i] = []
 var _midlod_commit_queue: Array[Vector2i] = []
@@ -70,6 +73,7 @@ var _workers: Array[Thread] = []
 var _work_mutex: Mutex = Mutex.new()
 var _work_semaphore: Semaphore = Semaphore.new()
 var _worker_should_stop: bool = false
+var _next_visual_build_id: int = 0
 var _build_queue: Array[Variant] = []
 var _midlod_build_queue: Array[Variant] = []
 var _result_queue: Array[Variant] = []
@@ -139,9 +143,12 @@ func reset_stream() -> void:
 	_ready_tile_step_by_cell.clear()
 	_ready_midlod_data_by_cell.clear()
 	_ready_foliage_data_by_cell.clear()
+	_committed_tile_step_by_cell.clear()
 	_load_failures_by_cell.clear()
 	_midlod_load_failures_by_cell.clear()
 	_queued_builds.clear()
+	_queued_build_step_by_cell.clear()
+	_queued_build_id_by_cell.clear()
 	_queued_midlod_builds.clear()
 	_cancelled_builds.clear()
 	_cancelled_midlod_builds.clear()
@@ -153,6 +160,7 @@ func reset_stream() -> void:
 	_pending_foliage_subcommit_counts_by_cell.clear()
 	_pending_free_cells.clear()
 	_clear_worker_queues()
+	_next_visual_build_id = 0
 	_configured = false
 	_region_id = ""
 	_detail_root = null
@@ -245,6 +253,10 @@ func ready_visual_cell_sample_step(cell: Vector2i) -> int:
 	return int(_ready_tile_step_by_cell.get(cell, -1))
 
 
+func committed_visual_cell_sample_step(cell: Vector2i) -> int:
+	return int(_committed_tile_step_by_cell.get(cell, -1))
+
+
 func has_ready_midlod_cell(cell: Vector2i) -> bool:
 	return _ready_midlod_data_by_cell.has(cell)
 
@@ -332,7 +344,11 @@ func _on_world_tile_activated(cell: Vector2i) -> void:
 	_hlod_dirty = true
 	_refresh_midlod_streaming()
 	if _visual_tiles_by_cell.has(cell) and (_foliage_tiles_by_cell.has(cell) or _partial_foliage_tiles_by_cell.has(cell)):
-		return
+		var committed_step: int = int(_committed_tile_step_by_cell.get(cell, TerrainVisualBuilderScript.REGION_DETAIL_SAMPLE_STEP))
+		if committed_step <= TerrainVisualBuilderScript.REGION_DETAIL_FULLRES_SAMPLE_STEP:
+			return
+		_free_visual_cell(cell)
+		_free_foliage_cell(cell)
 	if _ready_tile_data_by_cell.has(cell):
 		# If the ready data was built at a coarser step than full-res (e.g. from a
 		# prefetch at step=5), discard it and rebuild at full collision resolution so
@@ -348,7 +364,10 @@ func _on_world_tile_activated(cell: Vector2i) -> void:
 			_enqueue_ready_commit(cell)
 			return
 	if _queued_builds.has(cell):
-		return
+		var queued_step: int = int(_queued_build_step_by_cell.get(cell, TerrainVisualBuilderScript.REGION_DETAIL_SAMPLE_STEP))
+		if queued_step <= TerrainVisualBuilderScript.REGION_DETAIL_FULLRES_SAMPLE_STEP:
+			return
+		_cancel_build(cell)
 	# Active cells are the vehicle-near loaded physics tiles (STREAM_ACTIVE_RADIUS
 	# around the car). Build their visual mesh at full collision resolution
 	# (step=1) so the visible ground matches the surface the wheels actually
@@ -405,6 +424,7 @@ func _on_world_tile_unprefetched(cell: Vector2i) -> void:
 	_ready_tile_step_by_cell.erase(cell)
 	_ready_midlod_data_by_cell.erase(cell)
 	_ready_foliage_data_by_cell.erase(cell)
+	_committed_tile_step_by_cell.erase(cell)
 	_load_failures_by_cell.erase(cell)
 	_midlod_load_failures_by_cell.erase(cell)
 
@@ -419,7 +439,12 @@ func _enqueue_build(cell: Vector2i, sample_step: int = TerrainVisualBuilderScrip
 	if _load_failures_by_cell.has(cell):
 		return
 	_queued_builds[cell] = true
+	_queued_build_step_by_cell[cell] = sample_step
+	_next_visual_build_id += 1
+	var build_id: int = _next_visual_build_id
+	_queued_build_id_by_cell[cell] = build_id
 	var job: Dictionary = {
+		"build_id": build_id,
 		"cell": cell,
 		"generation": _stream_generation,
 		"kind": "visual",
@@ -427,7 +452,6 @@ func _enqueue_build(cell: Vector2i, sample_step: int = TerrainVisualBuilderScrip
 		"sample_step": sample_step,
 	}
 	_work_mutex.lock()
-	_cancelled_builds.erase(cell)
 	_build_queue.append(job)
 	_work_mutex.unlock()
 	_work_semaphore.post()
@@ -436,9 +460,13 @@ func _enqueue_build(cell: Vector2i, sample_step: int = TerrainVisualBuilderScrip
 func _cancel_build(cell: Vector2i) -> void:
 	if not _queued_builds.has(cell):
 		return
+	var build_id: int = int(_queued_build_id_by_cell.get(cell, -1))
 	_queued_builds.erase(cell)
+	_queued_build_step_by_cell.erase(cell)
+	_queued_build_id_by_cell.erase(cell)
 	_work_mutex.lock()
-	_cancelled_builds[cell] = true
+	if build_id >= 0:
+		_cancelled_builds[build_id] = true
 	_work_mutex.unlock()
 
 
@@ -492,7 +520,7 @@ func _desired_midlod_cells() -> Array[Vector2i]:
 	var tile_size_m: float = GameConfig.STREAM_TILE_SIZE_M
 	var tile_radius: float = Vector2(tile_size_m, tile_size_m).length() * 0.5
 	var max_distance: float = TerrainVisualBuilderScript.REGION_STREAM_MIDLOD_RANGE_END_M + tile_radius
-	var cell_radius: int = maxi(int(ceil(max_distance / maxf(tile_size_m, 0.001))), 1)
+	var cell_radius: int = maxi(int(ceilf(max_distance / maxf(tile_size_m, 0.001))), 1)
 	var center_xz: Vector2 = Vector2((float(center_cell.x) + 0.5) * tile_size_m, (float(center_cell.y) + 0.5) * tile_size_m)
 	for y in range(center_cell.y - cell_radius, center_cell.y + cell_radius + 1):
 		for x in range(center_cell.x - cell_radius, center_cell.x + cell_radius + 1):
@@ -576,21 +604,37 @@ func _drain_worker_results() -> void:
 		var generation: int = int(result["generation"])
 		if generation != _stream_generation:
 			continue
+		var build_id: int = int(result.get("build_id", -1))
 		_work_mutex.lock()
-		var was_cancelled: bool = _cancelled_builds.has(cell)
+		var was_cancelled: bool = _cancelled_builds.has(build_id)
 		if was_cancelled:
-			_cancelled_builds.erase(cell)
+			_cancelled_builds.erase(build_id)
 		_work_mutex.unlock()
 		if was_cancelled:
 			continue
 		if not _queued_builds.has(cell):
 			continue
+		var queued_build_id: int = int(_queued_build_id_by_cell.get(cell, -1))
+		if queued_build_id != build_id:
+			continue
 		_queued_builds.erase(cell)
+		_queued_build_step_by_cell.erase(cell)
+		_queued_build_id_by_cell.erase(cell)
 		if not bool(result["ok"]):
 			_record_load_failure(cell, String(result["message"]))
 			continue
+		var sample_step: int = int(result.get("sample_step", TerrainVisualBuilderScript.REGION_DETAIL_SAMPLE_STEP))
+		if _active_cells.has(cell) and sample_step > TerrainVisualBuilderScript.REGION_DETAIL_FULLRES_SAMPLE_STEP:
+			_ready_tile_data_by_cell.erase(cell)
+			_ready_tile_step_by_cell.erase(cell)
+			_ready_foliage_data_by_cell.erase(cell)
+			_remove_queued_commit(cell)
+			_enqueue_build(cell, TerrainVisualBuilderScript.REGION_DETAIL_FULLRES_SAMPLE_STEP)
+			if _workers.is_empty():
+				_process_build_queue_synchronously()
+			continue
 		_ready_tile_data_by_cell[cell] = result["visual_tile_data"]
-		_ready_tile_step_by_cell[cell] = int(result.get("sample_step", TerrainVisualBuilderScript.REGION_DETAIL_SAMPLE_STEP))
+		_ready_tile_step_by_cell[cell] = sample_step
 		_ready_foliage_data_by_cell[cell] = result["foliage_tile_data"]
 		if _active_cells.has(cell):
 			_enqueue_ready_commit(cell)
@@ -706,7 +750,8 @@ func _drain_midlod_commit_queue() -> int:
 
 func _commit_ready_cell(cell: Vector2i) -> void:
 	if _ready_tile_data_by_cell.has(cell):
-		_commit_visual_tile(cell, _ready_tile_data_by_cell[cell])
+		var sample_step: int = int(_ready_tile_step_by_cell.get(cell, TerrainVisualBuilderScript.REGION_DETAIL_SAMPLE_STEP))
+		_commit_visual_tile(cell, _ready_tile_data_by_cell[cell], sample_step)
 	if _ready_foliage_data_by_cell.has(cell) and _visual_tiles_by_cell.has(cell):
 		_begin_foliage_tile_commit(cell, _ready_foliage_data_by_cell[cell])
 
@@ -742,7 +787,7 @@ func _drain_pending_frees() -> void:
 		freed_count += 1
 
 
-func _commit_visual_tile(cell: Vector2i, visual_tile_data: Variant) -> void:
+func _commit_visual_tile(cell: Vector2i, visual_tile_data: Variant, sample_step: int) -> void:
 	if _detail_root == null:
 		return
 	if _visual_tiles_by_cell.has(cell):
@@ -752,6 +797,7 @@ func _commit_visual_tile(cell: Vector2i, visual_tile_data: Variant) -> void:
 		_load_failures_by_cell[cell] = "visual tile failed to load"
 		return
 	_visual_tiles_by_cell[cell] = visual_tile
+	_committed_tile_step_by_cell[cell] = sample_step
 	_ready_tile_data_by_cell.erase(cell)
 	_ready_tile_step_by_cell.erase(cell)
 	_load_failures_by_cell.erase(cell)
@@ -1088,7 +1134,7 @@ func _worker_loop() -> void:
 		var generation: int = int(result["generation"])
 		var kind: String = String(result.get("kind", "visual"))
 		_work_mutex.lock()
-		if not _worker_should_stop and generation == _stream_generation and not _worker_result_is_cancelled_locked(kind, cell):
+		if not _worker_should_stop and generation == _stream_generation and not _worker_result_is_cancelled_locked(result):
 			_result_queue.append(result)
 		_work_mutex.unlock()
 
@@ -1101,10 +1147,13 @@ func _pop_next_build_job_locked() -> Dictionary:
 	return {}
 
 
-func _worker_result_is_cancelled_locked(kind: String, cell: Vector2i) -> bool:
+func _worker_result_is_cancelled_locked(result: Dictionary) -> bool:
+	var kind: String = String(result.get("kind", "visual"))
+	var cell: Vector2i = result["cell"] as Vector2i
 	if kind == "midlod":
 		return _cancelled_midlod_builds.has(cell)
-	return _cancelled_builds.has(cell)
+	var build_id: int = int(result.get("build_id", -1))
+	return _cancelled_builds.has(build_id)
 
 
 func _build_worker_result(job: Dictionary) -> Dictionary:
@@ -1115,16 +1164,18 @@ func _build_worker_result(job: Dictionary) -> Dictionary:
 
 
 func _build_visual_tile_result(job: Dictionary) -> Dictionary:
+	var build_id: int = int(job.get("build_id", -1))
 	var cell: Vector2i = job["cell"] as Vector2i
 	var generation: int = int(job["generation"])
 	var region_id: String = String(job["region_id"])
 
 	_work_mutex.lock()
-	var should_skip: bool = _worker_should_stop or generation != _stream_generation or _cancelled_builds.has(cell)
+	var should_skip: bool = _worker_should_stop or generation != _stream_generation or _cancelled_builds.has(build_id)
 	_work_mutex.unlock()
 	if should_skip:
 		return {
 			"ok": false,
+			"build_id": build_id,
 			"cell": cell,
 			"generation": generation,
 			"kind": "visual",
@@ -1145,6 +1196,7 @@ func _build_visual_tile_result(job: Dictionary) -> Dictionary:
 		message = "visual tile failed to build: " + region_id + " " + str(cell)
 	return {
 		"ok": ok,
+		"build_id": build_id,
 		"cell": cell,
 		"generation": generation,
 		"kind": "visual",
@@ -1192,9 +1244,11 @@ func _build_midlod_tile_result(job: Dictionary) -> Dictionary:
 
 func _free_visual_cell(cell: Vector2i) -> void:
 	if not _visual_tiles_by_cell.has(cell):
+		_committed_tile_step_by_cell.erase(cell)
 		return
 	var visual_tile: Node3D = _visual_tiles_by_cell[cell]
 	_visual_tiles_by_cell.erase(cell)
+	_committed_tile_step_by_cell.erase(cell)
 	if visual_tile == null:
 		return
 	if visual_tile.get_parent() != null:

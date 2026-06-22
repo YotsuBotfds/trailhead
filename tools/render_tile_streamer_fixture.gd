@@ -137,6 +137,7 @@ func _inspect() -> void:
 	await _exercise_midlod_commit_pressure()
 	await _exercise_midlod_failure_retry_after_free()
 	await _exercise_fullres_on_activation()
+	await _exercise_fullres_on_inflight_prefetch_activation()
 
 	_streamer.call("reset_stream")
 	_require_cell_count("reset", 0)
@@ -562,6 +563,53 @@ func _exercise_fullres_on_activation() -> void:
 	var fullres_vertex_count: int = _mesh_vertex_count(fullres_tile.mesh)
 	if fullres_vertex_count < FULLRES_VERTEX_MIN:
 		_errors.append("fullres-on-activation: expected fullres (>=" + str(FULLRES_VERTEX_MIN) + " verts), got " + str(fullres_vertex_count) + " — coarse step=5 data may have committed instead")
+
+
+func _exercise_fullres_on_inflight_prefetch_activation() -> void:
+	# Regression: prefetch queued a step=5 worker build, activation arrived before
+	# that worker finished, and the activation handler returned early because a
+	# build was already queued. The worker then committed coarse step=5 terrain
+	# for an active cell and never upgraded it.
+	_streamer.call("reset_stream")
+	_streamer.call("configure_region", REGION_ID)
+	_streamer.call("set_worker_count_for_tests", 1)
+
+	var step5_data: Variant = TerrainVisualBuilderScript.build_region_visual_tile_data(
+		REGION_ID,
+		FIRST_CELL,
+		TerrainVisualBuilderScript.REGION_DETAIL_SAMPLE_STEP
+	)
+	var step1_data: Variant = TerrainVisualBuilderScript.build_region_visual_tile_data(
+		REGION_ID,
+		FIRST_CELL,
+		TerrainVisualBuilderScript.REGION_DETAIL_FULLRES_SAMPLE_STEP
+	)
+	if step5_data == null or not bool(step5_data.ok) or step5_data.mesh == null:
+		_errors.append("inflight-prefetch activation: failed to build reference step=5 tile")
+		return
+	if step1_data == null or not bool(step1_data.ok) or step1_data.mesh == null:
+		_errors.append("inflight-prefetch activation: failed to build reference step=1 tile")
+		return
+	var step5_vertex_count: int = _mesh_vertex_count(step5_data.mesh)
+	var step1_vertex_count: int = _mesh_vertex_count(step1_data.mesh)
+	if step1_vertex_count <= step5_vertex_count:
+		_errors.append("inflight-prefetch activation: reference step=1 vertex count " + str(step1_vertex_count) + " should exceed step=5 " + str(step5_vertex_count))
+		return
+
+	EventBus.world_tile_prefetched.emit(FIRST_CELL)
+	EventBus.world_tile_activated.emit(FIRST_CELL)
+	await _wait_for_cell_count("inflight-prefetch activation: fullres tile committed", 1)
+	await _wait_for_foliage_cell_count("inflight-prefetch activation: foliage committed", 1)
+
+	var committed_tile: MeshInstance3D = _streamer.call("visual_cell_node", FIRST_CELL) as MeshInstance3D
+	if committed_tile == null or committed_tile.mesh == null:
+		_errors.append("inflight-prefetch activation: committed tile or mesh is null")
+		return
+	var committed_vertex_count: int = _mesh_vertex_count(committed_tile.mesh)
+	if committed_vertex_count < step1_vertex_count:
+		_errors.append("inflight-prefetch activation: committed vertex count " + str(committed_vertex_count) + " should be >= step=1 reference " + str(step1_vertex_count))
+	if committed_vertex_count <= step5_vertex_count:
+		_errors.append("inflight-prefetch activation: committed vertex count " + str(committed_vertex_count) + " should be > step=5 reference " + str(step5_vertex_count))
 
 
 func _configure_streamer_for_pressure_fixture() -> void:

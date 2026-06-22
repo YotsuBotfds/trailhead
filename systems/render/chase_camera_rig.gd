@@ -31,7 +31,9 @@ func update(camera: Camera3D, state: RefCounted, steer: float, delta: float, spe
 	var vehicle_position: Vector3 = state.get("position")
 	var vehicle_basis: Basis = state.get("basis")
 	var linear_velocity: Vector3 = state.get("linear_velocity")
+	var angular_velocity: Vector3 = state.get("angular_velocity")
 	var speed: float = linear_velocity.length()
+	var yaw_speed: float = absf(angular_velocity.y)
 	# Stop-lock hysteresis: enter below cam_stop_lock_speed, release above the
 	# higher cam_stop_lock_release_speed so the lock doesn't chatter at the
 	# threshold. Below the lock the vehicle's never-sleeping rigid body still
@@ -39,11 +41,12 @@ func update(camera: Camera3D, state: RefCounted, steer: float, delta: float, spe
 	# path amplifies into visible shake; freezing pose + accel terms kills it.
 	var lock_speed: float = GameConfig.cam_stop_lock_speed
 	var release_speed: float = GameConfig.cam_stop_lock_release_speed
+	var yaw_release_speed: float = GameConfig.cam_stop_lock_yaw_speed
 	if not _stop_locked:
-		if initialized and speed < lock_speed:
+		if initialized and speed < lock_speed and yaw_speed < yaw_release_speed:
 			_stop_locked = true
 	else:
-		if speed > release_speed:
+		if speed > release_speed or yaw_speed >= yaw_release_speed:
 			# Released: snap to the live pose this frame (do NOT lerp from the
 			# stale frozen state -- that would swing the camera on takeoff).
 			_stop_locked = false
