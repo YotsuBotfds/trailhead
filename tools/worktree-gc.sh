@@ -9,9 +9,12 @@
 # Merged work is preserved in the base branch's history, so removals are
 # recoverable (re-create the worktree/branch from the commit in main).
 #
+# POSIX-sh parseable (check.sh runs `sh -n` over tools/*.sh): no process
+# substitution / here-strings — loops read from temp files so counters persist.
+#
 # Usage:  bash tools/worktree-gc.sh [base-branch]   (default: main)
 #         bash tools/worktree-gc.sh --dry-run [base-branch]
-set -uo pipefail
+set -u
 
 DRY=0
 if [ "${1:-}" = "--dry-run" ]; then DRY=1; shift; fi
@@ -25,7 +28,10 @@ merged="$(git branch --merged "$MAIN" | sed 's/^[ *+]*//' | grep -vxF "$MAIN")"
 removed=0; skipped=0; delbr=0
 
 # 1. Remove worktrees whose branch is fully merged (skip the main worktree).
-while IFS=$'\t' read -r br wt; do
+wtlist="$(mktemp)"
+git worktree list --porcelain \
+	| awk '/^worktree /{wt=$2} /^branch /{gsub("refs/heads/","",$2); print $2"\t"wt}' > "$wtlist"
+while IFS="$(printf '\t')" read -r br wt; do
 	[ -z "$br" ] && continue
 	[ "$br" = "$MAIN" ] && continue
 	if echo "$merged" | grep -qxF "$br"; then
@@ -46,12 +52,15 @@ while IFS=$'\t' read -r br wt; do
 			fi
 		fi
 	fi
-done < <(git worktree list --porcelain | awk '/^worktree /{wt=$2} /^branch /{gsub("refs/heads/","",$2); print $2"\t"wt}')
+done < "$wtlist"
+rm -f "$wtlist"
 
 # 2. Prune orphaned worktree admin entries (directories already deleted).
 [ "$DRY" = 1 ] || git worktree prune -v
 
 # 3. Delete merged branches (safe -d refuses unmerged / currently-checked-out).
+brlist="$(mktemp)"
+printf '%s\n' "$merged" > "$brlist"
 while IFS= read -r br; do
 	[ -z "$br" ] && continue
 	if [ "$DRY" = 1 ]; then
@@ -60,7 +69,8 @@ while IFS= read -r br; do
 	if git branch -d "$br" >/dev/null 2>&1; then
 		echo "deleted branch:    $br"; delbr=$((delbr + 1))
 	fi
-done <<< "$merged"
+done < "$brlist"
+rm -f "$brlist"
 
 echo "== done: $removed worktrees, $skipped skipped(dirty), $delbr branches =="
 echo "-- unmerged branches kept (decide keep/merge/abandon) --"
