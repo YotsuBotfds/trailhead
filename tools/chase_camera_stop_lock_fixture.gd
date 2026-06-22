@@ -66,14 +66,42 @@ func _ready() -> void:
 		push_error("stop-lock failed: rig did not enter _stop_locked state below threshold")
 		failures += 1
 
+	# Release on in-place rotation: zero linear velocity but real yaw must track
+	# the car instead of freezing the old camera pose.
+	var yawing_basis: Basis = Basis(Vector3.UP, deg_to_rad(45.0))
+	var yawing_state: RefCounted = _vehicle_state(
+		Vector3(1.0, 0.05, -3.0),
+		yawing_basis,
+		Vector3.ZERO,
+		Vector3(0.0, GameConfig.cam_stop_lock_yaw_speed * 4.0, 0.0)
+	)
+	rig.update(camera, yawing_state, 0.0, 1.0 / 120.0, true, true, 0.0, 0.0)
+	if bool(rig.get("_stop_locked")):
+		push_error("stop-lock failed: rig did not release for in-place yaw")
+		failures += 1
+	if camera.global_position.distance_to(frozen_position) < 0.001 and Vector3(rig.get("look_target_current")).distance_to(frozen_look) < 0.001:
+		push_error("stop-lock failed: camera did not track zero-linear in-place yaw")
+		failures += 1
+
 	# Release: a state above cam_stop_lock_release_speed must unlock and move the
 	# camera (snap, not stay frozen).
-	var moving_state: RefCounted = _stationary_state(Vector3(5.0, 0.05, -3.0), Basis.IDENTITY, Vector3(2.0, 0.0, 0.0))
-	rig.update(camera, moving_state, 0.0, 1.0 / 120.0, true, true, 0.0, 0.0)
-	if bool(rig.get("_stop_locked")):
+	var speed_camera: Camera3D = Camera3D.new()
+	add_child(speed_camera)
+	var speed_rig: RefCounted = ChaseCameraRigScript.new()
+	speed_rig.update(speed_camera, seed_state, 0.0, 1.0 / 120.0, true, true, 0.0, 0.0)
+	for _lock_index in range(2):
+		var lock_state: RefCounted = _vehicle_state(Vector3(1.0, 0.05, -3.0), Basis.IDENTITY, Vector3.ZERO, Vector3.ZERO)
+		speed_rig.update(speed_camera, lock_state, 0.0, 1.0 / 120.0, true, true, 0.0, 0.0)
+	var speed_frozen_position: Vector3 = speed_camera.global_position
+	if not bool(speed_rig.get("_stop_locked")):
+		push_error("stop-lock failed: speed-release rig did not enter _stop_locked state")
+		failures += 1
+	var moving_state: RefCounted = _vehicle_state(Vector3(5.0, 0.05, -3.0), Basis.IDENTITY, Vector3(2.0, 0.0, 0.0), Vector3.ZERO)
+	speed_rig.update(speed_camera, moving_state, 0.0, 1.0 / 120.0, true, true, 0.0, 0.0)
+	if bool(speed_rig.get("_stop_locked")):
 		push_error("stop-lock failed: rig did not release above threshold")
 		failures += 1
-	if camera.global_position.distance_to(frozen_position) < 0.01:
+	if speed_camera.global_position.distance_to(speed_frozen_position) < 0.01:
 		push_error("stop-lock failed: camera did not snap to new pose on release")
 		failures += 1
 
@@ -85,9 +113,13 @@ func _ready() -> void:
 
 
 func _stationary_state(position: Vector3, basis: Basis, velocity: Vector3) -> RefCounted:
+	return _vehicle_state(position, basis, velocity, Vector3.ZERO)
+
+
+func _vehicle_state(position: Vector3, basis: Basis, linear_velocity: Vector3, angular_velocity: Vector3) -> RefCounted:
 	var state: RefCounted = VehicleStateScript.new()
 	state.set("position", position)
 	state.set("basis", basis)
-	state.set("linear_velocity", velocity)
-	state.set("angular_velocity", Vector3.ZERO)
+	state.set("linear_velocity", linear_velocity)
+	state.set("angular_velocity", angular_velocity)
 	return state

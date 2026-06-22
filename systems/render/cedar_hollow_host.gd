@@ -636,9 +636,32 @@ func _visual_streaming_ready_for_reveal() -> bool:
 		return _visual_streaming_ready_signal_observed(active_count)
 	if active_count < expected_count:
 		return false
+	if not _spawn_visual_cells_fullres_for_reveal(active_cells):
+		return false
 	if _terrain_visual_streamer.has_method("foliage_cell_count"):
 		var foliage_count: int = int(_terrain_visual_streamer.call("foliage_cell_count"))
 		if foliage_count < expected_count:
+			return false
+	return true
+
+
+func _spawn_visual_cells_fullres_for_reveal(active_cells: Array) -> bool:
+	if _terrain_visual_streamer == null:
+		return false
+	if not _terrain_visual_streamer.has_method("committed_visual_cell_sample_step"):
+		return false
+	var expected_cells: Array[Vector2i] = _expected_spawn_visual_cells()
+	if expected_cells.is_empty():
+		return true
+	var active_lookup: Dictionary[Vector2i, bool] = {}
+	for active_cell_variant in active_cells:
+		if active_cell_variant is Vector2i:
+			active_lookup[active_cell_variant] = true
+	for cell in expected_cells:
+		if not active_lookup.has(cell):
+			return false
+		var sample_step: int = int(_terrain_visual_streamer.call("committed_visual_cell_sample_step", cell))
+		if sample_step != TerrainVisualBuilderScript.REGION_DETAIL_FULLRES_SAMPLE_STEP:
 			return false
 	return true
 
@@ -659,11 +682,20 @@ func _visual_streaming_ready_signal_observed(active_count: int) -> bool:
 
 
 func _expected_spawn_visual_cell_count() -> int:
+	return _expected_spawn_visual_cells().size()
+
+
+func _expected_spawn_visual_cells() -> Array[Vector2i]:
 	var streamer: Node = get_node_or_null("/root/TileStreamer")
 	if streamer == null or not streamer.has_method("expected_active_cells_for_position"):
-		return 0
+		return []
 	var cells: Array = streamer.call("expected_active_cells_for_position", _vehicle_world_position())
-	return cells.size()
+	var typed_cells: Array[Vector2i] = []
+	for cell_variant in cells:
+		if cell_variant is Vector2i:
+			typed_cells.append(cell_variant)
+	return typed_cells
+
 
 
 func _vehicle_world_position() -> Vector3:
@@ -1236,6 +1268,7 @@ func _visual_acceleration(state: RefCounted, delta: float) -> Vector3:
 
 func _chase_acceleration(state: RefCounted, delta: float) -> Vector3:
 	var velocity: Vector3 = state.get("linear_velocity")
+	var angular_velocity: Vector3 = state.get("angular_velocity")
 	if not _chase_last_velocity_valid:
 		_chase_last_velocity = velocity
 		_chase_last_velocity_valid = true
@@ -1245,7 +1278,7 @@ func _chase_acceleration(state: RefCounted, delta: float) -> Vector3:
 	# ~60x and pumps the camera's bank/pitch. Return zero AND re-pin the last
 	# velocity to the current reading so the post-release first delta doesn't
 	# explode from a stale accumulated difference.
-	if velocity.length() < GameConfig.cam_stop_lock_speed:
+	if velocity.length() < GameConfig.cam_stop_lock_speed and absf(angular_velocity.y) < GameConfig.cam_stop_lock_yaw_speed:
 		_chase_last_velocity = velocity
 		return Vector3.ZERO
 	var safe_delta: float = maxf(delta, GameConfig.FIXED_DT)

@@ -253,6 +253,7 @@ var cam_gimbal_up_smooth: float = 1.0
 # the sim never reads these.
 var cam_stop_lock_speed: float = 0.15
 var cam_stop_lock_release_speed: float = 0.25
+var cam_stop_lock_yaw_speed: float = 0.05
 var cam_vertical_follow_softness: float = 7.5
 var orbit_cam_height: float = 0.65
 var orbit_cam_distance: float = 1.05
