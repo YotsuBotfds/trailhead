@@ -1043,7 +1043,8 @@ static func _add_region_stream_hlod(parent: Node3D, region_id: String) -> MeshIn
 static func _region_stream_hlod_chunk(region_id: String, tile_data: RegionTileData, tile_origin_xz: Vector2) -> MeshInstance3D:
 	var instance: MeshInstance3D = MeshInstance3D.new()
 	instance.name = _region_stream_hlod_tile_node_name(region_id, tile_data.cell)
-	instance.mesh = _build_region_stream_hlod_mesh(tile_data, tile_origin_xz)
+	var mesh_data: RegionMeshData = build_region_surface_index_mesh_data(tile_data, REGION_STREAM_HLOD_SAMPLE_STEP, tile_data.key + "_stream_terrain_hlod_mesh", tile_origin_xz)
+	instance.mesh = region_mesh_from_data(mesh_data)
 	instance.visibility_range_begin = _stream_hlod_visibility_range_begin()
 	instance.visibility_range_end = 0.0
 	instance.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
@@ -1053,6 +1054,7 @@ static func _region_stream_hlod_chunk(region_id: String, tile_data: RegionTileDa
 	instance.set_meta(TILE_INDEX_META, tile_data.cell)
 	instance.set_meta(TILE_PATH_META, tile_data.heightmap_path)
 	instance.set_meta(TILE_SURFACE_ID_PATH_META, tile_data.surface_id_path)
+	apply_region_mesh_instance_parameters(instance, mesh_data)
 	return instance
 
 
