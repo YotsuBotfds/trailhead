@@ -152,6 +152,7 @@ var _track_apply_queue_lookup: Dictionary[Vector2i, bool] = {}
 var _track_applied_cells: Dictionary[Vector2i, bool] = {}
 var _cold_start_streaming_released: bool = false
 var _cold_start_hold_elapsed: float = 0.0
+var _audio_rig: Node = null
 
 
 func _ready() -> void:
@@ -489,10 +490,10 @@ func _setup_light() -> void:
 
 
 func _setup_audio() -> void:
-	var audio_rig: Node = CedarAudioRigScript.new()
-	audio_rig.name = "CedarAudioRig"
-	add_child(audio_rig)
-	audio_rig.call("configure", _vehicle)
+	_audio_rig = CedarAudioRigScript.new()
+	_audio_rig.name = "CedarAudioRig"
+	add_child(_audio_rig)
+	_audio_rig.call("configure", _vehicle)
 
 
 func _setup_recoverable_object_render() -> void:
@@ -618,6 +619,8 @@ func _release_cold_start_streaming_gate() -> void:
 	if _cold_start_streaming_released:
 		return
 	_cold_start_streaming_released = true
+	if _audio_rig != null:
+		_audio_rig.call("start")
 	if _title_card_hud != null and _title_card_hud.has_method("notify_world_ready"):
 		_title_card_hud.call("notify_world_ready")
 

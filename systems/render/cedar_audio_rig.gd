@@ -60,6 +60,7 @@ var _preview_ambient_volume_db: float = 0.0
 var _preview_reverb_wet: float = 0.0
 var _ambient_duck_volume_db: float = 0.0
 var _diag_no_audio_rig: bool = false
+var _started: bool = false
 var _audio_capacity_frames: int = 1
 var _audio_target_free_frames: int = 0
 var _audio_fill_budget_frames: int = 1
@@ -72,6 +73,10 @@ var _plank_fill_buffer: PackedVector2Array = PackedVector2Array()
 
 func configure(vehicle: Node) -> void:
 	_vehicle = vehicle
+
+
+func start() -> void:
+	_started = true
 
 
 func _ready() -> void:
@@ -109,6 +114,8 @@ func _exit_tree() -> void:
 
 
 func _process(_delta: float) -> void:
+	if not _started:
+		return
 	if _diag_no_audio_rig:
 		return
 	if _vehicle == null:
