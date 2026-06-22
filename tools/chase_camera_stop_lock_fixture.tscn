@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://tools/chase_camera_stop_lock_fixture.gd" id="1_fixture"]
+
+[node name="ChaseCameraStopLockFixture" type="Node"]
+script = ExtResource("1_fixture")

@@ -58,11 +58,18 @@ var render_visual_tile_frees_per_frame: int = 2
 # budget allows; use_taa stays true (FSR2 needs its velocity buffer; headless
 # visual inspectors assert it).
 var render_scaling_3d_mode: int = SCALING_3D_MODE_FSR
-var render_scaling_3d_scale: float = 0.85
+# Native 1.0 baseline (Phase 4 display fix): the owner-confirmed target is crisp
+# 1080p native. The dynamic-resolution controller (below) re-pins scale each
+# frame, so the steady-state band is min..max; both are 1.0 here = native at
+# rest, with the band left as a fallback hook (loosen min if 1080p drops frames
+# on a given machine). project.godot's scaling_3d/scale mirrors this at 1.0.
+var render_scaling_3d_scale: float = 1.0
 var render_use_taa: bool = true
 var render_dynamic_resolution_enabled: bool = true
+# min below 1.0 so the controller can still drop under load (fallback); max=1.0
+# so the steady-state/rest target is native 1080p.
 var render_dynamic_resolution_min_scale: float = 0.85
-var render_dynamic_resolution_max_scale: float = 0.85
+var render_dynamic_resolution_max_scale: float = 1.0
 var render_dynamic_resolution_step_down: float = 0.03
 var render_dynamic_resolution_step_up: float = 0.01
 var render_dynamic_resolution_ema_alpha: float = 0.18
@@ -92,7 +99,7 @@ var steer_reverse_velocity_threshold: float = 0.08
 var steer_inplace_yaw_rate_max: float = 0.24
 var steer_yaw_damping: float = 0.35
 var steer_low_speed_pivot_scale: float = 0.08
-var anti_roll_stiffness: float = 15.0
+var anti_roll_stiffness: float = 6.0
 # Deliberate feel value pending owner playtest signoff; not a 120 Hz artifact.
 var launch_wheelie_torque: float = 0.82
 var launch_wheelie_min_throttle: float = 0.95
@@ -138,7 +145,14 @@ var susp_damping_force_ratio: float = 0.6
 var susp_contact_angular_velocity_weight: float = 0.35
 var susp_ray_length_headroom: float = 0.0
 var susp_last_good_contact_ticks: int = 0
-var wheel_radius: float = 0.03
+# Calibrated to the GLB wheel mesh (assets/models/vehicle/rc_buggy.glb, mesh
+# `wheel_tire` POSITION accessor min/max X/Z = ±0.03765). The old 0.03 constant
+# was ~7.65 mm short of the real tire radius, so every wheel ray was that much
+# too short and the visual chassis dropped to compensate — visible as the tires
+# sinking 7.65 mm through the ground. Mesh-as-truth: the GLB is the authority
+# (see tools/check_glb.py wheel-radius contract + the de-circularized socket
+# assertion in the render inspectors, both read the accessor min/max directly).
+var wheel_radius: float = 0.03765
 
 var default_friction: float = 1.0
 var default_rolling_drag: float = 0.1
@@ -228,6 +242,17 @@ var cam_pitch_accel_gain: float = 0.35
 var cam_pitch_max_deg: float = 2.0
 var cam_bank_smooth: float = 8.0
 var cam_gimbal_up_smooth: float = 1.0
+# Stop-lock: when the vehicle is nearly stationary, FREEZE the chase camera's
+# position AND orientation (not just position). The rigid-body vehicle is forced
+# never-sleeping (raycast_vehicle_controller), so its basis/velocity carry
+# sub-tick jitter every physics frame; the chase cam hard-follows that pose 1:1
+# and the accel term divides velocity delta by ~delta (~60x noise gain), so the
+# stationary cam visibly jitters. Freeze below cam_stop_lock_speed; release above
+# the higher cam_stop_lock_release_speed (hysteresis) and SNAP to the current
+# pose on release so the camera never lerps from a stale frozen state. Host-only:
+# the sim never reads these.
+var cam_stop_lock_speed: float = 0.15
+var cam_stop_lock_release_speed: float = 0.25
 var cam_vertical_follow_softness: float = 7.5
 var orbit_cam_height: float = 0.65
 var orbit_cam_distance: float = 1.05
@@ -271,7 +296,16 @@ var controls_hint_hud_enabled: bool = true
 var controls_hint_hud_auto_dismiss_seconds: float = 16.0
 var controls_hint_hud_fade_seconds: float = 0.6
 var debug_overlay_enabled_by_default: bool = false
+# Separate "start visible" knob so the capture/recording toolchain can force the
+# overlay ON at startup (telemetry + hitch red-flash baked into the recording)
+# without flipping the player-facing default. The host reads this in _ready().
+var debug_overlay_start_visible: bool = false
 var debug_overlay_frame_sample_count: int = 72
+# Reference resolution for the debug overlay's viewport-relative scaling. The
+# overlay computes a uniform scale from the shorter viewport axis over 1080 so
+# its compact left-top panel reads at a consistent size across 1080p/1440p/4K
+# instead of the old hard-coded pixels (which looked tiny at 4K).
+var debug_overlay_reference_resolution: int = 1080
 var debug_overlay_hitch_ms: float = 33.3
 var debug_overlay_chunk_flash_seconds: float = 0.45
 var debug_overlay_hitch_flash_seconds: float = 0.25
@@ -599,8 +633,15 @@ var suspension_drop_max_settle_vertical_speed: float = 0.08
 var resting_ride_height_probe_ticks: int = 360
 var resting_ride_height_settle_start_tick: int = 240
 var resting_ride_height_min_sample_ticks: int = 80
-var resting_ride_height_min_y: float = 0.040
-var resting_ride_height_max_y: float = 0.055
+var resting_ride_height_min_y: float = 0.047
+var resting_ride_height_max_y: float = 0.062
+# Rest-height band shifted up ~7.65 mm vs the prior [0.040, 0.055] to track the
+# calibrated wheel_radius (0.03 -> 0.03765, the real GLB wheel_tire radius). The
+# buggy now rests at its correct ride height (~0.055 m) instead of 7.65 mm low;
+# the 15 mm tolerance window is unchanged, only its center moved. This bound
+# drives the resting_ride_height scenario predicate (sim_runner.gd); the suite
+# assertion in 13_feel_control_probes.sh mirrors it. See Phase 1 of the vehicle
+# visual-fixes plan.
 var roll_stability_probe_ticks: int = 260
 var roll_stability_side_slope_deg: float = 18.0
 var roll_stability_ground_size: Vector3 = Vector3(7.0, 0.1, 10.0)
