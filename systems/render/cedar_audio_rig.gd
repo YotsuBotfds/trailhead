@@ -89,6 +89,10 @@ func configure(vehicle: Node) -> void:
 
 func start() -> void:
 	_started = true
+	# Reveal gate: spin the fill thread ONLY once the cold-start reveal fires (host calls
+	# this at cedar_hollow_host.gd:623). The thread bypasses the _process `_started` check,
+	# so starting it earlier (in _start_players) played audio during the title/loading hold.
+	_start_audio_thread()
 
 
 func _ready() -> void:
@@ -339,7 +343,8 @@ func _start_players() -> void:
 	if _plank_player != null:
 		_plank_player.play()
 		_plank_playback = _plank_player.get_stream_playback() as AudioStreamGeneratorPlayback
-	_start_audio_thread()
+	# NOTE: the fill thread is started by start() at the reveal gate, NOT here — otherwise
+	# it fills the generators during the title/loading hold (the _started gate only guards _process).
 
 
 func _start_audio_thread() -> void:
