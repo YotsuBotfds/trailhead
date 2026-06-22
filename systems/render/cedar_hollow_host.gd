@@ -45,7 +45,7 @@ const ZION_DUSK_FOG_DENSITY: float = 0.0009
 const ZION_DAWN_FOG_DENSITY: float = 0.0014
 const ZION_NIGHT_FOG_DENSITY: float = 0.0016
 const ZION_FOG_AERIAL_PERSPECTIVE: float = 0.08
-const ZION_FOG_SKY_AFFECT: float = 0.28
+const ZION_FOG_SKY_AFFECT: float = 0.14  # was 0.28 — high sky-affect dissolved distant mesas into the bright sky (bible: mesas read as silhouettes)
 const ZION_VOLUMETRIC_FOG_SKY_AFFECT: float = 0.16
 const ZION_NIGHT_FOG_SKY_AFFECT: float = 0.18
 # Dusk golden-hour sky (zionfid/sky). The dusk PhysicalSkyMaterial was a plain
