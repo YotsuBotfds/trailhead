@@ -136,6 +136,7 @@ func _inspect() -> void:
 
 	await _exercise_midlod_commit_pressure()
 	await _exercise_midlod_failure_retry_after_free()
+	await _exercise_fullres_on_activation()
 
 	_streamer.call("reset_stream")
 	_require_cell_count("reset", 0)
@@ -522,6 +523,45 @@ func _exercise_midlod_failure_retry_after_free() -> void:
 	if int(_streamer.call("pending_midlod_build_count")) <= 0 and not bool(_streamer.call("has_ready_midlod_cell", retry_cell)):
 		_errors.append("mid-LOD retry fixture expected a new build after free/re-entry: " + str(retry_cell))
 	await _wait_for_midlod_cell("mid-LOD retry after transient failure", retry_cell)
+
+
+func _exercise_fullres_on_activation() -> void:
+	# Regression: prefetch builds at step=5; activating that cell must discard the
+	# coarse data and rebuild at REGION_DETAIL_FULLRES_SAMPLE_STEP (step=1) so the
+	# visual mesh aligns with the physics heightmap the wheels touch.
+	_streamer.call("reset_stream")
+	_streamer.call("configure_region", REGION_ID)
+	_streamer.call("set_worker_count_for_tests", 0)
+
+	# Step 1: prefetch → step=5 build lands in the ready cache.
+	EventBus.world_tile_prefetched.emit(FIRST_CELL)
+	await _wait_for_ready_cell_count("fullres-on-activation: prefetch ready", 1)
+	var prefetch_step: int = int(_streamer.call("ready_visual_cell_sample_step", FIRST_CELL))
+	if prefetch_step != TerrainVisualBuilderScript.REGION_DETAIL_SAMPLE_STEP:
+		_errors.append("fullres-on-activation: prefetch should produce step=" + str(TerrainVisualBuilderScript.REGION_DETAIL_SAMPLE_STEP) + " data, got step=" + str(prefetch_step))
+
+	# Step 2: activate → fix should discard the coarse ready data and rebuild at fullres.
+	# The synchronous build path (worker_count=0) may immediately place fullres data in
+	# the ready cache during the activation handler; what matters is that the committed
+	# tile is dense (step=1), not coarse (step=5).
+	EventBus.world_tile_activated.emit(FIRST_CELL)
+	# Wait for the fullres build to land and commit.
+	await _wait_for_cell_count("fullres-on-activation: fullres tile committed", 1)
+
+	# Step 3: the committed tile must be full-res.
+	# For the spike_1km tile data, step=1 produces far more vertices than step=5.
+	# step=5 tile: approx (tile_samples/5 + 1)^2 vertices — for a 512-sample tile ~103^2=10609.
+	# step=1 tile: approx (tile_samples + 1)^2 vertices — for a 512-sample tile ~513^2=263169.
+	# Even a conservative 64-sample tile gives step=1 → 65^2=4225 vs step=5 → 14^2=196.
+	# We assert a safe minimum that only a step=1 build can satisfy.
+	const FULLRES_VERTEX_MIN: int = 4000
+	var fullres_tile: MeshInstance3D = _streamer.call("visual_cell_node", FIRST_CELL) as MeshInstance3D
+	if fullres_tile == null or fullres_tile.mesh == null:
+		_errors.append("fullres-on-activation: committed tile or mesh is null")
+		return
+	var fullres_vertex_count: int = _mesh_vertex_count(fullres_tile.mesh)
+	if fullres_vertex_count < FULLRES_VERTEX_MIN:
+		_errors.append("fullres-on-activation: expected fullres (>=" + str(FULLRES_VERTEX_MIN) + " verts), got " + str(fullres_vertex_count) + " — coarse step=5 data may have committed instead")
 
 
 func _configure_streamer_for_pressure_fixture() -> void:

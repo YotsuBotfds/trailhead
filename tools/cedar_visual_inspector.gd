@@ -2042,7 +2042,7 @@ func _inspect_camera_reactivity(host: Node, vehicle: Node, chase_camera: Camera3
 		_errors.append("OrbitCamera should keep orbit FOV during reactive update")
 	_require_orbit_camera_composition(test_state, orbit_camera, expected_orbit_yaw, "OrbitCamera reactive update")
 
-	host.call("_update_fpv_camera", test_state)
+	host.call("_update_fpv_camera", GameConfig.FIXED_DT, test_state)
 	if absf(fpv_camera.fov - GameConfig.fpv_cam_fov) > FLOAT_EPSILON:
 		_errors.append("FpvCamera should keep FPV FOV during reactive update")
 	_require_fpv_camera_composition(test_state, fpv_camera, "FpvCamera reactive update")

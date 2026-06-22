@@ -50,6 +50,7 @@ var _midlod_tiles_by_cell: Dictionary[Vector2i, Node3D] = {}
 var _foliage_tiles_by_cell: Dictionary[Vector2i, Node3D] = {}
 var _partial_foliage_tiles_by_cell: Dictionary[Vector2i, Node3D] = {}
 var _ready_tile_data_by_cell: Dictionary[Vector2i, Variant] = {}
+var _ready_tile_step_by_cell: Dictionary[Vector2i, int] = {}
 var _ready_midlod_data_by_cell: Dictionary[Vector2i, Variant] = {}
 var _ready_foliage_data_by_cell: Dictionary[Vector2i, Variant] = {}
 var _load_failures_by_cell: Dictionary[Vector2i, String] = {}
@@ -135,6 +136,7 @@ func reset_stream() -> void:
 	_foliage_tiles_by_cell.clear()
 	_partial_foliage_tiles_by_cell.clear()
 	_ready_tile_data_by_cell.clear()
+	_ready_tile_step_by_cell.clear()
 	_ready_midlod_data_by_cell.clear()
 	_ready_foliage_data_by_cell.clear()
 	_load_failures_by_cell.clear()
@@ -239,6 +241,10 @@ func has_ready_visual_cell(cell: Vector2i) -> bool:
 	return _ready_tile_data_by_cell.has(cell)
 
 
+func ready_visual_cell_sample_step(cell: Vector2i) -> int:
+	return int(_ready_tile_step_by_cell.get(cell, -1))
+
+
 func has_ready_midlod_cell(cell: Vector2i) -> bool:
 	return _ready_midlod_data_by_cell.has(cell)
 
@@ -328,8 +334,19 @@ func _on_world_tile_activated(cell: Vector2i) -> void:
 	if _visual_tiles_by_cell.has(cell) and (_foliage_tiles_by_cell.has(cell) or _partial_foliage_tiles_by_cell.has(cell)):
 		return
 	if _ready_tile_data_by_cell.has(cell):
-		_enqueue_ready_commit(cell)
-		return
+		# If the ready data was built at a coarser step than full-res (e.g. from a
+		# prefetch at step=5), discard it and rebuild at full collision resolution so
+		# the visual mesh matches the physics heightmap the wheels touch.
+		var ready_step: int = int(_ready_tile_step_by_cell.get(cell, TerrainVisualBuilderScript.REGION_DETAIL_SAMPLE_STEP))
+		if ready_step > TerrainVisualBuilderScript.REGION_DETAIL_FULLRES_SAMPLE_STEP:
+			_remove_queued_commit(cell)
+			_ready_tile_data_by_cell.erase(cell)
+			_ready_foliage_data_by_cell.erase(cell)
+			_ready_tile_step_by_cell.erase(cell)
+			# Fall through to _enqueue_build below.
+		else:
+			_enqueue_ready_commit(cell)
+			return
 	if _queued_builds.has(cell):
 		return
 	# Active cells are the vehicle-near loaded physics tiles (STREAM_ACTIVE_RADIUS
@@ -385,6 +402,7 @@ func _on_world_tile_unprefetched(cell: Vector2i) -> void:
 	_remove_queued_midlod_commit(cell)
 	_remove_queued_foliage_subcommits(cell)
 	_ready_tile_data_by_cell.erase(cell)
+	_ready_tile_step_by_cell.erase(cell)
 	_ready_midlod_data_by_cell.erase(cell)
 	_ready_foliage_data_by_cell.erase(cell)
 	_load_failures_by_cell.erase(cell)
@@ -572,6 +590,7 @@ func _drain_worker_results() -> void:
 			_record_load_failure(cell, String(result["message"]))
 			continue
 		_ready_tile_data_by_cell[cell] = result["visual_tile_data"]
+		_ready_tile_step_by_cell[cell] = int(result.get("sample_step", TerrainVisualBuilderScript.REGION_DETAIL_SAMPLE_STEP))
 		_ready_foliage_data_by_cell[cell] = result["foliage_tile_data"]
 		if _active_cells.has(cell):
 			_enqueue_ready_commit(cell)
@@ -734,6 +753,7 @@ func _commit_visual_tile(cell: Vector2i, visual_tile_data: Variant) -> void:
 		return
 	_visual_tiles_by_cell[cell] = visual_tile
 	_ready_tile_data_by_cell.erase(cell)
+	_ready_tile_step_by_cell.erase(cell)
 	_load_failures_by_cell.erase(cell)
 
 
@@ -1131,6 +1151,7 @@ func _build_visual_tile_result(job: Dictionary) -> Dictionary:
 		"message": message,
 		"visual_tile_data": visual_tile_data,
 		"foliage_tile_data": foliage_tile_data,
+		"sample_step": sample_step,
 	}
 
 
