@@ -80,14 +80,10 @@ const REGION_FOLIAGE_INSTANCE_MULTIPLIER: int = 389
 const REGION_FOLIAGE_LOD_MULTIPLIER: int = 521
 const REGION_FOLIAGE_SALT_MULTIPLIER: int = 61
 const REGION_FOLIAGE_Y_OFFSET: float = 0.035
-# Defensive heightmap guard band. Real baked DEM ranges: cedar_hollow_zion
-# [1178.292 m, 2275.16 m], spike_1km [-0.567 m, 0.244 m] => combined envelope
-# [-0.567 m, 2275.16 m]; these loose bounds catch corrupt/non-finite float32
-# spikes without touching legit vertices. See codex-skyline-geometry-guard-plan.md §3.
-const HEIGHT_GUARD_MIN_M: float = -200.0
-const HEIGHT_GUARD_MAX_M: float = 4000.0
-const HEIGHT_GUARD_FALLBACK_M: float = 0.0
+const REGION_TERRAIN_SEAM_MAX_SLOPE: float = 7.5
+const REGION_TERRAIN_SEAM_MIN_DELTA_M: float = 180.0
 const FOLIAGE_MAX_SLOPE_NORMAL_Y: float = 0.819
+const FOLIAGE_CELL_MAX_GROUND_DELTA_M: float = 18.0
 const REGION_FOLIAGE_CULL_MARGIN: float = 0.08
 # Godot 4.6 MultiMesh.buffer stride for TRANSFORM_3D + use_colors + use_custom_data:
 # per instance = basis.x, basis.y, basis.z, origin (12) + color (4) + custom_data (4).
@@ -761,7 +757,7 @@ static func _prepare_streamed_foliage_cell_data(cell_data: FoliageCellData, tile
 	local_position.z -= tile_origin_xz.y
 	cell_data.position = local_position
 	cell_data.custom_aabb = AABB(
-		Vector3(tile_custom_aabb.position.x - local_position.x, tile_custom_aabb.position.y, tile_custom_aabb.position.z - local_position.z),
+		Vector3(tile_custom_aabb.position.x - local_position.x, tile_custom_aabb.position.y - local_position.y, tile_custom_aabb.position.z - local_position.z),
 		tile_custom_aabb.size
 	)
 	cell_data.visibility_radius = tile_radius
@@ -1220,6 +1216,8 @@ static func _append_tile_quads(tile_data: RegionTileData, sample_step: int, buck
 		var next_row: int = mini(row + safe_step, max_row)
 		for col in range(0, max_col, safe_step):
 			var next_col: int = mini(col + safe_step, max_col)
+			if _tile_quad_exceeds_relative_seam_delta(tile_data, col, row, next_col, next_row):
+				continue
 			var surface_col: int = _surface_sample_coord(col, next_col, tile_data.surface_image.get_width())
 			var surface_row: int = _surface_sample_coord(row, next_row, tile_data.surface_image.get_height())
 			var surface_id_value: int = _surface_id_value_at(tile_data, surface_col, surface_row)
@@ -1247,6 +1245,8 @@ static func _append_tile_quads_to_bucket(tile_data: RegionTileData, sample_step:
 		var next_row: int = mini(row + safe_step, max_row)
 		for col in range(0, max_col, safe_step):
 			var next_col: int = mini(col + safe_step, max_col)
+			if _tile_quad_exceeds_relative_seam_delta(tile_data, col, row, next_col, next_row):
+				continue
 			var corner_a: int = _bucket_vertex(bucket, tile_data, col, row, local_origin_xz)
 			var corner_b: int = _bucket_vertex(bucket, tile_data, next_col, row, local_origin_xz)
 			var corner_c: int = _bucket_vertex(bucket, tile_data, col, next_row, local_origin_xz)
@@ -1294,6 +1294,28 @@ static func _tile_vertex_key(tile_data: RegionTileData, col: int, row: int) -> i
 	return ((cell_x_key * REGION_VERTEX_KEY_CELL_STRIDE + cell_y_key) * tile_data.width * tile_data.depth) + local_key
 
 
+static func _tile_quad_exceeds_relative_seam_delta(tile_data: RegionTileData, col: int, row: int, next_col: int, next_row: int) -> bool:
+	var world_a: Vector2 = _tile_world_xz(tile_data, col, row)
+	var world_b: Vector2 = _tile_world_xz(tile_data, next_col, row)
+	var world_c: Vector2 = _tile_world_xz(tile_data, col, next_row)
+	var world_d: Vector2 = _tile_world_xz(tile_data, next_col, next_row)
+	var max_allowed_delta: float = maxf(
+		maxf(world_a.distance_to(world_b), world_c.distance_to(world_d)),
+		maxf(world_a.distance_to(world_c), world_b.distance_to(world_d))
+	) * REGION_TERRAIN_SEAM_MAX_SLOPE
+	max_allowed_delta = maxf(max_allowed_delta, REGION_TERRAIN_SEAM_MIN_DELTA_M)
+	var height_a: float = _height_value_at(tile_data, col, row)
+	var height_b: float = _height_value_at(tile_data, next_col, row)
+	var height_c: float = _height_value_at(tile_data, col, next_row)
+	var height_d: float = _height_value_at(tile_data, next_col, next_row)
+	return (
+		absf(height_a - height_b) > max_allowed_delta
+		or absf(height_a - height_c) > max_allowed_delta
+		or absf(height_b - height_d) > max_allowed_delta
+		or absf(height_c - height_d) > max_allowed_delta
+	)
+
+
 static func _tile_vertex(tile_data: RegionTileData, col: int, row: int, local_origin_xz: Vector2) -> Vector3:
 	var world_xz: Vector2 = _tile_world_xz(tile_data, col, row)
 	return Vector3(
@@ -1327,10 +1349,10 @@ static func _tile_foliage_custom_aabb(tile_data: RegionTileData) -> AABB:
 	var min_height: float = 0.0
 	var max_height: float = 0.0
 	if tile_data.heights.size() > 0:
-		min_height = _guarded_height(tile_data.heights[0], tile_data.key, "foliage_aabb")
+		min_height = tile_data.heights[0]
 		max_height = min_height
 		for height_index in range(1, tile_data.heights.size()):
-			var height: float = _guarded_height(tile_data.heights[height_index], tile_data.key, "foliage_aabb")
+			var height: float = tile_data.heights[height_index]
 			min_height = minf(min_height, height)
 			max_height = maxf(max_height, height)
 	var max_blade_height: float = _foliage_max_lod0_height()
@@ -1354,23 +1376,13 @@ static func _tile_normal(tile_data: RegionTileData, col: int, row: int) -> Vecto
 	return Vector3(-x_slope, 1.0, -z_slope).normalized()
 
 
-static func _guarded_height(raw_height: float, tile_key: String, context: String) -> float:
-	if not is_finite(raw_height):
-		push_warning("TerrainVisualBuilder non-finite height in " + context + " tile " + tile_key + " value " + str(raw_height))
-		return HEIGHT_GUARD_FALLBACK_M
-	if raw_height < HEIGHT_GUARD_MIN_M or raw_height > HEIGHT_GUARD_MAX_M:
-		push_warning("TerrainVisualBuilder out-of-band height in " + context + " tile " + tile_key + " value " + str(raw_height))
-		return clampf(raw_height, HEIGHT_GUARD_MIN_M, HEIGHT_GUARD_MAX_M)
-	return raw_height
-
-
 static func _height_value_at(tile_data: RegionTileData, col: int, row: int) -> float:
 	var safe_col: int = mini(maxi(col, 0), tile_data.width - 1)
 	var safe_row: int = mini(maxi(row, 0), tile_data.depth - 1)
 	var index: int = safe_row * tile_data.width + safe_col
 	if index < 0 or index >= tile_data.heights.size():
 		return 0.0
-	return _guarded_height(tile_data.heights[index], tile_data.key, "height_value_at")
+	return tile_data.heights[index]
 
 
 static func _surface_id_value_at(tile_data: RegionTileData, col: int, row: int) -> int:
@@ -1873,6 +1885,8 @@ static func _build_region_foliage_cell_data_with_audit(tile_data_by_cell: Dictio
 	if cell_rect.size.x <= 0.0 or cell_rect.size.y <= 0.0:
 		return null
 	var species_data_list: Array[FoliageSpeciesCellData] = []
+	var foliage_origin_xz: Vector2 = cell_rect.position + cell_rect.size * 0.5
+	var cell_ground_y: float = _height_at_region_xz(tile_data_by_cell, foliage_origin_xz.x, foliage_origin_xz.y)
 	var max_attempts: int = maxi(base_count * 3, base_count)
 	for attempt in range(max_attempts):
 		if _foliage_species_total_count(species_data_list) >= base_count:
@@ -1926,6 +1940,8 @@ static func _build_region_foliage_cell_data_with_audit(tile_data_by_cell: Dictio
 			_record_foliage_slope_rejection(audit)
 			continue
 		var height: float = _height_at_region_xz(tile_data_by_cell, place_x, place_z)
+		if absf(height - cell_ground_y) > FOLIAGE_CELL_MAX_GROUND_DELTA_M:
+			continue
 		var yaw: float = deg_to_rad(_region_foliage_unit(foliage_cell, lod_index, attempt, 4) * 360.0)
 		var width_scale: float = 0.82 + _region_foliage_unit(foliage_cell, lod_index, attempt, 5) * 0.42
 		var height_scale: float = 0.78 + _region_foliage_unit(foliage_cell, lod_index, attempt, 6) * 0.54
@@ -1964,16 +1980,11 @@ static func _build_region_foliage_cell_data_with_audit(tile_data_by_cell: Dictio
 	if _foliage_species_total_count(species_data_list) <= 0:
 		return null
 
-	var foliage_origin_xz: Vector2 = cell_rect.position + cell_rect.size * 0.5
 	var foliage_cell_radius: float = cell_rect.size.length() * 0.5
 	var cell_data: FoliageCellData = FoliageCellData.new()
 	cell_data.lod_index = lod_index
 	cell_data.node_name = "foliage_cell_" + str(foliage_cell.x) + "_" + str(foliage_cell.y) + "_lod" + str(lod_index)
-	cell_data.position = Vector3(foliage_origin_xz.x, 0.0, foliage_origin_xz.y)
-	cell_data.custom_aabb = AABB(
-		Vector3(cell_rect.size.x * -0.5, 0.0, cell_rect.size.y * -0.5),
-		Vector3(cell_rect.size.x, _foliage_max_lod0_height() + REGION_FOLIAGE_Y_OFFSET + 0.1, cell_rect.size.y)
-	)
+	cell_data.position = Vector3(foliage_origin_xz.x, cell_ground_y, foliage_origin_xz.y)
 	cell_data.visibility_radius = foliage_cell_radius
 	cell_data.species = species_data_list
 	if lod_index == 0:
@@ -1987,10 +1998,51 @@ static func _build_region_foliage_cell_data_with_audit(tile_data_by_cell: Dictio
 		for i in range(species_data.transforms.size()):
 			var transform: Transform3D = species_data.transforms[i]
 			transform.origin.x -= foliage_origin_xz.x
+			transform.origin.y -= cell_ground_y
 			transform.origin.z -= foliage_origin_xz.y
 			species_data.transforms[i] = transform
+	cell_data.custom_aabb = _foliage_cell_custom_aabb_from_instances(cell_data)
 	_pack_foliage_cell_buffer(cell_data)
 	return cell_data
+
+
+static func _foliage_cell_custom_aabb_from_instances(cell_data: FoliageCellData) -> AABB:
+	var has_bounds: bool = false
+	var min_x: float = 0.0
+	var min_y: float = 0.0
+	var min_z: float = 0.0
+	var max_x: float = 0.0
+	var max_y: float = 0.0
+	var max_z: float = 0.0
+	var foliage_height: float = _foliage_max_lod0_height() + REGION_FOLIAGE_CULL_MARGIN
+	for species_data in cell_data.species:
+		for transform in species_data.transforms:
+			var origin: Vector3 = transform.origin
+			if not has_bounds:
+				min_x = origin.x
+				min_y = origin.y
+				min_z = origin.z
+				max_x = origin.x
+				max_y = origin.y + foliage_height
+				max_z = origin.z
+				has_bounds = true
+			else:
+				min_x = minf(min_x, origin.x)
+				min_y = minf(min_y, origin.y)
+				min_z = minf(min_z, origin.z)
+				max_x = maxf(max_x, origin.x)
+				max_y = maxf(max_y, origin.y + foliage_height)
+				max_z = maxf(max_z, origin.z)
+	if not has_bounds:
+		return AABB()
+	return AABB(
+		Vector3(min_x - REGION_FOLIAGE_CULL_MARGIN, min_y - REGION_FOLIAGE_CULL_MARGIN, min_z - REGION_FOLIAGE_CULL_MARGIN),
+		Vector3(
+			maxf(max_x - min_x, 0.0) + REGION_FOLIAGE_CULL_MARGIN * 2.0,
+			maxf(max_y - min_y, 0.0) + REGION_FOLIAGE_CULL_MARGIN * 2.0,
+			maxf(max_z - min_z, 0.0) + REGION_FOLIAGE_CULL_MARGIN * 2.0
+		)
+	)
 
 
 static func _pack_foliage_cell_buffer(cell_data: FoliageCellData) -> void:
