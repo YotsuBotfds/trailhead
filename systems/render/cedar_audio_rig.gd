@@ -22,9 +22,12 @@ const MOTOR_SPEED_BLEND: float = 0.18
 const MOTOR_RPM_VOLUME_GAIN: float = 0.72
 const TIRE_SPEED_GATE: float = 0.08
 const DIAG_NO_AUDIO_RIG_ENV: String = "TRAILHEAD_DIAG_NOAUDIORIG"
-const AUDIO_TARGET_BUFFER_SECONDS: float = 0.064
-const AUDIO_FILL_BUDGET_SECONDS: float = 0.024
+const AUDIO_TARGET_BUFFER_SECONDS: float = 0.12
+const AUDIO_FILL_BUDGET_SECONDS: float = 0.040
 const AUDIO_SYNTH_STRIDE_FRAMES: int = 4
+# Audio-thread fill cadence: how long the worker sleeps between fill cycles when the
+# generator is already topped up. Host-only; read only by this rig.
+const AUDIO_THREAD_IDLE_SLEEP_USEC: int = 3000
 
 var _vehicle: Node = null
 var _motor_player: AudioStreamPlayer = null
@@ -69,6 +72,15 @@ var _tire_fill_buffer: PackedVector2Array = PackedVector2Array()
 var _ambient_fill_buffer: PackedVector2Array = PackedVector2Array()
 var _water_fill_buffer: PackedVector2Array = PackedVector2Array()
 var _plank_fill_buffer: PackedVector2Array = PackedVector2Array()
+var _audio_thread: Thread = null
+var _audio_mutex: Mutex = Mutex.new()
+var _audio_thread_should_stop: bool = false
+var _audio_thread_running: bool = false
+# Single-producer (main _process) / single-consumer (audio thread) input snapshot.
+var _snapshot_speed: float = 0.0
+var _snapshot_motor_rpm: float = 0.0
+var _snapshot_position: Vector3 = Vector3.ZERO
+var _snapshot_surface_id: StringName = &"packed_dirt"
 
 
 func configure(vehicle: Node) -> void:
@@ -97,6 +109,7 @@ func _ready() -> void:
 
 
 func _exit_tree() -> void:
+	_stop_audio_thread()
 	if EventBus.vehicle_changed_surface.is_connected(_on_vehicle_changed_surface):
 		EventBus.vehicle_changed_surface.disconnect(_on_vehicle_changed_surface)
 	if EventBus.world_duck_ambient_audio.is_connected(_on_world_duck_ambient_audio):
@@ -124,6 +137,18 @@ func _process(_delta: float) -> void:
 	var speed: float = float(state.call("speed"))
 	var motor_rpm: float = float(state.get("motor_rpm"))
 	var vehicle_position: Vector3 = state.get("position")
+	if _audio_thread_running:
+		# Publish-only. The self-paced worker reads the latest snapshot on its own
+		# cadence, so _process does not drive fills and does not need to wake it.
+		_audio_mutex.lock()
+		var threaded_surface_id: StringName = _dominant_surface_from_state(state, _snapshot_surface_id)
+		_snapshot_speed = speed
+		_snapshot_motor_rpm = motor_rpm
+		_snapshot_position = vehicle_position
+		_snapshot_surface_id = threaded_surface_id
+		_audio_mutex.unlock()
+		return
+	# Headless / thread-not-started fallback: synthesize inline, exactly as before.
 	_current_surface_id = _dominant_surface_from_state(state, _current_surface_id)
 	_fill_motor(speed, motor_rpm)
 	_fill_tires(speed)
@@ -219,6 +244,67 @@ func preview_audio_output_stats_with_mix_overrides(
 	return stats
 
 
+func debug_fill_cycle_buffers(speed: float, motor_rpm: float, vehicle_position: Vector3, surface_id: StringName, frame_count: int) -> Dictionary:
+	var safe_frame_count: int = maxi(frame_count, 0)
+	_current_surface_id = surface_id
+	_motor_fill_buffer.resize(safe_frame_count)
+	var write_index: int = 0
+	var repeat_count: int = 0
+	while write_index < safe_frame_count:
+		repeat_count = mini(AUDIO_SYNTH_STRIDE_FRAMES, safe_frame_count - write_index)
+		var motor_frame: Vector2 = _next_motor_frame(speed, motor_rpm, repeat_count)
+		for motor_repeat_index in range(repeat_count):
+			_motor_fill_buffer[write_index + motor_repeat_index] = motor_frame
+		write_index += repeat_count
+	_tire_fill_buffer.resize(safe_frame_count)
+	write_index = 0
+	while write_index < safe_frame_count:
+		repeat_count = mini(AUDIO_SYNTH_STRIDE_FRAMES, safe_frame_count - write_index)
+		var tire_frame: Vector2 = _next_tire_frame(speed, repeat_count)
+		for tire_repeat_index in range(repeat_count):
+			_tire_fill_buffer[write_index + tire_repeat_index] = tire_frame
+		write_index += repeat_count
+	_ambient_fill_buffer.resize(safe_frame_count)
+	write_index = 0
+	while write_index < safe_frame_count:
+		repeat_count = mini(AUDIO_SYNTH_STRIDE_FRAMES, safe_frame_count - write_index)
+		var ambient_frame: Vector2 = _next_ambient_frame(vehicle_position, repeat_count)
+		for ambient_repeat_index in range(repeat_count):
+			_ambient_fill_buffer[write_index + ambient_repeat_index] = ambient_frame
+		write_index += repeat_count
+	_water_fill_buffer.resize(safe_frame_count)
+	write_index = 0
+	while write_index < safe_frame_count:
+		repeat_count = mini(AUDIO_SYNTH_STRIDE_FRAMES, safe_frame_count - write_index)
+		var water_frame: Vector2 = _next_water_frame(vehicle_position, repeat_count)
+		for water_repeat_index in range(repeat_count):
+			_water_fill_buffer[write_index + water_repeat_index] = water_frame
+		write_index += repeat_count
+	_plank_fill_buffer.resize(safe_frame_count)
+	write_index = 0
+	while write_index < safe_frame_count:
+		repeat_count = mini(AUDIO_SYNTH_STRIDE_FRAMES, safe_frame_count - write_index)
+		var plank_frame: Vector2 = _next_plank_frame(speed, repeat_count)
+		for plank_repeat_index in range(repeat_count):
+			_plank_fill_buffer[write_index + plank_repeat_index] = plank_frame
+		write_index += repeat_count
+	return {
+		"motor": _copy_audio_buffer(_motor_fill_buffer),
+		"tire": _copy_audio_buffer(_tire_fill_buffer),
+		"ambient": _copy_audio_buffer(_ambient_fill_buffer),
+		"water": _copy_audio_buffer(_water_fill_buffer),
+		"plank": _copy_audio_buffer(_plank_fill_buffer),
+	}
+
+
+func _copy_audio_buffer(buffer: PackedVector2Array) -> PackedVector2Array:
+	var copy: PackedVector2Array = PackedVector2Array()
+	copy.resize(buffer.size())
+	for index in range(buffer.size()):
+		copy[index] = buffer[index]
+	return copy
+
+
 func _make_generator_player(player_name: String) -> AudioStreamPlayer:
 	var player: AudioStreamPlayer = AudioStreamPlayer.new()
 	player.name = player_name
@@ -253,6 +339,56 @@ func _start_players() -> void:
 	if _plank_player != null:
 		_plank_player.play()
 		_plank_playback = _plank_player.get_stream_playback() as AudioStreamGeneratorPlayback
+	_start_audio_thread()
+
+
+func _start_audio_thread() -> void:
+	if _audio_thread != null:
+		return
+	if DisplayServer.get_name() == "headless":
+		return
+	_audio_thread_should_stop = false
+	_audio_thread = Thread.new()
+	# Low priority parks audio fill on efficiency cores so main+render keep the perf
+	# cores, matching the TerrainVisualStreamer windowed worker rationale.
+	var start_error: Error = _audio_thread.start(Callable(self, "_audio_thread_loop"), Thread.PRIORITY_LOW)
+	if start_error != OK:
+		push_error("CedarAudioRig audio thread start failed: " + error_string(start_error))
+		_audio_thread = null
+		return
+	_audio_thread_running = true
+
+
+func _stop_audio_thread() -> void:
+	if _audio_thread == null:
+		return
+	_audio_mutex.lock()
+	_audio_thread_should_stop = true
+	_audio_mutex.unlock()
+	_audio_thread.wait_to_finish()
+	_audio_thread = null
+	_audio_thread_running = false
+	_audio_thread_should_stop = false
+
+
+func _audio_thread_loop() -> void:
+	while true:
+		_audio_mutex.lock()
+		if _audio_thread_should_stop:
+			_audio_mutex.unlock()
+			return
+		var speed: float = _snapshot_speed
+		var motor_rpm: float = _snapshot_motor_rpm
+		var vehicle_position: Vector3 = _snapshot_position
+		var surface_id: StringName = _snapshot_surface_id
+		_audio_mutex.unlock()
+		_current_surface_id = surface_id
+		_fill_motor(speed, motor_rpm)
+		_fill_tires(speed)
+		_fill_ambient(vehicle_position)
+		_fill_water(vehicle_position)
+		_fill_planks(speed)
+		OS.delay_usec(AUDIO_THREAD_IDLE_SLEEP_USEC)
 
 
 func _fill_motor(speed: float, motor_rpm: float) -> void:
@@ -641,6 +777,11 @@ func _dominant_surface_from_state(state: RefCounted, fallback_surface_id: String
 
 
 func _on_vehicle_changed_surface(surface_id: StringName) -> void:
+	if _audio_thread_running:
+		_audio_mutex.lock()
+		_snapshot_surface_id = surface_id
+		_audio_mutex.unlock()
+		return
 	_current_surface_id = surface_id
 
 

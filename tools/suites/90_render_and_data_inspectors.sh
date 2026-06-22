@@ -10,6 +10,9 @@ printf 'run: flat visuals\n'
 printf 'run: audio output preview\n'
 "$godot_bin" --headless --path . res://tools/audio_output_inspector.tscn
 
+printf 'run: audio thread fill determinism\n'
+"$godot_bin" --headless --path . res://tools/audio_thread_determinism_fixture.tscn
+
 printf 'run: terrain surface palette\n'
 "$godot_bin" --headless --path . res://tools/terrain_palette_inspector.tscn
 
