@@ -248,6 +248,28 @@ func _require_stream_hlod(expected_visible: bool) -> void:
 		_errors.append("streamed TerrainHLOD visibility_range_begin expected " + str(TerrainVisualBuilderScript.REGION_STREAM_MIDLOD_RANGE_END_M) + ", got " + str(hlod.visibility_range_begin))
 	if absf(hlod.visibility_range_end) > FLOAT_EPSILON:
 		_errors.append("streamed TerrainHLOD visibility_range_end should be open-ended")
+	# stream-HLOD is a tree: the root chunk (renamed REGION_HLOD_NAME) plus any
+	# child chunks. Both the root and every child carry REGION_LOD_META ==
+	# "stream_hlod" and TILE_INDEX_META (their cell), and all must receive the
+	# per-chunk control_origin_xz / control_size_xz instance shader parameters.
+	# Without them the shader falls back to its default control rect (0,0)/(100,100)
+	# so far chunks clamp control_uv to a corner pixel and read a wrong pale surface
+	# id -> the discrete white-block hard edges seen in flythrough review.
+	var hlod_chunks: Array[MeshInstance3D] = []
+	if hlod is MeshInstance3D:
+		hlod_chunks.append(hlod)
+	for child in hlod.get_children():
+		if child is MeshInstance3D and child.has_meta(TerrainVisualBuilderScript.REGION_LOD_META) and String(child.get_meta(TerrainVisualBuilderScript.REGION_LOD_META)) == "stream_hlod":
+			hlod_chunks.append(child)
+	for chunk in hlod_chunks:
+		if not chunk.has_meta(TerrainVisualBuilderScript.TILE_INDEX_META):
+			_errors.append("stream-HLOD chunk missing tile index metadata: " + String(chunk.name))
+			continue
+		var chunk_cell: Vector2i = Vector2i(chunk.get_meta(TerrainVisualBuilderScript.TILE_INDEX_META))
+		var expected_hlod_origin: Vector2 = Vector2(float(chunk_cell.x) * GameConfig.STREAM_TILE_SIZE_M, float(chunk_cell.y) * GameConfig.STREAM_TILE_SIZE_M)
+		var expected_hlod_size: Vector2 = Vector2(GameConfig.STREAM_TILE_SIZE_M, GameConfig.STREAM_TILE_SIZE_M)
+		_require_instance_shader_vector2(chunk, TerrainVisualBuilderScript.CONTROL_ORIGIN_XZ_UNIFORM, expected_hlod_origin, "stream-HLOD chunk instance")
+		_require_instance_shader_vector2(chunk, TerrainVisualBuilderScript.CONTROL_SIZE_XZ_UNIFORM, expected_hlod_size, "stream-HLOD chunk instance")
 
 
 func _require_int_meta(node: Node, meta_name: StringName, label: String) -> int:
