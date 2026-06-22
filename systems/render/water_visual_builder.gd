@@ -13,6 +13,11 @@ const FOAM_COLOR: Color = Color(0.86, 0.90, 0.84)
 const WETLINE_STRENGTH: float = 0.20
 const ZION_RIVER_WIDTH_M: float = 9.5
 const ZION_RIVER_SURFACE_RISE_M: float = 0.30
+# Defensive guard band — same envelope as the terrain builder; see
+# planning/codex-skyline-geometry-guard-plan.md §3.
+const RIVER_HEIGHT_GUARD_MIN_M: float = -200.0
+const RIVER_HEIGHT_GUARD_MAX_M: float = 4000.0
+const RIVER_HEIGHT_GUARD_FALLBACK_M: float = 0.0
 const ZION_RIVER_WEST_POINTS: Array[Vector2] = [
 	Vector2(910.0, 500.0),
 	Vector2(900.0, 700.0),
@@ -145,8 +150,18 @@ static func _zion_river_surface_points(river_points_xz: Array[Vector2], terrain_
 	return world_points
 
 
+static func _guarded_river_height(raw_height: float, world_xz: Vector2) -> float:
+	if not is_finite(raw_height):
+		push_warning("WaterVisualBuilder non-finite river bed height at " + str(world_xz) + " value " + str(raw_height))
+		return RIVER_HEIGHT_GUARD_FALLBACK_M
+	if raw_height < RIVER_HEIGHT_GUARD_MIN_M or raw_height > RIVER_HEIGHT_GUARD_MAX_M:
+		push_warning("WaterVisualBuilder out-of-band river bed height at " + str(world_xz) + " value " + str(raw_height))
+		return clampf(raw_height, RIVER_HEIGHT_GUARD_MIN_M, RIVER_HEIGHT_GUARD_MAX_M)
+	return raw_height
+
+
 static func _zion_river_surface_y(world_xz: Vector2, terrain_def: Resource, horizontal_offset: Vector2) -> float:
-	var bed_y: float = TerrainBuilderScript.heightmap_height_at_world_xz(terrain_def, world_xz, horizontal_offset)
+	var bed_y: float = _guarded_river_height(TerrainBuilderScript.heightmap_height_at_world_xz(terrain_def, world_xz, horizontal_offset), world_xz)
 	return bed_y + ZION_RIVER_SURFACE_RISE_M
 
 
