@@ -508,7 +508,7 @@ var terrain_track_surface_wet_strength: float = 0.55
 var visual_bar_lighting_spec_version: int = 1
 
 var audio_mix_rate: float = 22050.0
-var audio_buffer_length: float = 0.08
+var audio_buffer_length: float = 0.16
 var audio_motor_base_hz: float = 90.0
 var audio_motor_speed_hz_gain: float = 32.0
 var audio_motor_volume: float = 0.058
