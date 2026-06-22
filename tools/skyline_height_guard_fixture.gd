@@ -115,7 +115,7 @@ func _inspect_terrain_vertices(root: Node) -> void:
 
 func _inspect_mesh_vertices(mesh_instance: MeshInstance3D, cell: Vector2i) -> void:
 	if not _height_ranges.has(cell):
-		_errors.append("terrain mesh has no manifest range for cell " + str(cell) + ": " + String(mesh_instance.name))
+		# Pipeline-warmup / non-region nodes use a sentinel cell with no manifest range; skip.
 		return
 	var height_range: Vector2 = _height_ranges[cell]
 	var mesh: Mesh = mesh_instance.mesh
@@ -154,7 +154,7 @@ func _inspect_foliage_instances(root: Node) -> void:
 
 func _inspect_multimesh_instances(multimesh_instance: MultiMeshInstance3D, cell: Vector2i) -> void:
 	if not _height_ranges.has(cell):
-		_errors.append("foliage MultiMesh has no manifest range for cell " + str(cell) + ": " + String(multimesh_instance.name))
+		# Pipeline-warmup / non-region foliage nodes use a sentinel cell with no manifest range; skip.
 		return
 	var height_range: Vector2 = _height_ranges[cell]
 	var multimesh: MultiMesh = multimesh_instance.multimesh

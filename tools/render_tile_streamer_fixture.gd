@@ -291,16 +291,25 @@ func _exercise_stream_hlod_budget() -> void:
 		_errors.append("stream-HLOD configure_region should leave real manifest chunks queued")
 	if initial_committed + initial_pending != manifest_count:
 		_errors.append("stream-HLOD committed+pending should equal real manifest count: committed=" + str(initial_committed) + " pending=" + str(initial_pending) + " manifest=" + str(manifest_count))
-	await get_tree().process_frame
-	var next_committed: int = int(_streamer.call("stream_hlod_committed_chunk_count"))
-	var next_pending: int = int(_streamer.call("stream_hlod_pending_chunk_count"))
-	var committed_delta: int = next_committed - initial_committed
-	if committed_delta <= 0:
-		_errors.append("stream-HLOD should drain queued manifest chunks on the next frame")
-	if committed_delta > budget:
-		_errors.append("stream-HLOD drained more than one frame budget: delta=" + str(committed_delta) + " budget=" + str(budget))
-	if next_committed + next_pending != manifest_count:
-		_errors.append("stream-HLOD post-frame committed+pending should equal real manifest count: committed=" + str(next_committed) + " pending=" + str(next_pending) + " manifest=" + str(manifest_count))
+	# _process drains up to one budget of HLOD chunks per frame. One process_frame can resume
+	# before the streamer's _process runs with processing enabled, so verify bounded, monotonic
+	# progress across several frames (and that committed+pending stays == manifest throughout).
+	var prev_committed: int = initial_committed
+	var observed_progress: bool = false
+	for frame_index in range(6):
+		await get_tree().process_frame
+		var committed_now: int = int(_streamer.call("stream_hlod_committed_chunk_count"))
+		var pending_now: int = int(_streamer.call("stream_hlod_pending_chunk_count"))
+		var frame_delta: int = committed_now - prev_committed
+		if frame_delta > budget:
+			_errors.append("stream-HLOD drained more than one frame budget: delta=" + str(frame_delta) + " budget=" + str(budget))
+		if frame_delta > 0:
+			observed_progress = true
+		if committed_now + pending_now != manifest_count:
+			_errors.append("stream-HLOD committed+pending should equal real manifest count: committed=" + str(committed_now) + " pending=" + str(pending_now) + " manifest=" + str(manifest_count))
+		prev_committed = committed_now
+	if not observed_progress:
+		_errors.append("stream-HLOD queue made no drain progress across 6 frames (amortized build stalled)")
 	_streamer.call("reset_stream")
 
 
@@ -529,6 +538,9 @@ func _exercise_midlod_commit_pressure() -> void:
 		return
 	for cell in pressure_cells:
 		EventBus.world_tile_activated.emit(cell)
+	# Mid-LOD refresh is now coalesced into _process (once per frame); let it run before
+	# reading the desired/pending mid-LOD counts.
+	await get_tree().process_frame
 
 	var initial_pending_midlod: int = int(_streamer.call("pending_midlod_commit_count"))
 	var desired_midlod: int = int(_streamer.call("desired_midlod_cell_count"))
