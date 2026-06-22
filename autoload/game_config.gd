@@ -99,7 +99,7 @@ var steer_reverse_velocity_threshold: float = 0.08
 var steer_inplace_yaw_rate_max: float = 0.24
 var steer_yaw_damping: float = 0.35
 var steer_low_speed_pivot_scale: float = 0.08
-var anti_roll_stiffness: float = 15.0
+var anti_roll_stiffness: float = 6.0
 # Deliberate feel value pending owner playtest signoff; not a 120 Hz artifact.
 var launch_wheelie_torque: float = 0.82
 var launch_wheelie_min_throttle: float = 0.95
