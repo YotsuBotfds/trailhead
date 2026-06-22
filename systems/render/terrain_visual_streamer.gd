@@ -42,6 +42,7 @@ var _worker_count: int = clampi(OS.get_processor_count() / 2, DEFAULT_WORKER_COU
 var _configured: bool = false
 var _events_connected: bool = false
 var _hlod_dirty: bool = false
+var _midlod_refresh_requested: bool = false
 var _region_cells_by_cell: Dictionary[Vector2i, bool] = {}
 var _active_cells: Dictionary[Vector2i, bool] = {}
 var _desired_midlod_cells_by_cell: Dictionary[Vector2i, bool] = {}
@@ -69,6 +70,13 @@ var _queued_midlod_commits: Dictionary[Vector2i, bool] = {}
 var _foliage_subcommit_queue: Array[FoliageSubcommit] = []
 var _pending_foliage_subcommit_counts_by_cell: Dictionary[Vector2i, int] = {}
 var _pending_free_cells: Array[Vector2i] = []
+var _pending_free_midlod_cells: Array[Vector2i] = []
+var _stream_hlod_queue: Array[Vector2i] = []
+var _queued_stream_hlod_cells: Dictionary[Vector2i, bool] = {}
+var _stream_hlod_chunks_by_cell: Dictionary[Vector2i, MeshInstance3D] = {}
+var _stream_hlod_densify_queue: Array[Vector2i] = []
+var _queued_stream_hlod_densify_cells: Dictionary[Vector2i, bool] = {}
+var _densified_stream_hlod_cells: Dictionary[Vector2i, bool] = {}
 var _workers: Array[Thread] = []
 var _work_mutex: Mutex = Mutex.new()
 var _work_semaphore: Semaphore = Semaphore.new()
@@ -105,7 +113,8 @@ func configure_region(new_region_id: String) -> void:
 		_load_failures_by_cell[Vector2i.ZERO] = "region stream roots missing"
 		_configured = false
 		return
-	_apply_stream_hlod_densification()
+	_queue_stream_hlod_region()
+	_drain_stream_hlod_queue()
 	_hlod_dirty = true
 	_ensure_event_connections()
 	_start_workers()
@@ -121,6 +130,7 @@ func set_worker_count_for_tests(worker_count: int) -> void:
 func reset_stream() -> void:
 	set_process(false)
 	_hlod_dirty = false
+	_midlod_refresh_requested = false
 	_stop_workers()
 	_stream_generation += 1
 	_disconnect_event_connections()
@@ -159,6 +169,13 @@ func reset_stream() -> void:
 	_foliage_subcommit_queue.clear()
 	_pending_foliage_subcommit_counts_by_cell.clear()
 	_pending_free_cells.clear()
+	_pending_free_midlod_cells.clear()
+	_stream_hlod_queue.clear()
+	_queued_stream_hlod_cells.clear()
+	_stream_hlod_chunks_by_cell.clear()
+	_stream_hlod_densify_queue.clear()
+	_queued_stream_hlod_densify_cells.clear()
+	_densified_stream_hlod_cells.clear()
 	_clear_worker_queues()
 	_next_visual_build_id = 0
 	_configured = false
@@ -179,6 +196,11 @@ func _process(_delta: float) -> void:
 	if _hlod_dirty:
 		_update_hlod_visibility()
 		_hlod_dirty = false
+	_drain_stream_hlod_queue()
+	_drain_stream_hlod_densify_queue()
+	if _midlod_refresh_requested:
+		_midlod_refresh_requested = false
+		_refresh_midlod_streaming()
 	if _workers.is_empty():
 		_process_build_queue_synchronously()
 	_drain_worker_results()
@@ -239,6 +261,18 @@ func pending_midlod_build_count() -> int:
 
 func pending_foliage_subcommit_count() -> int:
 	return _foliage_subcommit_queue.size()
+
+
+func stream_hlod_committed_chunk_count() -> int:
+	return _stream_hlod_chunks_by_cell.size()
+
+
+func stream_hlod_pending_chunk_count() -> int:
+	return _stream_hlod_queue.size()
+
+
+func stream_hlod_manifest_chunk_count() -> int:
+	return _region_cells_by_cell.size()
 
 
 func foliage_cell_count() -> int:
@@ -342,7 +376,9 @@ func _on_world_tile_activated(cell: Vector2i) -> void:
 	_pending_free_cells.erase(cell)
 	_active_cells[cell] = true
 	_hlod_dirty = true
-	_refresh_midlod_streaming()
+	_resort_stream_hlod_queue()
+	_queue_near_stream_hlod_densification()
+	_request_midlod_refresh()
 	if _visual_tiles_by_cell.has(cell) and (_foliage_tiles_by_cell.has(cell) or _partial_foliage_tiles_by_cell.has(cell)):
 		var committed_step: int = int(_committed_tile_step_by_cell.get(cell, TerrainVisualBuilderScript.REGION_DETAIL_SAMPLE_STEP))
 		if committed_step <= TerrainVisualBuilderScript.REGION_DETAIL_FULLRES_SAMPLE_STEP:
@@ -384,7 +420,8 @@ func _on_world_tile_evicted(cell: Vector2i) -> void:
 		return
 	_active_cells.erase(cell)
 	_hlod_dirty = true
-	_refresh_midlod_streaming()
+	_queue_near_stream_hlod_densification()
+	_request_midlod_refresh()
 	_remove_queued_commit(cell)
 	_remove_queued_foliage_subcommits(cell)
 	if not _pending_free_cells.has(cell):
@@ -470,6 +507,16 @@ func _cancel_build(cell: Vector2i) -> void:
 	_work_mutex.unlock()
 
 
+func _request_midlod_refresh() -> void:
+	_midlod_refresh_requested = true
+
+
+func _queue_midlod_free(cell: Vector2i) -> void:
+	if _pending_free_midlod_cells.has(cell):
+		return
+	_pending_free_midlod_cells.append(cell)
+
+
 func _refresh_midlod_streaming() -> void:
 	if _midlod_root == null:
 		return
@@ -477,11 +524,12 @@ func _refresh_midlod_streaming() -> void:
 	var desired_lookup: Dictionary[Vector2i, bool] = {}
 	for cell in desired_cells:
 		desired_lookup[cell] = true
+		_pending_free_midlod_cells.erase(cell)
 	_desired_midlod_cells_by_cell = desired_lookup
 
 	for cell in _sorted_cells(_midlod_tiles_by_cell.keys()):
 		if not _desired_midlod_cells_by_cell.has(cell):
-			_free_midlod_cell(cell)
+			_queue_midlod_free(cell)
 	for cell in _sorted_cells(_ready_midlod_data_by_cell.keys()):
 		if not _desired_midlod_cells_by_cell.has(cell):
 			_ready_midlod_data_by_cell.erase(cell)
@@ -776,7 +824,7 @@ func _drain_foliage_subcommit_queue() -> void:
 
 
 func _drain_pending_frees() -> void:
-	if _pending_free_cells.is_empty():
+	if _pending_free_cells.is_empty() and _pending_free_midlod_cells.is_empty():
 		return
 	var free_budget: int = maxi(GameConfig.render_visual_tile_frees_per_frame, 1)
 	var freed_count: int = 0
@@ -784,6 +832,10 @@ func _drain_pending_frees() -> void:
 		var cell: Vector2i = _pending_free_cells.pop_front()
 		_free_visual_cell(cell)
 		_free_foliage_cell(cell)
+		freed_count += 1
+	while freed_count < free_budget and not _pending_free_midlod_cells.is_empty():
+		var cell: Vector2i = _pending_free_midlod_cells.pop_front()
+		_free_midlod_cell(cell)
 		freed_count += 1
 
 
@@ -828,6 +880,80 @@ func _update_hlod_visibility() -> void:
 		_midlod_root.visible = has_active_cells
 
 
+func _queue_stream_hlod_region() -> void:
+	_stream_hlod_queue.clear()
+	_queued_stream_hlod_cells.clear()
+	for cell in _sorted_cells(_region_cells_by_cell.keys()):
+		_stream_hlod_queue.append(cell)
+		_queued_stream_hlod_cells[cell] = true
+	_resort_stream_hlod_queue()
+
+
+func _resort_stream_hlod_queue() -> void:
+	if _stream_hlod_queue.size() <= 1:
+		return
+	_stream_hlod_queue.sort_custom(Callable(self, "_stream_hlod_cell_less"))
+
+
+func _stream_hlod_cell_less(left: Vector2i, right: Vector2i) -> bool:
+	if _active_cells.is_empty():
+		return _cell_less(left, right)
+	var center: Vector2i = _active_cell_center()
+	var left_distance: int = absi(left.x - center.x) + absi(left.y - center.y)
+	var right_distance: int = absi(right.x - center.x) + absi(right.y - center.y)
+	if left_distance == right_distance:
+		return _cell_less(left, right)
+	return left_distance < right_distance
+
+
+func _drain_stream_hlod_queue() -> int:
+	if _hlod_instance == null or _stream_hlod_queue.is_empty():
+		return 0
+	var commit_budget: int = maxi(GameConfig.render_stream_hlod_commits_per_frame, 1)
+	var committed_count: int = 0
+	while committed_count < commit_budget and not _stream_hlod_queue.is_empty():
+		var cell: Vector2i = _stream_hlod_queue.pop_front()
+		_queued_stream_hlod_cells.erase(cell)
+		if _stream_hlod_chunks_by_cell.has(cell):
+			continue
+		var chunk: MeshInstance3D = TerrainVisualBuilderScript.region_stream_hlod_chunk_for_cell(_region_id, cell)
+		if chunk == null:
+			_load_failures_by_cell[cell] = "stream HLOD chunk failed to build: " + _region_id + " " + str(cell)
+			continue
+		_attach_stream_hlod_chunk(cell, chunk)
+		committed_count += 1
+	return committed_count
+
+
+func _attach_stream_hlod_chunk(cell: Vector2i, chunk: MeshInstance3D) -> void:
+	if _hlod_instance == null:
+		return
+	var tile_origin_xz: Vector2 = Vector2((float(cell.x) + 0.5) * GameConfig.STREAM_TILE_SIZE_M, (float(cell.y) + 0.5) * GameConfig.STREAM_TILE_SIZE_M)
+	if _stream_hlod_chunks_by_cell.is_empty():
+		_hlod_instance.mesh = chunk.mesh
+		_hlod_instance.position = Vector3(tile_origin_xz.x, 0.0, tile_origin_xz.y)
+		_hlod_instance.set_meta(TerrainVisualBuilderScript.REGION_LOD_META, "stream_hlod")
+		_hlod_instance.set_meta(TerrainVisualBuilderScript.VISIBILITY_RADIUS_META, chunk.get_meta(TerrainVisualBuilderScript.VISIBILITY_RADIUS_META))
+		_hlod_instance.set_meta(TerrainVisualBuilderScript.TILE_INDEX_META, cell)
+		_hlod_instance.set_meta(TerrainVisualBuilderScript.TILE_PATH_META, chunk.get_meta(TerrainVisualBuilderScript.TILE_PATH_META))
+		_hlod_instance.set_meta(TerrainVisualBuilderScript.TILE_SURFACE_ID_PATH_META, chunk.get_meta(TerrainVisualBuilderScript.TILE_SURFACE_ID_PATH_META))
+		_hlod_instance.set_instance_shader_parameter(
+			TerrainVisualBuilderScript.CONTROL_ORIGIN_XZ_UNIFORM,
+			chunk.get_instance_shader_parameter(TerrainVisualBuilderScript.CONTROL_ORIGIN_XZ_UNIFORM)
+		)
+		_hlod_instance.set_instance_shader_parameter(
+			TerrainVisualBuilderScript.CONTROL_SIZE_XZ_UNIFORM,
+			chunk.get_instance_shader_parameter(TerrainVisualBuilderScript.CONTROL_SIZE_XZ_UNIFORM)
+		)
+		chunk.queue_free()
+		_stream_hlod_chunks_by_cell[cell] = _hlod_instance
+	else:
+		chunk.position = Vector3(tile_origin_xz.x - _hlod_instance.position.x, 0.0, tile_origin_xz.y - _hlod_instance.position.z)
+		_hlod_instance.add_child(chunk)
+		_stream_hlod_chunks_by_cell[cell] = chunk
+	_queue_stream_hlod_densification(cell)
+
+
 func _apply_stream_hlod_densification() -> void:
 	if _region_id != STREAM_HLOD_DENSIFY_REGION_ID:
 		return
@@ -836,7 +962,52 @@ func _apply_stream_hlod_densification() -> void:
 	var chunks: Array[MeshInstance3D] = []
 	_collect_stream_hlod_chunks(_hlod_instance, chunks)
 	for chunk in chunks:
-		_densify_stream_hlod_chunk(chunk)
+		if chunk.has_meta(TerrainVisualBuilderScript.TILE_INDEX_META):
+			_queue_stream_hlod_densification(Vector2i(chunk.get_meta(TerrainVisualBuilderScript.TILE_INDEX_META)))
+
+
+func _queue_near_stream_hlod_densification() -> void:
+	if _region_id != STREAM_HLOD_DENSIFY_REGION_ID:
+		return
+	for cell in _sorted_cells(_stream_hlod_chunks_by_cell.keys()):
+		_queue_stream_hlod_densification(cell)
+
+
+func _queue_stream_hlod_densification(cell: Vector2i) -> void:
+	if _region_id != STREAM_HLOD_DENSIFY_REGION_ID:
+		return
+	if not _stream_hlod_chunks_by_cell.has(cell):
+		return
+	if _densified_stream_hlod_cells.has(cell) or _queued_stream_hlod_densify_cells.has(cell):
+		return
+	if not _is_cell_in_stream_hlod_densify_radius(cell):
+		return
+	_stream_hlod_densify_queue.append(cell)
+	_queued_stream_hlod_densify_cells[cell] = true
+
+
+func _is_cell_in_stream_hlod_densify_radius(cell: Vector2i) -> bool:
+	if _active_cells.is_empty():
+		return false
+	var center: Vector2i = _active_cell_center()
+	var radius: int = maxi(int(ceilf(TerrainVisualBuilderScript.REGION_STREAM_MIDLOD_RANGE_END_M / maxf(GameConfig.STREAM_TILE_SIZE_M, 0.001))), 1)
+	return absi(cell.x - center.x) <= radius and absi(cell.y - center.y) <= radius
+
+
+func _drain_stream_hlod_densify_queue() -> int:
+	if _stream_hlod_densify_queue.is_empty():
+		return 0
+	var commit_budget: int = maxi(GameConfig.render_stream_hlod_commits_per_frame, 1)
+	var committed_count: int = 0
+	while committed_count < commit_budget and not _stream_hlod_densify_queue.is_empty():
+		var cell: Vector2i = _stream_hlod_densify_queue.pop_front()
+		_queued_stream_hlod_densify_cells.erase(cell)
+		if not _stream_hlod_chunks_by_cell.has(cell) or _densified_stream_hlod_cells.has(cell):
+			continue
+		_densify_stream_hlod_chunk(_stream_hlod_chunks_by_cell[cell])
+		_densified_stream_hlod_cells[cell] = true
+		committed_count += 1
+	return committed_count
 
 
 func _collect_stream_hlod_chunks(parent: Node, chunks: Array[MeshInstance3D]) -> void:
