@@ -37,6 +37,7 @@ const SCALING_3D_MODE_FSR2: int = Viewport.SCALING_3D_MODE_FSR2
 var render_frame_cap_enabled: bool = true
 var render_max_fps: int = 60
 var render_visual_tile_commits_per_frame: int = 2
+var render_stream_hlod_commits_per_frame: int = 2
 var render_visual_foliage_subcommits_per_frame: int = 16
 var stream_collision_activations_per_tick: int = 3
 var stream_collision_prebuild_per_tick: int = 1

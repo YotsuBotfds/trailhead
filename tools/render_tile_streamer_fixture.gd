@@ -3,6 +3,7 @@ extends Node
 const TerrainVisualStreamerScript: GDScript = preload("res://systems/render/terrain_visual_streamer.gd")
 const TerrainVisualBuilderScript: GDScript = preload("res://systems/render/terrain_visual_builder.gd")
 const REGION_ID: String = "spike_1km"
+const STREAM_HLOD_BUDGET_REGION_ID: String = "cedar_hollow_zion"
 const FIRST_CELL: Vector2i = Vector2i(2, 2)
 const SECOND_CELL: Vector2i = Vector2i(2, 3)
 const FLOAT_EPSILON: float = 0.001
@@ -30,6 +31,7 @@ func _inspect() -> void:
 		_finish()
 		return
 
+	await _exercise_stream_hlod_budget()
 	_streamer.call("configure_region", REGION_ID)
 	_streamer.call("set_worker_count_for_tests", 0)
 	_require_cell_count("configured empty", 0)
@@ -270,6 +272,36 @@ func _require_stream_hlod(expected_visible: bool) -> void:
 		var expected_hlod_size: Vector2 = Vector2(GameConfig.STREAM_TILE_SIZE_M, GameConfig.STREAM_TILE_SIZE_M)
 		_require_instance_shader_vector2(chunk, TerrainVisualBuilderScript.CONTROL_ORIGIN_XZ_UNIFORM, expected_hlod_origin, "stream-HLOD chunk instance")
 		_require_instance_shader_vector2(chunk, TerrainVisualBuilderScript.CONTROL_SIZE_XZ_UNIFORM, expected_hlod_size, "stream-HLOD chunk instance")
+
+
+func _exercise_stream_hlod_budget() -> void:
+	_streamer.call("reset_stream")
+	_streamer.call("configure_region", STREAM_HLOD_BUDGET_REGION_ID)
+	var manifest_count: int = int(_streamer.call("stream_hlod_manifest_chunk_count"))
+	var initial_committed: int = int(_streamer.call("stream_hlod_committed_chunk_count"))
+	var initial_pending: int = int(_streamer.call("stream_hlod_pending_chunk_count"))
+	var budget: int = maxi(GameConfig.render_stream_hlod_commits_per_frame, 1)
+	if manifest_count <= budget:
+		_errors.append("stream-HLOD budget fixture needs a real manifest larger than one frame budget, manifest=" + str(manifest_count) + " budget=" + str(budget))
+	if initial_committed <= 0:
+		_errors.append("stream-HLOD should commit the first budgeted chunks during configure_region")
+	if initial_committed > budget:
+		_errors.append("stream-HLOD configure_region committed more than one frame budget: committed=" + str(initial_committed) + " budget=" + str(budget))
+	if initial_pending <= 0:
+		_errors.append("stream-HLOD configure_region should leave real manifest chunks queued")
+	if initial_committed + initial_pending != manifest_count:
+		_errors.append("stream-HLOD committed+pending should equal real manifest count: committed=" + str(initial_committed) + " pending=" + str(initial_pending) + " manifest=" + str(manifest_count))
+	await get_tree().process_frame
+	var next_committed: int = int(_streamer.call("stream_hlod_committed_chunk_count"))
+	var next_pending: int = int(_streamer.call("stream_hlod_pending_chunk_count"))
+	var committed_delta: int = next_committed - initial_committed
+	if committed_delta <= 0:
+		_errors.append("stream-HLOD should drain queued manifest chunks on the next frame")
+	if committed_delta > budget:
+		_errors.append("stream-HLOD drained more than one frame budget: delta=" + str(committed_delta) + " budget=" + str(budget))
+	if next_committed + next_pending != manifest_count:
+		_errors.append("stream-HLOD post-frame committed+pending should equal real manifest count: committed=" + str(next_committed) + " pending=" + str(next_pending) + " manifest=" + str(manifest_count))
+	_streamer.call("reset_stream")
 
 
 func _require_int_meta(node: Node, meta_name: StringName, label: String) -> int:

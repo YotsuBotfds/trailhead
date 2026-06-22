@@ -17,6 +17,7 @@ const TEXTURE_SOURCE_PATH_META: StringName = &"trailhead_source_path"
 
 static var _terrain_material_cache: Dictionary[StringName, StandardMaterial3D] = {}
 static var _surface_index_material_cache: Dictionary[String, ShaderMaterial] = {}
+static var _surface_index_tile_material_cache: Dictionary[String, ShaderMaterial] = {}
 static var _foliage_mesh_cache: Dictionary[String, Mesh] = {}
 static var _foliage_material_cache: Dictionary[String, Material] = {}
 static var _surface_index_albedo_array_cache: Texture2DArray = null
@@ -498,7 +499,7 @@ static func build_region_stream_root(parent: Node3D, region_id: String) -> Node3
 	parent.add_child(root)
 
 	_add_region_pipeline_warmup(root)
-	_add_region_stream_hlod(root, region_id)
+	add_region_stream_hlod_root(root, region_id)
 	var midlod_root: Node3D = Node3D.new()
 	midlod_root.name = REGION_STREAM_MIDLOD_ROOT_NAME
 	midlod_root.set_meta(REGION_ID_META, region_id)
@@ -512,6 +513,20 @@ static func build_region_stream_root(parent: Node3D, region_id: String) -> Node3
 	foliage_root.set_meta(REGION_ID_META, region_id)
 	root.add_child(foliage_root)
 	return root
+
+
+static func add_region_stream_hlod_root(parent: Node3D, region_id: String) -> MeshInstance3D:
+	var instance: MeshInstance3D = MeshInstance3D.new()
+	instance.name = REGION_HLOD_NAME
+	instance.visible = false
+	instance.visibility_range_begin = _stream_hlod_visibility_range_begin()
+	instance.visibility_range_end = 0.0
+	instance.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
+	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	instance.set_meta(REGION_LOD_META, "stream_hlod_root")
+	instance.set_meta(REGION_ID_META, region_id)
+	parent.add_child(instance)
+	return instance
 
 
 static func add_region_visual_tile(parent: Node3D, region_id: String, cell: Vector2i) -> MeshInstance3D:
@@ -575,6 +590,14 @@ static func build_region_stream_midlod_tile_data(region_id: String, cell: Vector
 	if not midlod_tile_data.ok:
 		midlod_tile_data.message = "mid-LOD tile mesh had no surfaces: " + region_id + " " + str(cell)
 	return midlod_tile_data
+
+
+static func region_stream_hlod_chunk_for_cell(region_id: String, cell: Vector2i) -> MeshInstance3D:
+	var tile_data: RegionTileData = _load_region_tile(region_id, cell)
+	if tile_data == null:
+		return null
+	var tile_origin_xz: Vector2 = _tile_origin_xz(tile_data)
+	return _region_stream_hlod_chunk(region_id, tile_data, tile_origin_xz)
 
 
 static func region_visual_tile_from_data(parent: Node3D, visual_tile_data: RegionVisualTileData, _hlod_instance: MeshInstance3D) -> MeshInstance3D:
@@ -1417,6 +1440,9 @@ static func _surface_index_material(surface_data: MeshSurfaceData) -> ShaderMate
 
 
 static func _surface_index_tile_material(surface_data: MeshSurfaceData) -> ShaderMaterial:
+	var tile_cache_key: String = _surface_index_material_cache_key(surface_data) + "|" + surface_data.surface_id_path
+	if _surface_index_tile_material_cache.has(tile_cache_key):
+		return _surface_index_tile_material_cache[tile_cache_key]
 	var shared_material: ShaderMaterial = _surface_index_material(surface_data)
 	var tile_material: ShaderMaterial = shared_material.duplicate(false) as ShaderMaterial
 	tile_material.resource_name = TERRAIN_INDEX_MATERIAL_NAME
@@ -1425,6 +1451,7 @@ static func _surface_index_tile_material(surface_data: MeshSurfaceData) -> Shade
 		surface_texture = _load_texture(surface_data.surface_id_path)
 	if surface_texture != null:
 		tile_material.set_shader_parameter(SURFACE_ID_TEXTURE_UNIFORM, surface_texture)
+	_surface_index_tile_material_cache[tile_cache_key] = tile_material
 	return tile_material
 
 
