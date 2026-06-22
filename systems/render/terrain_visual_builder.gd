@@ -80,6 +80,13 @@ const REGION_FOLIAGE_INSTANCE_MULTIPLIER: int = 389
 const REGION_FOLIAGE_LOD_MULTIPLIER: int = 521
 const REGION_FOLIAGE_SALT_MULTIPLIER: int = 61
 const REGION_FOLIAGE_Y_OFFSET: float = 0.035
+# Defensive heightmap guard band. Real baked DEM ranges: cedar_hollow_zion
+# [1178.292 m, 2275.16 m], spike_1km [-0.567 m, 0.244 m] => combined envelope
+# [-0.567 m, 2275.16 m]; these loose bounds catch corrupt/non-finite float32
+# spikes without touching legit vertices. See codex-skyline-geometry-guard-plan.md §3.
+const HEIGHT_GUARD_MIN_M: float = -200.0
+const HEIGHT_GUARD_MAX_M: float = 4000.0
+const HEIGHT_GUARD_FALLBACK_M: float = 0.0
 const FOLIAGE_MAX_SLOPE_NORMAL_Y: float = 0.819
 const REGION_FOLIAGE_CULL_MARGIN: float = 0.08
 # Godot 4.6 MultiMesh.buffer stride for TRANSFORM_3D + use_colors + use_custom_data:
@@ -1320,10 +1327,10 @@ static func _tile_foliage_custom_aabb(tile_data: RegionTileData) -> AABB:
 	var min_height: float = 0.0
 	var max_height: float = 0.0
 	if tile_data.heights.size() > 0:
-		min_height = tile_data.heights[0]
+		min_height = _guarded_height(tile_data.heights[0], tile_data.key, "foliage_aabb")
 		max_height = min_height
 		for height_index in range(1, tile_data.heights.size()):
-			var height: float = tile_data.heights[height_index]
+			var height: float = _guarded_height(tile_data.heights[height_index], tile_data.key, "foliage_aabb")
 			min_height = minf(min_height, height)
 			max_height = maxf(max_height, height)
 	var max_blade_height: float = _foliage_max_lod0_height()
@@ -1347,13 +1354,23 @@ static func _tile_normal(tile_data: RegionTileData, col: int, row: int) -> Vecto
 	return Vector3(-x_slope, 1.0, -z_slope).normalized()
 
 
+static func _guarded_height(raw_height: float, tile_key: String, context: String) -> float:
+	if not is_finite(raw_height):
+		push_warning("TerrainVisualBuilder non-finite height in " + context + " tile " + tile_key + " value " + str(raw_height))
+		return HEIGHT_GUARD_FALLBACK_M
+	if raw_height < HEIGHT_GUARD_MIN_M or raw_height > HEIGHT_GUARD_MAX_M:
+		push_warning("TerrainVisualBuilder out-of-band height in " + context + " tile " + tile_key + " value " + str(raw_height))
+		return clampf(raw_height, HEIGHT_GUARD_MIN_M, HEIGHT_GUARD_MAX_M)
+	return raw_height
+
+
 static func _height_value_at(tile_data: RegionTileData, col: int, row: int) -> float:
 	var safe_col: int = mini(maxi(col, 0), tile_data.width - 1)
 	var safe_row: int = mini(maxi(row, 0), tile_data.depth - 1)
 	var index: int = safe_row * tile_data.width + safe_col
 	if index < 0 or index >= tile_data.heights.size():
 		return 0.0
-	return tile_data.heights[index]
+	return _guarded_height(tile_data.heights[index], tile_data.key, "height_value_at")
 
 
 static func _surface_id_value_at(tile_data: RegionTileData, col: int, row: int) -> int:
