@@ -1126,6 +1126,7 @@ func _drain_stream_hlod_densify_worker_result(result: Dictionary) -> void:
 	var mesh_data: Variant = result["mesh_data"]
 	if mesh == null or mesh.get_surface_count() <= 0 or mesh_data == null:
 		return
+	TerrainVisualBuilderScript.apply_region_mesh_materials(mesh, mesh_data)
 	chunk.mesh = mesh
 	TerrainVisualBuilderScript.apply_region_mesh_instance_parameters(chunk, mesh_data)
 
@@ -1496,7 +1497,7 @@ func _build_stream_hlod_densify_result(job: Dictionary) -> Dictionary:
 			"mesh_data": null,
 			"skipped": false,
 		}
-	var mesh: ArrayMesh = TerrainVisualBuilderScript.region_mesh_from_data(mesh_data)
+	var mesh: ArrayMesh = TerrainVisualBuilderScript.region_mesh_from_data(mesh_data, false)
 	if mesh == null or mesh.get_surface_count() <= 0:
 		return {
 			"ok": false,
