@@ -30,6 +30,7 @@ static var _foliage_material_cache: Dictionary[String, Material] = {}
 static var _surface_index_albedo_array_cache: Texture2DArray = null
 static var _surface_index_normal_array_cache: Texture2DArray = null
 static var _surface_index_macro_albedo_cache: Texture2D = null
+static var _surface_cache_mutex: Mutex = Mutex.new()
 
 const REGION_ID_META: StringName = &"trailhead_region_id"
 const REGION_LOD_META: StringName = &"trailhead_region_lod"
@@ -1421,21 +1422,28 @@ static func _sorted_surface_values(buckets: Dictionary[int, MeshBucket]) -> Arra
 
 
 static func _surface_index_material(surface_data: MeshSurfaceData) -> ShaderMaterial:
+	_surface_cache_mutex.lock()
+	var material: ShaderMaterial = _surface_index_material_locked(surface_data)
+	_surface_cache_mutex.unlock()
+	return material
+
+
+static func _surface_index_material_locked(surface_data: MeshSurfaceData) -> ShaderMaterial:
 	var cache_key: String = _surface_index_material_cache_key(surface_data)
 	if _surface_index_material_cache.has(cache_key):
 		return _surface_index_material_cache[cache_key]
 	var material: ShaderMaterial = ShaderMaterial.new()
 	material.resource_name = TERRAIN_INDEX_MATERIAL_NAME
 	material.shader = TerrainSurfaceIndexShader
-	var albedo_array: Texture2DArray = _surface_index_albedo_array()
+	var albedo_array: Texture2DArray = _surface_index_albedo_array_locked()
 	if albedo_array != null:
 		material.set_shader_parameter(ALBEDO_ARRAY_UNIFORM, albedo_array)
 		material.set_shader_parameter(USE_ALBEDO_ARRAY_UNIFORM, true)
-	var normal_array: Texture2DArray = _surface_index_normal_array()
+	var normal_array: Texture2DArray = _surface_index_normal_array_locked()
 	if normal_array != null:
 		material.set_shader_parameter(NORMAL_ARRAY_UNIFORM, normal_array)
 		material.set_shader_parameter(USE_NORMAL_ARRAY_UNIFORM, true)
-	var macro_albedo_texture: Texture2D = _surface_index_macro_albedo_texture()
+	var macro_albedo_texture: Texture2D = _surface_index_macro_albedo_texture_locked()
 	if macro_albedo_texture != null:
 		material.set_shader_parameter(MACRO_ALBEDO_TEXTURE_UNIFORM, macro_albedo_texture)
 		material.set_shader_parameter(USE_MACRO_ALBEDO_UNIFORM, true)
@@ -1448,10 +1456,17 @@ static func _surface_index_material(surface_data: MeshSurfaceData) -> ShaderMate
 
 
 static func _surface_index_tile_material(surface_data: MeshSurfaceData) -> ShaderMaterial:
+	_surface_cache_mutex.lock()
+	var tile_material: ShaderMaterial = _surface_index_tile_material_locked(surface_data)
+	_surface_cache_mutex.unlock()
+	return tile_material
+
+
+static func _surface_index_tile_material_locked(surface_data: MeshSurfaceData) -> ShaderMaterial:
 	var tile_cache_key: String = _surface_index_material_cache_key(surface_data) + "|" + surface_data.surface_id_path
 	if _surface_index_tile_material_cache.has(tile_cache_key):
 		return _surface_index_tile_material_cache[tile_cache_key]
-	var shared_material: ShaderMaterial = _surface_index_material(surface_data)
+	var shared_material: ShaderMaterial = _surface_index_material_locked(surface_data)
 	var tile_material: ShaderMaterial = shared_material.duplicate(false) as ShaderMaterial
 	tile_material.resource_name = TERRAIN_INDEX_MATERIAL_NAME
 	var surface_texture: Texture2D = surface_data.surface_id_texture
@@ -1549,6 +1564,13 @@ static func _apply_zion_surface_index_tuning(material: ShaderMaterial) -> void:
 
 
 static func _surface_index_macro_albedo_texture() -> Texture2D:
+	_surface_cache_mutex.lock()
+	var texture: Texture2D = _surface_index_macro_albedo_texture_locked()
+	_surface_cache_mutex.unlock()
+	return texture
+
+
+static func _surface_index_macro_albedo_texture_locked() -> Texture2D:
 	if _surface_index_macro_albedo_cache != null:
 		return _surface_index_macro_albedo_cache
 	_surface_index_macro_albedo_cache = _load_source_image_texture(MACRO_ALBEDO_TEXTURE_PATH)
@@ -1558,6 +1580,13 @@ static func _surface_index_macro_albedo_texture() -> Texture2D:
 
 
 static func _surface_index_albedo_array() -> Texture2DArray:
+	_surface_cache_mutex.lock()
+	var texture_array: Texture2DArray = _surface_index_albedo_array_locked()
+	_surface_cache_mutex.unlock()
+	return texture_array
+
+
+static func _surface_index_albedo_array_locked() -> Texture2DArray:
 	if _surface_index_albedo_array_cache != null:
 		if _surface_index_array_has_expected_layers(_surface_index_albedo_array_cache):
 			return _surface_index_albedo_array_cache
@@ -1599,6 +1628,13 @@ static func _surface_index_albedo_array() -> Texture2DArray:
 
 
 static func _surface_index_normal_array() -> Texture2DArray:
+	_surface_cache_mutex.lock()
+	var texture_array: Texture2DArray = _surface_index_normal_array_locked()
+	_surface_cache_mutex.unlock()
+	return texture_array
+
+
+static func _surface_index_normal_array_locked() -> Texture2DArray:
 	if _surface_index_normal_array_cache != null:
 		if _surface_index_array_has_expected_layers(_surface_index_normal_array_cache):
 			return _surface_index_normal_array_cache
