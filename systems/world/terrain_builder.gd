@@ -8,6 +8,7 @@ const CEDAR_TERRAIN_DEF_PATH: String = "res://data/terrain/cedar_hollow_terrain_
 const CEDAR_HOLLOW_10M_SCENE_ID: String = "cedar_hollow_zion"
 const CEDAR_HOLLOW_10M_TERRAIN_DEF_PATH: String = "res://data/terrain/cedar_hollow_zion_terrain_def.tres"
 const CEDAR_HOLLOW_10M_SPAWN_TERRAIN_XZ: Vector2 = Vector2(1180.0, 860.0)
+const CEDAR_HOLLOW_10M_PAVEMENT_PROBE_LOCAL_XZ: Vector2 = Vector2(184.5, 0.0)
 const CedarTerrainDef: Resource = preload(CEDAR_TERRAIN_DEF_PATH)
 const CedarHollow10mTerrainDef: Resource = preload(CEDAR_HOLLOW_10M_TERRAIN_DEF_PATH)
 
@@ -77,12 +78,20 @@ static func cedar_hollow_10m_horizontal_offset() -> Vector2:
 
 
 static func cedar_hollow_10m_spawn_transform() -> Transform3D:
-	var height: float = heightmap_height_at_world_xz(CedarHollow10mTerrainDef, Vector2.ZERO, cedar_hollow_10m_horizontal_offset())
-	return Transform3D(Basis.IDENTITY, Vector3(0.0, height + _vehicle_spawn_clearance(0.0), 0.0))
+	return _cedar_hollow_10m_local_spawn_transform(Vector2.ZERO)
+
+
+static func cedar_hollow_10m_pavement_probe_spawn_transform() -> Transform3D:
+	return _cedar_hollow_10m_local_spawn_transform(CEDAR_HOLLOW_10M_PAVEMENT_PROBE_LOCAL_XZ)
 
 
 static func heightmap_collision_shape_for_tile(tile_index: Vector2i) -> HeightMapShape3D:
 	return heightmap_collision_shape_for_terrain_tile(CedarTerrainDef, tile_index)
+
+
+static func _cedar_hollow_10m_local_spawn_transform(local_xz: Vector2) -> Transform3D:
+	var height: float = heightmap_height_at_world_xz(CedarHollow10mTerrainDef, local_xz, cedar_hollow_10m_horizontal_offset())
+	return Transform3D(Basis.IDENTITY, Vector3(local_xz.x, height + _vehicle_spawn_clearance(0.0), local_xz.y))
 
 
 static func heightmap_collision_shape_for_terrain_tile(terrain_def: Resource, tile_index: Vector2i) -> HeightMapShape3D:
