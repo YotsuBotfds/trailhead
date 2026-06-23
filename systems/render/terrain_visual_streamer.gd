@@ -52,6 +52,8 @@ var _foliage_tiles_by_cell: Dictionary[Vector2i, Node3D] = {}
 var _partial_foliage_tiles_by_cell: Dictionary[Vector2i, Node3D] = {}
 var _ready_tile_data_by_cell: Dictionary[Vector2i, Variant] = {}
 var _ready_tile_step_by_cell: Dictionary[Vector2i, int] = {}
+var _ready_upgrade_tile_data_by_cell: Dictionary[Vector2i, Variant] = {}
+var _ready_upgrade_tile_step_by_cell: Dictionary[Vector2i, int] = {}
 var _ready_midlod_data_by_cell: Dictionary[Vector2i, Variant] = {}
 var _ready_foliage_data_by_cell: Dictionary[Vector2i, Variant] = {}
 var _committed_tile_step_by_cell: Dictionary[Vector2i, int] = {}
@@ -77,6 +79,9 @@ var _stream_hlod_chunks_by_cell: Dictionary[Vector2i, MeshInstance3D] = {}
 var _stream_hlod_densify_queue: Array[Vector2i] = []
 var _queued_stream_hlod_densify_cells: Dictionary[Vector2i, bool] = {}
 var _densified_stream_hlod_cells: Dictionary[Vector2i, bool] = {}
+var _stream_priority_center_cell: Vector2i = Vector2i.ZERO
+var _stream_priority_has_center: bool = false
+var _stream_priority_forward_cell_delta: Vector2i = Vector2i.ZERO
 var _workers: Array[Thread] = []
 var _work_mutex: Mutex = Mutex.new()
 var _work_semaphore: Semaphore = Semaphore.new()
@@ -84,6 +89,7 @@ var _worker_should_stop: bool = false
 var _next_visual_build_id: int = 0
 var _build_queue: Array[Variant] = []
 var _midlod_build_queue: Array[Variant] = []
+var _stream_hlod_densify_build_queue: Array[Variant] = []
 var _result_queue: Array[Variant] = []
 
 
@@ -151,6 +157,8 @@ func reset_stream() -> void:
 	_partial_foliage_tiles_by_cell.clear()
 	_ready_tile_data_by_cell.clear()
 	_ready_tile_step_by_cell.clear()
+	_ready_upgrade_tile_data_by_cell.clear()
+	_ready_upgrade_tile_step_by_cell.clear()
 	_ready_midlod_data_by_cell.clear()
 	_ready_foliage_data_by_cell.clear()
 	_committed_tile_step_by_cell.clear()
@@ -176,6 +184,9 @@ func reset_stream() -> void:
 	_stream_hlod_densify_queue.clear()
 	_queued_stream_hlod_densify_cells.clear()
 	_densified_stream_hlod_cells.clear()
+	_stream_priority_center_cell = Vector2i.ZERO
+	_stream_priority_has_center = false
+	_stream_priority_forward_cell_delta = Vector2i.ZERO
 	_clear_worker_queues()
 	_next_visual_build_id = 0
 	_configured = false
@@ -375,35 +386,42 @@ func _on_world_tile_activated(cell: Vector2i) -> void:
 		return
 	_pending_free_cells.erase(cell)
 	_active_cells[cell] = true
+	_update_stream_priority_from_active_cells()
 	_hlod_dirty = true
 	_resort_stream_hlod_queue()
 	_queue_near_stream_hlod_densification()
 	_request_midlod_refresh()
-	if _visual_tiles_by_cell.has(cell) and (_foliage_tiles_by_cell.has(cell) or _partial_foliage_tiles_by_cell.has(cell)):
+	if _visual_tiles_by_cell.has(cell):
 		var committed_step: int = int(_committed_tile_step_by_cell.get(cell, TerrainVisualBuilderScript.REGION_DETAIL_SAMPLE_STEP))
 		if committed_step <= TerrainVisualBuilderScript.REGION_DETAIL_FULLRES_SAMPLE_STEP:
 			return
-		_free_visual_cell(cell)
-		_free_foliage_cell(cell)
+		if _ready_tile_data_by_cell.has(cell):
+			var visible_ready_step: int = int(_ready_tile_step_by_cell.get(cell, TerrainVisualBuilderScript.REGION_DETAIL_SAMPLE_STEP))
+			if visible_ready_step <= TerrainVisualBuilderScript.REGION_DETAIL_FULLRES_SAMPLE_STEP:
+				_enqueue_ready_commit(cell)
+				return
+		_promote_ready_visual_upgrade(cell)
+		_enqueue_build(cell, TerrainVisualBuilderScript.REGION_DETAIL_FULLRES_SAMPLE_STEP)
+		if _workers.is_empty():
+			_process_build_queue_synchronously()
+			_drain_worker_results()
+		return
 	if _ready_tile_data_by_cell.has(cell):
-		# If the ready data was built at a coarser step than full-res (e.g. from a
-		# prefetch at step=5), discard it and rebuild at full collision resolution so
-		# the visual mesh matches the physics heightmap the wheels touch.
 		var ready_step: int = int(_ready_tile_step_by_cell.get(cell, TerrainVisualBuilderScript.REGION_DETAIL_SAMPLE_STEP))
+		_enqueue_ready_commit(cell)
 		if ready_step > TerrainVisualBuilderScript.REGION_DETAIL_FULLRES_SAMPLE_STEP:
-			_remove_queued_commit(cell)
-			_ready_tile_data_by_cell.erase(cell)
-			_ready_foliage_data_by_cell.erase(cell)
-			_ready_tile_step_by_cell.erase(cell)
-			# Fall through to _enqueue_build below.
-		else:
-			_enqueue_ready_commit(cell)
-			return
+			_enqueue_build(cell, TerrainVisualBuilderScript.REGION_DETAIL_FULLRES_SAMPLE_STEP)
+			if _workers.is_empty():
+				_process_build_queue_synchronously()
+				_drain_worker_results()
+		return
 	if _queued_builds.has(cell):
 		var queued_step: int = int(_queued_build_step_by_cell.get(cell, TerrainVisualBuilderScript.REGION_DETAIL_SAMPLE_STEP))
 		if queued_step <= TerrainVisualBuilderScript.REGION_DETAIL_FULLRES_SAMPLE_STEP:
 			return
-		_cancel_build(cell)
+		# Keep the in-flight coarse prefetch. When it finishes, it can commit first
+		# and seed the full-res upgrade without leaving an active-cell hole.
+		return
 	# Active cells are the vehicle-near loaded physics tiles (STREAM_ACTIVE_RADIUS
 	# around the car). Build their visual mesh at full collision resolution
 	# (step=1) so the visible ground matches the surface the wheels actually
@@ -419,11 +437,14 @@ func _on_world_tile_evicted(cell: Vector2i) -> void:
 	if not _configured:
 		return
 	_active_cells.erase(cell)
+	_update_stream_priority_from_active_cells()
 	_hlod_dirty = true
 	_queue_near_stream_hlod_densification()
 	_request_midlod_refresh()
 	_remove_queued_commit(cell)
 	_remove_queued_foliage_subcommits(cell)
+	_ready_upgrade_tile_data_by_cell.erase(cell)
+	_ready_upgrade_tile_step_by_cell.erase(cell)
 	if not _pending_free_cells.has(cell):
 		_pending_free_cells.append(cell)
 	_load_failures_by_cell.erase(cell)
@@ -459,6 +480,8 @@ func _on_world_tile_unprefetched(cell: Vector2i) -> void:
 	_remove_queued_foliage_subcommits(cell)
 	_ready_tile_data_by_cell.erase(cell)
 	_ready_tile_step_by_cell.erase(cell)
+	_ready_upgrade_tile_data_by_cell.erase(cell)
+	_ready_upgrade_tile_step_by_cell.erase(cell)
 	_ready_midlod_data_by_cell.erase(cell)
 	_ready_foliage_data_by_cell.erase(cell)
 	_committed_tile_step_by_cell.erase(cell)
@@ -468,9 +491,17 @@ func _on_world_tile_unprefetched(cell: Vector2i) -> void:
 
 func _enqueue_build(cell: Vector2i, sample_step: int = TerrainVisualBuilderScript.REGION_DETAIL_SAMPLE_STEP) -> void:
 	if _visual_tiles_by_cell.has(cell):
-		return
+		var committed_step: int = int(_committed_tile_step_by_cell.get(cell, TerrainVisualBuilderScript.REGION_DETAIL_SAMPLE_STEP))
+		if committed_step <= sample_step:
+			return
 	if _ready_tile_data_by_cell.has(cell):
-		return
+		var ready_step: int = int(_ready_tile_step_by_cell.get(cell, TerrainVisualBuilderScript.REGION_DETAIL_SAMPLE_STEP))
+		if ready_step <= sample_step:
+			return
+	if _ready_upgrade_tile_step_by_cell.has(cell):
+		var upgrade_step: int = int(_ready_upgrade_tile_step_by_cell.get(cell, TerrainVisualBuilderScript.REGION_DETAIL_SAMPLE_STEP))
+		if upgrade_step <= sample_step:
+			return
 	if _queued_builds.has(cell):
 		return
 	if _load_failures_by_cell.has(cell):
@@ -648,6 +679,9 @@ func _drain_worker_results() -> void:
 		if kind == "midlod":
 			_drain_midlod_worker_result(result)
 			continue
+		if kind == "stream_hlod_densify":
+			_drain_stream_hlod_densify_worker_result(result)
+			continue
 		var cell: Vector2i = result["cell"] as Vector2i
 		var generation: int = int(result["generation"])
 		if generation != _stream_generation:
@@ -672,20 +706,30 @@ func _drain_worker_results() -> void:
 			_record_load_failure(cell, String(result["message"]))
 			continue
 		var sample_step: int = int(result.get("sample_step", TerrainVisualBuilderScript.REGION_DETAIL_SAMPLE_STEP))
-		if _active_cells.has(cell) and sample_step > TerrainVisualBuilderScript.REGION_DETAIL_FULLRES_SAMPLE_STEP:
-			_ready_tile_data_by_cell.erase(cell)
-			_ready_tile_step_by_cell.erase(cell)
-			_ready_foliage_data_by_cell.erase(cell)
-			_remove_queued_commit(cell)
-			_enqueue_build(cell, TerrainVisualBuilderScript.REGION_DETAIL_FULLRES_SAMPLE_STEP)
-			if _workers.is_empty():
-				_process_build_queue_synchronously()
-			continue
+		if _ready_tile_data_by_cell.has(cell):
+			var ready_step: int = int(_ready_tile_step_by_cell.get(cell, TerrainVisualBuilderScript.REGION_DETAIL_SAMPLE_STEP))
+			if ready_step <= sample_step:
+				if _active_cells.has(cell):
+					_enqueue_ready_commit(cell)
+				if sample_step > TerrainVisualBuilderScript.REGION_DETAIL_FULLRES_SAMPLE_STEP:
+					_enqueue_build(cell, TerrainVisualBuilderScript.REGION_DETAIL_FULLRES_SAMPLE_STEP)
+				continue
+			if _queued_commits.has(cell) and not _visual_tiles_by_cell.has(cell):
+				_ready_upgrade_tile_data_by_cell[cell] = result["visual_tile_data"]
+				_ready_upgrade_tile_step_by_cell[cell] = sample_step
+				continue
+		if _visual_tiles_by_cell.has(cell):
+			var committed_step: int = int(_committed_tile_step_by_cell.get(cell, TerrainVisualBuilderScript.REGION_DETAIL_SAMPLE_STEP))
+			if committed_step <= sample_step:
+				continue
 		_ready_tile_data_by_cell[cell] = result["visual_tile_data"]
 		_ready_tile_step_by_cell[cell] = sample_step
-		_ready_foliage_data_by_cell[cell] = result["foliage_tile_data"]
+		if result.has("foliage_tile_data") and result["foliage_tile_data"] != null:
+			_ready_foliage_data_by_cell[cell] = result["foliage_tile_data"]
 		if _active_cells.has(cell):
 			_enqueue_ready_commit(cell)
+			if sample_step > TerrainVisualBuilderScript.REGION_DETAIL_FULLRES_SAMPLE_STEP:
+				_enqueue_build(cell, TerrainVisualBuilderScript.REGION_DETAIL_FULLRES_SAMPLE_STEP)
 
 
 func _drain_midlod_worker_result(result: Dictionary) -> void:
@@ -715,12 +759,33 @@ func _drain_midlod_worker_result(result: Dictionary) -> void:
 func _enqueue_ready_commit(cell: Vector2i) -> void:
 	if _queued_commits.has(cell):
 		return
-	if _visual_tiles_by_cell.has(cell) and _foliage_tiles_by_cell.has(cell):
-		return
 	if not _ready_tile_data_by_cell.has(cell):
 		return
+	var ready_step: int = int(_ready_tile_step_by_cell.get(cell, TerrainVisualBuilderScript.REGION_DETAIL_SAMPLE_STEP))
+	if _visual_tiles_by_cell.has(cell):
+		var committed_step: int = int(_committed_tile_step_by_cell.get(cell, TerrainVisualBuilderScript.REGION_DETAIL_SAMPLE_STEP))
+		if committed_step <= ready_step and _foliage_tiles_by_cell.has(cell):
+			return
 	_queued_commits[cell] = true
 	_commit_queue.append(cell)
+
+
+func _promote_ready_visual_upgrade(cell: Vector2i) -> void:
+	if not _ready_upgrade_tile_data_by_cell.has(cell):
+		return
+	var upgrade_step: int = int(_ready_upgrade_tile_step_by_cell.get(cell, TerrainVisualBuilderScript.REGION_DETAIL_SAMPLE_STEP))
+	if _visual_tiles_by_cell.has(cell):
+		var committed_step: int = int(_committed_tile_step_by_cell.get(cell, TerrainVisualBuilderScript.REGION_DETAIL_SAMPLE_STEP))
+		if committed_step <= upgrade_step:
+			_ready_upgrade_tile_data_by_cell.erase(cell)
+			_ready_upgrade_tile_step_by_cell.erase(cell)
+			return
+	_ready_tile_data_by_cell[cell] = _ready_upgrade_tile_data_by_cell[cell]
+	_ready_tile_step_by_cell[cell] = upgrade_step
+	_ready_upgrade_tile_data_by_cell.erase(cell)
+	_ready_upgrade_tile_step_by_cell.erase(cell)
+	if _active_cells.has(cell):
+		_enqueue_ready_commit(cell)
 
 
 func _enqueue_ready_midlod_commit(cell: Vector2i) -> void:
@@ -765,7 +830,7 @@ func _drain_commit_queue() -> int:
 	if _commit_queue.is_empty():
 		return 0
 	var commit_budget: int = maxi(GameConfig.render_visual_tile_commits_per_frame, 1)
-	_commit_queue.sort_custom(Callable(self, "_cell_less"))
+	_commit_queue.sort_custom(Callable(self, "_visual_commit_cell_less"))
 	var committed_count: int = 0
 	while committed_count < commit_budget and not _commit_queue.is_empty():
 		var cell: Vector2i = _commit_queue.pop_front()
@@ -842,8 +907,15 @@ func _drain_pending_frees() -> void:
 func _commit_visual_tile(cell: Vector2i, visual_tile_data: Variant, sample_step: int) -> void:
 	if _detail_root == null:
 		return
+	var previous_visual_tile: Node3D = null
 	if _visual_tiles_by_cell.has(cell):
-		return
+		var committed_step: int = int(_committed_tile_step_by_cell.get(cell, TerrainVisualBuilderScript.REGION_DETAIL_SAMPLE_STEP))
+		if committed_step <= sample_step:
+			_ready_tile_data_by_cell.erase(cell)
+			_ready_tile_step_by_cell.erase(cell)
+			_promote_ready_visual_upgrade(cell)
+			return
+		previous_visual_tile = _visual_tiles_by_cell[cell]
 	var visual_tile: MeshInstance3D = TerrainVisualBuilderScript.region_visual_tile_from_data(_detail_root, visual_tile_data, _hlod_instance)
 	if visual_tile == null:
 		_load_failures_by_cell[cell] = "visual tile failed to load"
@@ -853,6 +925,11 @@ func _commit_visual_tile(cell: Vector2i, visual_tile_data: Variant, sample_step:
 	_ready_tile_data_by_cell.erase(cell)
 	_ready_tile_step_by_cell.erase(cell)
 	_load_failures_by_cell.erase(cell)
+	if previous_visual_tile != null:
+		if previous_visual_tile.get_parent() != null:
+			previous_visual_tile.get_parent().remove_child(previous_visual_tile)
+		previous_visual_tile.queue_free()
+	_promote_ready_visual_upgrade(cell)
 
 
 func _commit_midlod_tile(cell: Vector2i, midlod_tile_data: Variant) -> void:
@@ -998,16 +1075,59 @@ func _drain_stream_hlod_densify_queue() -> int:
 	if _stream_hlod_densify_queue.is_empty():
 		return 0
 	var commit_budget: int = maxi(GameConfig.render_stream_hlod_commits_per_frame, 1)
-	var committed_count: int = 0
-	while committed_count < commit_budget and not _stream_hlod_densify_queue.is_empty():
+	var dispatched_count: int = 0
+	while dispatched_count < commit_budget and not _stream_hlod_densify_queue.is_empty():
 		var cell: Vector2i = _stream_hlod_densify_queue.pop_front()
-		_queued_stream_hlod_densify_cells.erase(cell)
 		if not _stream_hlod_chunks_by_cell.has(cell) or _densified_stream_hlod_cells.has(cell):
+			_queued_stream_hlod_densify_cells.erase(cell)
 			continue
-		_densify_stream_hlod_chunk(_stream_hlod_chunks_by_cell[cell])
-		_densified_stream_hlod_cells[cell] = true
-		committed_count += 1
-	return committed_count
+		_enqueue_stream_hlod_densify_build(cell)
+		dispatched_count += 1
+	return dispatched_count
+
+
+func _enqueue_stream_hlod_densify_build(cell: Vector2i) -> void:
+	var job: Dictionary = {
+		"cell": cell,
+		"generation": _stream_generation,
+		"kind": "stream_hlod_densify",
+		"region_id": _region_id,
+	}
+	_work_mutex.lock()
+	_stream_hlod_densify_build_queue.append(job)
+	_work_mutex.unlock()
+	_work_semaphore.post()
+
+
+func _drain_stream_hlod_densify_worker_result(result: Dictionary) -> void:
+	var cell: Vector2i = result["cell"] as Vector2i
+	var generation: int = int(result["generation"])
+	if generation != _stream_generation:
+		return
+	if not _queued_stream_hlod_densify_cells.has(cell):
+		return
+	_queued_stream_hlod_densify_cells.erase(cell)
+	if _densified_stream_hlod_cells.has(cell):
+		return
+	if not _stream_hlod_chunks_by_cell.has(cell):
+		return
+	_densified_stream_hlod_cells[cell] = true
+	if not bool(result["ok"]):
+		var message: String = String(result.get("message", ""))
+		if not message.is_empty():
+			push_error(message)
+		return
+	if bool(result.get("skipped", false)):
+		return
+	var chunk: MeshInstance3D = _stream_hlod_chunks_by_cell[cell] as MeshInstance3D
+	if chunk == null:
+		return
+	var mesh: ArrayMesh = result["mesh"] as ArrayMesh
+	var mesh_data: Variant = result["mesh_data"]
+	if mesh == null or mesh.get_surface_count() <= 0 or mesh_data == null:
+		return
+	chunk.mesh = mesh
+	TerrainVisualBuilderScript.apply_region_mesh_instance_parameters(chunk, mesh_data)
 
 
 func _collect_stream_hlod_chunks(parent: Node, chunks: Array[MeshInstance3D]) -> void:
@@ -1022,114 +1142,6 @@ func _is_stream_hlod_chunk(chunk: MeshInstance3D) -> bool:
 	if chunk == null or not chunk.has_meta(TerrainVisualBuilderScript.REGION_LOD_META):
 		return false
 	return String(chunk.get_meta(TerrainVisualBuilderScript.REGION_LOD_META)) == "stream_hlod"
-
-
-func _densify_stream_hlod_chunk(chunk: MeshInstance3D) -> void:
-	if chunk == null or not chunk.has_meta(TerrainVisualBuilderScript.TILE_INDEX_META):
-		return
-	var cell: Vector2i = Vector2i(chunk.get_meta(TerrainVisualBuilderScript.TILE_INDEX_META))
-	var height_variance_m: float = _stream_hlod_tile_height_variance_m(cell)
-	if height_variance_m < STREAM_HLOD_DENSIFY_MIN_HEIGHT_VARIANCE_M:
-		return
-	var tile_data: Variant = _load_stream_hlod_densify_tile(cell)
-	if tile_data == null:
-		return
-	var tile_size_m: float = float(tile_data.tile_size_m)
-	var tile_origin_xz: Vector2 = Vector2((float(cell.x) + 0.5) * tile_size_m, (float(cell.y) + 0.5) * tile_size_m)
-	var mesh_data: Variant = TerrainVisualBuilderScript.build_region_surface_index_mesh_data(
-		tile_data,
-		STREAM_HLOD_DENSIFY_SAMPLE_STEP,
-		String(tile_data.key) + "_stream_terrain_hlod_densify_mesh",
-		tile_origin_xz
-	)
-	if mesh_data == null:
-		return
-	var mesh: ArrayMesh = TerrainVisualBuilderScript.region_mesh_from_data(mesh_data)
-	if mesh == null or mesh.get_surface_count() <= 0:
-		return
-	chunk.mesh = mesh
-	TerrainVisualBuilderScript.apply_region_mesh_instance_parameters(chunk, mesh_data)
-
-
-func _stream_hlod_tile_height_variance_m(cell: Vector2i) -> float:
-	var sidecar_path: String = _stream_hlod_tile_sidecar_path(cell)
-	var sidecar_text: String = FileAccess.get_file_as_string(sidecar_path)
-	if sidecar_text.is_empty():
-		return -1.0
-	var parsed: Variant = JSON.parse_string(sidecar_text)
-	if not (parsed is Dictionary):
-		return -1.0
-	var sidecar: Dictionary = parsed as Dictionary
-	var heightmap_info: Dictionary = sidecar.get("heightmap", {}) as Dictionary
-	if heightmap_info == null or not heightmap_info.has("min_y") or not heightmap_info.has("max_y"):
-		return -1.0
-	return float(heightmap_info["max_y"]) - float(heightmap_info["min_y"])
-
-
-func _load_stream_hlod_densify_tile(cell: Vector2i) -> Variant:
-	var sidecar_path: String = _stream_hlod_tile_sidecar_path(cell)
-	var sidecar_text: String = FileAccess.get_file_as_string(sidecar_path)
-	if sidecar_text.is_empty():
-		push_error("TerrainVisualStreamer HLOD densify sidecar failed to load: " + sidecar_path)
-		return null
-	var parsed: Variant = JSON.parse_string(sidecar_text)
-	if not (parsed is Dictionary):
-		push_error("TerrainVisualStreamer HLOD densify sidecar malformed: " + sidecar_path)
-		return null
-	var sidecar: Dictionary = parsed as Dictionary
-	var heightmap_info: Dictionary = sidecar.get("heightmap", {}) as Dictionary
-	var surface_info: Dictionary = sidecar.get("surface_id", {}) as Dictionary
-	if heightmap_info == null or surface_info == null:
-		push_error("TerrainVisualStreamer HLOD densify sidecar missing render data: " + sidecar_path)
-		return null
-	if not (heightmap_info.has("shape") and heightmap_info.has("path")) or not surface_info.has("path"):
-		push_error("TerrainVisualStreamer HLOD densify sidecar missing shape/path: " + sidecar_path)
-		return null
-	var shape_value: Variant = heightmap_info["shape"]
-	if not (shape_value is Array):
-		push_error("TerrainVisualStreamer HLOD densify sidecar shape not array: " + sidecar_path)
-		return null
-	var shape_array: Array = shape_value as Array
-	if shape_array.size() != 2:
-		push_error("TerrainVisualStreamer HLOD densify sidecar shape size != 2: " + sidecar_path)
-		return null
-	var tile_directory: String = _stream_hlod_tile_directory(cell)
-	var heightmap_path: String = tile_directory.path_join(String(heightmap_info["path"]))
-	var surface_id_path: String = tile_directory.path_join(String(surface_info["path"]))
-	var height_bytes: PackedByteArray = FileAccess.get_file_as_bytes(heightmap_path)
-	var tile_size_m: float = float(sidecar.get("tile_size_m", GameConfig.STREAM_TILE_SIZE_M))
-	var depth: int = int(shape_array[0])
-	var width: int = int(shape_array[1])
-	var expected_bytes: int = width * depth * TerrainVisualBuilderScript.HEIGHTMAP_FLOAT_BYTE_SIZE
-	if height_bytes.size() != expected_bytes:
-		push_error("TerrainVisualStreamer HLOD densify heightmap byte mismatch: " + heightmap_path)
-		return null
-	var tile_data: Variant = TerrainVisualBuilderScript.RegionTileData.new()
-	tile_data.cell = cell
-	tile_data.key = str(cell.x) + "_" + str(cell.y)
-	tile_data.tile_size_m = tile_size_m
-	tile_data.depth = depth
-	tile_data.width = width
-	tile_data.heightmap_path = heightmap_path
-	tile_data.surface_id_path = surface_id_path
-	tile_data.heights = height_bytes.to_float32_array()
-	if tile_data.heights.size() != width * depth:
-		push_error("TerrainVisualStreamer HLOD densify heightmap float mismatch: " + heightmap_path)
-		return null
-	var surface_image: Image = Image.load_from_file(ProjectSettings.globalize_path(surface_id_path))
-	if surface_image == null or surface_image.is_empty():
-		push_error("TerrainVisualStreamer HLOD densify surface_id image failed: " + surface_id_path)
-		return null
-	tile_data.surface_image = surface_image
-	return tile_data
-
-
-func _stream_hlod_tile_directory(cell: Vector2i) -> String:
-	return GameConfig.STREAM_TILE_DATA_BASE.path_join(_region_id).path_join("tiles").path_join(str(cell.x) + "_" + str(cell.y))
-
-
-func _stream_hlod_tile_sidecar_path(cell: Vector2i) -> String:
-	return _stream_hlod_tile_directory(cell).path_join(TerrainVisualBuilderScript.REGION_TILE_SIDE_CAR_FILE)
 
 
 func _commit_foliage_tile(cell: Vector2i, foliage_tile_data: Variant) -> void:
@@ -1149,6 +1161,7 @@ func _begin_foliage_tile_commit(cell: Vector2i, foliage_tile_data: Variant) -> v
 	if _foliage_root == null:
 		return
 	if _foliage_tiles_by_cell.has(cell) or _partial_foliage_tiles_by_cell.has(cell):
+		_ready_foliage_data_by_cell.erase(cell)
 		return
 	if foliage_tile_data == null or not bool(foliage_tile_data.ok):
 		_ready_foliage_data_by_cell.erase(cell)
@@ -1281,6 +1294,7 @@ func _clear_worker_queues() -> void:
 	_work_mutex.lock()
 	_build_queue.clear()
 	_midlod_build_queue.clear()
+	_stream_hlod_densify_build_queue.clear()
 	_result_queue.clear()
 	_work_mutex.unlock()
 
@@ -1301,9 +1315,7 @@ func _worker_loop() -> void:
 			continue
 
 		var result: Dictionary = _build_worker_result(job)
-		var cell: Vector2i = result["cell"] as Vector2i
 		var generation: int = int(result["generation"])
-		var kind: String = String(result.get("kind", "visual"))
 		_work_mutex.lock()
 		if not _worker_should_stop and generation == _stream_generation and not _worker_result_is_cancelled_locked(result):
 			_result_queue.append(result)
@@ -1315,6 +1327,8 @@ func _pop_next_build_job_locked() -> Dictionary:
 		return _build_queue.pop_front() as Dictionary
 	if not _midlod_build_queue.is_empty():
 		return _midlod_build_queue.pop_front() as Dictionary
+	if not _stream_hlod_densify_build_queue.is_empty():
+		return _stream_hlod_densify_build_queue.pop_front() as Dictionary
 	return {}
 
 
@@ -1323,6 +1337,8 @@ func _worker_result_is_cancelled_locked(result: Dictionary) -> bool:
 	var cell: Vector2i = result["cell"] as Vector2i
 	if kind == "midlod":
 		return _cancelled_midlod_builds.has(cell)
+	if kind == "stream_hlod_densify":
+		return false
 	var build_id: int = int(result.get("build_id", -1))
 	return _cancelled_builds.has(build_id)
 
@@ -1331,6 +1347,8 @@ func _build_worker_result(job: Dictionary) -> Dictionary:
 	var kind: String = String(job.get("kind", "visual"))
 	if kind == "midlod":
 		return _build_midlod_tile_result(job)
+	if kind == "stream_hlod_densify":
+		return _build_stream_hlod_densify_result(job)
 	return _build_visual_tile_result(job)
 
 
@@ -1413,6 +1431,110 @@ func _build_midlod_tile_result(job: Dictionary) -> Dictionary:
 	}
 
 
+func _build_stream_hlod_densify_result(job: Dictionary) -> Dictionary:
+	var cell: Vector2i = job["cell"] as Vector2i
+	var generation: int = int(job["generation"])
+	var region_id: String = String(job["region_id"])
+
+	_work_mutex.lock()
+	var should_skip: bool = _worker_should_stop or generation != _stream_generation
+	_work_mutex.unlock()
+	if should_skip:
+		return {
+			"ok": false,
+			"cell": cell,
+			"generation": generation,
+			"kind": "stream_hlod_densify",
+			"message": "stream HLOD densify cancelled: " + str(cell),
+			"mesh": null,
+			"mesh_data": null,
+			"skipped": true,
+		}
+
+	var tile_data: Variant = TerrainVisualBuilderScript._load_region_tile(region_id, cell)
+	if tile_data == null:
+		return {
+			"ok": false,
+			"cell": cell,
+			"generation": generation,
+			"kind": "stream_hlod_densify",
+			"message": "stream HLOD densify tile failed to load: " + region_id + " " + str(cell),
+			"mesh": null,
+			"mesh_data": null,
+			"skipped": false,
+		}
+
+	var height_variance_m: float = _stream_hlod_tile_height_variance_from_data(tile_data)
+	if height_variance_m < STREAM_HLOD_DENSIFY_MIN_HEIGHT_VARIANCE_M:
+		return {
+			"ok": true,
+			"cell": cell,
+			"generation": generation,
+			"kind": "stream_hlod_densify",
+			"message": "",
+			"mesh": null,
+			"mesh_data": null,
+			"skipped": true,
+		}
+
+	var tile_size_m: float = float(tile_data.tile_size_m)
+	var tile_origin_xz: Vector2 = Vector2((float(cell.x) + 0.5) * tile_size_m, (float(cell.y) + 0.5) * tile_size_m)
+	var mesh_data: Variant = TerrainVisualBuilderScript.build_region_surface_index_mesh_data(
+		tile_data,
+		STREAM_HLOD_DENSIFY_SAMPLE_STEP,
+		String(tile_data.key) + "_stream_terrain_hlod_densify_mesh",
+		tile_origin_xz
+	)
+	if mesh_data == null or mesh_data.surfaces.size() <= 0:
+		return {
+			"ok": false,
+			"cell": cell,
+			"generation": generation,
+			"kind": "stream_hlod_densify",
+			"message": "stream HLOD densify mesh had no surfaces: " + region_id + " " + str(cell),
+			"mesh": null,
+			"mesh_data": null,
+			"skipped": false,
+		}
+	var mesh: ArrayMesh = TerrainVisualBuilderScript.region_mesh_from_data(mesh_data)
+	if mesh == null or mesh.get_surface_count() <= 0:
+		return {
+			"ok": false,
+			"cell": cell,
+			"generation": generation,
+			"kind": "stream_hlod_densify",
+			"message": "stream HLOD densify ArrayMesh failed: " + region_id + " " + str(cell),
+			"mesh": null,
+			"mesh_data": mesh_data,
+			"skipped": false,
+		}
+	return {
+		"ok": true,
+		"cell": cell,
+		"generation": generation,
+		"kind": "stream_hlod_densify",
+		"message": "",
+		"mesh": mesh,
+		"mesh_data": mesh_data,
+		"skipped": false,
+	}
+
+
+func _stream_hlod_tile_height_variance_from_data(tile_data: Variant) -> float:
+	if tile_data == null:
+		return -1.0
+	var heights: PackedFloat32Array = tile_data.heights
+	if heights.is_empty():
+		return -1.0
+	var min_height: float = float(heights[0])
+	var max_height: float = min_height
+	for value in heights:
+		var height: float = float(value)
+		min_height = minf(min_height, height)
+		max_height = maxf(max_height, height)
+	return max_height - min_height
+
+
 func _free_visual_cell(cell: Vector2i) -> void:
 	if not _visual_tiles_by_cell.has(cell):
 		_committed_tile_step_by_cell.erase(cell)
@@ -1472,6 +1594,45 @@ func _sorted_cells(value: Array) -> Array[Vector2i]:
 			cells.append(item)
 	cells.sort_custom(Callable(self, "_cell_less"))
 	return cells
+
+
+func _update_stream_priority_from_active_cells() -> void:
+	if _active_cells.is_empty():
+		_stream_priority_center_cell = Vector2i.ZERO
+		_stream_priority_has_center = false
+		_stream_priority_forward_cell_delta = Vector2i.ZERO
+		return
+	var next_center: Vector2i = _active_cell_center()
+	if _stream_priority_has_center:
+		var delta: Vector2i = next_center - _stream_priority_center_cell
+		if delta != Vector2i.ZERO:
+			_stream_priority_forward_cell_delta = Vector2i(
+				clampi(delta.x, -1, 1),
+				clampi(delta.y, -1, 1)
+			)
+	else:
+		_stream_priority_has_center = true
+	_stream_priority_center_cell = next_center
+
+
+func _visual_commit_cell_less(left: Vector2i, right: Vector2i) -> bool:
+	if _active_cells.is_empty():
+		return _cell_less(left, right)
+	var center: Vector2i = _stream_priority_center_cell
+	if not _stream_priority_has_center:
+		center = _active_cell_center()
+	var left_distance: int = absi(left.x - center.x) + absi(left.y - center.y)
+	var right_distance: int = absi(right.x - center.x) + absi(right.y - center.y)
+	if left_distance != right_distance:
+		return left_distance < right_distance
+	if _stream_priority_forward_cell_delta != Vector2i.ZERO:
+		var left_offset: Vector2i = left - center
+		var right_offset: Vector2i = right - center
+		var left_forward: int = left_offset.x * _stream_priority_forward_cell_delta.x + left_offset.y * _stream_priority_forward_cell_delta.y
+		var right_forward: int = right_offset.x * _stream_priority_forward_cell_delta.x + right_offset.y * _stream_priority_forward_cell_delta.y
+		if left_forward != right_forward:
+			return left_forward > right_forward
+	return _cell_less(left, right)
 
 
 func _cell_less(left: Vector2i, right: Vector2i) -> bool:
