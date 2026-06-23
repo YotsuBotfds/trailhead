@@ -16,6 +16,7 @@ const ACTIVE_CELLS: Array[Vector2i] = [
 	Vector2i(10, 12),
 ]
 const WAIT_FRAMES: int = 360
+const FLOAT_EPSILON: float = 0.001
 const HEIGHT_MARGIN_M: float = 0.30
 const MAX_TRIANGLE_EDGE_SLOPE: float = 7.5
 const MIN_TRIANGLE_EDGE_DELTA_M: float = 180.0
@@ -159,13 +160,8 @@ func _inspect_multimesh_instances(multimesh_instance: MultiMeshInstance3D, cell:
 	var height_range: Vector2 = _height_ranges[cell]
 	var multimesh: MultiMesh = multimesh_instance.multimesh
 	var custom_aabb: AABB = multimesh.custom_aabb
-	for instance_index in range(multimesh.instance_count):
-		var transform: Transform3D = multimesh.get_instance_transform(instance_index)
-		var world_origin: Vector3 = multimesh_instance.global_transform * transform.origin
-		var label: String = "foliage instance " + String(multimesh_instance.name) + " index " + str(instance_index)
-		_require_y_in_range(world_origin.y, height_range, label)
-		if not _aabb_contains_point(custom_aabb, transform.origin):
-			_errors.append(label + " local origin outside custom_aabb: origin=" + str(transform.origin) + " aabb=" + str(custom_aabb))
+	var label: String = "foliage multimesh " + String(multimesh_instance.name)
+	_require_foliage_custom_aabb(custom_aabb, multimesh_instance.global_transform, height_range, label)
 
 
 func _tile_cell_for_node(node: Node) -> Vector2i:
@@ -200,15 +196,60 @@ func _require_edge_delta(a: Vector3, b: Vector3, label: String) -> void:
 		_errors.append(label + " exceeds relative seam delta: dy=" + str(y_delta) + " allowed=" + str(max_allowed_delta) + " a=" + str(a) + " b=" + str(b))
 
 
-func _aabb_contains_point(aabb: AABB, point: Vector3) -> bool:
-	return (
-		point.x >= aabb.position.x
-		and point.y >= aabb.position.y
-		and point.z >= aabb.position.z
-		and point.x <= aabb.position.x + aabb.size.x
-		and point.y <= aabb.position.y + aabb.size.y
-		and point.z <= aabb.position.z + aabb.size.z
+func _require_foliage_custom_aabb(custom_aabb: AABB, world_transform: Transform3D, height_range: Vector2, label: String) -> void:
+	if custom_aabb.size == Vector3.ZERO:
+		_errors.append(label + " missing custom_aabb")
+		return
+	if not _aabb_is_finite(custom_aabb):
+		_errors.append(label + " custom_aabb is not finite: " + str(custom_aabb))
+		return
+	if custom_aabb.size.x <= 0.0 or custom_aabb.size.y <= 0.0 or custom_aabb.size.z <= 0.0:
+		_errors.append(label + " custom_aabb should have positive size: " + str(custom_aabb))
+		return
+	var max_horizontal_size: float = (
+		TerrainVisualBuilderScript.REGION_FOLIAGE_CELL_SIZE_M
+		+ 2.0 * (TerrainVisualBuilderScript._foliage_max_lod0_horizontal_radius() + TerrainVisualBuilderScript.REGION_FOLIAGE_CULL_MARGIN)
 	)
+	if custom_aabb.size.x > max_horizontal_size + FLOAT_EPSILON or custom_aabb.size.z > max_horizontal_size + FLOAT_EPSILON:
+		_errors.append(label + " custom_aabb horizontal size exceeds tight cell bound " + str(max_horizontal_size) + ": " + str(custom_aabb))
+	var world_y_range: Vector2 = _aabb_world_y_range(custom_aabb, world_transform)
+	if not is_finite(world_y_range.x) or not is_finite(world_y_range.y):
+		_errors.append(label + " custom_aabb world-Y span is not finite: " + str(world_y_range))
+		return
+	var min_allowed_y: float = height_range.x - HEIGHT_MARGIN_M
+	var max_allowed_y: float = (
+		height_range.y
+		+ TerrainVisualBuilderScript._foliage_max_lod0_height()
+		+ TerrainVisualBuilderScript.REGION_FOLIAGE_CULL_MARGIN * 2.0
+		+ HEIGHT_MARGIN_M
+	)
+	if world_y_range.x < min_allowed_y or world_y_range.x > max_allowed_y or world_y_range.y < min_allowed_y or world_y_range.y > max_allowed_y:
+		_errors.append(label + " custom_aabb world-Y span outside manifest range " + str(height_range) + " plus foliage height/margin: " + str(world_y_range))
+
+
+func _aabb_world_y_range(aabb: AABB, world_transform: Transform3D) -> Vector2:
+	var min_y: float = INF
+	var max_y: float = -INF
+	for x_index in range(2):
+		for y_index in range(2):
+			for z_index in range(2):
+				var corner: Vector3 = aabb.position + Vector3(
+					aabb.size.x if x_index == 1 else 0.0,
+					aabb.size.y if y_index == 1 else 0.0,
+					aabb.size.z if z_index == 1 else 0.0
+				)
+				var world_corner: Vector3 = world_transform * corner
+				min_y = minf(min_y, world_corner.y)
+				max_y = maxf(max_y, world_corner.y)
+	return Vector2(min_y, max_y)
+
+
+func _aabb_is_finite(aabb: AABB) -> bool:
+	return _vector3_is_finite(aabb.position) and _vector3_is_finite(aabb.size)
+
+
+func _vector3_is_finite(value: Vector3) -> bool:
+	return is_finite(value.x) and is_finite(value.y) and is_finite(value.z)
 
 
 func _finish() -> void:

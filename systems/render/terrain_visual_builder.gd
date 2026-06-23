@@ -100,6 +100,8 @@ const FOLIAGE_MULTIMESH_FLOATS_PER_INSTANCE: int = 20
 const REGION_FOLIAGE_LOD0_SCALE: Vector3 = Vector3(0.16, 0.42, 0.16)
 const REGION_FOLIAGE_LOD1_SCALE: Vector3 = Vector3(0.42, 0.58, 0.42)
 const REGION_FOLIAGE_HEIGHT_SCALE_MAX: float = 1.32
+# Matches source-material tree placement: width_scale = 0.84 + unit * 0.34.
+const REGION_FOLIAGE_TREE_WIDTH_SCALE_MAX: float = 1.18
 const REGION_FOLIAGE_LOD0_COLOR: Color = Color(0.24, 0.38, 0.14, 0.92)
 const REGION_FOLIAGE_LOD1_COLOR: Color = Color(0.28, 0.34, 0.16, 0.86)
 const FOLIAGE_SPECIES_GRASS: StringName = &"grass"
@@ -2239,6 +2241,8 @@ static func _foliage_cell_custom_aabb_from_instances(cell_data: FoliageCellData)
 	var max_x: float = 0.0
 	var max_y: float = 0.0
 	var max_z: float = 0.0
+	var h_radius: float = _foliage_max_lod0_horizontal_radius()
+	var horizontal_margin: float = h_radius + REGION_FOLIAGE_CULL_MARGIN
 	var foliage_height: float = _foliage_max_lod0_height() + REGION_FOLIAGE_CULL_MARGIN
 	for species_data in cell_data.species:
 		for transform in species_data.transforms:
@@ -2261,11 +2265,11 @@ static func _foliage_cell_custom_aabb_from_instances(cell_data: FoliageCellData)
 	if not has_bounds:
 		return AABB()
 	return AABB(
-		Vector3(min_x - REGION_FOLIAGE_CULL_MARGIN, min_y - REGION_FOLIAGE_CULL_MARGIN, min_z - REGION_FOLIAGE_CULL_MARGIN),
+		Vector3(min_x - horizontal_margin, min_y - REGION_FOLIAGE_CULL_MARGIN, min_z - horizontal_margin),
 		Vector3(
-			maxf(max_x - min_x, 0.0) + REGION_FOLIAGE_CULL_MARGIN * 2.0,
+			maxf(max_x - min_x, 0.0) + horizontal_margin * 2.0,
 			maxf(max_y - min_y, 0.0) + REGION_FOLIAGE_CULL_MARGIN * 2.0,
-			maxf(max_z - min_z, 0.0) + REGION_FOLIAGE_CULL_MARGIN * 2.0
+			maxf(max_z - min_z, 0.0) + horizontal_margin * 2.0
 		)
 	)
 
@@ -2348,7 +2352,7 @@ static func _add_foliage_species_cell_from_data(parent: Node3D, cell_data: Folia
 	var material: Material = _region_foliage_material_for_lod_species(cell_data.lod_index, species_data.species_id)
 	if material != null:
 		instance.material_override = material
-	instance.extra_cull_margin = REGION_FOLIAGE_CULL_MARGIN
+	instance.extra_cull_margin = _foliage_max_lod0_horizontal_radius() + REGION_FOLIAGE_CULL_MARGIN
 	var species_id: StringName = species_data.species_id
 	var cell_radius: float = cell_data.visibility_radius
 	var fade_margin: float = foliage_visibility_range_fade_margin_for_species(species_id)
@@ -3171,6 +3175,20 @@ static func _foliage_max_lod0_height() -> float:
 	for species_id in FOLIAGE_SPECIES_LIST:
 		max_height = maxf(max_height, _foliage_lod0_height_for_species(species_id))
 	return max_height * REGION_FOLIAGE_HEIGHT_SCALE_MAX
+
+
+static func _foliage_max_lod0_horizontal_radius() -> float:
+	var max_radius: float = 0.0
+	for species_id in FOLIAGE_SPECIES_LIST:
+		var mesh: Mesh = _region_foliage_mesh_for_lod_species(0, species_id)
+		if mesh == null:
+			continue
+		var aabb: AABB = mesh.get_aabb()
+		var scale: Vector3 = _foliage_base_scale_for_lod_species(0, species_id)
+		var rx: float = maxf(absf(aabb.position.x), absf(aabb.position.x + aabb.size.x)) * scale.x
+		var rz: float = maxf(absf(aabb.position.z), absf(aabb.position.z + aabb.size.z)) * scale.z
+		max_radius = maxf(max_radius, maxf(rx, rz))
+	return max_radius * REGION_FOLIAGE_TREE_WIDTH_SCALE_MAX
 
 
 static func _foliage_lod0_height_for_species(species_id: StringName) -> float:

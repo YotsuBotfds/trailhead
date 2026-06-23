@@ -473,6 +473,10 @@ func _require_foliage_tile(cell: Vector2i) -> Node3D:
 	var multimesh_count: int = 0
 	var foliage_instance_count: int = 0
 	var lod_counts: Dictionary[String, int] = {}
+	var max_foliage_custom_aabb_xz: float = (
+		TerrainVisualBuilderScript.REGION_FOLIAGE_CELL_SIZE_M
+		+ 2.0 * (TerrainVisualBuilderScript._foliage_max_lod0_horizontal_radius() + TerrainVisualBuilderScript.REGION_FOLIAGE_CULL_MARGIN)
+	)
 	for child in foliage_tile.get_children():
 		var multimesh_instance: MultiMeshInstance3D = child as MultiMeshInstance3D
 		if multimesh_instance == null:
@@ -483,8 +487,11 @@ func _require_foliage_tile(cell: Vector2i) -> Node3D:
 			continue
 		var region_lod: String = String(multimesh_instance.get_meta(TerrainVisualBuilderScript.REGION_LOD_META))
 		lod_counts[region_lod] = int(lod_counts.get(region_lod, 0)) + 1
-		if multimesh_instance.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF:
-			_errors.append("foliage child should not cast shadows: " + String(child.name))
+		var expected_shadow: int = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		if region_lod == "foliage_lod0" and _is_source_material_foliage_child(multimesh_instance):
+			expected_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+		if multimesh_instance.cast_shadow != expected_shadow:
+			_errors.append("foliage child shadow mode expected " + str(expected_shadow) + ", got " + str(multimesh_instance.cast_shadow) + ": " + String(child.name))
 		var material: Material = multimesh_instance.material_override
 		if _is_source_material_foliage_child(multimesh_instance):
 			# GLB foliage (cottonwood/willow/juniper/yucca) intentionally renders with NO
@@ -511,12 +518,17 @@ func _require_foliage_tile(cell: Vector2i) -> Node3D:
 		else:
 			var multimesh: MultiMesh = multimesh_instance.multimesh
 			foliage_instance_count += multimesh.instance_count
+			var custom_aabb: AABB = multimesh.custom_aabb
 			if not multimesh.use_custom_data:
 				_errors.append("foliage child should enable MultiMesh custom data for wind: " + String(child.name))
-			elif multimesh.custom_aabb.size == Vector3.ZERO:
+			elif custom_aabb.size == Vector3.ZERO:
 				_errors.append("foliage child missing custom_aabb: " + String(child.name))
-			elif multimesh.custom_aabb.size.x < GameConfig.STREAM_TILE_SIZE_M - FLOAT_EPSILON or multimesh.custom_aabb.size.z < GameConfig.STREAM_TILE_SIZE_M - FLOAT_EPSILON:
-				_errors.append("foliage child custom_aabb should span the stream tile: " + String(child.name))
+			elif not _aabb_is_finite(custom_aabb):
+				_errors.append("foliage child custom_aabb should be finite: " + String(child.name) + " aabb=" + str(custom_aabb))
+			elif custom_aabb.size.x <= 0.0 or custom_aabb.size.z <= 0.0:
+				_errors.append("foliage child custom_aabb should have positive horizontal span: " + String(child.name) + " aabb=" + str(custom_aabb))
+			elif custom_aabb.size.x > max_foliage_custom_aabb_xz + FLOAT_EPSILON or custom_aabb.size.z > max_foliage_custom_aabb_xz + FLOAT_EPSILON:
+				_errors.append("foliage child custom_aabb should stay within tight cell bound " + str(max_foliage_custom_aabb_xz) + ": " + String(child.name) + " aabb=" + str(custom_aabb))
 			elif multimesh.mesh == null:
 				_errors.append("foliage child missing shared mesh: " + String(child.name))
 	if multimesh_count < 2:
@@ -708,6 +720,14 @@ func _has_visual_or_foliage_commit_pressure() -> bool:
 	if int(_streamer.call("pending_visual_commit_count")) > 0:
 		return true
 	return int(_streamer.call("pending_foliage_subcommit_count")) > 0
+
+
+func _aabb_is_finite(aabb: AABB) -> bool:
+	return _vector3_is_finite(aabb.position) and _vector3_is_finite(aabb.size)
+
+
+func _vector3_is_finite(value: Vector3) -> bool:
+	return is_finite(value.x) and is_finite(value.y) and is_finite(value.z)
 
 
 func _is_grass_shader_material(material: Material) -> bool:
