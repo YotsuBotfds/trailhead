@@ -597,8 +597,8 @@ func _inspect_viewport_antialiasing(host: Node, context: String) -> void:
 	if viewport == null:
 		_errors.append(context + " host should have a viewport")
 		return
-	if viewport.msaa_3d != Viewport.MSAA_DISABLED:
-		_errors.append(context + " viewport msaa_3d expected MSAA_DISABLED, got " + str(viewport.msaa_3d))
+	if viewport.msaa_3d != GameConfig.render_msaa_3d:
+		_errors.append(context + " viewport msaa_3d expected GameConfig.render_msaa_3d (" + str(GameConfig.render_msaa_3d) + "), got " + str(viewport.msaa_3d))
 	if not viewport.use_taa:
 		_errors.append(context + " viewport should keep TAA enabled")
 

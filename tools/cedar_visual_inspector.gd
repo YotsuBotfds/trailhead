@@ -68,9 +68,9 @@ const LIGHTING_BAR_COLOR_TOLERANCE: float = 0.02
 const SOFT_SHADOW_FILTER_QUALITY_SETTING_PATH: String = "rendering/lights_and_shadows/directional_shadow/soft_shadow_filter_quality"
 const EXPECTED_SOFT_SHADOW_FILTER_QUALITY: int = 2
 const VOLUMETRIC_FOG_VOLUME_SIZE_SETTING_PATH: String = "rendering/environment/volumetric_fog/volume_size"
-const EXPECTED_VOLUMETRIC_FOG_VOLUME_SIZE: int = 24
+const EXPECTED_VOLUMETRIC_FOG_VOLUME_SIZE: int = 16 # shipped project.godot volumetric_fog volume_size/depth
 const VOLUMETRIC_FOG_VOLUME_DEPTH_SETTING_PATH: String = "rendering/environment/volumetric_fog/volume_depth"
-const EXPECTED_VOLUMETRIC_FOG_VOLUME_DEPTH: int = 24
+const EXPECTED_VOLUMETRIC_FOG_VOLUME_DEPTH: int = 16 # shipped project.godot volumetric_fog volume_size/depth
 const VOLUMETRIC_FOG_USE_FILTER_SETTING_PATH: String = "rendering/environment/volumetric_fog/use_filter"
 const EXPECTED_VOLUMETRIC_FOG_USE_FILTER: int = 1
 const GROUND_DETAIL_MATERIAL_TOLERANCE: float = 0.05
@@ -1340,7 +1340,7 @@ func _inspect_default_environment(world_environment: WorldEnvironment) -> void:
 
 func _inspect_default_sun(sun: DirectionalLight3D) -> void:
 	_require_color_close("GoldenHourSun default dusk color", sun.light_color, AtmosphereVisualBuilderScript.DUSK_HERO_SUN_COLOR, LIGHTING_BAR_COLOR_TOLERANCE)
-	_require_float_close("GoldenHourSun default dusk energy", sun.light_energy, AtmosphereVisualBuilderScript.DUSK_HERO_SUN_ENERGY, LIGHTING_BAR_TOLERANCE)
+	_require_float_close("GoldenHourSun default dusk energy", sun.light_energy, GameConfig.dusk_sun_energy, LIGHTING_BAR_TOLERANCE)
 	if sun.rotation_degrees.distance_to(AtmosphereVisualBuilderScript.DUSK_HERO_SUN_ROTATION_DEGREES) > LIGHTING_BAR_TOLERANCE:
 		_errors.append("GoldenHourSun default dusk rotation expected " + str(AtmosphereVisualBuilderScript.DUSK_HERO_SUN_ROTATION_DEGREES) + ", got " + str(sun.rotation_degrees))
 	if sun.directional_shadow_mode != _expected_directional_shadow_mode():
@@ -1851,7 +1851,7 @@ func _require_lighting_bar_sun(sun: DirectionalLight3D, context: String) -> void
 	if not sun.shadow_enabled:
 		_errors.append(context + " GoldenHourSun should enable shadows")
 	_require_float_in_range(context + " GoldenHourSun dusk energy", sun.light_energy, DUSK_SUN_ENERGY_MIN, DUSK_SUN_ENERGY_MAX)
-	_require_float_close(context + " GoldenHourSun dusk energy", sun.light_energy, AtmosphereVisualBuilderScript.DUSK_HERO_SUN_ENERGY, LIGHTING_BAR_TOLERANCE)
+	_require_float_close(context + " GoldenHourSun dusk energy", sun.light_energy, GameConfig.dusk_sun_energy, LIGHTING_BAR_TOLERANCE)
 	_require_color_close(context + " GoldenHourSun dusk color", sun.light_color, AtmosphereVisualBuilderScript.DUSK_HERO_SUN_COLOR, LIGHTING_BAR_COLOR_TOLERANCE)
 	if sun.rotation_degrees.distance_to(AtmosphereVisualBuilderScript.DUSK_HERO_SUN_ROTATION_DEGREES) > LIGHTING_BAR_TOLERANCE:
 		_errors.append(context + " GoldenHourSun dusk rotation expected " + str(AtmosphereVisualBuilderScript.DUSK_HERO_SUN_ROTATION_DEGREES) + ", got " + str(sun.rotation_degrees))
@@ -1879,8 +1879,8 @@ func _require_lighting_bar_environment(world_environment: WorldEnvironment, cont
 	_require_float_close(context + " GoldenHourEnvironment dusk glow intensity", environment.glow_intensity, DUSK_GLOW_INTENSITY, LIGHTING_BAR_TOLERANCE)
 	_require_float_close(context + " GoldenHourEnvironment dusk glow strength", environment.glow_strength, DUSK_GLOW_STRENGTH, LIGHTING_BAR_TOLERANCE)
 	_require_float_close(context + " GoldenHourEnvironment glow bloom", environment.glow_bloom, DUSK_GLOW_BLOOM, LIGHTING_BAR_TOLERANCE)
-	if environment.tonemap_mode != Environment.TONE_MAPPER_AGX:
-		_errors.append(context + " GoldenHourEnvironment tonemap_mode expected AGX, got " + str(environment.tonemap_mode))
+	if environment.tonemap_mode != Environment.TONE_MAPPER_FILMIC:
+		_errors.append(context + " GoldenHourEnvironment tonemap_mode expected FILMIC, got " + str(environment.tonemap_mode))
 	if environment.adjustment_enabled != GameConfig.atmosphere_grade_enabled:
 		_errors.append(context + " GoldenHourEnvironment color grade enabled should follow GameConfig")
 	_require_float_in_range(context + " GoldenHourEnvironment grade saturation", environment.adjustment_saturation, GRADE_SATURATION_MIN, GRADE_SATURATION_MAX)
@@ -1934,8 +1934,8 @@ func _inspect_viewport_antialiasing(host: Node, context: String) -> void:
 	if viewport == null:
 		_errors.append(context + " host should have a viewport")
 		return
-	if viewport.msaa_3d != Viewport.MSAA_DISABLED:
-		_errors.append(context + " viewport msaa_3d expected MSAA_DISABLED, got " + str(viewport.msaa_3d))
+	if viewport.msaa_3d != GameConfig.render_msaa_3d:
+		_errors.append(context + " viewport msaa_3d expected GameConfig.render_msaa_3d (" + str(GameConfig.render_msaa_3d) + "), got " + str(viewport.msaa_3d))
 	if not viewport.use_taa:
 		_errors.append(context + " viewport should keep TAA enabled")
 
