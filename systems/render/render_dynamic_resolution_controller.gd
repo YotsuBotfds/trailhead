@@ -10,6 +10,7 @@ var _sample_frames: int = 0
 var _over_budget_frames: int = 0
 var _under_budget_frames: int = 0
 var _manual_test_mode: bool = false
+var _measure_render_time_enabled: bool = false
 
 
 func _ready() -> void:
@@ -18,14 +19,25 @@ func _ready() -> void:
 	_viewport = get_viewport()
 	_scale = _initial_scale()
 	_apply_scale(_scale)
+	if GameConfig.render_dynamic_resolution_enabled:
+		_enable_render_time_measurement()
 	set_process(GameConfig.render_dynamic_resolution_enabled and _viewport != null)
 
 
-func _process(delta: float) -> void:
-	sample_frame_ms(maxf(delta * 1000.0, 0.0))
+func _exit_tree() -> void:
+	_disable_render_time_measurement()
+
+
+func _process(_delta: float) -> void:
+	var gpu_frame_ms: float = _measured_gpu_frame_ms()
+	if gpu_frame_ms <= 0.0:
+		_publish_state()
+		return
+	sample_frame_ms(gpu_frame_ms)
 
 
 func configure_for_tests(viewport: Viewport, initial_scale: float) -> void:
+	_disable_render_time_measurement()
 	_manual_test_mode = true
 	_viewport = viewport
 	_scale = clampf(initial_scale, _min_scale(), _max_scale())
@@ -115,3 +127,23 @@ func _max_scale() -> float:
 
 func _ema_alpha() -> float:
 	return clampf(GameConfig.render_dynamic_resolution_ema_alpha, 0.01, 1.0)
+
+
+func _enable_render_time_measurement() -> void:
+	if _viewport == null or _measure_render_time_enabled:
+		return
+	RenderingServer.viewport_set_measure_render_time(_viewport.get_viewport_rid(), true)
+	_measure_render_time_enabled = true
+
+
+func _disable_render_time_measurement() -> void:
+	if _viewport == null or not _measure_render_time_enabled:
+		return
+	RenderingServer.viewport_set_measure_render_time(_viewport.get_viewport_rid(), false)
+	_measure_render_time_enabled = false
+
+
+func _measured_gpu_frame_ms() -> float:
+	if _viewport == null or not _measure_render_time_enabled:
+		return 0.0
+	return maxf(RenderingServer.viewport_get_measured_render_time_gpu(_viewport.get_viewport_rid()), 0.0)

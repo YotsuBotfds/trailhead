@@ -670,8 +670,6 @@ static func _build_region_foliage_tile_data(region_id: String, cell: Vector2i, a
 	var tile_min_x: float = float(cell.x) * tile_data.tile_size_m
 	var tile_min_z: float = float(cell.y) * tile_data.tile_size_m
 	var tile_origin_xz: Vector2 = _tile_origin_xz(tile_data)
-	var tile_custom_aabb: AABB = _tile_foliage_custom_aabb(tile_data)
-	var tile_radius: float = _tile_visibility_radius(tile_data)
 	var lod0_cell_data_list: Array[FoliageCellData] = []
 	var lod1_cell_data_list: Array[FoliageCellData] = []
 	var cell_count_x: int = int(ceil(tile_data.tile_size_m / REGION_FOLIAGE_CELL_SIZE_M))
@@ -690,13 +688,13 @@ static func _build_region_foliage_tile_data(region_id: String, cell: Vector2i, a
 			var lod0_base_count: int = _riparian_gallery_base_count(cell_rect, 0, REGION_FOLIAGE_LOD0_BASE_COUNT)
 			var lod0_data: FoliageCellData = _build_region_foliage_cell_data_with_audit(tile_data_by_cell, cell_rect, foliage_cell, 0, lod0_base_count, audit)
 			if lod0_data != null:
-				_prepare_streamed_foliage_cell_data(lod0_data, tile_origin_xz, tile_custom_aabb, tile_radius)
+				_prepare_streamed_foliage_cell_data(lod0_data, tile_origin_xz)
 				_build_foliage_cell_multimeshes(lod0_data)
 				lod0_cell_data_list.append(lod0_data)
 			var lod1_base_count: int = _riparian_gallery_base_count(cell_rect, 1, REGION_FOLIAGE_LOD1_BASE_COUNT)
 			var lod1_data: FoliageCellData = _build_region_foliage_cell_data_with_audit(tile_data_by_cell, cell_rect, foliage_cell, 1, lod1_base_count, audit)
 			if lod1_data != null:
-				_prepare_streamed_foliage_cell_data(lod1_data, tile_origin_xz, tile_custom_aabb, tile_radius)
+				_prepare_streamed_foliage_cell_data(lod1_data, tile_origin_xz)
 				_build_foliage_cell_multimeshes(lod1_data)
 				lod1_cell_data_list.append(lod1_data)
 
@@ -774,22 +772,13 @@ static func _append_foliage_cell_data_to_tile_lod(tile_lod_data: FoliageCellData
 			target_species_data.custom_data.append(source_species_data.custom_data[i])
 
 
-static func _prepare_streamed_foliage_cell_data(cell_data: FoliageCellData, tile_origin_xz: Vector2, tile_custom_aabb: AABB, tile_radius: float) -> void:
+static func _prepare_streamed_foliage_cell_data(cell_data: FoliageCellData, tile_origin_xz: Vector2) -> void:
+	# Streamed foliage tiles are parented under a tile root, but each species MultiMesh keeps the
+	# per-32 m cell custom_aabb/radius already derived from its local instance transforms.
 	var local_position: Vector3 = cell_data.position
 	local_position.x -= tile_origin_xz.x
 	local_position.z -= tile_origin_xz.y
 	cell_data.position = local_position
-	cell_data.custom_aabb = AABB(
-		Vector3(tile_custom_aabb.position.x - local_position.x, tile_custom_aabb.position.y - local_position.y, tile_custom_aabb.position.z - local_position.z),
-		tile_custom_aabb.size
-	)
-	cell_data.visibility_radius = tile_radius
-	if cell_data.lod_index == 0:
-		cell_data.visibility_range_begin = 0.0
-		cell_data.visibility_range_end = _foliage_lod0_visibility_range_end(tile_radius)
-	else:
-		cell_data.visibility_range_begin = _foliage_lod1_visibility_range_begin(tile_radius)
-		cell_data.visibility_range_end = _foliage_lod1_visibility_range_end(tile_radius)
 
 
 static func visual_tile_node_name(tile_index: Vector2i, tile_path: String, tile_array_index: int) -> String:
