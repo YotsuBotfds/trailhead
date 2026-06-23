@@ -77,6 +77,11 @@ static func cedar_hollow_10m_horizontal_offset() -> Vector2:
 	return -(bounds_min + CEDAR_HOLLOW_10M_SPAWN_TERRAIN_XZ)
 
 
+static func cedar_hollow_10m_streamed_horizontal_offset() -> Vector2:
+	var bounds_min: Vector2 = CedarHollow10mTerrainDef.get("bounds_min_xz")
+	return -bounds_min
+
+
 static func cedar_hollow_10m_spawn_transform() -> Transform3D:
 	return _cedar_hollow_10m_local_spawn_transform(Vector2.ZERO)
 
