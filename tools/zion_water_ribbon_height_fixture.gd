@@ -3,6 +3,7 @@ extends Node
 const WaterVisualBuilderScript: GDScript = preload("res://systems/render/water_visual_builder.gd")
 const TerrainBuilderScript: GDScript = preload("res://systems/world/terrain_builder.gd")
 const WATER_RIBBON_HEIGHT_EPSILON_M: float = 0.025
+const WATER_RIBBON_CANYON_FLOOR_MAX_Y_M: float = 1330.0
 const EXPECTED_RIBBONS: Array[String] = [
 	"virgin_river_west",
 	"virgin_river_east",
@@ -25,7 +26,7 @@ func _inspect_water_root(water_root: Node3D) -> void:
 		_errors.append("Zion river fixture failed to build water root")
 		return
 	var terrain_def: Resource = TerrainBuilderScript.cedar_hollow_10m_terrain_def()
-	var horizontal_offset: Vector2 = TerrainBuilderScript.cedar_hollow_10m_horizontal_offset()
+	var horizontal_offset: Vector2 = TerrainBuilderScript.cedar_hollow_10m_streamed_horizontal_offset()
 	for ribbon_name in EXPECTED_RIBBONS:
 		var ribbon: MeshInstance3D = water_root.get_node_or_null(ribbon_name) as MeshInstance3D
 		if ribbon == null:
@@ -42,10 +43,15 @@ func _require_ribbon_vertices_at_heightfield(ribbon: MeshInstance3D, terrain_def
 	var max_error: float = 0.0
 	var max_error_vertex: Vector3 = Vector3.ZERO
 	var max_error_expected_y: float = 0.0
+	var max_vertex_y: float = -INF
+	var max_height_vertex: Vector3 = Vector3.ZERO
 	for surface_index in range(ribbon.mesh.get_surface_count()):
 		var vertices: PackedVector3Array = ribbon.mesh.surface_get_arrays(surface_index)[Mesh.ARRAY_VERTEX] as PackedVector3Array
 		for local_vertex in vertices:
 			var world_vertex: Vector3 = ribbon.global_transform * local_vertex
+			if world_vertex.y > max_vertex_y:
+				max_vertex_y = world_vertex.y
+				max_height_vertex = world_vertex
 			var world_xz: Vector2 = Vector2(world_vertex.x, world_vertex.z)
 			var bed_y: float = TerrainBuilderScript.heightmap_height_at_world_xz(terrain_def, world_xz, horizontal_offset)
 			var expected_y: float = bed_y + WaterVisualBuilderScript.ZION_RIVER_SURFACE_RISE_M
@@ -66,6 +72,16 @@ func _require_ribbon_vertices_at_heightfield(ribbon: MeshInstance3D, terrain_def
 			+ str(max_error_vertex)
 			+ " expected_y="
 			+ str(max_error_expected_y)
+		)
+	elif max_vertex_y > WATER_RIBBON_CANYON_FLOOR_MAX_Y_M:
+		_errors.append(
+			String(ribbon.name)
+			+ " vertex Y should stay in Zion canyon-floor envelope; max_y="
+			+ str(max_vertex_y)
+			+ " max_allowed_y="
+			+ str(WATER_RIBBON_CANYON_FLOOR_MAX_Y_M)
+			+ " vertex="
+			+ str(max_height_vertex)
 		)
 
 

@@ -75,7 +75,7 @@ static func _add_water_ribbon(parent: Node3D, node_name: String, river_points_xz
 	if river_points_xz.size() < 2:
 		return null
 	var terrain_def: Resource = TerrainBuilderScript.cedar_hollow_10m_terrain_def()
-	var horizontal_offset: Vector2 = TerrainBuilderScript.cedar_hollow_10m_horizontal_offset()
+	var horizontal_offset: Vector2 = TerrainBuilderScript.cedar_hollow_10m_streamed_horizontal_offset()
 	var world_points: Array[Vector3] = _zion_river_surface_points(river_points_xz, terrain_def, horizontal_offset)
 	var transform: Transform3D = _water_ribbon_transform(world_points)
 	var inverse_basis: Basis = transform.basis.inverse()
