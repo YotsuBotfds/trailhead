@@ -150,6 +150,12 @@ var _track_last_bounds_max: Vector2 = Vector2.ZERO
 var _track_apply_queue: Array[Vector2i] = []
 var _track_apply_queue_lookup: Dictionary[Vector2i, bool] = {}
 var _track_applied_cells: Dictionary[Vector2i, bool] = {}
+# Cached snapshot of the active visual cell set from the last frame we actually
+# ran the overlay sync/drain. Drives the change gate in
+# _apply_terrain_tracks_to_streamed_tiles: when the streamer's active cells,
+# the track RT's texture/bounds, and the apply queue are all unchanged, the
+# per-frame re-apply is skipped (visually identical — see the gate comment).
+var _track_last_active_cells: Dictionary[Vector2i, bool] = {}
 var _cold_start_streaming_released: bool = false
 var _cold_start_hold_elapsed: float = 0.0
 var _audio_rig: Node = null
@@ -1368,6 +1374,28 @@ func _apply_terrain_tracks_to_streamed_tiles() -> void:
 	if not _terrain_visual_streamer.has_method("active_visual_cells"):
 		return
 	var active_cells: Array = _terrain_visual_streamer.call("active_visual_cells")
+	# Change gate: skip the per-frame overlay re-apply when nothing it depends on
+	# has changed. The two signals it tracks are (1) the track RT's texture +
+	# bounds (already computed above) and (2) the streamer's committed active
+	# visual cell set. When both are stable AND no queued applies remain, the
+	# sync pass would queue nothing new and the drain would do nothing, so the
+	# re-apply is pure busywork.
+	#
+	# Visual identity holds because:
+	#   - Newly committed/evicted visual tiles always mutate
+	#     active_visual_cells() (it returns _visual_tiles_by_cell.keys()), so the
+	#     set comparison fires exactly when a tile needs first-time apply or
+	#     cleanup.
+	#   - Stamp paint updates mutate the RT's *pixels*, not its Texture2D object
+	#     identity or bounds; materials on already-applied tiles sample that same
+	#     viewport texture on the GPU every frame, so fresh paint shows up with no
+	#     host-side re-apply.
+	#   - The queue-empty check guarantees any in-flight work still drains.
+	if not track_state_changed \
+			and _track_apply_queue.is_empty() \
+			and _active_cells_unchanged(active_cells):
+		return
+	_remember_active_cells(active_cells)
 	_sync_track_apply_queue(active_cells, track_bounds_min, track_bounds_max, track_state_changed)
 	_drain_track_apply_queue(track_texture, track_bounds_min, track_bounds_max)
 
@@ -1384,6 +1412,25 @@ func _track_texture_state_changed(track_texture: Texture2D, bounds_min: Vector2,
 		or _track_last_texture != track_texture \
 		or _track_last_bounds_min != bounds_min \
 		or _track_last_bounds_max != bounds_max
+
+
+func _active_cells_unchanged(active_cells: Array) -> bool:
+	# Cheap structural equality vs the cached snapshot: same count, then every
+	# current cell is present in the cache. active_visual_cells() is already a
+	# sorted Array[Vector2i], so a single forward sweep suffices; no per-cell
+	# Dictionary build on the hot path.
+	if active_cells.size() != _track_last_active_cells.size():
+		return false
+	for cell_variant in active_cells:
+		if not _track_last_active_cells.has(cell_variant):
+			return false
+	return true
+
+
+func _remember_active_cells(active_cells: Array) -> void:
+	_track_last_active_cells.clear()
+	for cell_variant in active_cells:
+		_track_last_active_cells[cell_variant] = true
 
 
 func _sync_track_apply_queue(active_cells: Array, bounds_min: Vector2, bounds_max: Vector2, force_refresh: bool) -> void:
