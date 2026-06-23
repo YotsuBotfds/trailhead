@@ -17,7 +17,7 @@ static func build(parent: Node3D, chase_camera: Camera3D, orbit_camera: Camera3D
 	var root: Node3D = Node3D.new()
 	root.name = ROOT_NAME
 	parent.add_child(root)
-	if chase_camera != null:
+	if chase_camera != null and GameConfig.dust_mote_count > 0:
 		chase_camera.add_child(_make_dust_field())
 	_ensure_tilt_shift_layer(parent)
 	_apply_tilt_shift(chase_camera)
