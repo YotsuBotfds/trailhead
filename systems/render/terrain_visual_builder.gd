@@ -2387,6 +2387,13 @@ static func _region_foliage_mesh_for_lod(lod_index: int) -> Mesh:
 
 
 static func _region_foliage_mesh_for_lod_species(lod_index: int, species_id: StringName) -> Mesh:
+	_surface_cache_mutex.lock()
+	var mesh: Mesh = _region_foliage_mesh_for_lod_species_locked(lod_index, species_id)
+	_surface_cache_mutex.unlock()
+	return mesh
+
+
+static func _region_foliage_mesh_for_lod_species_locked(lod_index: int, species_id: StringName) -> Mesh:
 	var safe_lod_index: int = _region_foliage_lod_index(lod_index)
 	var cache_key: String = String(species_id) + "_lod" + str(safe_lod_index)
 	if _foliage_mesh_cache.has(cache_key):
@@ -3445,8 +3452,6 @@ static func _load_source_image_texture(path: String) -> Texture2D:
 	if image == null or image.is_empty():
 		return null
 	var image_texture: ImageTexture = ImageTexture.create_from_image(image)
-	image_texture.take_over_path(path)
-	image_texture.set_meta(TEXTURE_SOURCE_PATH_META, path)
 	return image_texture
 
 
