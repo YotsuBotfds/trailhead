@@ -5,7 +5,6 @@ const MOOD_DUSK: int = 0
 const MOOD_DAWN: int = 1
 const MOOD_NIGHT: int = 2
 const DUSK_HERO_SUN_ROTATION_DEGREES: Vector3 = Vector3(-16.0, -62.0, 0.0)
-const DUSK_HERO_SUN_ENERGY: float = 2.90
 const DUSK_HERO_SUN_COLOR: Color = Color(1.0, 0.74, 0.50)
 const DUSK_HERO_AMBIENT_COLOR: Color = Color(0.45, 0.49, 0.56)
 const DUSK_HERO_AMBIENT_ENERGY: float = 0.31
@@ -83,7 +82,7 @@ static func _apply_mood_sun(sun: DirectionalLight3D, mood: int) -> void:
 		sun.light_color = GameConfig.dawn_sun_color
 		return
 	sun.rotation_degrees = DUSK_HERO_SUN_ROTATION_DEGREES
-	sun.light_energy = DUSK_HERO_SUN_ENERGY
+	sun.light_energy = GameConfig.dusk_sun_energy
 	sun.light_color = DUSK_HERO_SUN_COLOR
 
 
@@ -169,7 +168,7 @@ static func _apply_volumetric_fog(environment: Environment, mood: int) -> void:
 
 static func _apply_golden_hour_glow(environment: Environment, mood: int) -> void:
 	environment.glow_enabled = true
-	environment.glow_normalized = false
+	environment.glow_normalized = true
 	environment.glow_bloom = GLOW_BLOOM
 	if mood == MOOD_NIGHT:
 		environment.glow_intensity = NIGHT_GLOW_INTENSITY
@@ -179,7 +178,7 @@ static func _apply_golden_hour_glow(environment: Environment, mood: int) -> void
 		environment.glow_strength = DAWN_GLOW_STRENGTH
 	else:
 		environment.glow_intensity = DUSK_GLOW_INTENSITY
-		environment.glow_strength = DUSK_GLOW_STRENGTH
+		environment.glow_strength = GameConfig.atmosphere_glow_strength_dusk
 		environment.glow_hdr_threshold = GameConfig.atmosphere_glow_hdr_threshold
 		environment.glow_hdr_scale = GameConfig.atmosphere_glow_hdr_scale
 		environment.glow_bloom = GameConfig.atmosphere_glow_bloom_dusk
@@ -187,6 +186,8 @@ static func _apply_golden_hour_glow(environment: Environment, mood: int) -> void
 
 static func _apply_color_grade(environment: Environment) -> void:
 	environment.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+	environment.tonemap_exposure = GameConfig.atmosphere_tonemap_exposure
+	environment.tonemap_white = GameConfig.atmosphere_tonemap_white
 	environment.adjustment_enabled = GameConfig.atmosphere_grade_enabled
 	environment.adjustment_saturation = GameConfig.atmosphere_grade_saturation
 	environment.adjustment_contrast = GameConfig.atmosphere_grade_contrast
@@ -209,7 +210,7 @@ static func _apply_screen_space_grounding(environment: Environment) -> void:
 static func _apply_viewport_antialiasing(viewport: Viewport) -> void:
 	if viewport == null:
 		return
-	viewport.msaa_3d = Viewport.MSAA_DISABLED
+	viewport.msaa_3d = GameConfig.render_msaa_3d
 	viewport.use_taa = true
 
 

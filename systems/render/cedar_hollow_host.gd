@@ -45,8 +45,8 @@ const ZION_DUSK_FOG_DENSITY: float = 0.0009
 const ZION_DAWN_FOG_DENSITY: float = 0.0014
 const ZION_NIGHT_FOG_DENSITY: float = 0.0016
 const ZION_FOG_AERIAL_PERSPECTIVE: float = 0.08
-const ZION_FOG_SKY_AFFECT: float = 0.14  # was 0.28 — high sky-affect dissolved distant mesas into the bright sky (bible: mesas read as silhouettes)
-const ZION_VOLUMETRIC_FOG_SKY_AFFECT: float = 0.16
+const ZION_FOG_SKY_AFFECT: float = 0.10  # was 0.28 — high sky-affect dissolved distant mesas into the bright sky (bible: mesas read as silhouettes)
+const ZION_VOLUMETRIC_FOG_SKY_AFFECT: float = 0.11
 const ZION_NIGHT_FOG_SKY_AFFECT: float = 0.18
 # Dusk golden-hour sky (zionfid/sky). The dusk PhysicalSkyMaterial was a plain
 # two-stop gradient; this ShaderMaterial sky adds a soft cyan mid band, a sun
@@ -57,11 +57,11 @@ const ZION_NIGHT_FOG_SKY_AFFECT: float = 0.18
 const DUSK_GOLDEN_MID_COLOR: Color = Color(0.32, 0.55, 0.72)
 const DUSK_GOLDEN_SUN_COLOR: Color = Color(1.00, 0.80, 0.52)
 const DUSK_GOLDEN_CIRRUS_COLOR: Color = Color(0.82, 0.78, 0.72)
-const DUSK_GOLDEN_SUN_HALO_STRENGTH: float = 0.55
+const DUSK_GOLDEN_SUN_HALO_STRENGTH: float = 0.38
 const DUSK_GOLDEN_HORIZON_BAND_WIDTH: float = 0.34
 const DUSK_GOLDEN_CIRRUS_COVERAGE: float = 0.62
 const DUSK_GOLDEN_CIRRUS_INTENSITY: float = 0.16
-const DUSK_GOLDEN_ENERGY_MULTIPLIER: float = 1.20
+const DUSK_GOLDEN_ENERGY_MULTIPLIER: float = 1.00
 const ZION_SHADOW_ATLAS_SIZE: int = 8192
 const ZION_REGION_ID: String = "cedar_hollow_zion"
 const ZION_SPAWN_ID: StringName = &"demo_canyon_junction"

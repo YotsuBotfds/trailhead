@@ -1,5 +1,5 @@
 shader_type spatial;
-render_mode diffuse_lambert, specular_schlick_ggx;
+render_mode diffuse_lambert, specular_schlick_ggx, alpha_to_coverage;
 uniform vec4 blade_base_color : source_color = vec4(0.07, 0.18, 0.055, 1.0);
 uniform vec4 blade_tip_color : source_color = vec4(0.48, 0.66, 0.23, 1.0);
 uniform float blade_height_reference = 0.42;
@@ -65,8 +65,8 @@ void fragment() {
 	BACKLIGHT = backlight_color.rgb * backlight_energy * (0.35 + blade_height * 0.65) * COLOR.rgb;
 	// Procedural grass-blade cutout: turn the solid cross-quad into a cluster of a few
 	// tapering vertical blades. `h` is 0 at the card base and 1 at the top (UV.y is
-	// inverted relative to mesh height). ALPHA + ALPHA_SCISSOR_THRESHOLD keep the card
-	// in the opaque pass (depth_prepass_alpha) — no transparency sort, deterministic.
+	// inverted relative to mesh height). ALPHA_SCISSOR_THRESHOLD keeps the card on the
+	// cutout path, and alpha_to_coverage lets MSAA resolve leaf edges without sorting.
 	float h = 1.0 - UV.y;
 	float edge_fade = smoothstep(0.0, 0.10, UV.x) * smoothstep(1.0, 0.90, UV.x);
 	float mask = 0.0;
