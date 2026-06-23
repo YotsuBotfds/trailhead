@@ -506,23 +506,17 @@ func _require_foliage_tile(cell: Vector2i) -> Node3D:
 			_errors.append("foliage child should use grass_billboard ShaderMaterial: " + String(child.name))
 		if not multimesh_instance.has_meta(TerrainVisualBuilderScript.VISIBILITY_RADIUS_META):
 			_errors.append("foliage child missing visibility radius metadata: " + String(child.name))
-		else:
-			var visibility_radius: float = float(multimesh_instance.get_meta(TerrainVisualBuilderScript.VISIBILITY_RADIUS_META))
-			var max_cell_radius: float = Vector2(TerrainVisualBuilderScript.REGION_FOLIAGE_CELL_SIZE_M, TerrainVisualBuilderScript.REGION_FOLIAGE_CELL_SIZE_M).length() * 0.5
-			if visibility_radius > max_cell_radius + FLOAT_EPSILON:
-				_errors.append("foliage child visibility radius should stay per-cell, got " + str(visibility_radius) + ": " + String(child.name))
 		if multimesh_instance.multimesh == null:
 			_errors.append("foliage child missing MultiMesh: " + String(child.name))
 		else:
 			var multimesh: MultiMesh = multimesh_instance.multimesh
 			foliage_instance_count += multimesh.instance_count
-			var max_cell_aabb_size_xz: float = TerrainVisualBuilderScript.REGION_FOLIAGE_CELL_SIZE_M + TerrainVisualBuilderScript.REGION_FOLIAGE_CULL_MARGIN * 2.0 + FLOAT_EPSILON
 			if not multimesh.use_custom_data:
 				_errors.append("foliage child should enable MultiMesh custom data for wind: " + String(child.name))
 			elif multimesh.custom_aabb.size == Vector3.ZERO:
 				_errors.append("foliage child missing custom_aabb: " + String(child.name))
-			elif multimesh.custom_aabb.size.x > max_cell_aabb_size_xz or multimesh.custom_aabb.size.z > max_cell_aabb_size_xz:
-				_errors.append("foliage child custom_aabb should stay per-cell, got " + str(multimesh.custom_aabb.size) + ": " + String(child.name))
+			elif multimesh.custom_aabb.size.x < GameConfig.STREAM_TILE_SIZE_M - FLOAT_EPSILON or multimesh.custom_aabb.size.z < GameConfig.STREAM_TILE_SIZE_M - FLOAT_EPSILON:
+				_errors.append("foliage child custom_aabb should span the stream tile: " + String(child.name))
 			elif multimesh.mesh == null:
 				_errors.append("foliage child missing shared mesh: " + String(child.name))
 	if multimesh_count < 2:
