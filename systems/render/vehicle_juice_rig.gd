@@ -226,6 +226,8 @@ func _on_vehicle_changed_surface(surface_id: StringName) -> void:
 
 
 func _emit_surface_burst(surface_id: StringName, position: Vector3) -> void:
+	if not GameConfig.vehicle_surface_burst_enabled:
+		return
 	if _last_speed < GameConfig.surface_burst_speed_threshold:
 		return
 	var particles: GPUParticles3D = _burst_for_surface(surface_id)
@@ -249,18 +251,20 @@ func _burst_for_surface(surface_id: StringName) -> GPUParticles3D:
 
 
 func _ensure_bursts() -> void:
+	if not GameConfig.vehicle_surface_burst_enabled:
+		return
 	if get_node_or_null(DUST_BURST_NAME) == null:
-		add_child(_make_burst(DUST_BURST_NAME, BURST_SEED_DUST, Color(0.74, 0.61, 0.42, 0.45), 0.20))
+		add_child(_make_burst(DUST_BURST_NAME, BURST_SEED_DUST, Color(0.74, 0.61, 0.42, 0.15), 0.06))
 	if get_node_or_null(MUD_BURST_NAME) == null:
-		add_child(_make_burst(MUD_BURST_NAME, BURST_SEED_MUD, Color(0.20, 0.12, 0.055, 0.62), 0.16))
+		add_child(_make_burst(MUD_BURST_NAME, BURST_SEED_MUD, Color(0.20, 0.12, 0.055, 0.15), 0.06))
 	if get_node_or_null(WATER_BURST_NAME) == null:
-		add_child(_make_burst(WATER_BURST_NAME, BURST_SEED_WATER, Color(0.48, 0.72, 0.76, 0.52), 0.18))
+		add_child(_make_burst(WATER_BURST_NAME, BURST_SEED_WATER, Color(0.48, 0.72, 0.76, 0.15), 0.06))
 
 
 func _make_burst(node_name: String, seed: int, color: Color, particle_scale: float) -> GPUParticles3D:
 	var particles: GPUParticles3D = GPUParticles3D.new()
 	particles.name = node_name
-	particles.amount = maxi(GameConfig.surface_burst_max_particles, 0)
+	particles.amount = maxi(GameConfig.surface_burst_max_particles, 1)
 	particles.lifetime = GameConfig.surface_burst_lifetime
 	particles.one_shot = true
 	particles.emitting = false
@@ -855,7 +859,7 @@ func _emit_landing_ring(wheel_index: int, wheel_surfaces: Array[StringName], whe
 		return
 	var ring: GPUParticles3D = _landing_rings[wheel_index]
 	var tint: Color = _surface_color_for_wheel(wheel_index, wheel_surfaces)
-	tint.a = clampf(tint.a + clampf(impact_speed / maxf(GameConfig.cam_shake_landing_speed_threshold * 3.0, 0.001), 0.0, 0.28), 0.0, 0.72)
+	tint.a = clampf(tint.a + clampf(impact_speed / maxf(GameConfig.cam_shake_landing_speed_threshold * 3.0, 0.001), 0.0, 0.07), 0.0, 0.22)
 	_apply_particle_tint(ring, tint)
 	ring.global_position = wheel_hit_points[wheel_index] + Vector3.UP * WHEEL_DUST_HEIGHT_OFFSET
 	ring.restart()
