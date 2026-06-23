@@ -19,9 +19,9 @@ const CONTACT_FILL_LIGHT_NAME: String = "VehicleContactFillLight"
 const SOFT_SHADOW_FILTER_QUALITY_SETTING_PATH: String = "rendering/lights_and_shadows/directional_shadow/soft_shadow_filter_quality"
 const EXPECTED_SOFT_SHADOW_FILTER_QUALITY: int = 2
 const VOLUMETRIC_FOG_VOLUME_SIZE_SETTING_PATH: String = "rendering/environment/volumetric_fog/volume_size"
-const EXPECTED_VOLUMETRIC_FOG_VOLUME_SIZE: int = 24
+const EXPECTED_VOLUMETRIC_FOG_VOLUME_SIZE: int = 16
 const VOLUMETRIC_FOG_VOLUME_DEPTH_SETTING_PATH: String = "rendering/environment/volumetric_fog/volume_depth"
-const EXPECTED_VOLUMETRIC_FOG_VOLUME_DEPTH: int = 24
+const EXPECTED_VOLUMETRIC_FOG_VOLUME_DEPTH: int = 16
 const VOLUMETRIC_FOG_USE_FILTER_SETTING_PATH: String = "rendering/environment/volumetric_fog/use_filter"
 const EXPECTED_VOLUMETRIC_FOG_USE_FILTER: int = 1
 const PEBBLE_MATERIAL_META: StringName = &"vehicle_juice_pebble_material"
@@ -77,8 +77,8 @@ func _inspect_atmosphere(world_environment: WorldEnvironment, sun: DirectionalLi
 		_errors.append("atmosphere should configure volumetric fog density")
 	if not environment.glow_enabled:
 		_errors.append("atmosphere should enable subtle golden-hour glow")
-	if environment.tonemap_mode != Environment.TONE_MAPPER_AGX:
-		_errors.append("atmosphere should use AgX tonemapping")
+	if environment.tonemap_mode != Environment.TONE_MAPPER_FILMIC:
+		_errors.append("atmosphere should use FILMIC tonemapping")
 	if environment.adjustment_enabled != GameConfig.atmosphere_grade_enabled:
 		_errors.append("atmosphere grade enabled state should follow GameConfig")
 	if absf(environment.adjustment_saturation - GameConfig.atmosphere_grade_saturation) > FLOAT_EPSILON:
@@ -115,7 +115,7 @@ func _inspect_atmosphere(world_environment: WorldEnvironment, sun: DirectionalLi
 		_errors.append("GoldenHourSun should cast long shadows")
 	if sun.rotation_degrees.distance_to(AtmosphereVisualBuilderScript.DUSK_HERO_SUN_ROTATION_DEGREES) > FLOAT_EPSILON:
 		_errors.append("GoldenHourSun dusk rotation expected " + str(AtmosphereVisualBuilderScript.DUSK_HERO_SUN_ROTATION_DEGREES) + ", got " + str(sun.rotation_degrees))
-	_require_float_close("GoldenHourSun dusk energy", sun.light_energy, AtmosphereVisualBuilderScript.DUSK_HERO_SUN_ENERGY, FLOAT_EPSILON)
+	_require_float_close("GoldenHourSun dusk energy", sun.light_energy, GameConfig.dusk_sun_energy, FLOAT_EPSILON)
 	_require_color_close("GoldenHourSun dusk color", sun.light_color, AtmosphereVisualBuilderScript.DUSK_HERO_SUN_COLOR, COLOR_TOLERANCE)
 	if absf(sun.light_angular_distance - maxf(GameConfig.atmosphere_pcss_sun_angular_distance, 0.0)) > FLOAT_EPSILON:
 		_errors.append("GoldenHourSun angular distance should follow GameConfig")
@@ -160,8 +160,8 @@ func _inspect_viewport_antialiasing() -> void:
 	if viewport == null:
 		_errors.append("Cedar scene should have a viewport for antialiasing settings")
 		return
-	if viewport.msaa_3d != Viewport.MSAA_DISABLED:
-		_errors.append("Cedar viewport should use MSAA_DISABLED")
+	if viewport.msaa_3d != GameConfig.render_msaa_3d:
+		_errors.append("Cedar viewport MSAA should follow GameConfig.render_msaa_3d")
 	if not viewport.use_taa:
 		_errors.append("Cedar viewport should enable TAA for SSAO/SSIL")
 	var soft_shadow_quality: int = int(ProjectSettings.get_setting(SOFT_SHADOW_FILTER_QUALITY_SETTING_PATH, -1))
@@ -260,7 +260,7 @@ func _inspect_dust_and_tilt_shift() -> void:
 	var orbit_camera: Camera3D = _require_node(_scene_root, "OrbitCamera") as Camera3D
 	var fpv_camera: Camera3D = _require_node(_scene_root, "FpvCamera") as Camera3D
 	_inspect_camera_far_planes(chase_camera, orbit_camera, fpv_camera)
-	if chase_camera != null:
+	if chase_camera != null and GameConfig.dust_mote_count > 0:
 		var dust: GPUParticles3D = _require_node(chase_camera, "DustMoteField") as GPUParticles3D
 		_inspect_dust_field(dust)
 	_inspect_tilt_shift_layer()
@@ -389,9 +389,10 @@ func _inspect_vehicle_juice() -> void:
 	var callable: Callable = Callable(juice_rig, "_on_vehicle_changed_surface")
 	if not EventBus.vehicle_changed_surface.is_connected(callable):
 		_errors.append("VehicleJuiceRig should listen for vehicle_changed_surface")
-	_require_surface_burst(juice_rig, "DustSurfaceBurst")
-	_require_surface_burst(juice_rig, "MudSurfaceBurst")
-	_require_surface_burst(juice_rig, "WaterSurfaceBurst")
+	if GameConfig.vehicle_surface_burst_enabled:
+		_require_surface_burst(juice_rig, "DustSurfaceBurst")
+		_require_surface_burst(juice_rig, "MudSurfaceBurst")
+		_require_surface_burst(juice_rig, "WaterSurfaceBurst")
 	_inspect_vehicle_debris_particles(juice_rig)
 	var chase_camera: Camera3D = _require_node(_scene_root, "ChaseCamera") as Camera3D
 	var visual_root: Node3D = _require_node(_scene_root, "Vehicle/PhysicsBody/VisualRoot") as Node3D
