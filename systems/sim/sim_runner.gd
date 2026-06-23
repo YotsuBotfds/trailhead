@@ -805,6 +805,8 @@ func _spawn_transform(spawn_id: String) -> Transform3D:
 	if _route != null:
 		return _route.call("spawn_transform", StringName(spawn_id))
 	if _scene_id == TerrainBuilderScript.CEDAR_HOLLOW_10M_SCENE_ID:
+		if spawn_id == "zion_pavement_probe":
+			return TerrainBuilderScript.cedar_hollow_10m_pavement_probe_spawn_transform()
 		return TerrainBuilderScript.cedar_hollow_10m_spawn_transform()
 	if _scene_id == "heightmap_ramp_probe":
 		return _heightmap_ramp_spawn_transform()

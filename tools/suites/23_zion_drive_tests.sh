@@ -1,9 +1,11 @@
+# The id-6 pavement strip this probe targets is terrain E 323831.825..323860.825,
+# N 4118512.509..4118541.509, which maps to local x 170..199 and z -60..-31.
 run_sim "$out_dir/cedar_hollow_zion_pa_rus_flat_segment.json" \
 	--scene=cedar_hollow_zion \
 	--controller=scripted \
 	--scenario=real_terrain_flat_segment \
-	--spawn=trailhead \
-	--target=0,0,-50.1 \
+	--spawn=zion_pavement_probe \
+	--target=184.5,0,-50.1 \
 	--target-radius=0.05 \
 	--seed=12345 \
 	--max-ticks=6200 \
