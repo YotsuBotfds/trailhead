@@ -94,6 +94,8 @@ func _inspect() -> void:
 	_require_surface_map()
 	_require_hud_overlays()
 	await _wait_for_streaming(streamer)
+	if visual_root != null:
+		_require_stream_hlod(streamer, visual_root)
 	_require_tile_streamer_active_set()
 	_require_visual_streamer_state(streamer)
 	_require_center_tile_inside_chase_camera_range(streamer)
@@ -150,7 +152,7 @@ func _require_stream_roots(visual_root: Node) -> void:
 	if hlod == null:
 		_errors.append("Zion streamer TerrainHLOD should be MeshInstance3D")
 	else:
-		_require_stream_hlod(hlod)
+		_require_stream_hlod_root(hlod)
 
 
 func _require_pipeline_warmup(warmup_root: Node) -> void:
@@ -201,11 +203,27 @@ func _is_grass_shader_material(material: Material) -> bool:
 	return shader_material.shader.resource_path == "res://systems/render/grass_billboard.gdshader"
 
 
-func _require_stream_hlod(hlod: MeshInstance3D) -> void:
+func _require_stream_hlod_root(hlod: MeshInstance3D) -> void:
+	if not hlod.has_meta(TerrainVisualBuilderScript.REGION_LOD_META):
+		_errors.append("Zion streamer TerrainHLOD root missing metadata")
+		return
+	if String(hlod.get_meta(TerrainVisualBuilderScript.REGION_LOD_META)) != "stream_hlod_root":
+		_errors.append("Zion streamer TerrainHLOD should start as lightweight stream_hlod_root")
+
+
+func _require_stream_hlod(streamer: Node, visual_root: Node) -> void:
+	if streamer == null:
+		return
+	var hlod: MeshInstance3D = visual_root.get_node_or_null(TerrainVisualBuilderScript.REGION_HLOD_NAME) as MeshInstance3D
+	if hlod == null:
+		return
+	var committed_chunk_count: int = int(streamer.call("stream_hlod_committed_chunk_count"))
+	if committed_chunk_count <= 1:
+		_errors.append("Zion streamer TerrainHLOD should commit multiple localized tile HLODs after streaming is ready, got " + str(committed_chunk_count))
 	var chunks: Array[MeshInstance3D] = []
 	_collect_stream_hlod_chunks(hlod, chunks)
 	if chunks.size() <= 1:
-		_errors.append("Zion streamer TerrainHLOD should be chunked into localized tile HLODs")
+		_errors.append("Zion streamer TerrainHLOD should attach multiple localized tile HLOD nodes after streaming is ready")
 	for chunk in chunks:
 		_require_stream_hlod_chunk(chunk)
 	var center_chunk: MeshInstance3D = _stream_hlod_chunk_for_cell(chunks, _expected_center_cell)
@@ -640,7 +658,7 @@ func _require_zion_foliage_placement_audits() -> void:
 
 	var stream_west_audit: Dictionary[String, Variant] = TerrainVisualBuilderScript.build_region_foliage_tile_audit(ZION_REGION_ID, FOLIAGE_STREAM_WEST_AUDIT_CELL)
 	if _require_foliage_audit_ok(stream_west_audit, "stream west foliage audit"):
-		_require_foliage_dominant_surface(stream_west_audit, "stream west foliage audit", 6)
+		_require_foliage_dominant_surface(stream_west_audit, "stream west foliage audit", 4)
 		_require_foliage_species_present(stream_west_audit, "stream west foliage audit", "grass")
 		var stream_west_grass_count: int = int(stream_west_audit.get("grass_instance_count", 0))
 		if stream_west_grass_count < FOLIAGE_MIN_STREAM_WEST_SCRUB_INSTANCES:
