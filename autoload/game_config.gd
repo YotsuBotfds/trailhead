@@ -40,6 +40,7 @@ var render_visual_tile_commits_per_frame: int = 4
 var render_stream_hlod_commits_per_frame: int = 2
 var render_visual_foliage_subcommits_per_frame: int = 16
 var stream_collision_activations_per_tick: int = 3
+var stream_collision_result_drains_per_tick: int = 8
 var stream_collision_prebuild_per_tick: int = 1
 var stream_collision_evictions_per_tick: int = 3
 var stream_spawn_no_fall_probe_ticks: int = 840

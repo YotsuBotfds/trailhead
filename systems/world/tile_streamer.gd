@@ -47,6 +47,7 @@ var _result_semaphore: Semaphore = Semaphore.new()
 var _worker_should_stop: bool = false
 var _build_queue: Array[Variant] = []
 var _result_queue: Array[Variant] = []
+var _result_drains_remaining_this_tick: int = 0
 
 
 func _ready() -> void:
@@ -163,6 +164,7 @@ func reset() -> void:
 	_withheld_cells_previous_tick.clear()
 	_withheld_cells_current_tick.clear()
 	_sort_origin_cell = Vector2i.ZERO
+	_result_drains_remaining_this_tick = 0
 	_clear_worker_queues()
 
 
@@ -215,6 +217,7 @@ func _physics_process(_delta: float) -> void:
 	if _region_id.is_empty():
 		return
 	_stream_tick += 1
+	_reset_result_drain_budget()
 	_begin_withhold_tracking_tick()
 	_drain_prebuild_queue()
 
@@ -222,20 +225,25 @@ func _physics_process(_delta: float) -> void:
 	_current_cell = _cell_for_world_position(sampled_world_position)
 	var desired_active_cells: Array[Vector2i] = _cells_in_radius(_current_cell, GameConfig.STREAM_ACTIVE_RADIUS)
 	var desired_prefetch_cells: Array[Vector2i] = _prefetch_cells_for_sample(sampled_world_position, _current_cell)
+	var travel_ahead_prebuild_cells: Array[Vector2i] = _travel_ahead_prebuild_cells(sampled_world_position, _current_cell)
 	var current_active_cells: Array[Vector2i] = _sorted_body_cells()
 
 	_last_to_load = _cell_difference(desired_active_cells, current_active_cells)
 	_last_to_unload = _cell_difference(current_active_cells, desired_active_cells)
 
 	_drain_worker_results()
+	_prioritize_prebuilds_for_cells(travel_ahead_prebuild_cells)
 	_cancel_pending_evictions_for_cells(desired_active_cells)
 	_process_unloads(_last_to_unload)
 	_forget_ready_cells_outside_prefetch(desired_prefetch_cells)
 	_cancel_prefetch_builds_outside(desired_prefetch_cells)
+	_enqueue_builds_for_cells(travel_ahead_prebuild_cells)
 	_enqueue_builds_for_cells(desired_prefetch_cells)
+	_prioritize_queued_builds_for_cells(travel_ahead_prebuild_cells)
 	if _workers.is_empty():
 		_process_build_queue_synchronously()
 	_drain_worker_results()
+	_prioritize_prebuilds_for_cells(travel_ahead_prebuild_cells)
 	_process_loads(_last_to_load)
 	_record_sampled_world_position(sampled_world_position)
 
@@ -467,12 +475,53 @@ func _cancel_build(cell: Vector2i) -> void:
 	_work_mutex.unlock()
 
 
+func _prioritize_queued_builds_for_cells(cells: Array[Vector2i]) -> void:
+	if _workers.is_empty():
+		return
+	if cells.is_empty():
+		return
+	_work_mutex.lock()
+	for index in range(cells.size() - 1, -1, -1):
+		var cell: Vector2i = cells[index]
+		var priority_job_index: int = -1
+		var priority_job: Dictionary = {}
+		for job_index in range(_build_queue.size()):
+			var job: Dictionary = _build_queue[job_index] as Dictionary
+			if not job.has("cell") or not job.has("generation"):
+				continue
+			var job_cell: Vector2i = job["cell"] as Vector2i
+			var generation: int = int(job["generation"])
+			if job_cell == cell and generation == _stream_generation:
+				priority_job_index = job_index
+				priority_job = job
+				break
+		if priority_job_index < 0:
+			continue
+		_build_queue.remove_at(priority_job_index)
+		_build_queue.push_front(priority_job)
+	_work_mutex.unlock()
+
+
+func _reset_result_drain_budget() -> void:
+	if _workers.is_empty():
+		_result_drains_remaining_this_tick = 0
+		return
+	_result_drains_remaining_this_tick = maxi(GameConfig.stream_collision_result_drains_per_tick, 1)
+
+
 func _drain_worker_results() -> void:
 	var results: Array[Dictionary] = []
 	_work_mutex.lock()
-	for result in _result_queue:
-		results.append(result)
-	_result_queue.clear()
+	if _workers.is_empty():
+		for result in _result_queue:
+			results.append(result)
+		_result_queue.clear()
+	else:
+		var budget: int = maxi(_result_drains_remaining_this_tick, 0)
+		while budget > 0 and not _result_queue.is_empty():
+			results.append(_result_queue.pop_front() as Dictionary)
+			budget -= 1
+		_result_drains_remaining_this_tick = budget
 	_work_mutex.unlock()
 
 	results.sort_custom(Callable(self, "_build_result_less"))
@@ -519,17 +568,37 @@ func _drain_prebuild_queue() -> void:
 
 
 func _enqueue_prebuild(cell: Vector2i) -> void:
-	if _active_bodies_by_cell.has(cell):
-		return
-	if not _ready_flags.has(cell):
-		return
-	if not _heightmap_data_by_cell.has(cell):
-		return
-	if _prebuilt_shapes_by_cell.has(cell):
+	if not _can_prebuild_cell(cell):
 		return
 	if _prebuild_queue.has(cell):
 		return
 	_prebuild_queue.append(cell)
+
+
+func _prioritize_prebuilds_for_cells(cells: Array[Vector2i]) -> void:
+	if _workers.is_empty():
+		return
+	for index in range(cells.size() - 1, -1, -1):
+		_prioritize_prebuild(cells[index])
+
+
+func _prioritize_prebuild(cell: Vector2i) -> void:
+	if not _can_prebuild_cell(cell):
+		return
+	_prebuild_queue.erase(cell)
+	_prebuild_queue.push_front(cell)
+
+
+func _can_prebuild_cell(cell: Vector2i) -> bool:
+	if _active_bodies_by_cell.has(cell):
+		return false
+	if not _ready_flags.has(cell):
+		return false
+	if not _heightmap_data_by_cell.has(cell):
+		return false
+	if _prebuilt_shapes_by_cell.has(cell):
+		return false
+	return true
 
 
 func _remove_prebuild_state(cell: Vector2i) -> void:
@@ -600,11 +669,7 @@ func _start_workers() -> void:
 	_worker_should_stop = false
 	if _worker_count == 0:
 		return
-	# See terrain_visual_streamer: low priority in-game (E-cores), NORMAL headless
-	# so the busy-loop test fixtures don't starve the build workers.
-	var worker_priority: int = Thread.PRIORITY_LOW
-	if DisplayServer.get_name() == "headless":
-		worker_priority = Thread.PRIORITY_NORMAL
+	var worker_priority: int = Thread.PRIORITY_NORMAL
 	for _index in range(_worker_count):
 		var thread: Thread = Thread.new()
 		var start_error: Error = thread.start(Callable(self, "_worker_loop"), worker_priority)
@@ -740,8 +805,7 @@ func _prefetch_cells_for_sample(world_position: Vector3, center_cell: Vector2i) 
 		return cells
 	if not _has_last_sampled_world_position:
 		return cells
-	var travel_delta: Vector3 = world_position - _last_sampled_world_position
-	travel_delta.y = 0.0
+	var travel_delta: Vector3 = _travel_delta_for_sample(world_position)
 	if travel_delta.length() < GameConfig.STREAM_PREFETCH_TRAVEL_MIN_DISTANCE_M:
 		return cells
 	var travel_cell_step: Vector2i = _travel_cell_step(travel_delta)
@@ -753,6 +817,69 @@ func _prefetch_cells_for_sample(world_position: Vector3, center_cell: Vector2i) 
 		_append_unique_cells(cells, _cells_in_radius(bias_center, GameConfig.STREAM_ACTIVE_RADIUS))
 	_sort_cells(cells)
 	return cells
+
+
+func _travel_ahead_prebuild_cells(world_position: Vector3, center_cell: Vector2i) -> Array[Vector2i]:
+	var cells: Array[Vector2i] = []
+	if _workers.is_empty():
+		return cells
+	if _use_fixed_world_position:
+		return cells
+	var travel_delta: Vector3 = _travel_delta_for_sample(world_position)
+	if travel_delta.length() < GameConfig.STREAM_PREFETCH_TRAVEL_MIN_DISTANCE_M:
+		return cells
+	var travel_cell_step: Vector2i = _travel_cell_step(travel_delta)
+	if travel_cell_step == Vector2i.ZERO:
+		return cells
+	var lead_cells: int = _speed_scaled_prebuild_lead_cells(_horizontal_speed_mps(travel_delta))
+	for step in range(1, lead_cells + 1):
+		cells.append(center_cell + Vector2i(travel_cell_step.x * step, travel_cell_step.y * step))
+	return cells
+
+
+func _travel_delta_for_sample(world_position: Vector3) -> Vector3:
+	if not _workers.is_empty():
+		var followed_velocity: Vector3 = _followed_horizontal_velocity()
+		if followed_velocity.length() > 0.0:
+			return followed_velocity * GameConfig.FIXED_DT
+	if not _has_last_sampled_world_position:
+		return Vector3.ZERO
+	var travel_delta: Vector3 = world_position - _last_sampled_world_position
+	travel_delta.y = 0.0
+	return travel_delta
+
+
+func _followed_horizontal_velocity() -> Vector3:
+	if _use_fixed_world_position:
+		return Vector3.ZERO
+	if _followed_node == null:
+		return Vector3.ZERO
+	var rigid_body: RigidBody3D = _followed_node as RigidBody3D
+	if rigid_body != null:
+		return Vector3(rigid_body.linear_velocity.x, 0.0, rigid_body.linear_velocity.z)
+	var character_body: CharacterBody3D = _followed_node as CharacterBody3D
+	if character_body != null:
+		return Vector3(character_body.velocity.x, 0.0, character_body.velocity.z)
+	return Vector3.ZERO
+
+
+func _horizontal_speed_mps(travel_delta: Vector3) -> float:
+	if not _workers.is_empty():
+		var followed_velocity: Vector3 = _followed_horizontal_velocity()
+		if followed_velocity.length() > 0.0:
+			return followed_velocity.length()
+	if not _has_last_sampled_world_position:
+		return 0.0
+	return travel_delta.length() / maxf(GameConfig.FIXED_DT, 0.001)
+
+
+func _speed_scaled_prebuild_lead_cells(horizontal_speed_mps: float) -> int:
+	if horizontal_speed_mps <= 0.0:
+		return 0
+	var speed_ratio: float = clampf(horizontal_speed_mps / maxf(GameConfig.max_speed, 0.001), 0.0, 1.0)
+	var radius: int = maxi(GameConfig.STREAM_PREFETCH_RADIUS, 0)
+	var lead_cells: int = int(ceilf(float(radius) * speed_ratio))
+	return clampi(lead_cells, 0, radius)
 
 
 func _travel_cell_step(travel_delta: Vector3) -> Vector2i:
