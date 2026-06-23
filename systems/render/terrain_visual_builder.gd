@@ -219,9 +219,9 @@ const RIPARIAN_GRASS_OUTER_M: float = 130.0
 #     RIPARIAN_GRASS_OUTER_M the bench selector takes back over; cells outside the core keep the
 #     default cap.
 const RIPARIAN_GALLERY_CORE_OUTER_M: float = 70.0
-const RIPARIAN_GALLERY_LOD0_CORE_BASE_COUNT: int = 64
+const RIPARIAN_GALLERY_LOD0_CORE_BASE_COUNT: int = 44
 const RIPARIAN_GALLERY_LOD1_CORE_BASE_COUNT: int = 20
-const RIPARIAN_COTTONWOOD_CORE_DENSITY_MUL: float = 3.0
+const RIPARIAN_COTTONWOOD_CORE_DENSITY_MUL: float = 1.9
 const RIPARIAN_WILLOW_CORE_DENSITY_MUL: float = 2.6
 const RIPARIAN_GRASS_CORE_DENSITY_MUL: float = 1.55
 const ZION_RIVER_THALWEG_XZ: Array[Vector2] = [
@@ -2171,8 +2171,8 @@ static func _build_region_foliage_cell_data_with_audit(tile_data_by_cell: Dictio
 		var width_scale: float = 0.82 + _region_foliage_unit(foliage_cell, lod_index, attempt, 5) * 0.42
 		var height_scale: float = 0.78 + _region_foliage_unit(foliage_cell, lod_index, attempt, 6) * 0.54
 		if _foliage_species_uses_source_material(species_id):
-			width_scale = 0.92 + _region_foliage_unit(foliage_cell, lod_index, attempt, 5) * 0.18
-			height_scale = 0.94 + _region_foliage_unit(foliage_cell, lod_index, attempt, 6) * 0.18
+			width_scale = 0.84 + _region_foliage_unit(foliage_cell, lod_index, attempt, 5) * 0.34
+			height_scale = 0.82 + _region_foliage_unit(foliage_cell, lod_index, attempt, 6) * 0.42
 		elif species_id == FOLIAGE_SPECIES_BOULDER:
 			width_scale = lerpf(FOLIAGE_BOULDER_WIDTH_MIN, FOLIAGE_BOULDER_WIDTH_MAX, _region_foliage_unit(foliage_cell, lod_index, attempt, 5))
 			height_scale = lerpf(FOLIAGE_BOULDER_HEIGHT_MIN, FOLIAGE_BOULDER_HEIGHT_MAX, _region_foliage_unit(foliage_cell, lod_index, attempt, 6))
@@ -2367,7 +2367,7 @@ static func _add_foliage_species_cell_from_data(parent: Node3D, cell_data: Folia
 		instance.visibility_range_end = foliage_lod1_visibility_range_end_for_species(cell_radius, species_id)
 		instance.visibility_range_begin_margin = fade_margin
 		instance.visibility_range_end_margin = fade_margin
-	instance.cast_shadow = cell_data.cast_shadow
+	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if cell_data.lod_index == 0 and _foliage_species_uses_source_material(species_id) else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	instance.set_meta(REGION_LOD_META, "foliage_lod" + str(cell_data.lod_index))
 	instance.set_meta(&"trailhead_foliage_species", species_data.species_id)
 	instance.set_meta(VISIBILITY_RADIUS_META, cell_data.visibility_radius)
