@@ -108,6 +108,7 @@ window/size/resizable=true
 window/size/window_width=1920
 window/size/window_height=1080
 window/stretch/mode="canvas_items"
+window/dpi/allow_hidpi=false
 
 [physics]
 

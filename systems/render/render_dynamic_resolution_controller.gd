@@ -118,11 +118,27 @@ func _target_frame_ms() -> float:
 
 
 func _min_scale() -> float:
-	return clampf(GameConfig.render_dynamic_resolution_min_scale, 0.25, 1.0)
+	var cfg_min: float = clampf(GameConfig.render_dynamic_resolution_min_scale, 0.25, 1.0)
+	return clampf(minf(cfg_min, _cap_scale()), 0.25, 1.0)
 
 
 func _max_scale() -> float:
-	return clampf(GameConfig.render_dynamic_resolution_max_scale, _min_scale(), 1.0)
+	return clampf(minf(GameConfig.render_dynamic_resolution_max_scale, _cap_scale()), _min_scale(), 1.0)
+
+
+func _cap_scale() -> float:
+	# Cap the 3D render HEIGHT at render_target_max_height px so a maximized / Retina window
+	# renders ~1080p (FSR upscales to fill it) instead of the full panel (~3x the cost).
+	# Disabled in manual test mode so the fixture's band assertions are unaffected.
+	if _manual_test_mode or _viewport == null:
+		return 1.0
+	var target_h: float = maxf(GameConfig.render_target_max_height, 0.0)
+	if target_h <= 0.0:
+		return 1.0
+	var out_h: float = _viewport.get_visible_rect().size.y
+	if out_h <= target_h:
+		return 1.0
+	return clampf(target_h / out_h, 0.25, 1.0)
 
 
 func _ema_alpha() -> float:

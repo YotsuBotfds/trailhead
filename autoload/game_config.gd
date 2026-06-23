@@ -71,6 +71,11 @@ var render_dynamic_resolution_enabled: bool = true
 # so the steady-state/rest target is native 1080p.
 var render_dynamic_resolution_min_scale: float = 0.85
 var render_dynamic_resolution_max_scale: float = 1.0
+# Hard ceiling on the 3D render HEIGHT in px (FSR upscales to the window). macOS reopens the
+# window maximized on Retina, so without this the 3D renders at the full ~3K panel (~3x the
+# 1080p cost). The dynamic-res controller collapses its scale band to hit this when the window
+# is larger than the cap. 0 disables the cap.
+var render_target_max_height: float = 1080.0
 var render_dynamic_resolution_step_down: float = 0.03
 var render_dynamic_resolution_step_up: float = 0.01
 var render_dynamic_resolution_ema_alpha: float = 0.18
