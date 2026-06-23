@@ -169,7 +169,7 @@ static func _apply_volumetric_fog(environment: Environment, mood: int) -> void:
 
 static func _apply_golden_hour_glow(environment: Environment, mood: int) -> void:
 	environment.glow_enabled = true
-	environment.glow_normalized = true
+	environment.glow_normalized = false
 	environment.glow_bloom = GLOW_BLOOM
 	if mood == MOOD_NIGHT:
 		environment.glow_intensity = NIGHT_GLOW_INTENSITY
@@ -186,7 +186,7 @@ static func _apply_golden_hour_glow(environment: Environment, mood: int) -> void
 
 
 static func _apply_color_grade(environment: Environment) -> void:
-	environment.tonemap_mode = Environment.TONE_MAPPER_AGX
+	environment.tonemap_mode = Environment.TONE_MAPPER_FILMIC
 	environment.adjustment_enabled = GameConfig.atmosphere_grade_enabled
 	environment.adjustment_saturation = GameConfig.atmosphere_grade_saturation
 	environment.adjustment_contrast = GameConfig.atmosphere_grade_contrast
