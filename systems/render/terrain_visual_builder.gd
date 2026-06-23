@@ -14,6 +14,13 @@ const YuccaTreeScene: PackedScene = preload("res://assets/models/foliage/yucca.g
 const DETAIL_MASK_TEXTURE_PATH: String = "res://assets/textures/surface_visuals/generated/terrain_detail_mask.png"
 const GENERATED_SURFACE_TEXTURE_DIR: String = "res://assets/textures/surface_visuals/generated/"
 const TEXTURE_SOURCE_PATH_META: StringName = &"trailhead_source_path"
+const SURFACE_INDEX_LAYER_COUNT: int = 8
+const SURFACE_INDEX_ARRAY_CACHE_DIR: String = "user://trailhead/terrain_surface_index_arrays"
+const SURFACE_INDEX_ARRAY_CACHE_VERSION: String = "surface-index-array-cache-v1"
+const SURFACE_INDEX_ALBEDO_ARRAY_CACHE_KIND: String = "albedo"
+const SURFACE_INDEX_NORMAL_ARRAY_CACHE_KIND: String = "normal"
+const SURFACE_INDEX_ARRAY_IMAGE_FORMAT_NAME: String = "RGBA8"
+const SURFACE_INDEX_ARRAY_RESIZE_FILTER_NAME: String = "LANCZOS"
 
 static var _terrain_material_cache: Dictionary[StringName, StandardMaterial3D] = {}
 static var _surface_index_material_cache: Dictionary[String, ShaderMaterial] = {}
@@ -1554,8 +1561,14 @@ static func _surface_index_albedo_array() -> Texture2DArray:
 	if _surface_index_albedo_array_cache != null:
 		return _surface_index_albedo_array_cache
 	var target_size: Vector2i = _surface_index_albedo_target_size()
+	var cache_path: String = _surface_index_array_cache_path(SURFACE_INDEX_ALBEDO_ARRAY_CACHE_KIND, target_size)
+	var cached_array: Texture2DArray = _load_surface_index_array_cache(cache_path)
+	if cached_array != null:
+		cached_array.resource_name = "terrain_surface_index_albedo_array"
+		_surface_index_albedo_array_cache = cached_array
+		return _surface_index_albedo_array_cache
 	var images: Array[Image] = []
-	for id_value in range(8):
+	for id_value in range(SURFACE_INDEX_LAYER_COUNT):
 		var image: Image = _surface_index_albedo_image(id_value, target_size)
 		if image == null:
 			return null
@@ -1566,6 +1579,7 @@ static func _surface_index_albedo_array() -> Texture2DArray:
 		push_error("Terrain surface-index albedo array failed to create: " + error_string(create_error))
 		return null
 	texture_array.resource_name = "terrain_surface_index_albedo_array"
+	_save_surface_index_array_cache(texture_array, cache_path)
 	_surface_index_albedo_array_cache = texture_array
 	return _surface_index_albedo_array_cache
 
@@ -1574,8 +1588,14 @@ static func _surface_index_normal_array() -> Texture2DArray:
 	if _surface_index_normal_array_cache != null:
 		return _surface_index_normal_array_cache
 	var target_size: Vector2i = _surface_index_normal_target_size()
+	var cache_path: String = _surface_index_array_cache_path(SURFACE_INDEX_NORMAL_ARRAY_CACHE_KIND, target_size)
+	var cached_array: Texture2DArray = _load_surface_index_array_cache(cache_path)
+	if cached_array != null:
+		cached_array.resource_name = "terrain_surface_index_normal_array"
+		_surface_index_normal_array_cache = cached_array
+		return _surface_index_normal_array_cache
 	var images: Array[Image] = []
-	for id_value in range(8):
+	for id_value in range(SURFACE_INDEX_LAYER_COUNT):
 		var image: Image = _surface_index_normal_image(id_value, target_size)
 		if image == null:
 			return null
@@ -1586,12 +1606,13 @@ static func _surface_index_normal_array() -> Texture2DArray:
 		push_error("Terrain surface-index normal array failed to create: " + error_string(create_error))
 		return null
 	texture_array.resource_name = "terrain_surface_index_normal_array"
+	_save_surface_index_array_cache(texture_array, cache_path)
 	_surface_index_normal_array_cache = texture_array
 	return _surface_index_normal_array_cache
 
 
 static func _surface_index_albedo_target_size() -> Vector2i:
-	for id_value in range(8):
+	for id_value in range(SURFACE_INDEX_LAYER_COUNT):
 		var image: Image = _load_surface_index_source_albedo_image(id_value)
 		if image == null:
 			continue
@@ -1600,12 +1621,122 @@ static func _surface_index_albedo_target_size() -> Vector2i:
 
 
 static func _surface_index_normal_target_size() -> Vector2i:
-	for id_value in range(8):
+	for id_value in range(SURFACE_INDEX_LAYER_COUNT):
 		var image: Image = _load_surface_index_source_normal_image(id_value)
 		if image == null:
 			continue
 		return Vector2i(image.get_width(), image.get_height())
 	return Vector2i(4, 4)
+
+
+static func _surface_index_array_cache_path(kind: String, target_size: Vector2i) -> String:
+	var cache_key: String = _surface_index_array_cache_key(kind, target_size)
+	if cache_key.is_empty():
+		return ""
+	var file_name: String = "terrain_surface_index_" + kind + "_array_" + cache_key + ".res"
+	return SURFACE_INDEX_ARRAY_CACHE_DIR.path_join(file_name)
+
+
+static func _surface_index_array_cache_key(kind: String, target_size: Vector2i) -> String:
+	var parts: PackedStringArray = PackedStringArray()
+	parts.append(SURFACE_INDEX_ARRAY_CACHE_VERSION)
+	parts.append("kind=" + kind)
+	parts.append("layers=" + str(SURFACE_INDEX_LAYER_COUNT))
+	parts.append("target_size=" + str(target_size.x) + "x" + str(target_size.y))
+	parts.append("format=" + SURFACE_INDEX_ARRAY_IMAGE_FORMAT_NAME)
+	parts.append("mipmaps=generated")
+	parts.append("resize_filter=" + SURFACE_INDEX_ARRAY_RESIZE_FILTER_NAME)
+	parts.append("palette_path=" + TerrainSurfacePaletteResource.resource_path)
+	parts.append("palette_md5=" + _file_md5_or_missing(TerrainSurfacePaletteResource.resource_path))
+	parts.append("catalog_path=" + SurfaceVisualCatalogResource.resource_path)
+	parts.append("catalog_md5=" + _file_md5_or_missing(SurfaceVisualCatalogResource.resource_path))
+	for id_value in range(SURFACE_INDEX_LAYER_COUNT):
+		parts.append(_surface_index_array_cache_layer_signature(kind, id_value))
+	return "\n".join(parts).sha256_text()
+
+
+static func _surface_index_array_cache_layer_signature(kind: String, id_value: int) -> String:
+	var parts: PackedStringArray = PackedStringArray()
+	var surface_id: StringName = _surface_id_for_value(id_value)
+	parts.append("id=" + str(id_value))
+	parts.append("surface_id=" + String(surface_id))
+	var visual_def: Resource = SurfaceVisualCatalogResource.call("default_visual_for_surface_id", surface_id)
+	if visual_def == null:
+		parts.append("visual=<null>")
+		parts.append("fallback=" + _surface_index_array_fallback_signature(kind, id_value))
+		return "|".join(parts)
+	var visual_id: StringName = visual_def.get("id")
+	var texture_path: String = _surface_index_array_texture_path(kind, visual_def)
+	parts.append("visual_id=" + String(visual_id))
+	parts.append("texture_path=" + texture_path)
+	if texture_path.is_empty():
+		parts.append("fallback=" + _surface_index_array_fallback_signature(kind, id_value))
+	else:
+		parts.append("source_md5=" + _file_md5_or_missing(texture_path))
+		parts.append("import_md5=" + _file_md5_or_missing(texture_path + ".import"))
+	return "|".join(parts)
+
+
+static func _surface_index_array_texture_path(kind: String, visual_def: Resource) -> String:
+	if kind == SURFACE_INDEX_ALBEDO_ARRAY_CACHE_KIND:
+		return String(visual_def.get("albedo_texture_path"))
+	if kind == SURFACE_INDEX_NORMAL_ARRAY_CACHE_KIND:
+		return String(visual_def.get("normal_texture_path"))
+	return ""
+
+
+static func _surface_index_array_fallback_signature(kind: String, id_value: int) -> String:
+	if kind == SURFACE_INDEX_ALBEDO_ARRAY_CACHE_KIND:
+		return str(_surface_index_fallback_color(id_value))
+	if kind == SURFACE_INDEX_NORMAL_ARRAY_CACHE_KIND:
+		return str(Color(0.5, 0.5, 1.0, 1.0))
+	return "<unknown>"
+
+
+static func _load_surface_index_array_cache(cache_path: String) -> Texture2DArray:
+	if cache_path.is_empty():
+		return null
+	var absolute_path: String = _globalize_resource_path(cache_path)
+	if not FileAccess.file_exists(absolute_path):
+		return null
+	var resource: Resource = ResourceLoader.load(cache_path) as Resource
+	var texture_array: Texture2DArray = resource as Texture2DArray
+	if texture_array == null:
+		push_warning("Terrain surface-index texture-array cache ignored because it is not a Texture2DArray: " + cache_path)
+		return null
+	return texture_array
+
+
+static func _save_surface_index_array_cache(texture_array: Texture2DArray, cache_path: String) -> void:
+	if texture_array == null or cache_path.is_empty():
+		return
+	var absolute_dir: String = _globalize_resource_path(SURFACE_INDEX_ARRAY_CACHE_DIR)
+	var dir_error: Error = DirAccess.make_dir_recursive_absolute(absolute_dir)
+	if dir_error != OK:
+		push_warning("Terrain surface-index texture-array cache directory failed: " + error_string(dir_error))
+		return
+	var absolute_path: String = _globalize_resource_path(cache_path)
+	var save_error: Error = ResourceSaver.save(texture_array, absolute_path)
+	if save_error != OK:
+		push_warning("Terrain surface-index texture-array cache save failed: " + error_string(save_error))
+
+
+static func _file_md5_or_missing(path: String) -> String:
+	if path.is_empty():
+		return "<empty>"
+	var absolute_path: String = _globalize_resource_path(path)
+	if not FileAccess.file_exists(absolute_path):
+		return "<missing>"
+	var md5: String = FileAccess.get_md5(absolute_path)
+	if md5.is_empty():
+		return "<hash-error>"
+	return md5
+
+
+static func _globalize_resource_path(path: String) -> String:
+	if path.begins_with("res://") or path.begins_with("user://"):
+		return ProjectSettings.globalize_path(path)
+	return path
 
 
 static func _surface_index_albedo_image(id_value: int, target_size: Vector2i) -> Image:
