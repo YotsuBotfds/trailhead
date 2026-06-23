@@ -27,7 +27,7 @@ const ZION_SAMPLE_POINTS: Array[Vector3] = [
 	Vector3(324860.825, 0.0, 4120711.509),
 	Vector3(325231.825, 0.0, 4120501.509),
 	Vector3(325411.825, 0.0, 4122132.509),
-	Vector3(324070.825, 0.0, 4119301.509)
+	Vector3(323846.325, 0.0, 4118527.009)
 ]
 
 var _surface_map: Node = null
