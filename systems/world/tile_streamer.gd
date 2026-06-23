@@ -252,9 +252,19 @@ func _process_unloads(cells: Array[Vector2i]) -> void:
 
 
 func _process_loads(cells: Array[Vector2i]) -> void:
+	var has_missing_cells: bool = false
 	for cell in cells:
 		if not _ready_flags.has(cell):
 			_enqueue_build(cell)
+			has_missing_cells = true
+	# Multi-worker production activates ready cells (including the cell under the
+	# car) even while other cells are still building, so a fast car never stalls
+	# on a fringe-cell load (the accel-freeze fix). Single-/zero-worker configs —
+	# every headless golden, including the workers=1 Zion surface drives — keep
+	# the original all-or-nothing gate so their deterministic baselines are
+	# byte-identical.
+	if _worker_count < 2 and has_missing_cells:
+		return
 	var checked_cells: Dictionary[Vector2i, bool] = {}
 	if cells.has(_current_cell):
 		checked_cells[_current_cell] = true
