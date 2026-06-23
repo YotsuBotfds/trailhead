@@ -6,7 +6,8 @@ const DEFAULT_COLLISION_MASK: int = 1
 const TILE_KEY_SEPARATOR: String = "_"
 const HEIGHTMAP_SIDE_CAR_PATH: String = "tile.json"
 const HEIGHTMAP_BIN_PATH: String = "heightmap.bin"
-const DEFAULT_WORKER_COUNT: int = 1
+const DEFAULT_WORKER_COUNT: int = 2
+const MAX_WORKER_COUNT: int = 3
 
 var _region_id: String = ""
 var _followed_node: Node3D = null
@@ -18,7 +19,7 @@ var _streaming_enabled: bool = false
 var _current_cell: Vector2i = Vector2i.ZERO
 var _stream_generation: int = 0
 var _stream_tick: int = 0
-var _worker_count: int = DEFAULT_WORKER_COUNT
+var _worker_count: int = clampi(OS.get_processor_count() / 4, DEFAULT_WORKER_COUNT, MAX_WORKER_COUNT)
 var _forced_unready_ticks_by_cell: Dictionary[Vector2i, int] = {}
 var _withheld_cells_previous_tick: Dictionary[Vector2i, bool] = {}
 var _withheld_cells_current_tick: Dictionary[Vector2i, bool] = {}
@@ -251,13 +252,9 @@ func _process_unloads(cells: Array[Vector2i]) -> void:
 
 
 func _process_loads(cells: Array[Vector2i]) -> void:
-	var missing_cells: Array[Vector2i] = []
 	for cell in cells:
 		if not _ready_flags.has(cell):
 			_enqueue_build(cell)
-			missing_cells.append(cell)
-	if not missing_cells.is_empty():
-		return
 	var checked_cells: Dictionary[Vector2i, bool] = {}
 	if cells.has(_current_cell):
 		checked_cells[_current_cell] = true
@@ -278,25 +275,25 @@ func _process_loads(cells: Array[Vector2i]) -> void:
 		checked_cells[cell] = true
 		if _should_withhold_activation_for_tests(cell):
 			continue
-		_activate_cell(cell)
-		budget_remaining -= 1
+		if _activate_cell(cell):
+			budget_remaining -= 1
 
 	if budget_remaining <= 0:
 		_activate_just_cleared_withheld_cells(remaining_cells, checked_cells)
 
 
-func _activate_cell(cell: Vector2i) -> void:
+func _activate_cell(cell: Vector2i) -> bool:
 	if _active_bodies_by_cell.has(cell):
-		return
+		return false
 	if not _heightmap_data_by_cell.has(cell):
-		return
+		return false
 
 	var shape: HeightMapShape3D
 	var prebuilt_shape: Variant = _prebuilt_shapes_by_cell.get(cell, null)
 	if prebuilt_shape == null:
 		if cell != _current_cell:
 			_enqueue_prebuild(cell)
-			return
+			return false
 		shape = _shape_from_heightmap_data(_heightmap_data_by_cell[cell])
 	else:
 		shape = prebuilt_shape as HeightMapShape3D
@@ -315,6 +312,7 @@ func _activate_cell(cell: Vector2i) -> void:
 	_active_shapes_by_cell[cell] = shape
 	_activated_ticks_by_cell[cell] = _stream_tick
 	EventBus.world_tile_activated.emit(cell)
+	return true
 
 
 func _shape_from_heightmap_data(heightmap_data: Dictionary) -> HeightMapShape3D:

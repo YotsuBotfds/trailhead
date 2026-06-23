@@ -22,6 +22,7 @@ assert_metrics "$out_dir/tile_streamer_seam_above_terrain_workers1.json" \
 	--metric-max=max_flipped_ticks:0 \
 	--metric-max=max_position_delta_m:0.35 \
 	--metric-min=streaming_collision_freeze_ticks:1 \
+	--metric-max=streaming_collision_max_consecutive_freeze_ticks:240 \
 	--metric-min=streaming_collision_release_count:1 \
 	--metric-max=streaming_collision_release_same_tick_as_activation_count:0 \
 	--metric-min=streaming_collision_release_min_activation_lag_ticks:1 \
