@@ -11,7 +11,6 @@ const REGION_LOD_META: StringName = &"trailhead_region_lod"
 const VISIBILITY_RADIUS_META: StringName = &"trailhead_visibility_radius"
 const EXPECTED_FOLIAGE_LOD0_META: String = "foliage_lod0"
 const EXPECTED_FOLIAGE_LOD1_META: String = "foliage_lod1"
-const EXPECTED_FOLIAGE_LOD0_SHADOW_CASTING: int = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 const EXPECTED_FOLIAGE_LOD1_SHADOW_CASTING: int = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 const FOLIAGE_SPECIES_META: StringName = &"trailhead_foliage_species"
 
@@ -139,8 +138,9 @@ func _inspect_foliage_cells(foliage_root: Node) -> void:
 			_errors.append(label + " visibility_range_end_margin expected " + str(expected_margin) + ", got " + str(multimesh_instance.visibility_range_end_margin))
 		if lod_index == 0:
 			lod0_count += 1
-			if multimesh_instance.cast_shadow != EXPECTED_FOLIAGE_LOD0_SHADOW_CASTING:
-				_errors.append(label + " LOD0 cast_shadow expected OFF, got " + str(multimesh_instance.cast_shadow))
+			var expected_lod0_shadow: int = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if TerrainVisualBuilderScript._foliage_species_uses_source_material(species_id) else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			if multimesh_instance.cast_shadow != expected_lod0_shadow:
+				_errors.append(label + " LOD0 cast_shadow expected " + str(expected_lod0_shadow) + ", got " + str(multimesh_instance.cast_shadow))
 			if absf(multimesh_instance.visibility_range_begin) > FLOAT_EPSILON:
 				_errors.append(label + " LOD0 visibility_range_begin expected 0, got " + str(multimesh_instance.visibility_range_begin))
 			var expected_lod0_end: float = TerrainVisualBuilderScript.foliage_lod0_visibility_range_end_for_species(visibility_radius, species_id)
