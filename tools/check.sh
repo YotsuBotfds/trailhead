@@ -42,9 +42,30 @@ check "sim/render determinism boundary" sh -c '
 		exit 1
 	fi
 '
+check "no wall-clock in sim/vehicle/world" sh -c '! rg -n -P "\bTime\.|OS\.get_unix_time|OS\.get_system_time|OS\.get_datetime|get_ticks_usec|get_ticks_msec" systems/sim systems/vehicle systems/world --glob "*.gd"'
 check "no sim-path render asset dependencies" sh -c '! rg -n "res://(systems/render|assets/models)" systems/sim systems/vehicle systems/world --glob "*.gd"'
 check "Python tool syntax" sh -c 'python3 -m py_compile tools/*.py'
 check "shell tool syntax" sh -c 'for path in tools/*.sh; do sh -n "$path" || exit 1; done'
+check "every inspector/fixture is suite-wired or allowlisted" sh -c '
+	missing="" &&
+	for file in tools/*_inspector.gd tools/*_fixture.gd tools/*_fixture.py; do
+		[ -e "$file" ] || continue
+		base="${file##*/}"
+		stem="${base%.*}"
+		if rg -q "$stem" tools/suites/*.sh; then
+			continue
+		fi
+		if rg -q -x "$stem" tools/manual_tools_allowlist.txt; then
+			continue
+		fi
+		missing="${missing}${file}
+"
+	done
+	if [ -n "$missing" ]; then
+		printf "%s" "$missing" >&2
+		exit 1
+	fi
+'
 check "Zion bake determinism" python3 tools/check_zion_bake_determinism.py
 check "collision tile integrity" python3 tools/check_collision_tile_integrity.py data/regions/spike_1km
 check "Zion collision tile integrity" python3 tools/check_collision_tile_integrity.py data/regions/cedar_hollow_zion

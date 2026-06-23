@@ -39,3 +39,6 @@ printf 'run: chase camera rod (FX-25 horizontal-rod guard)\n'
 
 printf 'run: chase camera stop-lock (stationary freeze guard)\n'
 "$godot_bin" --headless --path . res://tools/chase_camera_stop_lock_fixture.tscn
+
+printf 'run: skyline height manifest guard\n'
+"$godot_bin" --headless --path . res://tools/skyline_height_guard_fixture.tscn

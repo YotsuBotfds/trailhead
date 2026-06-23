@@ -1,0 +1,7 @@
+# Inspector/fixture stems intentionally kept out of tools/suites/*.sh.
+# Each non-comment line is the basename without extension for tools/*_inspector.gd or tools/*_fixture.{gd,py}.
+cedar_visual_inspector
+desert_prop_inspector
+render_frame_budget_fixture
+render_non_feedback_fixture
+render_runtime_config_fixture
