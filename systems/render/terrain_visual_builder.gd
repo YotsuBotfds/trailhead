@@ -16,7 +16,7 @@ const GENERATED_SURFACE_TEXTURE_DIR: String = "res://assets/textures/surface_vis
 const TEXTURE_SOURCE_PATH_META: StringName = &"trailhead_source_path"
 const SURFACE_INDEX_LAYER_COUNT: int = 8
 const SURFACE_INDEX_ARRAY_CACHE_DIR: String = "user://trailhead/terrain_surface_index_arrays"
-const SURFACE_INDEX_ARRAY_CACHE_VERSION: String = "surface-index-array-cache-v1"
+const SURFACE_INDEX_ARRAY_CACHE_VERSION: String = "surface-index-array-cache-v2"
 const SURFACE_INDEX_ALBEDO_ARRAY_CACHE_KIND: String = "albedo"
 const SURFACE_INDEX_NORMAL_ARRAY_CACHE_KIND: String = "normal"
 const SURFACE_INDEX_ARRAY_IMAGE_FORMAT_NAME: String = "RGBA8"
@@ -1559,7 +1559,11 @@ static func _surface_index_macro_albedo_texture() -> Texture2D:
 
 static func _surface_index_albedo_array() -> Texture2DArray:
 	if _surface_index_albedo_array_cache != null:
-		return _surface_index_albedo_array_cache
+		if _surface_index_array_has_expected_layers(_surface_index_albedo_array_cache):
+			return _surface_index_albedo_array_cache
+		_surface_index_albedo_array_cache = null
+		_surface_index_material_cache.clear()
+		_surface_index_tile_material_cache.clear()
 	var target_size: Vector2i = _surface_index_albedo_target_size()
 	var cache_path: String = _surface_index_array_cache_path(SURFACE_INDEX_ALBEDO_ARRAY_CACHE_KIND, target_size)
 	var cached_array: Texture2DArray = _load_surface_index_array_cache(cache_path)
@@ -1579,6 +1583,16 @@ static func _surface_index_albedo_array() -> Texture2DArray:
 		push_error("Terrain surface-index albedo array failed to create: " + error_string(create_error))
 		return null
 	texture_array.resource_name = "terrain_surface_index_albedo_array"
+	for layer_index in range(images.size()):
+		texture_array.update_layer(images[layer_index], layer_index)
+	if not _surface_index_array_has_expected_layers(texture_array):
+		push_error(
+			"Terrain surface-index albedo array created with "
+			+ str(texture_array.get_layers())
+			+ " layers, expected "
+			+ str(SURFACE_INDEX_LAYER_COUNT)
+		)
+		return null
 	_save_surface_index_array_cache(texture_array, cache_path)
 	_surface_index_albedo_array_cache = texture_array
 	return _surface_index_albedo_array_cache
@@ -1586,7 +1600,11 @@ static func _surface_index_albedo_array() -> Texture2DArray:
 
 static func _surface_index_normal_array() -> Texture2DArray:
 	if _surface_index_normal_array_cache != null:
-		return _surface_index_normal_array_cache
+		if _surface_index_array_has_expected_layers(_surface_index_normal_array_cache):
+			return _surface_index_normal_array_cache
+		_surface_index_normal_array_cache = null
+		_surface_index_material_cache.clear()
+		_surface_index_tile_material_cache.clear()
 	var target_size: Vector2i = _surface_index_normal_target_size()
 	var cache_path: String = _surface_index_array_cache_path(SURFACE_INDEX_NORMAL_ARRAY_CACHE_KIND, target_size)
 	var cached_array: Texture2DArray = _load_surface_index_array_cache(cache_path)
@@ -1606,6 +1624,16 @@ static func _surface_index_normal_array() -> Texture2DArray:
 		push_error("Terrain surface-index normal array failed to create: " + error_string(create_error))
 		return null
 	texture_array.resource_name = "terrain_surface_index_normal_array"
+	for layer_index in range(images.size()):
+		texture_array.update_layer(images[layer_index], layer_index)
+	if not _surface_index_array_has_expected_layers(texture_array):
+		push_error(
+			"Terrain surface-index normal array created with "
+			+ str(texture_array.get_layers())
+			+ " layers, expected "
+			+ str(SURFACE_INDEX_LAYER_COUNT)
+		)
+		return null
 	_save_surface_index_array_cache(texture_array, cache_path)
 	_surface_index_normal_array_cache = texture_array
 	return _surface_index_normal_array_cache
@@ -1704,7 +1732,21 @@ static func _load_surface_index_array_cache(cache_path: String) -> Texture2DArra
 	if texture_array == null:
 		push_warning("Terrain surface-index texture-array cache ignored because it is not a Texture2DArray: " + cache_path)
 		return null
+	if not _surface_index_array_has_expected_layers(texture_array):
+		push_warning(
+			"Terrain surface-index texture-array cache ignored because it has "
+			+ str(texture_array.get_layers())
+			+ " layers, expected "
+			+ str(SURFACE_INDEX_LAYER_COUNT)
+			+ ": "
+			+ cache_path
+		)
+		return null
 	return texture_array
+
+
+static func _surface_index_array_has_expected_layers(texture_array: Texture2DArray) -> bool:
+	return texture_array != null and texture_array.get_layers() == SURFACE_INDEX_LAYER_COUNT
 
 
 static func _save_surface_index_array_cache(texture_array: Texture2DArray, cache_path: String) -> void:
