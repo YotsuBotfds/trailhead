@@ -65,8 +65,8 @@ func update(camera: Camera3D, state: RefCounted, steer: float, delta: float, spe
 			_pitch_current_deg = 0.0
 			initialized = true
 		camera.look_at(look_target_current, up_current)
-		camera.rotate(camera.basis.z, deg_to_rad(_bank_current_deg))
-		camera.rotate(camera.basis.x, deg_to_rad(_pitch_current_deg))
+		camera.rotate_object_local(Vector3.BACK, deg_to_rad(_bank_current_deg))
+		camera.rotate_object_local(Vector3.RIGHT, deg_to_rad(_pitch_current_deg))
 	else:
 		var back: Vector3 = ChaseCameraMath.rod_back(vehicle_basis, back_current)
 		var up: Vector3 = ChaseCameraMath.rod_up(vehicle_basis, back, up_current, GameConfig.cam_gimbal_up_smooth)
@@ -96,8 +96,8 @@ func update(camera: Camera3D, state: RefCounted, steer: float, delta: float, spe
 		var bank_alpha: float = clampf(GameConfig.cam_bank_smooth * delta, 0.0, 1.0)
 		_bank_current_deg = lerpf(_bank_current_deg, roll_target_deg, bank_alpha)
 		_pitch_current_deg = lerpf(_pitch_current_deg, pitch_target_deg, bank_alpha)
-		camera.rotate(camera.basis.z, deg_to_rad(_bank_current_deg))
-		camera.rotate(camera.basis.x, deg_to_rad(_pitch_current_deg))
+		camera.rotate_object_local(Vector3.BACK, deg_to_rad(_bank_current_deg))
+		camera.rotate_object_local(Vector3.RIGHT, deg_to_rad(_pitch_current_deg))
 	if speed_fov_enabled:
 		camera.fov = GameConfig.get_fov_for_speed(speed)
 	else:
