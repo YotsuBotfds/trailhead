@@ -34,14 +34,15 @@ var _stamp_root: Node3D = null
 var _render_bounds_min: Vector2 = Vector2.ZERO
 var _render_bounds_max: Vector2 = Vector2.ZERO
 var _stamp_nodes: Array[MeshInstance3D] = []
+var _stamp_pool: Array[MeshInstance3D] = []
 var _stamp_colors: Array[Color] = []
 var _last_wheel_points: Array[Vector3] = [Vector3.ZERO, Vector3.ZERO, Vector3.ZERO, Vector3.ZERO]
 var _last_wheel_surfaces: Array[StringName] = [&"", &"", &"", &""]
 var _last_wheel_has_stamp: Array[bool] = [false, false, false, false]
-var _stamp_sequence: int = 0
 var _max_stamp_count: int = WHEEL_COUNT * MIN_STAMPS_PER_WHEEL
 var _track_update_tick: int = 0
 var _pending_decay_delta: float = 0.0
+var _stamp_mesh: PlaneMesh = null
 
 
 func _ready() -> void:
@@ -143,6 +144,7 @@ func _ensure_viewport() -> void:
 		_stamp_root = Node3D.new()
 		_stamp_root.name = STAMP_ROOT_NAME
 		_viewport.add_child(_stamp_root)
+	_configure_stamp_pool()
 
 
 func _configure_viewport() -> void:
@@ -283,18 +285,19 @@ func _should_stamp(wheel_index: int, hit_point: Vector3, surface_id: StringName)
 func _add_stamp(wheel_index: int, hit_point: Vector3, surface_id: StringName, surface_response: float) -> void:
 	while _stamp_nodes.size() >= _max_stamp_count:
 		_remove_stamp_at(0)
-	var stamp: MeshInstance3D = MeshInstance3D.new()
-	stamp.name = STAMP_NODE_PREFIX + str(_stamp_sequence)
-	_stamp_sequence += 1
-	var radius: float = maxf(GameConfig.terrain_track_stamp_radius, MIN_STAMP_RADIUS)
-	var mesh: PlaneMesh = PlaneMesh.new()
-	mesh.size = Vector2(radius * STAMP_WIDTH_MULTIPLIER, radius * STAMP_LENGTH_MULTIPLIER)
-	stamp.mesh = mesh
+	var stamp: MeshInstance3D = _acquire_stamp()
+	if stamp == null:
+		return
+	stamp.mesh = _stamp_shared_mesh()
+	if stamp.get_parent() != _stamp_root:
+		if stamp.get_parent() != null:
+			stamp.get_parent().remove_child(stamp)
+		_stamp_root.add_child(stamp)
 	stamp.position = Vector3(hit_point.x, STAMP_Y, hit_point.z)
 	stamp.rotation_degrees = Vector3(0.0, rad_to_deg(_stamp_yaw_for_wheel(wheel_index, hit_point)), 0.0)
 	var stamp_color: Color = _stamp_color_for_surface(surface_id, surface_response)
-	stamp.material_override = _stamp_material(stamp_color)
-	_stamp_root.add_child(stamp)
+	_apply_stamp_color(stamp, stamp_color)
+	stamp.visible = true
 	_stamp_nodes.append(stamp)
 	_stamp_colors.append(stamp_color)
 	_last_wheel_points[wheel_index] = hit_point
@@ -353,6 +356,46 @@ func _stamp_material(stamp_color: Color) -> ShaderMaterial:
 	return material
 
 
+# Inactive stamps stay unparented so TrackStampRoot contains only live quads.
+func _configure_stamp_pool() -> void:
+	if _stamp_root == null:
+		return
+	_stamp_shared_mesh()
+	var active_count: int = _stamp_nodes.size()
+	var pool_count: int = _stamp_pool.size()
+	while active_count + pool_count < _max_stamp_count:
+		var stamp: MeshInstance3D = _create_pooled_stamp(active_count + pool_count)
+		_stamp_pool.append(stamp)
+		pool_count += 1
+	while _stamp_nodes.size() > _max_stamp_count:
+		_remove_stamp_at(0)
+
+
+func _stamp_shared_mesh() -> PlaneMesh:
+	if _stamp_mesh == null:
+		_stamp_mesh = PlaneMesh.new()
+	var radius: float = maxf(GameConfig.terrain_track_stamp_radius, MIN_STAMP_RADIUS)
+	_stamp_mesh.size = Vector2(radius * STAMP_WIDTH_MULTIPLIER, radius * STAMP_LENGTH_MULTIPLIER)
+	return _stamp_mesh
+
+
+func _create_pooled_stamp(pool_index: int) -> MeshInstance3D:
+	var stamp: MeshInstance3D = MeshInstance3D.new()
+	stamp.name = STAMP_NODE_PREFIX + str(pool_index)
+	stamp.mesh = _stamp_shared_mesh()
+	stamp.material_override = _stamp_material(Color(0.0, 0.0, 0.0, 0.0))
+	stamp.visible = false
+	return stamp
+
+
+func _acquire_stamp() -> MeshInstance3D:
+	if _stamp_pool.is_empty():
+		_configure_stamp_pool()
+	if _stamp_pool.is_empty():
+		return null
+	return _stamp_pool.pop_back()
+
+
 func _apply_stamp_color(stamp: MeshInstance3D, stamp_color: Color) -> void:
 	var material: ShaderMaterial = stamp.material_override as ShaderMaterial
 	if material == null:
@@ -370,7 +413,9 @@ func _remove_stamp_at(index: int) -> void:
 		return
 	if is_instance_valid(stamp):
 		stamp.visible = false
-		stamp.queue_free()
+		if stamp.get_parent() != null:
+			stamp.get_parent().remove_child(stamp)
+		_stamp_pool.append(stamp)
 
 
 func _request_viewport_update() -> void:
