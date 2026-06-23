@@ -490,10 +490,19 @@ func _setup_light() -> void:
 
 
 func _setup_audio() -> void:
+	if not GameConfig.audio_enabled or _audio_disabled_by_cmdline():
+		return
 	_audio_rig = CedarAudioRigScript.new()
 	_audio_rig.name = "CedarAudioRig"
 	add_child(_audio_rig)
 	_audio_rig.call("configure", _vehicle)
+
+
+func _audio_disabled_by_cmdline() -> bool:
+	for arg in OS.get_cmdline_user_args():
+		if String(arg) == "--no-audio":
+			return true
+	return false
 
 
 func _setup_recoverable_object_render() -> void:

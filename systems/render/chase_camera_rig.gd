@@ -111,6 +111,8 @@ func _smoothed_follow_position(vehicle_position: Vector3, delta: float) -> Vecto
 	else:
 		var vertical_alpha: float = clampf(GameConfig.cam_vertical_follow_softness * delta, 0.0, 1.0)
 		vehicle_y_current = lerpf(vehicle_y_current, vehicle_position.y, vertical_alpha)
+		var max_drop_lag: float = maxf(GameConfig.cam_vertical_follow_max_drop_lag, 0.0)
+		vehicle_y_current = minf(vehicle_y_current, vehicle_position.y + max_drop_lag)
 	return Vector3(vehicle_position.x, vehicle_y_current, vehicle_position.z)
 
 
