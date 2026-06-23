@@ -256,6 +256,7 @@ var cam_stop_lock_speed: float = 0.15
 var cam_stop_lock_release_speed: float = 0.25
 var cam_stop_lock_yaw_speed: float = 0.05
 var cam_vertical_follow_softness: float = 7.5
+var cam_vertical_follow_max_drop_lag: float = 0.06
 var orbit_cam_height: float = 0.65
 var orbit_cam_distance: float = 1.05
 var orbit_cam_spring: float = 10.0
@@ -508,6 +509,7 @@ var terrain_track_surface_sand_strength: float = 0.90
 var terrain_track_surface_wet_strength: float = 0.55
 var visual_bar_lighting_spec_version: int = 1
 
+var audio_enabled: bool = true  # render-host: false (or launch with `-- --no-audio`) skips the audio rig entirely, for A/B perf measurement
 var audio_mix_rate: float = 22050.0
 var audio_buffer_length: float = 0.16
 var audio_motor_base_hz: float = 90.0
