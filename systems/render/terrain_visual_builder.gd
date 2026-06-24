@@ -1519,15 +1519,15 @@ static func _apply_surface_index_palette(material: ShaderMaterial) -> void:
 
 
 static func _apply_zion_surface_index_tuning(material: ShaderMaterial) -> void:
-	material.set_shader_parameter(ZION_SANDSTONE_COLOR_UNIFORM, Color(0.82, 0.42, 0.20, 1.0))
+	material.set_shader_parameter(ZION_SANDSTONE_COLOR_UNIFORM, Color(0.49, 0.14, 0.05, 1.0))
 	material.set_shader_parameter(ZION_SAND_COLOR_UNIFORM, Color(0.78, 0.68, 0.52, 1.0))
 	material.set_shader_parameter(ZION_STRATA_DARK_COLOR_UNIFORM, Color(0.36, 0.14, 0.08, 1.0))
 	material.set_shader_parameter(ZION_SANDSTONE_SLOPE_START_UNIFORM, 0.08)
 	material.set_shader_parameter(ZION_SANDSTONE_SLOPE_END_UNIFORM, 0.38)
 	material.set_shader_parameter(ZION_SAND_HEIGHT_START_UNIFORM, 1193.0)
 	material.set_shader_parameter(ZION_SAND_HEIGHT_END_UNIFORM, 1202.0)
-	material.set_shader_parameter(ZION_STRATA_SCALE_UNIFORM, 2.0)
-	material.set_shader_parameter(ZION_STRATA_STRENGTH_UNIFORM, 0.48)
+	material.set_shader_parameter(ZION_STRATA_SCALE_UNIFORM, 18.0)
+	material.set_shader_parameter(ZION_STRATA_STRENGTH_UNIFORM, 0.28)
 	material.set_shader_parameter(ZION_STRATA_LIGHT_COLOR_UNIFORM, Color(0.86, 0.62, 0.38, 1.0))
 	material.set_shader_parameter(ZION_STRATA_DIP_UNIFORM, Vector2(0.15, 0.15))
 	material.set_shader_parameter(ZION_DETILE_STRENGTH_UNIFORM, 0.18)

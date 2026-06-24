@@ -43,13 +43,13 @@ uniform vec4 zion_navajo_cream_color : source_color = vec4(0.79, 0.58, 0.34, 1.0
 uniform vec4 zion_navajo_bleached_white_color : source_color = vec4(0.83, 0.74, 0.58, 1.0);
 uniform float zion_navajo_height_start = 1250.0;
 uniform float zion_navajo_height_end = 1700.0;
-uniform float zion_navajo_palette_strength = 0.9;
+uniform float zion_navajo_palette_strength = 1.0;
 uniform float zion_sandstone_slope_start = 0.08;
 uniform float zion_sandstone_slope_end = 0.38;
 uniform float zion_sand_height_start = 1193.0;
 uniform float zion_sand_height_end = 1202.0;
-uniform float zion_strata_scale = 2.0;
-uniform float zion_strata_strength = 0.48;
+uniform float zion_strata_scale = 18.0;                                      // major cross-bed repeat in world meters
+uniform float zion_strata_strength = 0.28;
 uniform vec4 zion_strata_light_color : source_color = vec4(0.86, 0.62, 0.38, 1.0);  // lighter band tone (Navajo cross-bedding)
 uniform vec2 zion_strata_dip = vec2(0.15, 0.15);                                    // xz phase per meter (diagonal cross-bedding dip)
 uniform vec2 zion_crossbed_dip_dir = vec2(0.84, 0.54);
@@ -504,7 +504,7 @@ void fragment() {
 	float sandstone_mask = smoothstep(zion_sandstone_slope_start, zion_sandstone_slope_end, slope_mask);
 	float high_wall_mask = smoothstep(zion_sand_height_start + 4.0, zion_sand_height_end + 18.0, world_y);
 	float low_flat_mask = (1.0 - sandstone_mask) * (1.0 - smoothstep(zion_sand_height_start, zion_sand_height_end, world_y));
-	float cliff_mask = max(sandstone_mask, high_wall_mask * 0.58);
+	float cliff_mask = max(sandstone_mask, high_wall_mask * 0.86);
 	float cliff_face_mask = smoothstep(0.32, 0.82, slope_mask);
 	bool cliff_strata_active = (cliff_mask > 0.0) || (high_wall_mask > 0.0);
 	float kayenta_mask = 0.0;
@@ -531,7 +531,7 @@ void fragment() {
 		vec2 dip_dir = vec2(base_dip_dir.x * dip_cos - base_dip_dir.y * dip_sin, base_dip_dir.x * dip_sin + base_dip_dir.y * dip_cos);
 		float bed_warp = (hash21_smooth(world_xz * 0.014 + vec2(9.3, 4.4)) * 2.0 - 1.0) * zion_crossbed_warp_m;
 		float bed_coord = world_y + dot(world_xz, dip_dir) * zion_crossbed_dip_tangent + bed_warp + dot(world_xz, zion_strata_dip) * 0.2;
-		float major_phase = bed_coord / max(zion_crossbed_major_period_m, 1.0);
+		float major_phase = bed_coord / max(zion_strata_scale, 1.0);
 		float lamina_phase = bed_coord / max(zion_crossbed_lamina_period_m, 0.25);
 		major_sweep = sin(major_phase * ZION_TAU + hash21_smooth(world_xz * 0.011) * ZION_TAU) * 0.5 + 0.5;
 		major_line = wrapped_line(major_phase, 0.052);
@@ -636,7 +636,7 @@ void fragment() {
 	                   + hash21_smooth(world_xz * 0.047 + vec2(1.0, 5.0)) * 0.42;
 	float bleach_blob = smoothstep(0.50, 0.84, bleach_noise);
 	float bleach_mask = smoothstep(zion_bleach_height_start, zion_bleach_height_start + 210.0, world_y) * cliff_mask * (0.42 + bleach_blob * 0.58);
-	ALBEDO = mix(ALBEDO, zion_navajo_bleached_white_color.rgb, bleach_mask * zion_bleach_strength);
+	ALBEDO = mix(ALBEDO, zion_bleach_color.rgb, bleach_mask * zion_bleach_strength);
 	ALBEDO = mix(ALBEDO, ALBEDO * (1.0 - zion_bank_wet_darkness), bank_wet_mask);
 	// W6-SURFACE-DETAIL: surface micro-relief so raking golden-hour light catches
 	// real texture. A procedural micro-normal (hash only, no extra texture fetches)
