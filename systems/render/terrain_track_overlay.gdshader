@@ -1,4 +1,13 @@
 shader_type spatial;
+// UNSHADED IS DELIBERATE — DO NOT make this lit. This material is the terrain's
+// `next_pass` (see TerrainVisualBuilder._track_overlay_material), an alpha-blend
+// pass over the ALREADY-LIT base terrain (terrain_surface_index.gdshader, which
+// is diffuse_lambert + specular_schlick_ggx). The track catches the sun through
+// the lit base showing through (1 - ALPHA); the overlay only darkens it. Making
+// this pass lit would compute the sun a SECOND time over a dark albedo and
+// composite that over the first lit result == double-lighting. Ruts read as
+// pressed-in grooves via the rut_contact_shadow term below (a lighting-free
+// darkening keyed on rut depth), not via a BRDF.
 render_mode unshaded, blend_mix, depth_draw_never, cull_disabled;
 
 uniform sampler2D track_rt : source_color, hint_default_black, repeat_disable, filter_linear;
@@ -6,6 +15,10 @@ uniform vec2 track_bounds_min = vec2(-6.1, -10.6);
 uniform vec2 track_bounds_max = vec2(6.1, 1.6);
 uniform float track_darkening : hint_range(0.0, 1.0) = 0.34;
 uniform float rut_darkening : hint_range(0.0, 1.0) = 0.25;
+// Extra contact-shadow inside the rut channel so a deep rut reads as a pressed-in
+// groove (darker on the compressed floor) rather than flat paint, while still
+// letting the lit terrain underneath supply the sun. 0.0 == previous behavior.
+uniform float rut_contact_shadow : hint_range(0.0, 1.0) = 0.35;
 
 varying vec2 world_xz;
 
@@ -23,10 +36,14 @@ void fragment() {
 		float rut_strength = clamp(track_sample.g, 0.0, 1.0);
 		float wet_strength = clamp(track_sample.b, 0.0, 1.0);
 		float combined = clamp(track_strength + rut_strength * 0.65, 0.0, 1.0);
+		// Contact-shadow keyed on rut depth: a deeper rut (more compressed soil)
+		// darkens the floor a little harder so the groove reads as pressed-in under
+		// the same sun the lit base catches, instead of a flat decal. Squared so
+		// only genuinely deep ruts deepen; shallow scuffs are unaffected.
 		vec3 dry_track = vec3(0.085, 0.060, 0.035);
 		vec3 wet_track = vec3(0.035, 0.028, 0.020);
-		ALBEDO = mix(dry_track, wet_track, wet_strength);
+		float rut_floor = 1.0 - rut_strength * rut_strength * rut_contact_shadow;
+		ALBEDO = mix(dry_track, wet_track, wet_strength) * rut_floor;
 		ALPHA = combined * clamp(track_darkening + rut_strength * rut_darkening, 0.0, 1.0);
-		ROUGHNESS = mix(0.92, 0.48, wet_strength);
 	}
 }
