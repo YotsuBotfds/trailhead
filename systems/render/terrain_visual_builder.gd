@@ -1985,8 +1985,7 @@ static func _surface_index_array_fallback_signature(kind: String, id_value: int)
 static func _load_surface_index_array_cache(cache_path: String) -> Texture2DArray:
 	if cache_path.is_empty():
 		return null
-	var absolute_path: String = _globalize_resource_path(cache_path)
-	if not FileAccess.file_exists(absolute_path):
+	if not FileAccess.file_exists(cache_path):
 		return null
 	var resource: Resource = ResourceLoader.load(cache_path) as Resource
 	var texture_array: Texture2DArray = resource as Texture2DArray
@@ -2027,10 +2026,9 @@ static func _save_surface_index_array_cache(texture_array: Texture2DArray, cache
 static func _file_md5_or_missing(path: String) -> String:
 	if path.is_empty():
 		return "<empty>"
-	var absolute_path: String = _globalize_resource_path(path)
-	if not FileAccess.file_exists(absolute_path):
+	if not FileAccess.file_exists(path):
 		return "<missing>"
-	var md5: String = FileAccess.get_md5(absolute_path)
+	var md5: String = FileAccess.get_md5(path)
 	if md5.is_empty():
 		return "<hash-error>"
 	return md5
@@ -2080,7 +2078,7 @@ static func _load_surface_index_source_albedo_image(id_value: int) -> Image:
 	var albedo_texture_path: String = visual_def.get("albedo_texture_path")
 	if albedo_texture_path.is_empty():
 		return null
-	var image: Image = Image.load_from_file(ProjectSettings.globalize_path(albedo_texture_path))
+	var image: Image = _load_source_image(albedo_texture_path)
 	if image == null or image.is_empty():
 		return null
 	return image
@@ -2094,7 +2092,7 @@ static func _load_surface_index_source_normal_image(id_value: int) -> Image:
 	var normal_texture_path: String = visual_def.get("normal_texture_path")
 	if normal_texture_path.is_empty():
 		return null
-	var image: Image = Image.load_from_file(ProjectSettings.globalize_path(normal_texture_path))
+	var image: Image = _load_source_image(normal_texture_path)
 	if image == null or image.is_empty():
 		return null
 	return image
@@ -2238,7 +2236,7 @@ static func _load_region_tile_uncached(region_id: String, cell: Vector2i) -> Reg
 		push_error("TerrainVisualBuilder heightmap float count mismatch: " + tile_data.heightmap_path)
 		return null
 
-	tile_data.surface_image = Image.load_from_file(ProjectSettings.globalize_path(tile_data.surface_id_path))
+	tile_data.surface_image = _load_source_image(tile_data.surface_id_path)
 	if tile_data.surface_image == null or tile_data.surface_image.is_empty():
 		push_error("TerrainVisualBuilder surface_id image failed to load: " + tile_data.surface_id_path)
 		return null
@@ -4211,11 +4209,21 @@ static func _load_texture(path: String) -> Texture2D:
 
 
 static func _load_source_image_texture(path: String) -> Texture2D:
-	var image: Image = Image.load_from_file(ProjectSettings.globalize_path(path))
+	var image: Image = _load_source_image(path)
 	if image == null or image.is_empty():
 		return null
 	var image_texture: ImageTexture = ImageTexture.create_from_image(image)
 	return image_texture
+
+
+static func _load_source_image(path: String) -> Image:
+	if path.is_empty():
+		return null
+	var image: Image = Image.new()
+	var load_error: Error = image.load(path)
+	if load_error != OK or image.is_empty():
+		return null
+	return image
 
 
 static func _wet_albedo_color(base_color: Color, wetness: float) -> Color:
