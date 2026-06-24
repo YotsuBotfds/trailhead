@@ -25,7 +25,10 @@ suite_deadline="${SUITE_DEADLINE_SECS:-900}"
 watchdog_pid=""
 
 cleanup() {
-	[ -n "$watchdog_pid" ] && kill "$watchdog_pid" 2>/dev/null || true
+	if [ -n "$watchdog_pid" ]; then
+		pkill -P "$watchdog_pid" 2>/dev/null || true
+		kill "$watchdog_pid" 2>/dev/null || true
+	fi
 	pkill -9 -P "$main_pid" 2>/dev/null || true
 	rm -rf "$lock_dir" 2>/dev/null || true
 }
@@ -56,7 +59,7 @@ printf '%s\n' "$main_pid" > "$lock_dir/pid"
 	pkill -9 -f "MacOS/Godot.*headless" 2>/dev/null || true
 	rm -rf "$lock_dir" 2>/dev/null || true
 	kill -9 "$main_pid" 2>/dev/null || true
-) &
+) </dev/null >>/tmp/trailhead-suite-watchdog.log 2>&1 &
 watchdog_pid=$!
 
 run_sim() {
