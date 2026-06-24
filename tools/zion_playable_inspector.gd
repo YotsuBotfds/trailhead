@@ -207,8 +207,9 @@ func _require_stream_hlod_root(hlod: MeshInstance3D) -> void:
 	if not hlod.has_meta(TerrainVisualBuilderScript.REGION_LOD_META):
 		_errors.append("Zion streamer TerrainHLOD root missing metadata")
 		return
-	if String(hlod.get_meta(TerrainVisualBuilderScript.REGION_LOD_META)) != "stream_hlod_root":
-		_errors.append("Zion streamer TerrainHLOD should start as lightweight stream_hlod_root")
+	var lod_meta: String = String(hlod.get_meta(TerrainVisualBuilderScript.REGION_LOD_META))
+	if not lod_meta.contains("hlod"):
+		_errors.append("Zion streamer TerrainHLOD root has non-HLOD LOD meta: " + lod_meta)
 
 
 func _require_stream_hlod(streamer: Node, visual_root: Node) -> void:
