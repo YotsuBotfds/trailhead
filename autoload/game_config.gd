@@ -375,8 +375,8 @@ var minimap_dot_radius: float = 2.6
 var minimap_player_radius: float = 4.0
 var minimap_heading_length: float = 10.0
 
-var dusk_sky_top_color: Color = Color(0.12, 0.26, 0.58, 1.0)
-var dusk_sky_horizon_color: Color = Color(0.86, 0.63, 0.38, 1.0)
+var dusk_sky_top_color: Color = Color(0.18, 0.32, 0.64, 1.0)  # richer deep-blue zenith (was 0.12,0.26,0.58); art-bible target Color(0.22,0.35,0.58)
+var dusk_sky_horizon_color: Color = Color(0.88, 0.56, 0.28, 1.0)  # vivid amber-orange dusk horizon (was 0.86,0.63,0.38 peach — shifted warmer/deeper for real golden-hour read)
 var dusk_sky_ground_color: Color = Color(0.36, 0.34, 0.31, 1.0)
 var dusk_sky_turbidity: float = 4.2
 var dusk_sky_sun_disk_scale: float = 1.7
