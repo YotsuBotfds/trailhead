@@ -151,12 +151,12 @@ uniform vec4 zion_far_wall_warm_color : source_color = vec4(0.52, 0.18, 0.07, 1.
 uniform float zion_far_wall_height_start = 1280.0;  // world Y where warm push begins (above canyon floor)
 uniform float zion_far_wall_height_end = 1600.0;    // world Y of full warm push (upper rims)
 uniform float zion_far_wall_warm_strength = 0.22;   // tint authority (0 = off, 0.22 = visible but conservative)
-uniform float zion_far_wall_contrast = 0.14;        // luminance contrast lift (0 = off, 0.14 = modest pop)
+uniform float zion_far_wall_contrast = 0.26;        // luminance contrast lift (0 = off) — counters distance albedo-flattening the post-stack can't recover, restoring strata separation on the far walls
 
 // Upper-wall bleach: pale buff cream tint driven by world height (Great White Throne reads near-white).
 uniform vec4 zion_bleach_color : source_color = vec4(0.91, 0.84, 0.72, 1.0);  // pale buff cream
 uniform float zion_bleach_height_start = 1550.0;   // lower edge of the bleached upper walls
-uniform float zion_bleach_strength = 0.55;
+uniform float zion_bleach_strength = 0.38;         // upper-rim pale-buff blend — eased from 0.55 so the most-distant rims keep warm Navajo identity instead of washing to near-white buff
 uniform bool zion_wetrock_enabled = true;
 uniform float zion_wetrock_height_start = 1230.0;
 uniform float zion_wetrock_height_end = 1320.0;
