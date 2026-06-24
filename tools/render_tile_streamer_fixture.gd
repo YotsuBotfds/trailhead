@@ -758,7 +758,8 @@ func _exercise_foliage_finish_budget() -> void:
 	# then activate both in the same handler pass so their foliage commits begin together.
 	EventBus.world_tile_prefetched.emit(FIRST_CELL)
 	EventBus.world_tile_prefetched.emit(SECOND_CELL)
-	await _wait_for_ready_foliage_cell_count("finish-budget: first foliage ready", 1)
+	# Both cells are prefetched in the same synchronous pass, so ready_foliage_cell_count
+	# steps 0 -> 2 without ever resting at 1; wait only for both to be ready before activating.
 	await _wait_for_ready_foliage_cell_count("finish-budget: both foliage ready", 2)
 	EventBus.world_tile_activated.emit(FIRST_CELL)
 	EventBus.world_tile_activated.emit(SECOND_CELL)
