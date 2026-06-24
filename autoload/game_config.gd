@@ -23,6 +23,19 @@ const STREAM_ACTIVE_RADIUS: int = 3
 const STREAM_PREFETCH_RADIUS: int = 4
 const STREAM_PREFETCH_TRAVEL_LOOKAHEAD_CELLS: int = 2
 const STREAM_PREFETCH_TRAVEL_MIN_DISTANCE_M: float = 0.05
+# Production-only (≥2 worker, following a moving body) continuous-prefetch knob.
+# The active/prefetch rings are keyed to the INTEGER current cell, so they snap a
+# full new leading row of cells the instant the car crosses a boundary — those
+# cells then load + decode + prebuild their collision in one burst, the residual
+# multi-second cell-crossing render stall. This extends the prefetch frontier one
+# row EARLY, gated on the car's fractional progress through the current cell along
+# its travel direction: once progress passes this fraction the next-row cells join
+# the prefetch ring, so the worker decode + main-thread shape prebuild warm them
+# gradually (under the existing per-tick result-drain/prebuild budgets) across the
+# rest of the traversal instead of all at once at the crossing. 0.2 leaves ~80% of
+# the cell traversal to warm the row. Fixed-position / worker<2 paths ignore this
+# entirely, so every deterministic golden + fixture is byte-identical.
+const STREAM_CONTINUOUS_PREFETCH_LEAD_FRACTION: float = 0.2
 const STREAM_TILE_DATA_BASE: String = "res://data/regions/"
 const streaming_collision_freeze_max_ticks: int = 600
 const DIRECTIONAL_SHADOW_ORTHOGONAL: int = 0

@@ -241,6 +241,15 @@ func _physics_process(_delta: float) -> void:
 	_current_cell = _cell_for_world_position(sampled_world_position)
 	var desired_active_cells: Array[Vector2i] = _cells_in_radius(_current_cell, GameConfig.STREAM_ACTIVE_RADIUS)
 	var desired_prefetch_cells: Array[Vector2i] = _prefetch_cells_for_sample(sampled_world_position, _current_cell)
+	# Production (≥2 worker, following a moving body) only: extend the prefetch
+	# frontier one row EARLY, gated on the car's fractional progress through the
+	# current cell, so the row of cells the ring would otherwise gain in a burst AT
+	# the crossing instead joins the ring partway through the traversal and warms
+	# (worker decode + main-thread prebuild) gradually under the existing per-tick
+	# budgets. Merged into desired_prefetch_cells so the early row is enqueued AND
+	# protected from the prefetch-eviction/cancel passes below. No-op (empty) on the
+	# fixed-position / worker<2 paths, so every golden + fixture is byte-identical.
+	_merge_continuous_prefetch_extension(desired_prefetch_cells, sampled_world_position, _current_cell)
 	var travel_ahead_prebuild_cells: Array[Vector2i] = _travel_ahead_prebuild_cells(sampled_world_position, _current_cell)
 	var current_active_cells: Array[Vector2i] = _sorted_body_cells()
 
@@ -972,6 +981,56 @@ func _travel_ahead_prebuild_cells(world_position: Vector3, center_cell: Vector2i
 	for step in range(1, lead_cells + 1):
 		cells.append(center_cell + Vector2i(travel_cell_step.x * step, travel_cell_step.y * step))
 	return cells
+
+
+func _merge_continuous_prefetch_extension(
+	desired_prefetch_cells: Array[Vector2i],
+	world_position: Vector3,
+	center_cell: Vector2i
+) -> void:
+	# Production-only continuous frontier. The prefetch ring is keyed to the integer
+	# current cell, so it gains a full leading row in one tick at every crossing —
+	# that row's worker decode + main-thread prebuild burst IS the residual stall.
+	# Once the car is past STREAM_CONTINUOUS_PREFETCH_LEAD_FRACTION of the way
+	# through the current cell (toward the boundary it is driving at), pull the
+	# prefetch ring that WILL be centered one cell ahead into the desired set so its
+	# new leading row is requested early and warms gradually under the existing
+	# per-tick result-drain/prebuild budgets. No-op on the fixed-position / worker<2
+	# paths (golden + fixture byte-identical) and a no-op until the lead fraction is
+	# crossed, so the requested cells only ever advance forward — never a set the
+	# baseline paths could observe.
+	if _workers.is_empty():
+		return
+	if _use_fixed_world_position:
+		return
+	var travel_delta: Vector3 = _travel_delta_for_sample(world_position)
+	if travel_delta.length() < GameConfig.STREAM_PREFETCH_TRAVEL_MIN_DISTANCE_M:
+		return
+	var travel_cell_step: Vector2i = _travel_cell_step(travel_delta)
+	if travel_cell_step == Vector2i.ZERO:
+		return
+	if _cell_progress_fraction(world_position, travel_cell_step) < GameConfig.STREAM_CONTINUOUS_PREFETCH_LEAD_FRACTION:
+		return
+	var ahead_center: Vector2i = center_cell + travel_cell_step
+	_append_unique_cells(desired_prefetch_cells, _cells_in_radius(ahead_center, GameConfig.STREAM_PREFETCH_RADIUS))
+	_sort_cells(desired_prefetch_cells)
+
+
+func _cell_progress_fraction(world_position: Vector3, travel_cell_step: Vector2i) -> float:
+	# Fraction in [0, 1] of the way the car is through the current cell toward the
+	# boundary it is driving at, along the dominant travel axis. Pure position math
+	# (no wall-clock / RNG). 0 just after a crossing, ~1 just before the next one.
+	var tile_size_m: float = maxf(GameConfig.STREAM_TILE_SIZE_M, 0.001)
+	var axis_value: float = world_position.x
+	var axis_step: int = travel_cell_step.x
+	if travel_cell_step.x == 0:
+		axis_value = world_position.z
+		axis_step = travel_cell_step.y
+	var local_fraction: float = (axis_value - floor(axis_value / tile_size_m) * tile_size_m) / tile_size_m
+	local_fraction = clampf(local_fraction, 0.0, 1.0)
+	if axis_step < 0:
+		return 1.0 - local_fraction
+	return local_fraction
 
 
 func _travel_delta_for_sample(world_position: Vector3) -> Vector3:
