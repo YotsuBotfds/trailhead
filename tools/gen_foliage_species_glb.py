@@ -306,9 +306,9 @@ def build_cottonwood_lod0() -> LodMesh:
             bark_meshes.append(tapered_branch(side_start, side_end, radius * 0.34, radius * 0.095, 6, 0.055))
             branch_ends.append(side_end)
 
-    leaf_centers = crown_centers(rng, 620, 8.7, 7.8, 12.1, 24.1, 0.34)
+    leaf_centers = crown_centers(rng, 900, 8.7, 7.8, 12.1, 24.1, 0.34)
     for end in branch_ends:
-        for _copy in range(8):
+        for _copy in range(12):
             leaf_centers.append((
                 end[0] + rng.uniform(-1.0, 1.0),
                 end[1] + rng.uniform(-0.6, 1.1),
@@ -317,7 +317,7 @@ def build_cottonwood_lod0() -> LodMesh:
     leaf_mesh = leaf_cards(leaf_centers, rng, (0.28, 0.56), (0.34, 0.72), (-24.0, 32.0), False)
     return LodMesh("cottonwood_candidate_lod0", [
         mesh_part(merge_meshes(bark_meshes), (0.43, 0.36, 0.26, 1.0), "cottonwood_pale_furrowed_bark"),
-        mesh_part(leaf_mesh, (0.42, 0.56, 0.16, 0.92), "cottonwood_summer_leaf_cards", MASK, True),
+        mesh_part(leaf_mesh, (0.30, 0.50, 0.11, 0.92), "cottonwood_summer_leaf_cards", MASK, True),
     ])
 
 
@@ -346,7 +346,7 @@ def build_cottonwood_lod1() -> LodMesh:
     leaf_mesh = leaf_cards(leaf_centers, rng, (0.75, 1.38), (0.86, 1.62), (-18.0, 24.0), False)
     return LodMesh("cottonwood_candidate_lod1", [
         mesh_part(merge_meshes(bark_meshes), (0.38, 0.32, 0.24, 1.0), "cottonwood_lod1_bark"),
-        mesh_part(leaf_mesh, (0.36, 0.48, 0.13, 0.90), "cottonwood_lod1_leaf_cards", MASK, True),
+        mesh_part(leaf_mesh, (0.26, 0.43, 0.10, 0.90), "cottonwood_lod1_leaf_cards", MASK, True),
     ])
 
 
@@ -378,13 +378,13 @@ def build_willow_lod0() -> LodMesh:
             side_dir = radial(stem_direction + side_offset + rng.uniform(-10.0, 10.0))
             side_end = vec_add(side_start, vec_add(vec_mul(side_dir, rng.uniform(0.42, 1.05)), (0.0, rng.uniform(-0.32, 0.34), 0.0)))
             bark_meshes.append(tapered_branch(side_start, side_end, radius * 0.23, radius * 0.055, 5, 0.060))
-            for _copy in range(9):
+            for _copy in range(13):
                 leaf_centers.append((
                     side_end[0] + rng.uniform(-0.28, 0.28),
                     side_end[1] + rng.uniform(-0.48, 0.32),
                     side_end[2] + rng.uniform(-0.28, 0.28),
                 ))
-        for _copy in range(12):
+        for _copy in range(16):
             leaf_centers.append((
                 end[0] + rng.uniform(-0.38, 0.38),
                 end[1] + rng.uniform(-0.78, 0.22),
@@ -393,7 +393,7 @@ def build_willow_lod0() -> LodMesh:
     leaf_mesh = leaf_cards(leaf_centers, rng, (0.10, 0.22), (0.50, 1.05), (-38.0, 14.0), True)
     return LodMesh("willow_candidate_lod0", [
         mesh_part(merge_meshes(bark_meshes), (0.31, 0.23, 0.14, 1.0), "willow_fine_bark_stems"),
-        mesh_part(leaf_mesh, (0.32, 0.42, 0.22, 0.90), "willow_silvery_narrow_leaf_cards", MASK, True),
+        mesh_part(leaf_mesh, (0.22, 0.40, 0.22, 0.90), "willow_cool_narrow_leaf_cards", MASK, True),
     ])
 
 
@@ -415,7 +415,7 @@ def build_willow_lod1() -> LodMesh:
     leaf_mesh = leaf_cards(leaf_centers, rng, (0.28, 0.55), (1.1, 2.3), (-28.0, 10.0), True)
     return LodMesh("willow_candidate_lod1", [
         mesh_part(merge_meshes(bark_meshes), (0.28, 0.21, 0.13, 1.0), "willow_lod1_stems"),
-        mesh_part(leaf_mesh, (0.28, 0.37, 0.20, 0.88), "willow_lod1_leaf_cards", MASK, True),
+        mesh_part(leaf_mesh, (0.19, 0.35, 0.20, 0.88), "willow_lod1_leaf_cards", MASK, True),
     ])
 
 
