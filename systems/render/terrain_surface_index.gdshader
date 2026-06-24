@@ -156,6 +156,18 @@ uniform float micro_fine_scale = 2.6;              // ~0.38 m sand-grain frequen
 uniform float micro_fine_strength = 0.45;          // relative amplitude of the fine octave
 uniform float micro_roughness_floor_variation = 0.05;   // +/- extra floor roughness wobble
 uniform float micro_albedo_grain_strength = 0.045;      // subtle fine albedo break-up on floor
+// FLOOR-TONAL-DRIFT: broad (~tens-of-meters) warm/cool hue drift across the drivable canyon
+// floor so the close-up ground reads as redder slickrock benches grading into paler sandy
+// washes -- the real lower-Zion floor mosaic -- instead of one uniform de-oranged tint. The
+// existing small-scale wash/slickrock/sand-patch masks break up ON TOP of this broad base.
+// Hash-only (reuses the floor_macro/floor_mid octaves already computed below; no extra
+// texture fetches), floor-gated by low_flat_mask so cliffs/strata/walls pay nothing and are
+// untouched. Additive uniforms only -- the render builder never sets these, so the defaults
+// take effect golden-neutrally and can be dialed to zero to restore the prior flat-tint floor.
+uniform vec4 zion_floor_warm_bench_color : source_color = vec4(0.58, 0.36, 0.24, 1.0);  // redder iron-rich slickrock bench
+uniform vec4 zion_floor_pale_wash_color : source_color = vec4(0.76, 0.69, 0.57, 1.0);   // paler bleached sandy wash
+uniform float zion_floor_tonal_drift_strength = 0.22;   // authority of the broad warm/cool floor drift
+uniform float zion_floor_tonal_drift_bias = 0.04;       // center shift (+ = warmer overall, - = paler)
 // FLOOR-PBR: real CC0 ambientCG PBR textures (albedo + normal) sampled TRIPLANAR in world
 // space and detail-blended onto the drivable floor, so the close-up reads as real Zion
 // sand / slickrock / packed wash instead of a flat procedural tint. Cliffs/strata stay on
@@ -639,6 +651,17 @@ void fragment() {
 	float floor_macro = hash21_smooth(world_xz * 0.010 + vec2(8.0, 2.0));
 	float floor_mid = hash21_smooth(world_xz * 0.026 + vec2(3.1, 8.7));
 	float floor_fine = hash21_smooth(world_xz * 0.083 + vec2(14.4, 6.2));
+	// FLOOR-TONAL-DRIFT: broad warm/cool hue drift across the drivable floor. Two low
+	// frequencies (~200 m + ~100 m, the latter reusing floor_macro) sum into a smooth
+	// signed drift; positive pulls the floor base toward the redder iron-rich slickrock
+	// bench, negative toward the paler bleached sandy wash. Gated to the low flat floor
+	// (low_flat_mask), so the canyon floor reads as a mosaic of redder benches and paler
+	// washes instead of one flat de-oranged tint. The small-scale wash/slickrock/sand
+	// patch masks below break up ON TOP of this broad base.
+	float floor_drift_broad = hash21_smooth(world_xz * 0.0052 + vec2(21.0, 9.0));
+	float floor_drift = clamp((floor_drift_broad * 0.62 + floor_macro * 0.38) * 2.0 - 1.0 + zion_floor_tonal_drift_bias, -1.0, 1.0);
+	vec3 floor_drift_color = mix(zion_floor_pale_wash_color.rgb, zion_floor_warm_bench_color.rgb, floor_drift * 0.5 + 0.5);
+	zion_albedo = mix(zion_albedo, floor_drift_color, low_flat_mask * zion_floor_tonal_drift_strength);
 	float floor_wash_mask = low_flat_mask * (1.0 - river_corridor_mask * 0.35) * smoothstep(0.46, 0.82, floor_mid);
 	float floor_slickrock_mask = low_flat_mask * smoothstep(0.60, 0.90, floor_macro) * (1.0 - floor_wash_mask * 0.45);
 	float floor_sand_patch_mask = low_flat_mask * smoothstep(0.48, 0.86, floor_fine) * (1.0 - floor_slickrock_mask * 0.30);
