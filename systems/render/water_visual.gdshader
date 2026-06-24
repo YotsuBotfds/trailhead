@@ -3,28 +3,33 @@ render_mode blend_mix, depth_prepass_alpha, cull_back, diffuse_burley, specular_
 
 uniform sampler2D depth_texture : hint_depth_texture, repeat_disable, filter_nearest;
 uniform sampler2D screen_texture : hint_screen_texture, repeat_disable, filter_linear_mipmap;
-uniform vec4 shallow_color : source_color = vec4(0.45, 0.68, 0.70, 1.0);
-uniform vec4 deep_color : source_color = vec4(0.10, 0.22, 0.25, 1.0);
-uniform float water_alpha : hint_range(0.0, 1.0) = 0.55;
-uniform float depth_fade_distance : hint_range(0.001, 2.0) = 0.45;
-uniform float foam_edge_width : hint_range(0.001, 0.5) = 0.08;
-uniform float flow_speed : hint_range(0.0, 1.0) = 0.08;
-uniform float wave_amplitude : hint_range(0.0, 0.1) = 0.015;
-uniform float foam_normal_strength : hint_range(0.0, 1.0) = 0.18;
-uniform float foam_normal_scale : hint_range(1.0, 64.0) = 18.0;
-uniform float foam_normal_flow_speed : hint_range(0.0, 1.0) = 0.06;
+uniform vec4 shallow_color : source_color = vec4(0.34, 0.27, 0.12, 1.0);
+uniform vec4 deep_color : source_color = vec4(0.11, 0.105, 0.045, 1.0);
+uniform float water_alpha : hint_range(0.0, 1.0) = 0.82;
+uniform float depth_fade_distance : hint_range(0.001, 2.0) = 0.32;
+uniform float foam_edge_width : hint_range(0.001, 0.5) = 0.14;
+uniform float flow_speed : hint_range(0.0, 1.0) = 0.10;
+uniform float wave_amplitude : hint_range(0.0, 0.1) = 0.010;
+uniform float foam_normal_strength : hint_range(0.0, 1.0) = 0.14;
+uniform float foam_normal_scale : hint_range(1.0, 64.0) = 14.0;
+uniform float foam_normal_flow_speed : hint_range(0.0, 1.0) = 0.08;
 uniform bool ssr_enabled = true;
-uniform float ssr_intensity : hint_range(0.0, 1.0) = 0.24;
-uniform int ssr_max_steps : hint_range(0, 32) = 16;
+uniform float ssr_intensity : hint_range(0.0, 1.0) = 0.20;
+uniform int ssr_max_steps : hint_range(0, 32) = 8;
 uniform float ssr_step_size : hint_range(0.005, 0.2) = 0.035;
 uniform float ssr_thickness : hint_range(0.005, 0.3) = 0.08;
-uniform float water_roughness : hint_range(0.0, 1.0) = 0.18;
-uniform vec4 bed_tint_color : source_color = vec4(0.84, 0.78, 0.60, 1.0);
-uniform float bed_tint_strength : hint_range(0.0, 1.0) = 0.35;
-uniform float shallow_alpha : hint_range(0.0, 1.0) = 0.38;
-uniform float downstream_flow_speed : hint_range(0.0, 0.5) = 0.06;
-uniform vec4 foam_color : source_color = vec4(0.86, 0.90, 0.84, 1.0);
-uniform float wetline_strength : hint_range(0.0, 1.0) = 0.20;
+uniform float water_roughness : hint_range(0.0, 1.0) = 0.22;
+uniform vec4 bed_tint_color : source_color = vec4(0.59, 0.46, 0.26, 1.0);
+uniform float bed_tint_strength : hint_range(0.0, 1.0) = 0.50;
+uniform float shallow_alpha : hint_range(0.0, 1.0) = 0.50;
+uniform float downstream_flow_speed : hint_range(0.0, 0.5) = 0.10;
+uniform vec4 foam_color : source_color = vec4(0.70, 0.63, 0.42, 1.0);
+uniform float wetline_strength : hint_range(0.0, 1.0) = 0.28;
+uniform float ripple_normal_strength : hint_range(0.0, 1.0) = 0.08;
+uniform float ripple_normal_scale : hint_range(0.1, 8.0) = 1.60;
+uniform float shoreline_softness : hint_range(0.001, 0.8) = 0.22;
+uniform vec4 fresnel_glint_color : source_color = vec4(1.0, 0.74, 0.46, 1.0);
+uniform float fresnel_glint_strength : hint_range(0.0, 0.5) = 0.12;
 
 const int SSR_STEP_LIMIT = 32;
 const float SSR_EDGE_FADE = 0.065;
@@ -64,6 +69,15 @@ vec2 foam_noise_gradient(vec2 uv, float flow_time) {
 	float height_x = foam_noise_height(uv + sample_x, flow_time) - foam_noise_height(uv - sample_x, flow_time);
 	float height_y = foam_noise_height(uv + sample_y, flow_time) - foam_noise_height(uv - sample_y, flow_time);
 	return vec2(height_x, height_y) / (FOAM_NORMAL_SAMPLE_RADIUS * 2.0);
+}
+
+vec2 flow_ripple_gradient(vec2 position, vec2 flow_dir, float flow_time) {
+	vec2 side_dir = vec2(-flow_dir.y, flow_dir.x);
+	float downstream_pos = dot(position, flow_dir) * ripple_normal_scale;
+	float cross_pos = dot(position, side_dir) * ripple_normal_scale;
+	float wave_a = sin(downstream_pos * 4.0 - flow_time * 8.0 + sin(cross_pos * 1.5) * 0.45);
+	float wave_b = sin(downstream_pos * 7.5 + cross_pos * 2.2 - flow_time * 13.0);
+	return flow_dir * (wave_a * 0.70 + wave_b * 0.25) + side_dir * (wave_b * 0.18);
 }
 
 vec3 view_from_depth(vec2 uv, float raw_depth, mat4 inv_projection) {
@@ -135,25 +149,36 @@ void fragment() {
 	float scene_depth = -scene_position.z;
 	float fragment_depth = -VERTEX.z;
 	float depth_delta = max(scene_depth - fragment_depth, 0.0);
-	float depth_mix = clamp(depth_delta / depth_fade_distance, 0.0, 1.0);
+	float depth_ratio = clamp(depth_delta / depth_fade_distance, 0.0, 1.0);
+	float depth_mix = smoothstep(0.0, 1.0, depth_ratio);
 	float foam = 1.0 - smoothstep(0.0, foam_edge_width, depth_delta);
+	float shoreline = 1.0 - smoothstep(0.0, shoreline_softness, depth_delta);
 	float downstream_pos = dot(world_xz, downstream_dir);
 	float ripple = sin(downstream_pos * 11.0 - TIME * flow_speed * 9.0) * 0.5 + 0.5;
 	vec2 foam_uv = world_xz * foam_normal_scale - downstream_dir * TIME * downstream_flow_speed;
 	vec2 foam_gradient = foam_noise_gradient(foam_uv, TIME * foam_normal_flow_speed);
-	float foam_normal_weight = mix(0.35, 1.0, foam);
-	vec3 tangent_normal = normalize(vec3(-foam_gradient.x, -foam_gradient.y, 1.0));
-	vec3 normal_view = normalize(NORMAL + (TANGENT * tangent_normal.x + BINORMAL * tangent_normal.y) * foam_normal_strength * foam_normal_weight);
+	vec2 ripple_gradient = flow_ripple_gradient(world_xz, downstream_dir, TIME * flow_speed);
+	float foam_normal_weight = mix(0.25, 1.0, foam);
+	float depth_ripple_weight = mix(0.55, 1.0, depth_mix);
+	vec2 combined_gradient = foam_gradient * foam_normal_weight + ripple_gradient * depth_ripple_weight;
+	float normal_strength = clamp(foam_normal_strength * foam_normal_weight + ripple_normal_strength * depth_ripple_weight, 0.0, 1.0);
+	vec3 tangent_normal = normalize(vec3(-combined_gradient.x, -combined_gradient.y, 1.0));
+	vec3 normal_view = normalize(NORMAL + (TANGENT * tangent_normal.x + BINORMAL * tangent_normal.y) * normal_strength);
 	NORMAL_MAP = tangent_normal;
-	NORMAL_MAP_DEPTH = foam_normal_strength * foam_normal_weight;
+	NORMAL_MAP_DEPTH = normal_strength;
 	NORMAL = normal_view;
 	vec3 water_color = mix(shallow_color.rgb, deep_color.rgb, depth_mix);
-	float bed_visibility = pow(1.0 - depth_mix, 1.5);
+	float bed_visibility = pow(1.0 - depth_mix, 1.35);
 	water_color = mix(water_color, bed_tint_color.rgb, bed_visibility * bed_tint_strength);
-	water_color = mix(water_color, foam_color.rgb, foam * (0.45 + ripple * 0.25));
-	float wetline_inside = smoothstep(foam_edge_width, foam_edge_width * 2.0, depth_delta);
-	float wetline_deep = 1.0 - smoothstep(foam_edge_width * 2.0, foam_edge_width * 6.0, depth_delta);
+	water_color = mix(water_color, foam_color.rgb, shoreline * (0.30 + ripple * 0.12));
+	water_color = mix(water_color, foam_color.rgb, foam * (0.18 + ripple * 0.10));
+	float wetline_inside = smoothstep(foam_edge_width, shoreline_softness, depth_delta);
+	float wetline_deep = 1.0 - smoothstep(shoreline_softness, shoreline_softness * 2.8, depth_delta);
 	water_color *= mix(1.0, 0.82, wetline_inside * wetline_deep * wetline_strength);
+	vec3 view_direction = normalize(VERTEX);
+	float view_fresnel = pow(1.0 - clamp(dot(-view_direction, normal_view), 0.0, 1.0), 5.0);
+	float glint_weight = view_fresnel * smoothstep(0.35, 1.0, ripple) * mix(0.55, 1.0, depth_mix) * fresnel_glint_strength;
+	water_color = mix(water_color, fresnel_glint_color.rgb, glint_weight);
 	if (ssr_enabled && ssr_intensity > 0.0 && ssr_max_steps > 0) {
 		float reflection_weight = 0.0;
 		vec3 reflection_color = screen_space_reflection(
@@ -166,8 +191,9 @@ void fragment() {
 		water_color = mix(water_color, reflection_color, reflection_weight * ssr_intensity);
 	}
 	ALBEDO = water_color;
-	float base_alpha = mix(shallow_alpha, water_alpha, depth_mix);
-	ALPHA = clamp(base_alpha + foam * 0.25, 0.0, 1.0);
+	float shoreline_alpha = mix(shallow_alpha, shallow_alpha * 0.82, shoreline);
+	float base_alpha = mix(shoreline_alpha, water_alpha, depth_mix);
+	ALPHA = clamp(base_alpha + foam * 0.16, 0.0, 1.0);
 	ROUGHNESS = water_roughness;
-	SPECULAR = 0.55;
+	SPECULAR = mix(0.40, 0.62, view_fresnel);
 }

@@ -5,12 +5,17 @@ const WaterShader: Shader = preload("res://systems/render/water_visual.gdshader"
 const TerrainBuilderScript: GDScript = preload("res://systems/world/terrain_builder.gd")
 const ROOT_NAME: String = "WaterVisuals"
 const WATER_SURFACE_GROUP: String = "render_water_surface"
-const BED_TINT_COLOR: Color = Color(0.84, 0.78, 0.60)
-const BED_TINT_STRENGTH: float = 0.35
-const SHALLOW_ALPHA: float = 0.38
-const DOWNSTREAM_FLOW_SPEED: float = 0.06
-const FOAM_COLOR: Color = Color(0.86, 0.90, 0.84)
-const WETLINE_STRENGTH: float = 0.20
+const BED_TINT_COLOR: Color = Color(0.59, 0.46, 0.26)
+const BED_TINT_STRENGTH: float = 0.50
+const SHALLOW_ALPHA: float = 0.50
+const DOWNSTREAM_FLOW_SPEED: float = 0.10
+const FOAM_COLOR: Color = Color(0.70, 0.63, 0.42)
+const WETLINE_STRENGTH: float = 0.28
+const RIPPLE_NORMAL_STRENGTH: float = 0.08
+const RIPPLE_NORMAL_SCALE: float = 1.60
+const SHORELINE_SOFTNESS: float = 0.22
+const FRESNEL_GLINT_COLOR: Color = Color(1.0, 0.74, 0.46)
+const FRESNEL_GLINT_STRENGTH: float = 0.12
 const ZION_RIVER_WIDTH_M: float = 9.5
 const ZION_RIVER_SURFACE_RISE_M: float = 0.30
 # Defensive guard band — same envelope as the terrain builder; see
@@ -230,4 +235,9 @@ static func _water_material(resource_name: String) -> ShaderMaterial:
 	material.set_shader_parameter("downstream_flow_speed", DOWNSTREAM_FLOW_SPEED)
 	material.set_shader_parameter("foam_color", FOAM_COLOR)
 	material.set_shader_parameter("wetline_strength", WETLINE_STRENGTH)
+	material.set_shader_parameter("ripple_normal_strength", RIPPLE_NORMAL_STRENGTH)
+	material.set_shader_parameter("ripple_normal_scale", RIPPLE_NORMAL_SCALE)
+	material.set_shader_parameter("shoreline_softness", SHORELINE_SOFTNESS)
+	material.set_shader_parameter("fresnel_glint_color", FRESNEL_GLINT_COLOR)
+	material.set_shader_parameter("fresnel_glint_strength", FRESNEL_GLINT_STRENGTH)
 	return material
