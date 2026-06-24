@@ -53,6 +53,21 @@ var render_stream_hlod_densify_radius: int = 5
 # mesh per frame is reduced — cutting per-cell-crossing render cost and steady-state
 # primitive count. Render-only, golden-neutral (collision authority untouched).
 var render_visual_fullres_radius_cells: int = 2
+# Chebyshev radius (in stream tiles) around the active cell within which active cells
+# commit the HEAVY near-field foliage LOD0 (REGION_FOLIAGE_LOD0_BASE_COUNT ~56
+# instances/subcell × species — the dense ground/canopy reads). Active cells BEYOND this
+# radius (but still within STREAM_ACTIVE_RADIUS=3) commit ONLY the sparse far-silhouette
+# LOD1 (~4/subcell) — so foliage is still PRESENT everywhere (no empty pop) while the
+# heavy LOD0 materialization is confined to the near ring. The LOD0 payload for a deferred
+# cell is RETAINED, not discarded, and upgraded in-place the moment that cell crosses into
+# the radius (no rebuild, no hole). One foliage tile = a whole terrain cell's foliage (all
+# 32m subcells × species × instances), and materializing one such tile is itself a multi-
+# second RenderingServer burst; gating LOD0 to a 5x5 ring (default 2) instead of all ~49
+# active cells is the lever that collapses the recurring cell-crossing freeze. Default 2
+# mirrors render_visual_fullres_radius_cells so the dense visual mesh and dense foliage
+# share the same near ring. Render-only, golden-neutral (foliage holds no sim references;
+# collision authority is the HeightMapShape3D streamer, untouched — D30/D35).
+var render_visual_foliage_radius_cells: int = 2
 var render_visual_foliage_subcommits_per_frame: int = 6
 # How many fully-built foliage TILES may attach to the live _foliage_root per frame.
 # Each foliage tile is assembled DETACHED (its MultiMeshInstance3D children are added to

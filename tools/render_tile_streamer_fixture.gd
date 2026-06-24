@@ -145,6 +145,7 @@ func _inspect() -> void:
 	await _exercise_fullres_on_activation()
 	await _exercise_fullres_on_inflight_prefetch_activation()
 	await _exercise_foliage_finish_budget()
+	await _exercise_foliage_lod_radius()
 
 	_streamer.call("reset_stream")
 	_require_cell_count("reset", 0)
@@ -788,6 +789,98 @@ func _exercise_foliage_finish_budget() -> void:
 
 	GameConfig.render_visual_foliage_tile_finishes_per_frame = previous_budget
 	GameConfig.render_visual_foliage_subcommits_per_frame = previous_subcommit_budget
+
+
+func _exercise_foliage_lod_radius() -> void:
+	# Cell-crossing-freeze lever: distance-graded foliage LOD. Cells inside
+	# render_visual_foliage_radius_cells of the active center commit the dense near-field LOD0
+	# + sparse LOD1; cells beyond it commit ONLY LOD1, with the heavy LOD0 DEFERRED (retained)
+	# and materialized in place — no rebuild, no empty pop — the moment the cell crosses into
+	# the ring. We assert on FAR_CELL=(2,2) only (the existing fixture already proves that cell
+	# carries both foliage LODs); the other activated cells are pure center-movers that pull the
+	# rounded active center toward or away from FAR so its Chebyshev distance crosses the ring.
+	const FAR_CELL: Vector2i = Vector2i(2, 2)
+	# Phase 1 movers put the active center at (2,4): center of {(2,2),(2,5),(2,6)} =
+	# round(mean_y=13/3=4.33)=4 -> FAR is Chebyshev distance 2, BEYOND the radius-1 ring.
+	const FAR_MOVER_A: Vector2i = Vector2i(2, 5)
+	const FAR_MOVER_B: Vector2i = Vector2i(2, 6)
+	# Phase 2 movers pull the center to (2,3): center of {(2,2),(2,5),(2,6),(2,1),(2,3)} =
+	# round(mean_y=17/5=3.4)=3 -> FAR is Chebyshev distance 1, INSIDE the ring -> LOD0 upgrade.
+	const PULL_MOVER_A: Vector2i = Vector2i(2, 1)
+	const PULL_MOVER_B: Vector2i = Vector2i(2, 3)
+	const FOLIAGE_RADIUS: int = 1
+	const WIDE_BUDGET: int = 100000
+	var previous_radius: int = GameConfig.render_visual_foliage_radius_cells
+	var previous_subcommit_budget: int = GameConfig.render_visual_foliage_subcommits_per_frame
+	var previous_finish_budget: int = GameConfig.render_visual_foliage_tile_finishes_per_frame
+	GameConfig.render_visual_foliage_radius_cells = FOLIAGE_RADIUS
+	GameConfig.render_visual_foliage_subcommits_per_frame = WIDE_BUDGET
+	GameConfig.render_visual_foliage_tile_finishes_per_frame = WIDE_BUDGET
+	_streamer.call("reset_stream")
+	_streamer.call("configure_region", REGION_ID)
+	_streamer.call("set_worker_count_for_tests", 0)
+
+	# Activate FAR plus the two phase-1 movers; the active center settles at (2,4), so FAR
+	# commits LOD1-only (its dense LOD0 is deferred).
+	EventBus.world_tile_activated.emit(FAR_CELL)
+	EventBus.world_tile_activated.emit(FAR_MOVER_A)
+	EventBus.world_tile_activated.emit(FAR_MOVER_B)
+	await _wait_for_foliage_lod_child_count_at_least("foliage-lod-radius: far LOD1 silhouette present", FAR_CELL, "foliage_lod1", 1)
+
+	var far_lod0_before: int = _foliage_tile_lod_child_count(FAR_CELL, "foliage_lod0")
+	var far_lod1_before: int = _foliage_tile_lod_child_count(FAR_CELL, "foliage_lod1")
+	if far_lod0_before != 0:
+		_errors.append("foliage-lod-radius: far cell beyond ring should be LOD1-only (no LOD0), got " + str(far_lod0_before))
+	if far_lod1_before <= 0:
+		_errors.append("foliage-lod-radius: far cell should still carry the sparse LOD1 silhouette (no empty pop), got " + str(far_lod1_before))
+
+	# Pull the active center to (2,3); FAR is now Chebyshev distance 1 (inside the ring) and its
+	# deferred LOD0 must materialize IN PLACE on the existing tile (no new tile, no rebuild).
+	var live_count_before_upgrade: int = int(_streamer.call("foliage_cell_count"))
+	EventBus.world_tile_activated.emit(PULL_MOVER_A)
+	EventBus.world_tile_activated.emit(PULL_MOVER_B)
+	await _wait_for_foliage_lod_child_count_at_least("foliage-lod-radius: deferred LOD0 upgraded in place", FAR_CELL, "foliage_lod0", 1)
+
+	var far_lod0_after: int = _foliage_tile_lod_child_count(FAR_CELL, "foliage_lod0")
+	if far_lod0_after <= 0:
+		_errors.append("foliage-lod-radius: far cell crossing into the ring should materialize its deferred LOD0 in place, got " + str(far_lod0_after))
+	var far_lod1_after: int = _foliage_tile_lod_child_count(FAR_CELL, "foliage_lod1")
+	if far_lod1_after < far_lod1_before:
+		_errors.append("foliage-lod-radius: LOD0 upgrade must not drop the existing LOD1 children (" + str(far_lod1_before) + " -> " + str(far_lod1_after) + ")")
+	# In-place upgrade: the far tile already existed, so the live tile count must not shrink
+	# (the upgrade must not destroy and rebuild the tile).
+	var live_count_after_upgrade: int = int(_streamer.call("foliage_cell_count"))
+	if live_count_after_upgrade < live_count_before_upgrade:
+		_errors.append("foliage-lod-radius: in-place LOD0 upgrade should not destroy the far tile (" + str(live_count_before_upgrade) + " -> " + str(live_count_after_upgrade) + ")")
+
+	GameConfig.render_visual_foliage_radius_cells = previous_radius
+	GameConfig.render_visual_foliage_subcommits_per_frame = previous_subcommit_budget
+	GameConfig.render_visual_foliage_tile_finishes_per_frame = previous_finish_budget
+
+
+func _foliage_tile_lod_child_count(cell: Vector2i, region_lod: String) -> int:
+	var node: Node = _streamer.call("foliage_cell_node", cell) as Node
+	var foliage_tile: Node3D = node as Node3D
+	if foliage_tile == null:
+		return 0
+	var count: int = 0
+	for child in foliage_tile.get_children():
+		var multimesh_instance: MultiMeshInstance3D = child as MultiMeshInstance3D
+		if multimesh_instance == null:
+			continue
+		if not multimesh_instance.has_meta(TerrainVisualBuilderScript.REGION_LOD_META):
+			continue
+		if String(multimesh_instance.get_meta(TerrainVisualBuilderScript.REGION_LOD_META)) == region_lod:
+			count += 1
+	return count
+
+
+func _wait_for_foliage_lod_child_count_at_least(label: String, cell: Vector2i, region_lod: String, expected_minimum: int) -> void:
+	for _frame_index in range(WAIT_FRAMES):
+		if _foliage_tile_lod_child_count(cell, region_lod) >= expected_minimum:
+			return
+		await get_tree().process_frame
+	_errors.append(label + " expected >= " + str(expected_minimum) + " " + region_lod + " children, got " + str(_foliage_tile_lod_child_count(cell, region_lod)))
 
 
 func _configure_streamer_for_pressure_fixture() -> void:

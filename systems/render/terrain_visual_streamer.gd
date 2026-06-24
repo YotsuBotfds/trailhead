@@ -66,6 +66,15 @@ var _ready_upgrade_tile_data_by_cell: Dictionary[Vector2i, Variant] = {}
 var _ready_upgrade_tile_step_by_cell: Dictionary[Vector2i, int] = {}
 var _ready_midlod_data_by_cell: Dictionary[Vector2i, Variant] = {}
 var _ready_foliage_data_by_cell: Dictionary[Vector2i, Variant] = {}
+# Distance-graded foliage LOD (the cell-crossing-freeze lever). A foliage tile carries both
+# the dense near-field LOD0 cells (~56 instances/subcell) and the sparse far-silhouette LOD1
+# cells (~4/subcell). When a cell is committed while OUTSIDE render_visual_foliage_radius_cells
+# of the active center, only its LOD1 subcommits are enqueued and the full tile data is RETAINED
+# here so the heavy LOD0 can be materialized later — IN PLACE, no rebuild — once the cell crosses
+# into the radius (_enqueue_lod0_foliage_upgrade, driven from _on_world_tile_activated). Presence
+# in this dict == "this cell is committed LOD1-only and its LOD0 is still pending". Erased the
+# moment LOD0 is enqueued, on eviction/unprefetch/free, and on reset. Render-only, golden-neutral.
+var _deferred_lod0_foliage_data_by_cell: Dictionary[Vector2i, Variant] = {}
 var _committed_tile_step_by_cell: Dictionary[Vector2i, int] = {}
 var _load_failures_by_cell: Dictionary[Vector2i, String] = {}
 var _midlod_load_failures_by_cell: Dictionary[Vector2i, String] = {}
@@ -179,6 +188,7 @@ func reset_stream() -> void:
 	_ready_upgrade_tile_step_by_cell.clear()
 	_ready_midlod_data_by_cell.clear()
 	_ready_foliage_data_by_cell.clear()
+	_deferred_lod0_foliage_data_by_cell.clear()
 	_committed_tile_step_by_cell.clear()
 	_load_failures_by_cell.clear()
 	_midlod_load_failures_by_cell.clear()
@@ -443,6 +453,11 @@ func _on_world_tile_activated(cell: Vector2i) -> void:
 	_hlod_dirty = true
 	_resort_stream_hlod_queue()
 	_queue_near_stream_hlod_densification()
+	# Any cell activation can shift the active center and pull a previously LOD1-only foliage
+	# tile into the dense foliage ring. Sweep the deferred set (mirrors the near-HLOD-densify
+	# re-sweep above) and materialize the held-back LOD0 in place for cells that are now inside
+	# render_visual_foliage_radius_cells — no rebuild, no empty pop. Render-only, golden-neutral.
+	_promote_near_deferred_foliage_lod0()
 	_request_midlod_refresh()
 	# Decouple the heavy step-1 full-res VISUAL upgrade from the collision radius: only
 	# active cells within render_visual_fullres_radius_cells (Chebyshev) of the active
@@ -513,6 +528,7 @@ func _on_world_tile_evicted(cell: Vector2i) -> void:
 	_remove_queued_commit(cell)
 	_remove_queued_foliage_subcommits(cell)
 	_remove_queued_foliage_finish(cell)
+	_deferred_lod0_foliage_data_by_cell.erase(cell)
 	_ready_upgrade_tile_data_by_cell.erase(cell)
 	_ready_upgrade_tile_step_by_cell.erase(cell)
 	if not _pending_free_cells.has(cell):
@@ -554,6 +570,7 @@ func _on_world_tile_unprefetched(cell: Vector2i) -> void:
 	_ready_upgrade_tile_step_by_cell.erase(cell)
 	_ready_midlod_data_by_cell.erase(cell)
 	_ready_foliage_data_by_cell.erase(cell)
+	_deferred_lod0_foliage_data_by_cell.erase(cell)
 	_committed_tile_step_by_cell.erase(cell)
 	_load_failures_by_cell.erase(cell)
 	_midlod_load_failures_by_cell.erase(cell)
@@ -964,9 +981,15 @@ func _drain_foliage_subcommit_queue() -> void:
 		var subcommit: FoliageSubcommit = _foliage_subcommit_queue.pop_front()
 		if not _active_cells.has(subcommit.cell):
 			continue
+		# Resolve the tile root from the partial (still assembling) OR the live (already
+		# attached) tile. A deferred-LOD0 upgrade enqueues subcommits for a cell whose tile may
+		# already be live, so adding a species cell directly to the attached root materializes
+		# that one MultiMesh in place — budgeted by this same per-frame subcommit drain.
 		var tile_root: Node3D = null
 		if _partial_foliage_tiles_by_cell.has(subcommit.cell):
 			tile_root = _partial_foliage_tiles_by_cell[subcommit.cell]
+		elif _foliage_tiles_by_cell.has(subcommit.cell):
+			tile_root = _foliage_tiles_by_cell[subcommit.cell]
 		if tile_root == null:
 			continue
 		TerrainVisualBuilderScript.add_region_foliage_species_cell_from_data(tile_root, subcommit.cell_data, subcommit.species_data)
@@ -1183,6 +1206,18 @@ func _is_cell_in_visual_fullres_radius(cell: Vector2i) -> bool:
 	return absi(cell.x - center.x) <= radius and absi(cell.y - center.y) <= radius
 
 
+func _is_cell_in_foliage_radius(cell: Vector2i) -> bool:
+	# Gate the heavy near-field foliage LOD0 to a small Chebyshev ring around the active
+	# center. Cells outside the ring commit only the sparse LOD1 silhouette; their LOD0 is
+	# deferred (retained) and materialized in place once they cross in. Mirrors the visual
+	# full-res / HLOD-densify radius helpers; uses _active_cell_center() (== the just-
+	# activated cell when it is the sole active cell, so a single near cell still gets LOD0,
+	# as the foliage fixtures rely on). Render-only, golden-neutral.
+	var center: Vector2i = _active_cell_center()
+	var radius: int = maxi(GameConfig.render_visual_foliage_radius_cells, 0)
+	return absi(cell.x - center.x) <= radius and absi(cell.y - center.y) <= radius
+
+
 func _drain_stream_hlod_densify_queue() -> int:
 	if _stream_hlod_densify_queue.is_empty():
 		return 0
@@ -1286,9 +1321,19 @@ func _begin_foliage_tile_commit(cell: Vector2i, foliage_tile_data: Variant) -> v
 	_partial_foliage_tiles_by_cell[cell] = foliage_tile
 	_ready_foliage_data_by_cell.erase(cell)
 
+	# Distance-graded foliage LOD. Cells INSIDE render_visual_foliage_radius_cells commit the
+	# full LOD0 (dense near-field) + LOD1 (sparse silhouette). Cells beyond it commit ONLY LOD1
+	# now — the heavy LOD0 (the bulk of the per-crossing materialization) is deferred and the
+	# full tile data retained so LOD0 can be added IN PLACE the moment the cell enters the ring
+	# (_promote_near_deferred_foliage_lod0). Foliage is still PRESENT everywhere (no empty pop).
+	var commit_lod0: bool = _is_cell_in_foliage_radius(cell)
+	if not commit_lod0:
+		_deferred_lod0_foliage_data_by_cell[cell] = foliage_tile_data
 	var subcommit_count: int = 0
 	for cell_data in foliage_tile_data.cells:
 		if cell_data == null:
+			continue
+		if not commit_lod0 and int(cell_data.lod_index) == 0:
 			continue
 		for species_data in cell_data.species:
 			if species_data == null or bool(species_data.transforms.is_empty()):
@@ -1303,6 +1348,62 @@ func _begin_foliage_tile_commit(cell: Vector2i, foliage_tile_data: Variant) -> v
 		_queue_foliage_tile_finish(cell)
 		return
 	_pending_foliage_subcommit_counts_by_cell[cell] = subcommit_count
+
+
+func _promote_near_deferred_foliage_lod0() -> void:
+	# Materialize the deferred near-field LOD0 for every cell that is now both active and
+	# inside the dense foliage ring. Called on each activation (the active center may have
+	# shifted, pulling previously LOD1-only tiles into the ring). Snapshot the keys first so
+	# the upgrade can mutate the deferred dict mid-iteration.
+	if _deferred_lod0_foliage_data_by_cell.is_empty():
+		return
+	for cell in _sorted_cells(_deferred_lod0_foliage_data_by_cell.keys()):
+		if not _active_cells.has(cell):
+			continue
+		if not _is_cell_in_foliage_radius(cell):
+			continue
+		_enqueue_lod0_foliage_upgrade(cell)
+
+
+func _enqueue_lod0_foliage_upgrade(cell: Vector2i) -> void:
+	# In-place upgrade: enqueue the held-back LOD0 subcommits for a cell whose foliage tile is
+	# already partial (still assembling) or live (attached). The subcommit drain resolves the
+	# root from either dict and adds the LOD0 species, budgeted per frame like any subcommit —
+	# so the deferred dense foliage materializes spread across frames, never a rebuild and
+	# never an empty hole (the LOD1 silhouette was already in place). Render-only.
+	if not _deferred_lod0_foliage_data_by_cell.has(cell):
+		return
+	var foliage_tile_data: Variant = _deferred_lod0_foliage_data_by_cell[cell]
+	_deferred_lod0_foliage_data_by_cell.erase(cell)
+	if foliage_tile_data == null:
+		return
+	# Only upgrade tiles that actually exist (partial or live); if the tile was freed before the
+	# upgrade fired, the deferred entry is simply dropped.
+	if not _partial_foliage_tiles_by_cell.has(cell) and not _foliage_tiles_by_cell.has(cell):
+		return
+	var added_count: int = 0
+	for cell_data in foliage_tile_data.cells:
+		if cell_data == null:
+			continue
+		if int(cell_data.lod_index) != 0:
+			continue
+		for species_data in cell_data.species:
+			if species_data == null or bool(species_data.transforms.is_empty()):
+				continue
+			var subcommit: FoliageSubcommit = FoliageSubcommit.new()
+			subcommit.cell = cell
+			subcommit.cell_data = cell_data
+			subcommit.species_data = species_data
+			_foliage_subcommit_queue.append(subcommit)
+			added_count += 1
+	if added_count <= 0:
+		return
+	# If the tile is still assembling (LOD1 subcommits not all drained yet), fold the LOD0
+	# subcommits into the pending count so the tile-finish waits for them too. If the tile has
+	# already finished its LOD1 subcommits (live or finish-queued), no pending count exists and
+	# the LOD0 subcommits drain straight into the existing root — no finish step is owed.
+	if _pending_foliage_subcommit_counts_by_cell.has(cell):
+		_pending_foliage_subcommit_counts_by_cell[cell] += added_count
 
 
 func _finish_foliage_subcommit(cell: Vector2i) -> void:
@@ -1719,6 +1820,7 @@ func _free_midlod_cell(cell: Vector2i) -> void:
 func _free_foliage_cell(cell: Vector2i) -> void:
 	_remove_queued_foliage_subcommits(cell)
 	_remove_queued_foliage_finish(cell)
+	_deferred_lod0_foliage_data_by_cell.erase(cell)
 	var foliage_tile: Node3D = null
 	if _foliage_tiles_by_cell.has(cell):
 		foliage_tile = _foliage_tiles_by_cell[cell]
