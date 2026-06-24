@@ -33,6 +33,8 @@ uniform float fresnel_glint_strength : hint_range(0.0, 0.5) = 0.12;
 uniform vec2 flow_direction = vec2(0.0, 1.0);
 uniform float foam_intensity : hint_range(0.0, 1.0) = 0.55;
 uniform float ripple_tightness : hint_range(0.5, 16.0) = 3.5;
+uniform vec4 ssr_sky_fallback_color : source_color = vec4(0.38, 0.54, 0.72, 1.0);
+uniform float ssr_sky_fallback_strength : hint_range(0.0, 1.0) = 0.72;
 
 const int SSR_STEP_LIMIT = 32;
 const float SSR_EDGE_FADE = 0.065;
@@ -179,10 +181,12 @@ void fragment() {
 	vec2 combined_gradient = foam_gradient * foam_normal_weight + ripple_gradient * depth_ripple_weight;
 	float normal_strength = clamp(foam_normal_strength * foam_normal_weight + ripple_normal_strength * depth_ripple_weight, 0.0, 1.0);
 	vec3 tangent_normal = normalize(vec3(-combined_gradient.x, -combined_gradient.y, 1.0));
-	vec3 normal_view = normalize(NORMAL + (TANGENT * tangent_normal.x + BINORMAL * tangent_normal.y) * normal_strength);
+	// NORMAL_MAP is the intended perturbation path (mesh has tangents; Forward+ uses it correctly).
+	// The direct NORMAL write is dropped to prevent double perturbation (H3 fix).
+	// normal_view is still computed for SSR ray direction and Fresnel — it is NOT written to NORMAL.
 	NORMAL_MAP = tangent_normal;
 	NORMAL_MAP_DEPTH = normal_strength;
-	NORMAL = normal_view;
+	vec3 normal_view = normalize(NORMAL + (TANGENT * tangent_normal.x + BINORMAL * tangent_normal.y) * normal_strength);
 	vec3 water_color = mix(shallow_color.rgb, deep_color.rgb, depth_mix);
 	float bed_visibility = pow(1.0 - depth_mix, 1.35);
 	water_color = mix(water_color, bed_tint_color.rgb, bed_visibility * bed_tint_strength);
@@ -204,7 +208,12 @@ void fragment() {
 				PROJECTION_MATRIX,
 				INV_PROJECTION_MATRIX,
 				reflection_weight);
-		water_color = mix(water_color, reflection_color, reflection_weight * ssr_intensity);
+		// On SSR hit: blend in the screen reflection.
+		// On SSR miss: fade toward sky/fog color at grazing angles (Fresnel) to avoid a
+		// dark-water artifact where no geometry is behind the reflected ray.
+		float miss_weight = (1.0 - reflection_weight) * view_fresnel * ssr_sky_fallback_strength * ssr_intensity;
+		vec3 blended = mix(water_color, reflection_color, reflection_weight * ssr_intensity);
+		water_color = mix(blended, ssr_sky_fallback_color.rgb, miss_weight);
 	}
 	ALBEDO = water_color;
 	float shoreline_alpha = mix(shallow_alpha, shallow_alpha * 0.82, shoreline);
