@@ -438,7 +438,16 @@ var atmosphere_directional_shadow_mode: int = DIRECTIONAL_SHADOW_PARALLEL_2_SPLI
 var atmosphere_directional_shadow_blend_splits: bool = false
 var atmosphere_sun_volumetric_fog_energy: float = 0.91  # was 0.35; target 1.1-1.2 (visual-fidelity-wave §1.1); conservative ~75% to low end
 var contact_fill_light_enabled: bool = true
-var contact_fill_light_energy: float = 0.18
+# FIDELITY (vehicle grounding): this warm fill lamp sits ~0.09 m BELOW the chassis
+# origin -- i.e. just under the ground plane at rest (resting min_y ~0.047 m) -- and
+# floods the contact pocket directly beneath the tires, lifting away the very
+# contact shadow that grounds the buggy ("hard flat blob, no contact shadow" /
+# L17). Halved 0.18 -> 0.09 so the under-car contact darkening reads; this is
+# COMPLEMENTARY to the SSAO grounding being raised on the in-flight
+# fidelity/lighting-atmosphere lane (it stops the fill from fighting that AO at the
+# wheel contacts), not a duplicate of it. Inspector-safe: cedar/mood inspectors
+# assert light_energy == GameConfig.contact_fill_light_energy, so they track this.
+var contact_fill_light_energy: float = 0.09
 var contact_fill_light_range: float = 0.55
 var contact_fill_light_height: float = 0.09
 var contact_fill_light_color: Color = Color(1.0, 0.76, 0.48)
@@ -577,7 +586,15 @@ var brake_light_energy: float = 1.8
 # to 4.0 m for a 1:10 RC-scale read (searchlight -> car-length throw). Default
 # ON; the L-key toggle is deferred (needs the host).
 var headlight_emission_color: Color = Color(1.0, 0.949, 0.847)
-var headlight_emission_energy: float = 1.6
+# FIDELITY (daylight glare): emission peak was 1.6 -> above the glow HDR threshold
+# (atmosphere_glow_hdr_threshold 1.15), so in full dusk/daylight the lens bloomed
+# into a hard glowing white blob that reads as a glare artifact rather than a lit
+# lamp. Dropped to 0.45 so the brightest emission channel (color peak 1.0 * 0.45)
+# stays under the glow threshold -- the lens still reads warm/self-lit but no longer
+# blooms in daylight. Kept > 0 (flat_visual_inspector requires the lens default ON),
+# the warm lens albedo is untouched, and the SpotLight night beams
+# (headlight_light_energy) are unchanged so the night light path is intact.
+var headlight_emission_energy: float = 0.45
 var headlight_light_color: Color = Color(1.0, 0.949, 0.847)
 var headlight_light_energy: float = 3.0
 var headlight_spot_range: float = 4.0
