@@ -61,26 +61,6 @@ var _build_queue: Array[Variant] = []
 var _result_queue: Array[Variant] = []
 var _result_drains_remaining_this_tick: int = 0
 
-# --- Resident collision pool (GameConfig.stream_collision_resident_pool_enabled).
-# These are inert/empty while the flag is FALSE (the default production path) and
-# only populated by the _resident_* helpers when the flag is TRUE. A pool SLOT is
-# the toroidal address of a cell: Vector2i(cell.x mod G, cell.y mod G), with
-# G = 2*STREAM_ACTIVE_RADIUS+2 (see _resident_pool_grid_side for why the +1 margin
-# over the (2R+1)^2 active window is required: the leaving and entering crossing
-# columns must hold distinct slots while both are briefly active). Within that grid
-# the cell->slot map is injective over the live cell set, so each active cell owns a
-# private resident body — the geometry-clipmap toroidal property. A slot's body is
-# created + body_set_space'd ONCE (lazily, the first time any cell maps to it) and
-# then recycled forever via map_data refresh (shape_set_data) + body_set_shape_-
-# transform; it is never freed mid-session (only on reset()).
-var _resident_pool_body_by_slot: Dictionary[Vector2i, RID] = {}
-var _resident_pool_cell_by_slot: Dictionary[Vector2i, Vector2i] = {}
-# Strong refs to the resident HeightMapShape3D Resources, keyed by slot. A
-# HeightMapShape3D owns its server shape RID and frees it on destruction, so the
-# object MUST be retained for as long as a resident body references its RID
-# (otherwise the RID dangles). This dict is also the slot-occupancy source of truth.
-var _resident_pool_shape_objects: Dictionary[Vector2i, HeightMapShape3D] = {}
-
 
 func _ready() -> void:
 	_cell_distance_less_callable = Callable(self, "_cell_distance_less")
@@ -360,20 +340,16 @@ func _activate_cell(cell: Vector2i) -> bool:
 	else:
 		shape = prebuilt_shape as HeightMapShape3D
 		_prebuilt_shapes_by_cell.erase(cell)
-	var body_rid: RID
-	if GameConfig.stream_collision_resident_pool_enabled:
-		body_rid = _resident_pool_activate(cell, shape)
-	else:
-		body_rid = PhysicsServer3D.body_create()
-		PhysicsServer3D.body_set_mode(body_rid, PhysicsServer3D.BODY_MODE_STATIC)
-		PhysicsServer3D.body_set_collision_layer(body_rid, DEFAULT_COLLISION_LAYER)
-		PhysicsServer3D.body_set_collision_mask(body_rid, DEFAULT_COLLISION_MASK)
-		PhysicsServer3D.body_add_shape(
-			body_rid,
-			shape.get_rid(),
-			Transform3D(Basis().scaled(_heightmap_collision_scale(shape)), _tile_center_world_position(cell))
-		)
-		PhysicsServer3D.body_set_space(body_rid, _physics_space())
+	var body_rid: RID = PhysicsServer3D.body_create()
+	PhysicsServer3D.body_set_mode(body_rid, PhysicsServer3D.BODY_MODE_STATIC)
+	PhysicsServer3D.body_set_collision_layer(body_rid, DEFAULT_COLLISION_LAYER)
+	PhysicsServer3D.body_set_collision_mask(body_rid, DEFAULT_COLLISION_MASK)
+	PhysicsServer3D.body_add_shape(
+		body_rid,
+		shape.get_rid(),
+		Transform3D(Basis().scaled(_heightmap_collision_scale(shape)), _tile_center_world_position(cell))
+	)
+	PhysicsServer3D.body_set_space(body_rid, _physics_space())
 	_active_bodies_by_cell[cell] = body_rid
 	_active_shapes_by_cell[cell] = shape
 	_activated_ticks_by_cell[cell] = _stream_tick
@@ -713,9 +689,7 @@ func _evict_cell_now(cell: Vector2i) -> void:
 	if not _active_bodies_by_cell.has(cell):
 		return
 	var body_rid: RID = _active_bodies_by_cell[cell]
-	if GameConfig.stream_collision_resident_pool_enabled:
-		_resident_pool_evict(cell, body_rid)
-	elif body_rid.is_valid():
+	if body_rid.is_valid():
 		PhysicsServer3D.body_set_space(body_rid, RID())
 		PhysicsServer3D.free_rid(body_rid)
 	_active_bodies_by_cell.erase(cell)
@@ -726,141 +700,6 @@ func _evict_cell_now(cell: Vector2i) -> void:
 	_remove_prebuild_state(cell)
 	_cancel_build(cell)
 	EventBus.world_tile_evicted.emit(cell)
-
-
-# --- Resident collision pool helpers ----------------------------------------
-# Only reachable when GameConfig.stream_collision_resident_pool_enabled is TRUE.
-# DETERMINISM CONTRACT: every observable the headless fixtures assert is produced
-# by the shared code in _activate_cell / _evict_cell_now (the world_tile_* events,
-# _active_bodies_by_cell membership read by active_cells(), _activated_ticks_by_cell
-# read by is_collision_settled_at, the per-tick budgets). These helpers ONLY change
-# the underlying PhysicsServer3D RIDs and produce NO ordering/RNG/clock effect — the
-# slot address is a pure function of cell coords. The per-cell collision GEOMETRY is
-# preserved exactly: the same map_width/map_depth/map_data and the same world
-# transform (scale + tile-center origin) the OFF path applies.
-
-# Toroidal grid side G. A single-cell crossing makes the OLD active column (leaving
-# the window) and the NEW active column (entering it) exactly 2R+1 cells apart, so
-# under a (2R+1)-sided grid they would alias to the SAME slot. Because evictions are
-# budget-limited (stream_collision_evictions_per_tick) the leaving column can stay
-# active for a few ticks AFTER the entering column activates, so both would be live
-# and aliasing — a single resident body per slot cannot carry two distinct active
-# cells' heightfields. Sizing the grid to 2R+2 makes the union of the old and new
-# windows (span 2R+2 per axis) inject: leaving column vs entering column differ by
-# 2R+1, which is NOT a multiple of 2R+2, so they take different slots, while any two
-# cells within a single window still differ by <= 2R+1 = G-1 < G (still a bijection).
-# This +1 margin is what keeps the per-cell collision geometry exactly correct
-# through a crossing under any eviction budget. (R = STREAM_ACTIVE_RADIUS.)
-func _resident_pool_grid_side() -> int:
-	return 2 * maxi(GameConfig.STREAM_ACTIVE_RADIUS, 0) + 2
-
-
-func _resident_pool_slot(cell: Vector2i) -> Vector2i:
-	var grid_side: int = _resident_pool_grid_side()
-	return Vector2i(posmod(cell.x, grid_side), posmod(cell.y, grid_side))
-
-
-# Lazily create (once) the resident body + HeightMapShape3D for this cell's slot,
-# refresh the slot's heightfield to this cell's data, re-center + enable the body's
-# shape, and record slot ownership. Returns the resident body RID (recorded in
-# _active_bodies_by_cell by the caller, exactly as the OFF path records its fresh RID).
-#
-# CORRECTNESS BOUND: the 2R+2 grid guarantees a free slot for every active cell as
-# long as the active center advances by at most ONE cell per tick — the documented,
-# golden-pinned crossing (the seam fixtures step one cell). A multi-cell jump in a
-# single tick (a teleport, or a car outrunning the streamer faster than ~1 cell/tick)
-# could in principle alias the entering cell onto a slot a DIFFERENT still-active cell
-# owns; a single resident body cannot hold two distinct active heightfields, so we
-# detect that and fail LOUD (push_error) rather than silently serve wrong collision.
-# This is the ceiling the A/B (research §3) must clear before the flag is shipped:
-# assert the resident-pool run never logs this error across the route.
-func _resident_pool_activate(cell: Vector2i, shape: HeightMapShape3D) -> RID:
-	var slot: Vector2i = _resident_pool_slot(cell)
-	if _resident_pool_cell_by_slot.has(slot):
-		var slot_owner: Vector2i = _resident_pool_cell_by_slot[slot]
-		if slot_owner != cell and _active_bodies_by_cell.has(slot_owner):
-			push_error(
-				"resident collision pool slot "
-				+ str(slot)
-				+ " aliases active cells "
-				+ str(slot_owner)
-				+ " and "
-				+ str(cell)
-				+ " (center moved >1 cell/tick; grid side "
-				+ str(_resident_pool_grid_side())
-				+ " too small) — collision geometry would diverge"
-			)
-	var resident_shape: HeightMapShape3D = _resident_pool_shape_for_slot(slot)
-	# Recycle the resident shape's heightfield in place. Assigning map_data on a
-	# HeightMapShape3D routes to the server's shape_set_data for SHAPE_HEIGHTMAP —
-	# no triangle BVH to rebuild — while the body + its space stay resident (the
-	# churn the OFF path pays per crossing). The resident shape RID is stable, so
-	# no body_add_shape / body_remove_shape is needed across recycles.
-	resident_shape.map_width = shape.map_width
-	resident_shape.map_depth = shape.map_depth
-	resident_shape.map_data = shape.map_data
-	var body_rid: RID = _resident_pool_body_by_slot[slot]
-	PhysicsServer3D.body_set_shape_transform(
-		body_rid,
-		0,
-		Transform3D(Basis().scaled(_heightmap_collision_scale(resident_shape)), _tile_center_world_position(cell))
-	)
-	PhysicsServer3D.body_set_shape_disabled(body_rid, 0, false)
-	_resident_pool_cell_by_slot[slot] = cell
-	return body_rid
-
-
-# Mark a cell's slot inactive: disable the slot's shape so the resident body carries
-# no collidable geometry while no cell occupies the slot, and drop slot ownership.
-# The body + shape RID stay resident for the next cell that maps to this slot.
-func _resident_pool_evict(cell: Vector2i, body_rid: RID) -> void:
-	var slot: Vector2i = _resident_pool_slot(cell)
-	# Only disable if THIS cell still owns the slot. With the 2R+2 grid an entering
-	# cell never re-binds a slot a still-active leaving cell holds, but guarding on
-	# ownership keeps eviction order-independent and safe even if that ever changes:
-	# if a newer cell already owns the slot, leave its shape enabled.
-	if not _resident_pool_cell_by_slot.has(slot):
-		return
-	if _resident_pool_cell_by_slot[slot] != cell:
-		return
-	_resident_pool_cell_by_slot.erase(slot)
-	if body_rid.is_valid() and PhysicsServer3D.body_get_shape_count(body_rid) > 0:
-		PhysicsServer3D.body_set_shape_disabled(body_rid, 0, true)
-
-
-# Return the resident HeightMapShape3D for a slot, creating the slot's body + shape
-# (and calling body_set_space ONCE) on first use. The body is a single static
-# layer-1/mask-1 collider holding exactly one shape at index 0 — structurally the
-# same body the OFF path creates per cell, just kept resident and recycled.
-func _resident_pool_shape_for_slot(slot: Vector2i) -> HeightMapShape3D:
-	if _resident_pool_shape_objects.has(slot):
-		return _resident_pool_shape_objects[slot]
-	var resident_shape: HeightMapShape3D = HeightMapShape3D.new()
-	var body_rid: RID = PhysicsServer3D.body_create()
-	PhysicsServer3D.body_set_mode(body_rid, PhysicsServer3D.BODY_MODE_STATIC)
-	PhysicsServer3D.body_set_collision_layer(body_rid, DEFAULT_COLLISION_LAYER)
-	PhysicsServer3D.body_set_collision_mask(body_rid, DEFAULT_COLLISION_MASK)
-	PhysicsServer3D.body_add_shape(body_rid, resident_shape.get_rid())
-	PhysicsServer3D.body_set_shape_disabled(body_rid, 0, true)
-	PhysicsServer3D.body_set_space(body_rid, _physics_space())
-	_resident_pool_body_by_slot[slot] = body_rid
-	_resident_pool_shape_objects[slot] = resident_shape
-	return resident_shape
-
-
-# Free every resident body + shape RID and clear pool bookkeeping. Called only from
-# _unload_all_active_bodies (reset()/_exit_tree()) — never on a per-crossing path.
-func _resident_pool_free_all() -> void:
-	for slot in _resident_pool_body_by_slot.keys():
-		var body_rid: RID = _resident_pool_body_by_slot[slot]
-		if body_rid.is_valid():
-			PhysicsServer3D.body_set_space(body_rid, RID())
-			PhysicsServer3D.free_rid(body_rid)
-	# HeightMapShape3D Resources free their own server shape RID on destruction; the
-	# objects drop here so the server shapes are released when the dictionary clears.
-	_resident_pool_body_by_slot.clear()
-	_resident_pool_shape_objects.clear()
-	_resident_pool_cell_by_slot.clear()
 
 
 func _begin_withhold_tracking_tick() -> void:
@@ -1034,22 +873,12 @@ func _worker_loop() -> void:
 
 
 func _unload_all_active_bodies() -> void:
-	if GameConfig.stream_collision_resident_pool_enabled:
-		# Resident-pool bodies are owned per SLOT, not per cell, and outlive cells —
-		# tear them all down here (only reset()/_exit_tree() calls this).
-		_resident_pool_free_all()
-	else:
-		var cells: Array[Vector2i] = _sorted_body_cells()
-		for cell in cells:
-			var body_rid: RID = _active_bodies_by_cell[cell]
-			if body_rid.is_valid():
-				PhysicsServer3D.body_set_space(body_rid, RID())
-				PhysicsServer3D.free_rid(body_rid)
-	# Defensively reclaim any resident pool left over from a prior flag-ON session,
-	# so a runtime flag flip can never leak RIDs (no-op under the steady OFF path —
-	# the pool dictionaries are empty, leaving the free-loop above byte-identical).
-	if not _resident_pool_body_by_slot.is_empty():
-		_resident_pool_free_all()
+	var cells: Array[Vector2i] = _sorted_body_cells()
+	for cell in cells:
+		var body_rid: RID = _active_bodies_by_cell[cell]
+		if body_rid.is_valid():
+			PhysicsServer3D.body_set_space(body_rid, RID())
+			PhysicsServer3D.free_rid(body_rid)
 	_active_bodies_by_cell.clear()
 	_active_shapes_by_cell.clear()
 	_activated_ticks_by_cell.clear()
@@ -1187,9 +1016,7 @@ func _deactivate_cell_for_tests(cell: Vector2i) -> void:
 	if not _active_bodies_by_cell.has(cell):
 		return
 	var body_rid: RID = _active_bodies_by_cell[cell]
-	if GameConfig.stream_collision_resident_pool_enabled:
-		_resident_pool_evict(cell, body_rid)
-	elif body_rid.is_valid():
+	if body_rid.is_valid():
 		PhysicsServer3D.body_set_space(body_rid, RID())
 		PhysicsServer3D.free_rid(body_rid)
 	_active_bodies_by_cell.erase(cell)
