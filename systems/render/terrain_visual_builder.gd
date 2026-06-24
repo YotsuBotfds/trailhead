@@ -51,6 +51,26 @@ const FOLIAGE_BARK_ALBEDO_LIGHTEN_STRENGTH: float = 0.6
 # white so we never push back into the chartreuse neon blowout (commit a02214fb1).
 const FOLIAGE_LEAF_ALBEDO_LIGHTEN_TARGET: Color = Color(0.82, 0.86, 0.74, 1.0)
 const FOLIAGE_LEAF_ALBEDO_LIGHTEN_STRENGTH: float = 0.62
+# Riparian leaf light-transmission (fidelity/foliage-translucency): cottonwood/willow leaf cards
+# carry no transmittance, so the low dusk sun behind a canopy renders the leaves as flat near-black
+# silhouettes — real cottonwoods/willows GLOW with light passing through the leaf. BaseMaterial3D's
+# backlight adds a back-face emission that reads as that transmitted glow (the StandardMaterial3D
+# analogue of the grass shader's BACKLIGHT output). Warm-green so the lit-through leaf reads as
+# sunlit chlorophyll, not a tint shift. ENERGY 0.0 fully restores the prior opaque-silhouette look
+# (backlight_enabled is gated on energy > 0). Kept modest so a back-lit canopy lifts off black
+# without blowing past the muted-green target that commit a02214fb1 fought.
+const FOLIAGE_LEAF_BACKLIGHT_COLOR: Color = Color(0.34, 0.46, 0.16, 1.0)
+const FOLIAGE_LEAF_BACKLIGHT_ENERGY: float = 0.22
+# Opaque juniper/yucca leaf grounding (fidelity/foliage-translucency): their GLB leaf surfaces have
+# no alpha, so they skip the alpha-scissor leaf branch and never enable vertex_color_use_as_albedo
+# — the per-instance COLOR the MultiMesh already writes (_foliage_tree_instance_color) stays inert
+# and a whole stand clones to one near-black cone. ENABLED activates that existing per-instance
+# value/warmth variation (deterministic, hash-derived) so the stand stops reading identical; the
+# backlight gives the scale/rosette leaves a touch of transmission. Smaller energy than the riparian
+# canopy (dense scale foliage, less card-thin). false / 0.0 each restore the prior flat-clone look.
+const FOLIAGE_OPAQUE_LEAF_PER_INSTANCE_COLOR_ENABLED: bool = true
+const FOLIAGE_OPAQUE_LEAF_BACKLIGHT_COLOR: Color = Color(0.30, 0.40, 0.20, 1.0)
+const FOLIAGE_OPAQUE_LEAF_BACKLIGHT_ENERGY: float = 0.12
 const TEXTURE_SOURCE_PATH_META: StringName = &"trailhead_source_path"
 const SURFACE_INDEX_LAYER_COUNT: int = 8
 const SURFACE_INDEX_ARRAY_CACHE_DIR: String = "user://trailhead/terrain_surface_index_arrays"
@@ -130,6 +150,17 @@ const REGION_HLOD_SAMPLE_STEP: int = 5
 const REGION_STREAM_MIDLOD_SAMPLE_STEP: int = 4
 const REGION_STREAM_HLOD_SAMPLE_STEP: int = 20
 const REGION_STREAM_MIDLOD_RANGE_END_M: float = 500.0
+# Cast-shadow grounding (fidelity/foliage-translucency): near/mid canyon-wall terrain and LOD1 tree
+# trunks were forced shadow-OFF, so mid-ground walls/trees planted no shadow on the canyon floor and
+# read as pasted-on cutouts. These gate the new casters so they can be tiered DOWN on weaker hardware
+# (false → exact prior behaviour). Scoped CONSERVATIVELY: the mid-LOD terrain band is the near/mid
+# canyon-wall representation (visible from the camera out to REGION_STREAM_MIDLOD_RANGE_END_M, ~500m;
+# the detail tile under it already casts). The far stream-HLOD chunks (begin >= 500m) stay OFF —
+# distant casters cost GPU for shadows the eye won't place. LOD1 trees are the mid-field trunks; LOD0
+# (near) trees already cast. A parallel lane is raising the directional shadow max-distance so these
+# mid casters land in range.
+const REGION_MIDLOD_WALL_CAST_SHADOW_ENABLED: bool = true
+const FOLIAGE_LOD1_TREE_CAST_SHADOW_ENABLED: bool = true
 const REGION_VERTEX_KEY_CELL_OFFSET: int = 32768
 const REGION_VERTEX_KEY_CELL_STRIDE: int = 65536
 const REGION_FOLIAGE_CELL_SIZE_M: float = 32.0
@@ -763,7 +794,11 @@ static func region_stream_midlod_tile_from_data(parent: Node3D, midlod_tile_data
 	instance.visibility_range_begin = midlod_tile_data.visibility_range_begin
 	instance.visibility_range_end = midlod_tile_data.visibility_range_end
 	instance.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
-	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# Cast-shadow grounding: this is the near/mid canyon-wall terrain band (camera out to ~500m;
+	# the detail tile under it already casts). Letting it cast plants mid-ground walls' shadows on
+	# the canyon floor so they stop reading as pasted-on cutouts. The far stream-HLOD chunks
+	# (begin >= 500m) deliberately stay OFF. Gated so it can be tiered down on weaker GPUs.
+	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if REGION_MIDLOD_WALL_CAST_SHADOW_ENABLED else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	instance.set_meta(REGION_LOD_META, midlod_tile_data.lod_meta)
 	instance.set_meta(VISIBILITY_RADIUS_META, midlod_tile_data.visibility_radius)
 	instance.set_meta(TILE_INDEX_META, midlod_tile_data.cell)
@@ -2648,7 +2683,12 @@ static func _add_foliage_species_cell_from_data(parent: Node3D, cell_data: Folia
 		instance.visibility_range_end = foliage_lod1_visibility_range_end_for_species(cell_radius, species_id)
 		instance.visibility_range_begin_margin = fade_margin
 		instance.visibility_range_end_margin = fade_margin
-	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if cell_data.lod_index == 0 and _foliage_species_uses_source_material(species_id) else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# Cast-shadow grounding: tree species (source-material: willow/cottonwood/juniper/yucca) cast so
+	# they plant a shadow and stop reading as pasted-on. LOD0 (near) trees always cast; LOD1 (mid-
+	# field) trunks were forced OFF, so the mid-ground trees floated — enable them behind the tunable
+	# so weak GPUs can tier the mid casters back off. Grass/scrub/boulder never cast (cheap billboards).
+	var casts_shadow: bool = _foliage_species_uses_source_material(species_id) and (cell_data.lod_index == 0 or FOLIAGE_LOD1_TREE_CAST_SHADOW_ENABLED)
+	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if casts_shadow else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	instance.set_meta(REGION_LOD_META, "foliage_lod" + str(cell_data.lod_index))
 	instance.set_meta(&"trailhead_foliage_species", species_data.species_id)
 	instance.set_meta(VISIBILITY_RADIUS_META, cell_data.visibility_radius)
@@ -2913,6 +2953,25 @@ static func _source_foliage_mesh_with_species_materials(source_mesh: Mesh, mesh_
 				# roughness toward matte and disable the specular lobe. Colour is unchanged.
 				material.roughness = maxf(material.roughness, 0.9)
 				material.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
+				# Riparian leaf translucency: a back-lit cottonwood/willow canopy read as a flat
+				# near-black silhouette against the low dusk sun. backlight adds a warm-green back-face
+				# emission (StandardMaterial3D's transmitted-light analogue of the grass shader's
+				# BACKLIGHT) so the leaves GLOW when the sun is behind them. Inside the alpha-scissor
+				# (leaf-card) branch so bark and opaque juniper/yucca leaves are untouched here.
+				_apply_foliage_leaf_backlight(material, FOLIAGE_LEAF_BACKLIGHT_COLOR, FOLIAGE_LEAF_BACKLIGHT_ENERGY)
+			else:
+				# Opaque juniper/yucca leaf surface (no alpha → never enters the alpha-scissor branch
+				# above, but _foliage_source_material_is_leaf still classified it as a leaf). The
+				# MultiMesh already writes a per-instance COLOR multiplier for these species
+				# (_foliage_tree_instance_color) but a StandardMaterial3D ignores instance COLOR unless
+				# vertex_color_use_as_albedo is set — so without this a whole stand clones to one
+				# identical near-black cone. Enabling it activates that existing deterministic
+				# value/warmth variation; a small backlight adds a touch of leaf transmission. No atlas
+				# (rosette/scale geometry carries bbox UVs that would smear the leaf sheet). Both
+				# effects revert cleanly via their tunables.
+				if FOLIAGE_OPAQUE_LEAF_PER_INSTANCE_COLOR_ENABLED:
+					material.vertex_color_use_as_albedo = true
+				_apply_foliage_leaf_backlight(material, FOLIAGE_OPAQUE_LEAF_BACKLIGHT_COLOR, FOLIAGE_OPAQUE_LEAF_BACKLIGHT_ENERGY)
 		elif _foliage_source_material_is_bark(material):
 			# C1 Approach A: the foliage GLBs ship with zero textures, so trunks read as flat
 			# pale pillars. Bark/stem/stalk surfaces have clean cone-projected UVs, so a real
@@ -2991,6 +3050,18 @@ static func _apply_foliage_leaf_atlas(material: StandardMaterial3D) -> void:
 		tint.a
 	)
 	material.albedo_texture = _foliage_leaf_atlas_texture
+
+
+static func _apply_foliage_leaf_backlight(material: StandardMaterial3D, color: Color, energy: float) -> void:
+	# Leaf light-transmission: BaseMaterial3D.backlight is a back-face emission that reads as light
+	# passing THROUGH the leaf when the sun is behind the canopy (the StandardMaterial3D analogue of
+	# the grass shader's BACKLIGHT). Scale the warm-green colour by energy so a single tunable
+	# controls the glow strength; energy <= 0.0 leaves backlight disabled (exact prior look). No
+	# per-frame state, no RNG/clock — a pure material edit, identical every build.
+	if energy <= 0.0:
+		return
+	material.backlight_enabled = true
+	material.backlight = Color(color.r * energy, color.g * energy, color.b * energy, 1.0)
 
 
 static func _foliage_source_material_is_leaf(species_id: StringName, material: StandardMaterial3D, surface_index: int) -> bool:
