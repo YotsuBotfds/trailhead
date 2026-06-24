@@ -159,8 +159,11 @@ const REGION_STREAM_MIDLOD_RANGE_END_M: float = 500.0
 # distant casters cost GPU for shadows the eye won't place. LOD1 trees are the mid-field trunks; LOD0
 # (near) trees already cast. A parallel lane is raising the directional shadow max-distance so these
 # mid casters land in range.
-const REGION_MIDLOD_WALL_CAST_SHADOW_ENABLED: bool = true
-const FOLIAGE_LOD1_TREE_CAST_SHADOW_ENABLED: bool = true
+# NOTE: mid-LOD wall casting MUST stay false — zion_playable_inspector.gd enforces that mid-LOD
+# tiles do not cast (coarse geometry throws blocky LOD-seam shadows). Grounding instead comes from
+# LOD1-tree + detail-tile shadows and the longer directional shadow max-distance.
+const REGION_MIDLOD_WALL_CAST_SHADOW_ENABLED: bool = false
+const FOLIAGE_LOD1_TREE_CAST_SHADOW_ENABLED: bool = false  # MUST stay false: zion_playable_inspector enforces LOD1 foliage does NOT cast (only LOD0/detail tiles cast — perf + LOD-seam shadow quality). Grounding comes from the longer directional shadow distance + meter-scale SSAO instead.
 const REGION_VERTEX_KEY_CELL_OFFSET: int = 32768
 const REGION_VERTEX_KEY_CELL_STRIDE: int = 65536
 const REGION_FOLIAGE_CELL_SIZE_M: float = 32.0
