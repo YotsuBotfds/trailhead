@@ -4221,9 +4221,24 @@ static func _load_source_image(path: String) -> Image:
 		return null
 	var image: Image = Image.new()
 	var load_error: Error = image.load(path)
-	if load_error != OK or image.is_empty():
+	if load_error == OK and not image.is_empty():
+		return image
+	# Exported builds strip an imported texture's raw source file from the PCK,
+	# so Image.load("res://....png") fails there even though the texture ships.
+	# Read pixels back from the imported texture instead. Surface-id maps import
+	# lossless with no mipmaps (compress/mode=0), so get_image() is pixel-exact;
+	# decompress() guards any VRAM-compressed source images routed through here.
+	var imported_texture: Texture2D = load(path) as Texture2D
+	if imported_texture == null:
 		return null
-	return image
+	var imported_image: Image = imported_texture.get_image()
+	if imported_image == null or imported_image.is_empty():
+		return null
+	if imported_image.is_compressed():
+		var decompress_error: Error = imported_image.decompress()
+		if decompress_error != OK:
+			return null
+	return imported_image
 
 
 static func _wet_albedo_color(base_color: Color, wetness: float) -> Color:
