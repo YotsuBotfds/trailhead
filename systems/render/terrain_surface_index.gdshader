@@ -546,6 +546,7 @@ void fragment() {
 	float kayenta_contact_line = 0.0;
 	float kayenta_contact_y = 0.0;
 	vec3 navajo_color = ALBEDO;
+	float navajo_height_t_out = 0.0;
 	float major_sweep = 0.0;
 	float major_line = 0.0;
 	float lamina_wave = 0.0;
@@ -571,6 +572,7 @@ void fragment() {
 		kayenta_contact_line = (1.0 - smoothstep(0.0, 5.5, abs(world_y - kayenta_contact_y))) * kayenta_wall_mask * cliff_face_mask;
 		float navajo_height_span = max(zion_navajo_height_end - zion_navajo_height_start, 1.0);
 		float navajo_height_t = clamp((world_y - zion_navajo_height_start) / navajo_height_span + cliff_face_mask * 0.035, 0.0, 1.0);
+		navajo_height_t_out = navajo_height_t;
 		navajo_color = zion_navajo_palette(navajo_height_t);
 		// Cross-bed SET modeling: quantize the wall into stacked bedding packages, give each set
 		// its own azimuth dip and tangent (set_hash / tangent_hash), and read the laminae within.
@@ -659,8 +661,22 @@ void fragment() {
 	zion_albedo = mix(zion_albedo, kayenta_base, kayenta_mask * min(zion_kayenta_strength + 0.30, 1.0));
 	float strata_shade = major_sweep * 0.11 + lamina_wave * 0.070 - truncation_line * 0.50 - lamina_dark * 0.12;
 	vec3 strata_tint = navajo_modulated * (1.0 + strata_shade);
-	strata_tint = mix(strata_tint, zion_strata_dark_color.rgb, clamp(truncation_line * 0.58 + major_line * 0.10, 0.0, 0.42));
-	strata_tint = mix(strata_tint, zion_strata_light_color.rgb, lamina_line * 0.055 * (1.0 - major_line * 0.45));
+	// Truncation/bounding-surface shadow: warm red-brown low on the wall (iron-rich Navajo),
+	// cooling toward a neutral grey-dark high up so the bleached cream/white tops don't read as
+	// warm-red in their cross-bed shadows (preserves the warm-bottom / cool-top complement).
+	vec3 strata_dark_tint = mix(zion_strata_dark_color.rgb, vec3(0.20, 0.17, 0.15), smoothstep(0.55, 0.92, navajo_height_t_out));
+	strata_tint = mix(strata_tint, strata_dark_tint, clamp(truncation_line * 0.58 + major_line * 0.10, 0.0, 0.42));
+	// Cross-bed lighter laminae are a tonal LIFT of the LOCAL height facies, not a single
+	// warm-orange constant. The legacy constant (zion_strata_light_color, a warm orange) was
+	// mixed into every lamina at all heights, which re-warmed the cream/white upper Navajo and
+	// bleached tops -- fighting the vertical de-orange gradient (bible 1.3/4.3 rule 1, the
+	// load-bearing "too orange on the upper walls" defect). Derive the lamina-light tint from
+	// the local navajo_color brightened toward its own value, and fade the warm-orange constant
+	// out with height so it only warms the lower/mid wall where warm laminae are correct.
+	vec3 strata_local_light = clamp(navajo_color * 1.18 + vec3(0.045), vec3(0.0), vec3(1.0));
+	float strata_warm_keep = 1.0 - smoothstep(0.42, 0.78, navajo_height_t_out);
+	vec3 strata_light_tint = mix(strata_local_light, zion_strata_light_color.rgb, strata_warm_keep * 0.5);
+	strata_tint = mix(strata_tint, strata_light_tint, lamina_line * 0.055 * (1.0 - major_line * 0.45));
 	float strata_cliff_mask = navajo_mask * cliff_face_mask;
 	zion_albedo = mix(zion_albedo, strata_tint, strata_cliff_mask * zion_strata_strength);
 	zion_albedo = mix(zion_albedo, kayenta_base, kayenta_mask * cliff_face_mask * min(zion_kayenta_strength + 0.15, 1.0) * 0.45);
