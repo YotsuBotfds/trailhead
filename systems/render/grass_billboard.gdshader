@@ -1,5 +1,5 @@
 shader_type spatial;
-render_mode diffuse_lambert, specular_schlick_ggx, alpha_to_coverage;
+render_mode diffuse_lambert, specular_schlick_ggx;
 uniform vec4 blade_base_color : source_color = vec4(0.07, 0.18, 0.055, 1.0);
 uniform vec4 blade_tip_color : source_color = vec4(0.48, 0.66, 0.23, 1.0);
 uniform float blade_height_reference = 0.42;

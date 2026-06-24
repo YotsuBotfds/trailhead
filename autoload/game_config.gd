@@ -430,7 +430,7 @@ var cam_drive_chatter_max_offset: float = 0.0045
 var cam_drive_chatter_speed_threshold: float = 2.5
 var cam_drive_chatter_speed_full: float = 11.0
 var cam_drive_chatter_frequency_hz: float = 9.5
-var vehicle_surface_burst_enabled: bool = true  # verified SOFT (no wave1 yellow-box) via windowed drive_capture + suite42, 2026-06-24; recovered radial-alpha mask + wheel-contact spawn
+var vehicle_surface_burst_enabled: bool = false  # OFF: owner saw it as a "weird haze the car drives through" in motion (a still read soft, continuous driving accumulates)
 var surface_burst_max_particles: int = 16
 var surface_burst_speed_threshold: float = 2.0
 var surface_burst_lifetime: float = 0.80
@@ -442,7 +442,7 @@ var landing_squash_recover_speed: float = 8.0
 # per-surface INTENSITY (sand strong, pavement faint, water=spray), then tinted by
 # a per-surface COLOR. Hard-accel / slide / landing add a decaying KICK boost that
 # also re-fires the existing surface burst for a bigger pop. All values live-tunable.
-var wheel_dust_enabled: bool = true
+var wheel_dust_enabled: bool = false  # OFF: continuous per-wheel dust read as a "weird haze the car drives through" in motion
 var wheel_dust_particles_per_wheel: int = 16
 var wheel_dust_speed_threshold: float = 0.6
 var wheel_dust_speed_full: float = 4.5
