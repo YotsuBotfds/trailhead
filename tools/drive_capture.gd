@@ -22,7 +22,7 @@ const STREAM_WAIT_FRAMES: int = 1800
 const TITLE_CARD_WAIT_FRAMES: int = 600
 const RENDER_SETTLE_FRAMES: int = 30
 const SHUTDOWN_FRAMES: int = 8
-const EXPECTED_STREAMED_CELLS: int = 25
+const MIN_STREAMED_CELLS: int = 25  # MINIMUM streamed visual+foliage cells before driving; was an exact ==25 gate that rotted when STREAM_ACTIVE_RADIUS grew 2->3 (now 49 active cells)
 const CAPTURE_CAMERA_FOV: float = 62.0
 const CAPTURE_CAMERA_NAME: String = "DriveCaptureLookbackCamera"
 const LOOKBACK_FORWARD_OFFSET: float = 2.5
@@ -161,9 +161,9 @@ func _streaming_ready() -> bool:
 	var streamer: Node = _visual_streamer()
 	if streamer == null:
 		return false
-	if int(streamer.call("visual_cell_count")) != EXPECTED_STREAMED_CELLS:
+	if int(streamer.call("visual_cell_count")) < MIN_STREAMED_CELLS:
 		return false
-	if int(streamer.call("foliage_cell_count")) != EXPECTED_STREAMED_CELLS:
+	if int(streamer.call("foliage_cell_count")) < MIN_STREAMED_CELLS:
 		return false
 	return true
 
