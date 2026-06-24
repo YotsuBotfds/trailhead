@@ -215,6 +215,17 @@ func reset_stream() -> void:
 func _process(_delta: float) -> void:
 	if not _configured:
 		return
+	# Stamp the streamer's per-frame work-phase budget window HERE, at the very top, so
+	# EVERY main-thread drain below — the stream-HLOD chunk decode included — shares one
+	# soft COMMIT_FRAME_BUDGET_USEC (~4 ms). Previously the stamp was set only just before
+	# the commit/foliage/mid-LOD drains, so the stream-HLOD drain ran first, ungated, and
+	# its per-chunk PNG/heightmap decode (Image.load_from_file + mesh build) paid full main-
+	# thread cost every frame on top of the commit budget. During the cold-start title-card
+	# hold that compounded across the whole region manifest (~3k coarse silhouette chunks)
+	# into a multi-second boot freeze. Sharing one window means a heavy HLOD decode now
+	# yields the rest of the frame's streamer work to the next frame instead of stalling.
+	# Render host only — wall-clock here never feeds the deterministic sim.
+	_commit_phase_start_usec = Time.get_ticks_usec()
 	if _hlod_dirty:
 		_update_hlod_visibility()
 		_hlod_dirty = false
@@ -231,10 +242,8 @@ func _process(_delta: float) -> void:
 	# commit continuously, so foliage starved to a trickle and the floor ahead of the
 	# moving car stayed bare. Foliage drain is already bounded by its own per-frame budget
 	# (GameConfig.render_visual_foliage_subcommits_per_frame), so ungating does not uncap work.
-	# The commit/subcommit/mid-LOD drains additionally share a soft wall-clock budget
-	# (COMMIT_FRAME_BUDGET_USEC) measured from this stamp, so a burst spreads across frames
-	# instead of stalling one. Render host only — wall-clock here never feeds the sim.
-	_commit_phase_start_usec = Time.get_ticks_usec()
+	# The commit/subcommit/mid-LOD drains share the soft wall-clock budget stamped above
+	# (COMMIT_FRAME_BUDGET_USEC), so a burst spreads across frames instead of stalling one.
 	_drain_commit_queue()
 	_drain_foliage_subcommit_queue()
 	_drain_midlod_commit_queue()
@@ -1037,6 +1046,15 @@ func _drain_stream_hlod_queue() -> int:
 			continue
 		_attach_stream_hlod_chunk(cell, chunk)
 		committed_count += 1
+		# Each HLOD chunk decode (heightmap bytes + Image.load_from_file PNG + coarse mesh
+		# build) is the single heaviest main-thread step in this drain. Once at least one
+		# chunk has committed this frame, yield the rest to the next frame if the streamer's
+		# shared per-frame wall-clock budget (stamped at the top of _process) is already
+		# spent — so a fat decode during the cold-start manifest sweep can't stall the frame
+		# into the boot freeze. Headless disables the budget, so fixtures still drain the
+		# full per-frame commit_budget in one tick. Render host only — never feeds the sim.
+		if _commit_frame_budget_exceeded():
+			break
 	return committed_count
 
 
