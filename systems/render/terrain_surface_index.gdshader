@@ -32,6 +32,32 @@ uniform vec2 surface_uv_scale_6 = vec2(2.0, 2.0);
 uniform vec2 surface_uv_scale_7 = vec2(1.6, 1.6);
 uniform float terrain_roughness = 0.88;
 uniform float terrain_specular = 0.18;
+// C2 PER-SURFACE ROUGHNESS/AO MATERIAL RESPONSE. The terrain used a single flat scalar
+// roughness (terrain_roughness, the catalog-averaged value) for every surface, so wet
+// stone, dry sand and loose scree all shaded with identical glossiness -- the literal
+// "everything looks flat" read. These uniforms carry the catalog's OWN per-surface
+// roughness (wet-adjusted) per surface-id layer so the surface-id map drives real material
+// variation: glossier wet/mossy stone (low roughness), matte loose sand/scree (high).
+// ALBEDO IS UNTOUCHED -- this adds only the roughness/AO light RESPONSE, not a restyle.
+// The render builder sets surface_roughness_0..7 from each surface's SurfaceVisualDef in
+// _apply_surface_index_palette(); defaults below mirror the legacy single scalar so the
+// shader is golden-neutral if the builder never sets them (e.g. palette-only fallback).
+uniform float surface_roughness_0 = 0.88;   // palette fallback / packed_dirt-like
+uniform float surface_roughness_1 = 0.88;
+uniform float surface_roughness_2 = 0.88;
+uniform float surface_roughness_3 = 0.88;
+uniform float surface_roughness_4 = 0.88;
+uniform float surface_roughness_5 = 0.88;
+uniform float surface_roughness_6 = 0.88;
+uniform float surface_roughness_7 = 0.88;
+// Cavity AO RESPONSE: a tunable contact-darkening driven off the per-pixel surface relief
+// the shader already computes (the texture/micro normal's lean off the geometric normal --
+// floor_pbr_bump on the floor, array-normal tilt on cliffs). Crevices read slightly
+// occluded so raking golden-hour light reveals grain depth instead of a flat matte plate.
+// No new texture fetch (a full per-surface AO map array from the unused ground_pbr scans is
+// the larger refactor deliberately deferred per the audit note). Default subtle; 0 = no-op.
+uniform float surface_ao_strength = 0.35;    // authority of the cavity-AO darkening
+uniform float surface_ao_floor_bias = 0.6;   // extra AO weight on the drivable floor relief
 uniform vec4 zion_sandstone_color : source_color = vec4(0.82, 0.42, 0.20, 1.0);
 uniform vec4 zion_sand_color : source_color = vec4(0.78, 0.68, 0.52, 1.0);
 uniform vec4 zion_strata_dark_color : source_color = vec4(0.36, 0.14, 0.08, 1.0);
@@ -357,6 +383,39 @@ float surface_micro_strength_for_id(float surface_id_value) {
 		return surface_micro_strength_7;
 	}
 	return surface_micro_strength_0;
+}
+
+// C2: per-surface base roughness for the rounded surface-id layer. Same nearest-id ladder
+// the other per-surface selectors use. Drives the ROUGHNESS base so each surface shades
+// with its own glossiness (wet/mossy stone glossy, loose sand/scree matte) instead of one
+// catalog-averaged scalar. Defaults mirror the legacy flat value so an unset builder is a
+// no-op.
+float surface_roughness_for_id(float surface_id_value) {
+	if (surface_id_value < 0.5) {
+		return surface_roughness_0;
+	}
+	if (surface_id_value < 1.5) {
+		return surface_roughness_1;
+	}
+	if (surface_id_value < 2.5) {
+		return surface_roughness_2;
+	}
+	if (surface_id_value < 3.5) {
+		return surface_roughness_3;
+	}
+	if (surface_id_value < 4.5) {
+		return surface_roughness_4;
+	}
+	if (surface_id_value < 5.5) {
+		return surface_roughness_5;
+	}
+	if (surface_id_value < 6.5) {
+		return surface_roughness_6;
+	}
+	if (surface_id_value < 7.5) {
+		return surface_roughness_7;
+	}
+	return surface_roughness_0;
 }
 
 // Two-octave smooth-hash "micro-height" in world XZ. Each octave is a couple of
@@ -838,9 +897,23 @@ void fragment() {
 	vec3 world_micro_normal = apply_micro_normal(world_detail_normal, world_xz, micro_strength);
 	world_micro_normal = apply_floor_fine_normal(world_micro_normal, world_xz, micro_strength, low_flat_mask);
 	NORMAL = normalize((VIEW_MATRIX * vec4(world_micro_normal, 0.0)).xyz);
+	// C2 CAVITY AO: darken ALBEDO in crevices using the relief signal the detail normal
+	// already carries -- how far the final micro/detail normal leans off the geometric
+	// normal (0 = flat plate, ~1 = deep grain/strata). No extra texture fetch. Weighted up
+	// a touch on the drivable floor (where grain depth reads most) via surface_ao_floor_bias.
+	// Conservative: a multiplicative darken only, so it deepens contact shadow without
+	// shifting hue; surface_ao_strength = 0 restores the prior flat-lit albedo exactly.
+	float surface_cavity = clamp(1.0 - dot(world_micro_normal, world_geo_normal_now), 0.0, 1.0);
+	float surface_ao = 1.0 - surface_cavity * surface_ao_strength * (1.0 + surface_ao_floor_bias * low_flat_mask);
+	ALBEDO = clamp(ALBEDO * clamp(surface_ao, 0.0, 1.0), vec3(0.0), vec3(1.0));
 	float roughness_wobble = (hash21_smooth(world_xz * 0.31) * 2.0 - 1.0) * micro_roughness_variation * (0.5 + micro_strength);
 	float floor_roughness_wobble = (hash21_smooth(world_xz * 0.9 + vec2(5.7, 2.4)) * 2.0 - 1.0) * micro_roughness_floor_variation * low_flat_mask;
 	float floor_roughness_shift = floor_wash_mask * 0.035 + floor_sand_patch_mask * 0.055 - floor_slickrock_mask * 0.08 + low_flat_mask * detile_floor * 0.025;
-	ROUGHNESS = clamp(mix(terrain_roughness + roughness_wobble + floor_roughness_shift + floor_roughness_wobble + floor_pbr_bump * floor_pbr_roughness_strength * floor_pbr_gate, zion_bank_wet_roughness, bank_wet_mask), 0.05, 1.0);
+	// C2: per-surface base roughness (catalog's own wet-adjusted value per surface-id layer)
+	// replaces the single catalog-averaged terrain_roughness scalar, so wet/mossy stone reads
+	// glossier and loose sand/scree matte. All the existing floor/relief/wet wobbles still
+	// layer on top, and the wet-bank override is unchanged.
+	float surface_base_roughness = surface_roughness_for_id(surface_id_value);
+	ROUGHNESS = clamp(mix(surface_base_roughness + roughness_wobble + floor_roughness_shift + floor_roughness_wobble + floor_pbr_bump * floor_pbr_roughness_strength * floor_pbr_gate, zion_bank_wet_roughness, bank_wet_mask), 0.05, 1.0);
 	SPECULAR = terrain_specular;
 }

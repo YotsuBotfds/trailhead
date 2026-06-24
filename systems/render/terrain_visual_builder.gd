@@ -321,6 +321,10 @@ const CONTROL_ORIGIN_XZ_UNIFORM: StringName = &"control_origin_xz"
 const CONTROL_SIZE_XZ_UNIFORM: StringName = &"control_size_xz"
 const TERRAIN_ROUGHNESS_UNIFORM: StringName = &"terrain_roughness"
 const TERRAIN_SPECULAR_UNIFORM: StringName = &"terrain_specular"
+# C2: per-surface roughness uniform prefix (surface_roughness_0..7). Each surface-id layer
+# carries its own catalog roughness so wet/mossy stone shades glossier and loose sand/scree
+# matte, instead of the single catalog-averaged terrain_roughness scalar.
+const SURFACE_ROUGHNESS_UNIFORM_PREFIX: String = "surface_roughness_"
 const ALBEDO_ARRAY_UNIFORM: StringName = &"albedo_array"
 const USE_ALBEDO_ARRAY_UNIFORM: StringName = &"use_albedo_array"
 const NORMAL_ARRAY_UNIFORM: StringName = &"normal_array"
@@ -1607,6 +1611,10 @@ static func _apply_surface_index_palette(material: ShaderMaterial) -> void:
 			color = _wet_albedo_color(visual_def.get("albedo_color"), wetness)
 			var texture_uv_scale: Vector2 = visual_def.get("texture_uv_scale")
 			material.set_shader_parameter(StringName(SURFACE_UV_SCALE_UNIFORM_PREFIX + str(id_value)), texture_uv_scale)
+			# C2: per-surface base roughness (wet-adjusted, same model as the cedar material
+			# path and the legacy average) so the surface-id map drives real material variation.
+			var surface_roughness: float = _wet_roughness(float(visual_def.get("roughness")), wetness)
+			material.set_shader_parameter(StringName(SURFACE_ROUGHNESS_UNIFORM_PREFIX + str(id_value)), surface_roughness)
 		material.set_shader_parameter(StringName("surface_color_" + str(id_value)), color)
 
 
