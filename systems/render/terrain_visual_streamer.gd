@@ -68,12 +68,11 @@ var _ready_midlod_data_by_cell: Dictionary[Vector2i, Variant] = {}
 var _ready_foliage_data_by_cell: Dictionary[Vector2i, Variant] = {}
 # Distance-graded foliage LOD (the cell-crossing-freeze lever). A foliage tile carries both
 # the dense near-field LOD0 cells (~56 instances/subcell) and the sparse far-silhouette LOD1
-# cells (~4/subcell). When a cell is committed while OUTSIDE render_visual_foliage_radius_cells
-# of the active center, only its LOD1 subcommits are enqueued and the full tile data is RETAINED
-# here so the heavy LOD0 can be materialized later — IN PLACE, no rebuild — once the cell crosses
-# into the radius (_enqueue_lod0_foliage_upgrade, driven from _on_world_tile_activated). Presence
-# in this dict == "this cell is committed LOD1-only and its LOD0 is still pending". Erased the
-# moment LOD0 is enqueued, on eviction/unprefetch/free, and on reset. Render-only, golden-neutral.
+# cells (~4/subcell). Detail cells committed while OUTSIDE render_visual_foliage_radius_cells
+# of the active center enqueue only LOD1 and retain the full tile data here so LOD0 can be
+# materialized later — IN PLACE, no rebuild — once the cell crosses into the radius. Cells
+# outside render_visual_detail_radius do not commit foliage at all; their terrain is covered
+# by MidLOD/HLOD instead. Render-only, golden-neutral.
 var _deferred_lod0_foliage_data_by_cell: Dictionary[Vector2i, Variant] = {}
 var _committed_tile_step_by_cell: Dictionary[Vector2i, int] = {}
 var _load_failures_by_cell: Dictionary[Vector2i, String] = {}
@@ -453,18 +452,24 @@ func _on_world_tile_activated(cell: Vector2i) -> void:
 	_hlod_dirty = true
 	_resort_stream_hlod_queue()
 	_queue_near_stream_hlod_densification()
-	# Any cell activation can shift the active center and pull a previously LOD1-only foliage
-	# tile into the dense foliage ring. Sweep the deferred set (mirrors the near-HLOD-densify
-	# re-sweep above) and materialize the held-back LOD0 in place for cells that are now inside
-	# render_visual_foliage_radius_cells — no rebuild, no empty pop. Render-only, golden-neutral.
-	_promote_near_deferred_foliage_lod0()
 	_request_midlod_refresh()
-	# Decouple the heavy step-1 full-res VISUAL upgrade from the collision radius: only
-	# active cells within render_visual_fullres_radius_cells (Chebyshev) of the active
-	# center upgrade to full res. Outer active cells (still within STREAM_ACTIVE_RADIUS,
-	# so collision is full res for them) stay at the coarse REGION_DETAIL_SAMPLE_STEP
-	# visual mesh — cutting the per-cell-crossing full-res materialization and the
-	# steady-state primitive count. Render-only; golden-neutral.
+	_refresh_visual_detail_streaming()
+	# Any cell activation can shift the active center and pull a previously LOD1-only foliage
+	# tile into the dense foliage ring. Sweep the deferred set after the detail-radius refresh
+	# so cells downgraded to MidLOD/HLOD cannot receive a foliage upgrade.
+	_promote_near_deferred_foliage_lod0()
+
+
+func _refresh_visual_detail_streaming() -> void:
+	for active_cell in _sorted_cells(_active_cells.keys()):
+		if _is_cell_in_visual_detail_radius(active_cell):
+			_ensure_visual_detail_cell(active_cell)
+		else:
+			_downgrade_visual_detail_cell(active_cell)
+
+
+func _ensure_visual_detail_cell(cell: Vector2i) -> void:
+	_pending_free_cells.erase(cell)
 	var wants_fullres: bool = _is_cell_in_visual_fullres_radius(cell)
 	if _visual_tiles_by_cell.has(cell):
 		var committed_step: int = int(_committed_tile_step_by_cell.get(cell, TerrainVisualBuilderScript.REGION_DETAIL_SAMPLE_STEP))
@@ -501,20 +506,30 @@ func _on_world_tile_activated(cell: Vector2i) -> void:
 		# Keep the in-flight coarse prefetch. When it finishes, it can commit first
 		# and seed the full-res upgrade without leaving an active-cell hole.
 		return
-	# Active cells are the vehicle-near loaded physics tiles (STREAM_ACTIVE_RADIUS
-	# around the car). They MUST end up at full collision resolution (step=1) so the
-	# visible ground matches the surface the wheels touch (the 5x downsample let the
-	# visual mesh wander cm above/below the collision heightmap, reading as tire
-	# sink/float). But building fullres FIRST serialized ~49 heavy step-1 GPU uploads
-	# on the cold-start reveal path -> a multi-second boot freeze before the title
-	# card lifts. Instead spawn the COARSE step (step=5) first so the world appears
-	# fast; _drain_worker_results auto-chains the step=1 fullres UPGRADE the moment the
-	# coarse build commits (see the sample_step > FULLRES branch there), so near tiles
-	# still sharpen to collision-matched fullres over the next frames.
+	# Detail-radius cells start with the cheaper coarse mesh (step=5), then the
+	# full-res upgrade chains only inside render_visual_fullres_radius_cells. Active
+	# collision cells outside render_visual_detail_radius do not materialize a
+	# TerrainDetailTile at all; MidLOD/HLOD carries their visual representation.
 	_enqueue_build(cell, TerrainVisualBuilderScript.REGION_DETAIL_SAMPLE_STEP)
 	if _workers.is_empty():
 		_process_build_queue_synchronously()
 		_drain_worker_results()
+
+
+func _downgrade_visual_detail_cell(cell: Vector2i) -> void:
+	_remove_queued_commit(cell)
+	_remove_queued_foliage_subcommits(cell)
+	_remove_queued_foliage_finish(cell)
+	_deferred_lod0_foliage_data_by_cell.erase(cell)
+	_ready_upgrade_tile_data_by_cell.erase(cell)
+	_ready_upgrade_tile_step_by_cell.erase(cell)
+	if _queued_builds.has(cell):
+		var queued_step: int = int(_queued_build_step_by_cell.get(cell, TerrainVisualBuilderScript.REGION_DETAIL_SAMPLE_STEP))
+		if queued_step <= TerrainVisualBuilderScript.REGION_DETAIL_FULLRES_SAMPLE_STEP:
+			_cancel_build(cell)
+	if (_visual_tiles_by_cell.has(cell) or _foliage_tiles_by_cell.has(cell) or _partial_foliage_tiles_by_cell.has(cell)) \
+			and not _pending_free_cells.has(cell):
+		_pending_free_cells.append(cell)
 
 
 func _on_world_tile_evicted(cell: Vector2i) -> void:
@@ -525,6 +540,7 @@ func _on_world_tile_evicted(cell: Vector2i) -> void:
 	_hlod_dirty = true
 	_queue_near_stream_hlod_densification()
 	_request_midlod_refresh()
+	_refresh_visual_detail_streaming()
 	_remove_queued_commit(cell)
 	_remove_queued_foliage_subcommits(cell)
 	_remove_queued_foliage_finish(cell)
@@ -691,7 +707,7 @@ func _desired_midlod_cells() -> Array[Vector2i]:
 	for y in range(center_cell.y - cell_radius, center_cell.y + cell_radius + 1):
 		for x in range(center_cell.x - cell_radius, center_cell.x + cell_radius + 1):
 			var cell: Vector2i = Vector2i(x, y)
-			if _active_cells.has(cell):
+			if _active_cells.has(cell) and _is_cell_in_visual_detail_radius(cell):
 				continue
 			if not _region_cells_by_cell.has(cell):
 				continue
@@ -796,7 +812,7 @@ func _drain_worker_results() -> void:
 		if _ready_tile_data_by_cell.has(cell):
 			var ready_step: int = int(_ready_tile_step_by_cell.get(cell, TerrainVisualBuilderScript.REGION_DETAIL_SAMPLE_STEP))
 			if ready_step <= sample_step:
-				if _active_cells.has(cell):
+				if _active_cells.has(cell) and _is_cell_in_visual_detail_radius(cell):
 					_enqueue_ready_commit(cell)
 				# Auto-chain the step-1 full-res upgrade only for active cells inside the
 				# visual full-res ring; outer active cells keep the coarse mesh (collision
@@ -816,7 +832,7 @@ func _drain_worker_results() -> void:
 		_ready_tile_step_by_cell[cell] = sample_step
 		if result.has("foliage_tile_data") and result["foliage_tile_data"] != null:
 			_ready_foliage_data_by_cell[cell] = result["foliage_tile_data"]
-		if _active_cells.has(cell):
+		if _active_cells.has(cell) and _is_cell_in_visual_detail_radius(cell):
 			_enqueue_ready_commit(cell)
 			# Chain the step-1 full-res upgrade only inside the visual full-res ring;
 			# outer active cells keep the coarse mesh. Render-only; golden-neutral.
@@ -853,6 +869,8 @@ func _enqueue_ready_commit(cell: Vector2i) -> void:
 		return
 	if not _ready_tile_data_by_cell.has(cell):
 		return
+	if _active_cells.has(cell) and not _is_cell_in_visual_detail_radius(cell):
+		return
 	var ready_step: int = int(_ready_tile_step_by_cell.get(cell, TerrainVisualBuilderScript.REGION_DETAIL_SAMPLE_STEP))
 	if _visual_tiles_by_cell.has(cell):
 		var committed_step: int = int(_committed_tile_step_by_cell.get(cell, TerrainVisualBuilderScript.REGION_DETAIL_SAMPLE_STEP))
@@ -876,7 +894,7 @@ func _promote_ready_visual_upgrade(cell: Vector2i) -> void:
 	_ready_tile_step_by_cell[cell] = upgrade_step
 	_ready_upgrade_tile_data_by_cell.erase(cell)
 	_ready_upgrade_tile_step_by_cell.erase(cell)
-	if _active_cells.has(cell):
+	if _active_cells.has(cell) and _is_cell_in_visual_detail_radius(cell):
 		_enqueue_ready_commit(cell)
 
 
@@ -934,7 +952,7 @@ func _drain_commit_queue() -> int:
 	while committed_count < commit_budget and not _commit_queue.is_empty():
 		var cell: Vector2i = _commit_queue.pop_front()
 		_queued_commits.erase(cell)
-		if not _active_cells.has(cell):
+		if not _active_cells.has(cell) or not _is_cell_in_visual_detail_radius(cell):
 			continue
 		_commit_ready_cell(cell)
 		committed_count += 1
@@ -965,6 +983,8 @@ func _drain_midlod_commit_queue() -> int:
 
 
 func _commit_ready_cell(cell: Vector2i) -> void:
+	if not _is_cell_in_visual_detail_radius(cell):
+		return
 	if _ready_tile_data_by_cell.has(cell):
 		var sample_step: int = int(_ready_tile_step_by_cell.get(cell, TerrainVisualBuilderScript.REGION_DETAIL_SAMPLE_STEP))
 		_commit_visual_tile(cell, _ready_tile_data_by_cell[cell], sample_step)
@@ -979,7 +999,7 @@ func _drain_foliage_subcommit_queue() -> void:
 	var committed_count: int = 0
 	while committed_count < subcommit_budget and not _foliage_subcommit_queue.is_empty():
 		var subcommit: FoliageSubcommit = _foliage_subcommit_queue.pop_front()
-		if not _active_cells.has(subcommit.cell):
+		if not _active_cells.has(subcommit.cell) or not _is_cell_in_visual_detail_radius(subcommit.cell):
 			continue
 		# Resolve the tile root from the partial (still assembling) OR the live (already
 		# attached) tile. A deferred-LOD0 upgrade enqueues subcommits for a cell whose tile may
@@ -1192,29 +1212,35 @@ func _is_cell_in_stream_hlod_densify_radius(cell: Vector2i) -> bool:
 	return absi(cell.x - center.x) <= radius and absi(cell.y - center.y) <= radius
 
 
+func _is_cell_in_visual_detail_radius(cell: Vector2i) -> bool:
+	if _active_cells.is_empty():
+		return false
+	var center: Vector2i = _active_cell_center()
+	var radius: int = maxi(GameConfig.render_visual_detail_radius, 0)
+	return absi(cell.x - center.x) <= radius and absi(cell.y - center.y) <= radius
+
+
 func _is_cell_in_visual_fullres_radius(cell: Vector2i) -> bool:
 	# Gate the step-1 full-res VISUAL upgrade (REGION_DETAIL_FULLRES_SAMPLE_STEP) to a
-	# small Chebyshev ring around the active center, decoupling the heavy full-res
-	# visual radius from the collision radius (STREAM_ACTIVE_RADIUS). Active cells
-	# outside this ring stay committed at the coarse REGION_DETAIL_SAMPLE_STEP — render
-	# only, collision is unaffected (every active cell still gets its full-res
-	# HeightMapShape3D from the collision streamer; D30/D35). Mirrors the densify-radius
-	# helper above; uses _active_cell_center() (== the just-activated cell when it is
-	# the sole active cell, as in the fullres fixtures, so the near cell still upgrades).
+	# small Chebyshev ring inside the visual-detail radius. Active collision cells
+	# outside render_visual_detail_radius have no TerrainDetailTile; active detail cells
+	# outside this full-res ring keep the coarse REGION_DETAIL_SAMPLE_STEP mesh.
+	if not _is_cell_in_visual_detail_radius(cell):
+		return false
 	var center: Vector2i = _active_cell_center()
-	var radius: int = maxi(GameConfig.render_visual_fullres_radius_cells, 0)
+	var radius: int = mini(maxi(GameConfig.render_visual_fullres_radius_cells, 0), maxi(GameConfig.render_visual_detail_radius, 0))
 	return absi(cell.x - center.x) <= radius and absi(cell.y - center.y) <= radius
 
 
 func _is_cell_in_foliage_radius(cell: Vector2i) -> bool:
-	# Gate the heavy near-field foliage LOD0 to a small Chebyshev ring around the active
-	# center. Cells outside the ring commit only the sparse LOD1 silhouette; their LOD0 is
-	# deferred (retained) and materialized in place once they cross in. Mirrors the visual
-	# full-res / HLOD-densify radius helpers; uses _active_cell_center() (== the just-
-	# activated cell when it is the sole active cell, so a single near cell still gets LOD0,
-	# as the foliage fixtures rely on). Render-only, golden-neutral.
+	# Gate the heavy near-field foliage LOD0 to a small Chebyshev ring inside the
+	# visual-detail radius. Detail cells outside this foliage ring commit only sparse
+	# LOD1 and retain LOD0 for an in-place upgrade; cells outside the detail radius do
+	# not commit foliage nodes.
+	if not _is_cell_in_visual_detail_radius(cell):
+		return false
 	var center: Vector2i = _active_cell_center()
-	var radius: int = maxi(GameConfig.render_visual_foliage_radius_cells, 0)
+	var radius: int = mini(maxi(GameConfig.render_visual_foliage_radius_cells, 0), maxi(GameConfig.render_visual_detail_radius, 0))
 	return absi(cell.x - center.x) <= radius and absi(cell.y - center.y) <= radius
 
 
@@ -1308,6 +1334,8 @@ func _commit_foliage_tile(cell: Vector2i, foliage_tile_data: Variant) -> void:
 func _begin_foliage_tile_commit(cell: Vector2i, foliage_tile_data: Variant) -> void:
 	if _foliage_root == null:
 		return
+	if not _is_cell_in_visual_detail_radius(cell):
+		return
 	if _foliage_tiles_by_cell.has(cell) or _partial_foliage_tiles_by_cell.has(cell):
 		_ready_foliage_data_by_cell.erase(cell)
 		return
@@ -1321,11 +1349,10 @@ func _begin_foliage_tile_commit(cell: Vector2i, foliage_tile_data: Variant) -> v
 	_partial_foliage_tiles_by_cell[cell] = foliage_tile
 	_ready_foliage_data_by_cell.erase(cell)
 
-	# Distance-graded foliage LOD. Cells INSIDE render_visual_foliage_radius_cells commit the
-	# full LOD0 (dense near-field) + LOD1 (sparse silhouette). Cells beyond it commit ONLY LOD1
-	# now — the heavy LOD0 (the bulk of the per-crossing materialization) is deferred and the
-	# full tile data retained so LOD0 can be added IN PLACE the moment the cell enters the ring
-	# (_promote_near_deferred_foliage_lod0). Foliage is still PRESENT everywhere (no empty pop).
+	# Distance-graded foliage LOD inside the detail ring. Cells INSIDE
+	# render_visual_foliage_radius_cells commit full LOD0 (dense near-field) + LOD1
+	# (sparse silhouette). Detail cells beyond it commit ONLY LOD1 now; the heavy LOD0
+	# is retained and added IN PLACE if the cell later enters the foliage ring.
 	var commit_lod0: bool = _is_cell_in_foliage_radius(cell)
 	if not commit_lod0:
 		_deferred_lod0_foliage_data_by_cell[cell] = foliage_tile_data
@@ -1458,7 +1485,7 @@ func _finish_foliage_tile_commit(cell: Vector2i) -> void:
 	_pending_foliage_subcommit_counts_by_cell.erase(cell)
 	if foliage_tile == null:
 		return
-	if _active_cells.has(cell):
+	if _active_cells.has(cell) and _is_cell_in_visual_detail_radius(cell):
 		if foliage_tile.get_parent() == null:
 			if _foliage_root == null:
 				foliage_tile.queue_free()

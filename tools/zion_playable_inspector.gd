@@ -51,16 +51,24 @@ var _expected_spawn_id: StringName = &""
 var _expected_spawn_position: Vector3 = Vector3.ZERO
 var _expected_spawn_yaw_degrees: float = 0.0
 var _expected_center_cell: Vector2i = Vector2i.ZERO
-var _expected_active_visual_cells: int = 0
+var _expected_active_collision_cells: int = 0
+var _expected_detail_visual_cells: int = 0
 
 
 func _ready() -> void:
-	var radius: int = GameConfig.STREAM_ACTIVE_RADIUS
-	_expected_active_visual_cells = (2 * radius + 1) * (2 * radius + 1)
+	var active_radius: int = GameConfig.STREAM_ACTIVE_RADIUS
+	var detail_radius: int = mini(maxi(GameConfig.render_visual_detail_radius, 0), active_radius)
+	_expected_active_collision_cells = _cell_count_for_radius(active_radius)
+	_expected_detail_visual_cells = _cell_count_for_radius(detail_radius)
 	_resolve_expected_spawn()
 	_scene_root = CedarHollowPlayableScene.instantiate()
 	add_child(_scene_root)
 	call_deferred("_inspect")
+
+
+func _cell_count_for_radius(radius: int) -> int:
+	var diameter: int = 2 * radius + 1
+	return diameter * diameter
 
 
 func _resolve_expected_spawn() -> void:
@@ -576,11 +584,11 @@ func _wait_for_streaming(streamer: Node) -> void:
 
 
 func _streaming_ready(streamer: Node) -> bool:
-	if _tile_streamer_active_cells().size() != _expected_active_visual_cells:
+	if _tile_streamer_active_cells().size() != _expected_active_collision_cells:
 		return false
-	if int(streamer.call("visual_cell_count")) != _expected_active_visual_cells:
+	if int(streamer.call("visual_cell_count")) != _expected_detail_visual_cells:
 		return false
-	if int(streamer.call("foliage_cell_count")) != _expected_active_visual_cells:
+	if int(streamer.call("foliage_cell_count")) != _expected_detail_visual_cells:
 		return false
 	if int(streamer.call("midlod_cell_count")) <= 0:
 		return false
@@ -589,8 +597,8 @@ func _streaming_ready(streamer: Node) -> bool:
 
 func _require_tile_streamer_active_set() -> void:
 	var active_cells: Array[Vector2i] = _tile_streamer_active_cells()
-	if active_cells.size() != _expected_active_visual_cells:
-		_errors.append("TileStreamer active cell count expected " + str(_expected_active_visual_cells) + ", got " + str(active_cells.size()))
+	if active_cells.size() != _expected_active_collision_cells:
+		_errors.append("TileStreamer active cell count expected " + str(_expected_active_collision_cells) + ", got " + str(active_cells.size()))
 	if not active_cells.has(_expected_center_cell):
 		_errors.append("TileStreamer active cells should include spawn center cell " + str(_expected_center_cell))
 	var failures: Dictionary = _tile_streamer_failures()
@@ -601,10 +609,10 @@ func _require_tile_streamer_active_set() -> void:
 func _require_visual_streamer_state(streamer: Node) -> void:
 	if streamer == null:
 		return
-	if int(streamer.call("visual_cell_count")) != _expected_active_visual_cells:
-		_errors.append("Zion visual cell count expected " + str(_expected_active_visual_cells) + ", got " + str(int(streamer.call("visual_cell_count"))))
-	if int(streamer.call("foliage_cell_count")) != _expected_active_visual_cells:
-		_errors.append("Zion foliage cell count expected " + str(_expected_active_visual_cells) + ", got " + str(int(streamer.call("foliage_cell_count"))))
+	if int(streamer.call("visual_cell_count")) != _expected_detail_visual_cells:
+		_errors.append("Zion visual detail cell count expected " + str(_expected_detail_visual_cells) + ", got " + str(int(streamer.call("visual_cell_count"))))
+	if int(streamer.call("foliage_cell_count")) != _expected_detail_visual_cells:
+		_errors.append("Zion foliage detail cell count expected " + str(_expected_detail_visual_cells) + ", got " + str(int(streamer.call("foliage_cell_count"))))
 	if int(streamer.call("midlod_cell_count")) <= 0:
 		_errors.append("Zion streamer should commit at least one mid-LOD cell")
 	if not bool(streamer.call("has_visual_cell", _expected_center_cell)):
