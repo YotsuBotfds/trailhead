@@ -86,6 +86,26 @@ var stream_collision_activations_per_tick: int = 3
 var stream_collision_result_drains_per_tick: int = 8
 var stream_collision_prebuild_per_tick: int = 1
 var stream_collision_evictions_per_tick: int = 3
+# Node-less RESIDENT COLLISION POOL (Terrain3D "Dynamic/Game" pattern; research
+# brief 2026-06-24 §3, the #1 crossing-freeze lever). DEFAULT FALSE: the existing
+# per-cell PhysicsServer3D.body_create -> body_add_shape -> body_set_space (cook)
+# and body_set_space(RID()) -> free_rid (evict) path runs UNCHANGED and is the
+# byte-identical, golden-pinned production path. When TRUE, TileStreamer instead
+# keeps a fixed (2*STREAM_ACTIVE_RADIUS+2)^2 pool of bodies+HeightMapShape3D shapes
+# resident (body_set_space called ONCE the first time a shape lands in a slot) and
+# per crossing only recycles the changed slots' heightfield via
+# PhysicsServer3D.shape_set_data + repositions the body transform — removing the
+# broadphase body-insert + free_rid churn the residual ~4.5-4.9 s crossing spike
+# is made of. The pool->cell mapping is TOROIDAL (slot = cell mod G, G = 2R+2; the
+# +1 margin lets the leaving and entering crossing columns hold distinct slots while
+# both are briefly active under budget-limited eviction), a pure deterministic
+# function of the cell coords with no RNG and no wall-clock, so
+# the emitted world_tile_* events, the _active_bodies_by_cell membership/order, and
+# the per-tile collision geometry (same map_data, same world transform) are
+# identical to the OFF path. DO NOT flip this for a golden/demo build until the A/B
+# in planning/streaming-rendering-research-20260624.md §3 (two scenes/sim_runner.tscn
+# runs, same seed, OFF vs ON, byte-identical streaming/collision metrics) is green.
+var stream_collision_resident_pool_enabled: bool = false
 var stream_spawn_no_fall_probe_ticks: int = 840
 var render_visual_tile_frees_per_frame: int = 4
 # --- Render quality baseline (GLM perf-opt): explicit, GameConfig-driven 3D
