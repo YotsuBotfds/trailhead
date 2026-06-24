@@ -46,6 +46,7 @@ check "no wall-clock in sim/vehicle/world" sh -c '! rg -n -P "\bTime\.|OS\.get_u
 check "no sim-path render asset dependencies" sh -c '! rg -n "res://(systems/render|assets/models)" systems/sim systems/vehicle systems/world --glob "*.gd"'
 check "Python tool syntax" sh -c 'python3 -m py_compile tools/*.py'
 check "shell tool syntax" sh -c 'for path in tools/*.sh; do sh -n "$path" || exit 1; done'
+check "headless suite aggregates failures" sh tools/test_run_headless_suite_aggregation.sh
 check "every inspector/fixture is suite-wired or allowlisted" sh -c '
 	missing="" &&
 	for file in tools/*_inspector.gd tools/*_fixture.gd tools/*_fixture.py; do

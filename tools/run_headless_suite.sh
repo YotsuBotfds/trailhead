@@ -71,10 +71,31 @@ assert_metrics() {
 	./tools/assert_sim_metrics.py "$@"
 }
 
-for suite_path in tools/suites/*.sh; do
+# Each suite runs in a subshell so a single failing assert can no longer abort
+# the whole run and blackout every visual/render suite after it. We record the
+# failure, print it, and keep going; the final exit code reflects whether any
+# suite failed. TRAILHEAD_SUITE_GLOB lets the pure-shell self-test point at fake
+# suites without launching Godot (default unchanged).
+# shellcheck disable=SC2086 # intentional word-splitting + glob expansion
+suite_glob="${TRAILHEAD_SUITE_GLOB:-tools/suites/*.sh}"
+suite_status=0
+for suite_path in $suite_glob; do
 	if [ ! -e "$suite_path" ]; then
+		# Unmatched glob expands to the literal pattern; skip it.
 		continue
 	fi
 	printf 'suite: %s\n' "$suite_path"
-	. "$suite_path"
+	set +e
+	(
+		set -eu
+		. "$suite_path"
+	)
+	suite_rc=$?
+	set -e
+	if [ "$suite_rc" -ne 0 ]; then
+		suite_status=1
+		printf 'SUITE FAILED: %s\n' "$suite_path" >&2
+	fi
 done
+
+exit "$suite_status"

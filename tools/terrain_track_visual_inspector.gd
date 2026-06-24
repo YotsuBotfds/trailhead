@@ -449,19 +449,38 @@ func _actual_pixels_per_meter(painter: Node, viewport: SubViewport) -> float:
 
 
 func _finish() -> void:
+	var exit_code: int = 0
 	if _errors.is_empty():
 		if _skipped_streamed_zion_tracks:
 			print("ok: streamed Zion host skips strip terrain track painter")
 		else:
 			print("ok: terrain track painter, SubViewport RT, terrain POM fields, and track sampler are wired")
-		if _scene_root != null:
-			_scene_root.queue_free()
-		await get_tree().process_frame
-		get_tree().quit(0)
-		return
-	for error in _errors:
-		push_error(error)
+	else:
+		exit_code = 1
+		for error in _errors:
+			push_error(error)
+	_shutdown_streamers_for_exit()
 	if _scene_root != null:
 		_scene_root.queue_free()
 	await get_tree().process_frame
-	get_tree().quit(1)
+	await get_tree().process_frame
+	get_tree().quit(exit_code)
+
+
+func _shutdown_streamers_for_exit() -> void:
+	if _scene_root != null:
+		_release_multimesh_instances(_scene_root)
+		var visual_streamer: Node = _scene_root.get_node_or_null("CedarHollow/TerrainVisualStreamer")
+		if visual_streamer != null:
+			visual_streamer.call("reset_stream")
+	var collision_streamer: Node = get_node_or_null("/root/TileStreamer")
+	if collision_streamer != null:
+		collision_streamer.call("reset")
+
+
+func _release_multimesh_instances(parent: Node) -> void:
+	var multimesh_instance: MultiMeshInstance3D = parent as MultiMeshInstance3D
+	if multimesh_instance != null:
+		multimesh_instance.multimesh = null
+	for child in parent.get_children():
+		_release_multimesh_instances(child)

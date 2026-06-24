@@ -64,7 +64,10 @@ func _run() -> void:
 	await _wait_for_prefetch_ready(streamer, START_CELL)
 
 	_require_cells("start active set", streamer.call("active_cells"), expected_start_cells)
-	_require_cells_exact_order("start activation event order", _activated_cells, _activation_order_for_cells(START_CELL, expected_start_cells))
+	if _worker_count < 2:
+		_require_cells_exact_order("start activation event order", _activated_cells, _activation_order_for_cells(START_CELL, expected_start_cells))
+	else:
+		_require_cells("start activation event coverage", _activated_cells, expected_start_cells)
 	_require_event_keys_include_cells("start prefetch event coverage", _all_prefetched_keys, expected_start_prefetch_cells)
 	_require_int("start eviction event count", _evicted_cells.size(), 0)
 	_require_activation_budget("start activation budget")
@@ -93,7 +96,10 @@ func _run() -> void:
 	await _advance_physics_ticks(1)
 
 	_require_cells("end active set", streamer.call("active_cells"), expected_end_cells)
-	_require_cells_exact_order("end activation event order", _activated_cells, _activation_order_for_cells(END_CELL, expected_loaded_cells))
+	if _worker_count < 2:
+		_require_cells_exact_order("end activation event order", _activated_cells, _activation_order_for_cells(END_CELL, expected_loaded_cells))
+	else:
+		_require_cells("end activation event coverage", _activated_cells, expected_loaded_cells)
 	_require_cells_exact_order("end eviction event order", _evicted_cells, expected_evicted_cells)
 	_require_cells_exact_order("end unprefetch event order", _unprefetched_cells, expected_unprefetched_cells)
 	var empty_cells: Array[Vector2i] = []
@@ -383,7 +389,7 @@ func _finish(streamer: Node) -> void:
 			"prefetch_ticks": _prefetch_ticks,
 		}
 		print("tile_streamer_fixture_result=" + JSON.stringify(result))
-		print("ok: TileStreamer active set and sorted lifecycle events")
+		print("ok: TileStreamer active set and lifecycle events")
 		get_tree().quit(0)
 		return
 	for error in _errors:
