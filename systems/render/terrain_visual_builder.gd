@@ -146,24 +146,32 @@ const FOLIAGE_SPECIES_BOULDER: StringName = &"boulder"
 const FOLIAGE_SPECIES_LIST: Array[StringName] = [FOLIAGE_SPECIES_GRASS, FOLIAGE_SPECIES_RIPARIAN_GRASS, FOLIAGE_SPECIES_SHRUB, FOLIAGE_SPECIES_YUCCA, FOLIAGE_SPECIES_JUNIPER, FOLIAGE_SPECIES_WILLOW, FOLIAGE_SPECIES_COTTONWOOD, FOLIAGE_SPECIES_BOULDER]
 # Zion foliage identity palette (art-direction bible §2): varied desert-riparian species
 # colors, with dusk tints kept muted so the river corridor reads botanical instead of rainbow.
+# Species palette calibrated to lower Zion canyon field references (2026-06-24):
+#   cottonwood     — warm yellow-green shimmer (Fremont gallery forest, sunlit canopy)
+#   willow         — lighter/brighter green than cottonwood (Goodding willow, wet margin)
+#   juniper        — blue-grey-green, cool and desaturated (Utah juniper, dry benches)
+#   sage           — silvery grey-green, cool (Great Basin sagebrush understory)
+#   rabbitbrush    — olive-warm but muted (rubber rabbitbrush, talus + wash edges)
+#   yucca          — steel blue-grey-green (sharp blade colour, dry exposed rock)
+#   riparian_grass — lusher medium green (wet sedge + rush corridor, river margin)
 const FOLIAGE_SPECIES_GRASS_COLOR: Color = Color(0.64, 0.53, 0.25, 0.92)
-const FOLIAGE_SPECIES_RIPARIAN_GRASS_COLOR: Color = Color(0.18, 0.28, 0.08, 0.92)
+const FOLIAGE_SPECIES_RIPARIAN_GRASS_COLOR: Color = Color(0.16, 0.32, 0.09, 0.92)
 const FOLIAGE_SPECIES_SHRUB_COLOR: Color = Color(0.46, 0.50, 0.39, 0.94)
-const FOLIAGE_SHRUB_RABBITBRUSH_COLOR: Color = Color(0.72, 0.62, 0.26, 0.95)
-const FOLIAGE_SHRUB_SAGE_COLOR: Color = Color(0.44, 0.50, 0.42, 0.95)
+const FOLIAGE_SHRUB_RABBITBRUSH_COLOR: Color = Color(0.58, 0.56, 0.22, 0.95)
+const FOLIAGE_SHRUB_SAGE_COLOR: Color = Color(0.38, 0.44, 0.40, 0.95)
 const FOLIAGE_SHRUB_MORMON_TEA_COLOR: Color = Color(0.31, 0.39, 0.27, 0.95)
-const FOLIAGE_SPECIES_YUCCA_COLOR: Color = Color(0.36, 0.43, 0.30, 0.95)
-const FOLIAGE_SPECIES_JUNIPER_COLOR: Color = Color(0.14, 0.22, 0.16, 0.97)
-const FOLIAGE_SPECIES_WILLOW_COLOR: Color = Color(0.22, 0.27, 0.11, 0.95)
-const FOLIAGE_SPECIES_COTTONWOOD_COLOR: Color = Color(0.27, 0.39, 0.075, 0.96)
+const FOLIAGE_SPECIES_YUCCA_COLOR: Color = Color(0.28, 0.38, 0.32, 0.95)
+const FOLIAGE_SPECIES_JUNIPER_COLOR: Color = Color(0.12, 0.20, 0.17, 0.97)
+const FOLIAGE_SPECIES_WILLOW_COLOR: Color = Color(0.20, 0.32, 0.13, 0.95)
+const FOLIAGE_SPECIES_COTTONWOOD_COLOR: Color = Color(0.30, 0.44, 0.085, 0.96)
 const FOLIAGE_SPECIES_BOULDER_COLOR: Color = Color(0.69, 0.47, 0.31, 1.0)
 const FOLIAGE_SPECIES_GRASS_DUSK_TINT: Color = Color(0.76, 0.55, 0.30, 0.92)
-const FOLIAGE_SPECIES_RIPARIAN_GRASS_DUSK_TINT: Color = Color(0.23, 0.29, 0.11, 0.92)
+const FOLIAGE_SPECIES_RIPARIAN_GRASS_DUSK_TINT: Color = Color(0.22, 0.33, 0.12, 0.92)
 const FOLIAGE_SPECIES_SHRUB_DUSK_TINT: Color = Color(0.52, 0.46, 0.34, 0.94)
-const FOLIAGE_SPECIES_YUCCA_DUSK_TINT: Color = Color(0.42, 0.43, 0.31, 0.95)
-const FOLIAGE_SPECIES_JUNIPER_DUSK_TINT: Color = Color(0.17, 0.22, 0.16, 0.97)
-const FOLIAGE_SPECIES_WILLOW_DUSK_TINT: Color = Color(0.25, 0.27, 0.13, 0.95)
-const FOLIAGE_SPECIES_COTTONWOOD_DUSK_TINT: Color = Color(0.34, 0.35, 0.10, 0.96)
+const FOLIAGE_SPECIES_YUCCA_DUSK_TINT: Color = Color(0.35, 0.40, 0.33, 0.95)
+const FOLIAGE_SPECIES_JUNIPER_DUSK_TINT: Color = Color(0.15, 0.20, 0.17, 0.97)
+const FOLIAGE_SPECIES_WILLOW_DUSK_TINT: Color = Color(0.25, 0.32, 0.14, 0.95)
+const FOLIAGE_SPECIES_COTTONWOOD_DUSK_TINT: Color = Color(0.38, 0.40, 0.11, 0.96)
 const FOLIAGE_SPECIES_MATERIAL_DUSK_STRENGTH: float = 0.18
 const FOLIAGE_SPECIES_INSTANCE_DUSK_JITTER: float = 0.18
 # Lane-D demo triage: keep Zion foliage lush without the graded rim/tips reading neon.
@@ -251,9 +259,9 @@ const FOLIAGE_BENCH_SELECTOR_SALT_B: int = 30
 const GRASS_CLUMP_ATTEMPTS_PER_CLUMP: int = 4
 const GRASS_CLUMP_RADIUS_M: float = 1.6
 const GRASS_TILT_MAX_DEG: float = 9.0
-const GRASS_HUE_JITTER: float = 0.06
-const GRASS_VALUE_JITTER: float = 0.16
-const GRASS_MIN_VALUE: float = 0.42
+const GRASS_HUE_JITTER: float = 0.10
+const GRASS_VALUE_JITTER: float = 0.24
+const GRASS_MIN_VALUE: float = 0.35
 const GRASS_CLUMP_CENTER_SALT_X: int = 20
 const GRASS_CLUMP_CENTER_SALT_Z: int = 21
 const GRASS_CLUMP_OFFSET_SALT_X: int = 22
