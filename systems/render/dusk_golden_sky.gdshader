@@ -42,9 +42,17 @@ uniform float energy_multiplier  = 1.20;              // overall sky energy (was
 uniform float dither_strength    = 0.0035;            // subtle direction-locked debanding noise
 uniform float cirrus_angle       = -0.42;             // wind-streak rotation in sky UV space
 uniform float cirrus_wispiness   = 0.72;              // higher = finer, more separated strands
+uniform float zion_cobalt_amber_strength = 1.0;       // 0.0 = previous sky, 1.0 = tighter Zion cobalt/amber tune
 
 const float SKY_PI = 3.14159265359;
 const float SKY_TAU = 6.28318530718;
+const vec3 ZION_COBALT_ZENITH = vec3(0.105, 0.245, 0.600);
+const vec3 ZION_AMBER_HORIZON = vec3(0.960, 0.620, 0.300);
+const float ZION_HORIZON_WIDTH_SCALE = 0.50;
+const float ZION_HORIZON_WIDTH_MIN = 0.085;
+const float ZION_HORIZON_WIDTH_MAX = 0.160;
+const float ZION_AMBER_RIM_INTENSITY = 0.055;
+const float ZION_COBALT_CAP_BLEND = 0.10;
 
 float hash21(vec2 p) {
 	return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
@@ -108,15 +116,24 @@ void sky() {
 	vec3 dir = normalize(EYEDIR);
 	float h = clamp(dir.y, -1.0, 1.0);
 	float up = clamp(h, 0.0, 1.0);
+	float zion_tune = clamp(zion_cobalt_amber_strength, 0.0, 1.0);
+	float base_horizon_width = max(horizon_band_width, 0.001);
+	float zion_horizon_width = min(base_horizon_width, clamp(base_horizon_width * ZION_HORIZON_WIDTH_SCALE, ZION_HORIZON_WIDTH_MIN, ZION_HORIZON_WIDTH_MAX));
+	float active_horizon_width = mix(base_horizon_width, zion_horizon_width, zion_tune);
+	vec3 active_zenith_color = mix(zenith_color, ZION_COBALT_ZENITH, zion_tune);
+	vec3 active_horizon_color = mix(horizon_color, ZION_AMBER_HORIZON, zion_tune * 0.65);
 
 	// Smooth Rayleigh-ish ramp: peach/gold at the horizon, clean cyan through
 	// the lower dome, and a genuinely blue zenith for cool canyon shadow fill.
-	float horizon_t = 1.0 - smoothstep(0.0, horizon_band_width, up);
-	vec3 lower_dome = mix(horizon_color, mid_color, smoothstep(0.0, horizon_band_width, up));
-	vec3 upper_dome = mix(mid_color, zenith_color, smoothstep(0.24, 1.0, pow(up, 0.72)));
+	float horizon_t = 1.0 - smoothstep(0.0, active_horizon_width, up);
+	vec3 lower_dome = mix(active_horizon_color, mid_color, smoothstep(0.0, active_horizon_width, up));
+	vec3 upper_dome = mix(mid_color, active_zenith_color, smoothstep(0.24, 1.0, pow(up, 0.72)));
 	vec3 col = mix(lower_dome, upper_dome, smoothstep(0.10, 0.72, up));
-	col += horizon_color * horizon_t * 0.035;
-	col += mid_color * smoothstep(0.18, 0.95, up) * 0.025;
+	col += active_horizon_color * horizon_t * mix(0.035, 0.045, zion_tune);
+	col += mid_color * smoothstep(0.18, 0.95, up) * mix(0.025, 0.016, zion_tune);
+	float amber_rim = (1.0 - smoothstep(0.0, max(active_horizon_width * 0.38, 0.001), up)) * smoothstep(-0.012, 0.024, h);
+	col += active_horizon_color * amber_rim * zion_tune * ZION_AMBER_RIM_INTENSITY;
+	col = mix(col, active_zenith_color, smoothstep(0.50, 1.0, up) * zion_tune * ZION_COBALT_CAP_BLEND);
 	// Below the horizon, fall to a muted ground color so the lower hemisphere
 	// (ground reflections / fill) stays neutral instead of glowing warm.
 	col = mix(col, ground_color, 1.0 - smoothstep(-0.25, 0.0, h));
@@ -138,7 +155,7 @@ void sky() {
 	float halo = (inner_halo * 0.52 + outer_halo * 0.22) * sun_halo_strength;
 	halo *= (0.65 + low_sun * 0.35) * (0.45 + horizon_focus * 0.55);
 	vec3 inner_halo_color = mix(mid_color, sun_color, 0.42);
-	vec3 outer_halo_color = mix(mid_color, horizon_color, 0.45);
+	vec3 outer_halo_color = mix(mid_color, active_horizon_color, 0.45);
 	col += outer_halo_color * halo * 0.45;
 	col += inner_halo_color * halo * 0.55;
 	col += sun_color * (disk * 1.65 + limb * 0.32);
