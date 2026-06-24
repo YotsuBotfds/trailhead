@@ -89,10 +89,12 @@ const DRIVER_VISOR_LOCAL_OFFSET: Vector3 = Vector3(0.0, 0.0015, -0.0095)
 const DRIVER_VISOR_COLOR: Color = Color(0.06, 0.08, 0.12)
 const CAGE_NAME_PREFIX: String = "cage_"
 const RC_DETAIL_MATERIAL_META: StringName = &"trailhead_rc_detail_material"
-# GLM-fidelity (ungrounding pass): the StandardMaterial3D fresnel rim is unlit
-# edge energy, so on the bright saturated orange albedo it reads as a self-lit
-# underglow once bloom picks it up. Cap it below the W6 author value so the body
-# stays lit-only-by-sun. Albedo (owner palette) is still untouched.
+# Ungrounding cap (kept defensive): the StandardMaterial3D fresnel rim is unlit
+# edge energy, so a strong rim on a saturated body can read as a self-lit
+# underglow once bloom picks it up. Cap it below the author value so the body
+# stays lit-only-by-sun. The FIDELITY hero now wears a deep petrol-teal (far
+# lower bloom risk than the prior bright orange), but the cap is retained so a
+# future palette swap can't silently re-introduce the glow.
 const BUGGY_BODY_RIM_GROUNDED_CAP: float = 0.15
 
 
@@ -190,20 +192,22 @@ static func _apply_clearcoat(mesh_instance: MeshInstance3D) -> void:
 		tuned_material.clearcoat_enabled = GameConfig.buggy_clearcoat_enabled
 		tuned_material.clearcoat = clampf(GameConfig.buggy_clearcoat, 0.0, 1.0)
 		tuned_material.clearcoat_roughness = clampf(GameConfig.buggy_clearcoat_roughness, 0.0, 1.0)
-		# W6-VEHICLE: subtle paint polish layered on the same duplicate so the body
-		# doesn't read flat under golden-hour light. Metallic adds a faint flake
-		# (metallic-paint read); rim adds a soft edge highlight. Albedo (palette)
-		# is left untouched so the owner-tuned body color survives.
+		# W6-VEHICLE / FIDELITY: subtle paint polish layered on the same duplicate so
+		# the painted shells don't read flat under golden-hour light. Metallic adds a
+		# faint flake (metallic-paint read); rim adds a soft edge highlight. Albedo
+		# (the FIDELITY hero teal/amber palette baked in the GLB) is left untouched so
+		# the authored two-tone survives. The GLB already carries a low metallic for
+		# these panels; this re-asserts it from GameConfig so the flake is tunable.
 		tuned_material.metallic = clampf(GameConfig.buggy_body_metallic, 0.0, 1.0)
 		tuned_material.rim_enabled = GameConfig.buggy_body_rim_enabled
-		# GLM-fidelity: cap the fresnel rim so it doesn't read as a self-lit underglow
-		# on the bright orange paint (see BUGGY_BODY_RIM_GROUNDED_CAP).
+		# Cap the fresnel rim so it doesn't read as a self-lit underglow on saturated
+		# paint (see BUGGY_BODY_RIM_GROUNDED_CAP).
 		tuned_material.rim = minf(clampf(GameConfig.buggy_body_rim_energy, 0.0, 1.0), BUGGY_BODY_RIM_GROUNDED_CAP)
-		# GLM-fidelity: guarantee the body paint is never self-lit. The source GLB
-		# materials carry no emission, but pin it off here so a future import/path
-		# cannot silently make the orange paint glow. Intended emissives (headlights,
-		# tail lights) are wired on their own mesh names in dedicated paths and are
-		# NOT body clearcoat panels, so they are unaffected.
+		# Guarantee the body paint is never self-lit. The source GLB materials carry
+		# no emission, but pin it off here so a future import/path cannot silently
+		# make the paint glow. Intended emissives (headlights, tail lights) are wired
+		# on their own mesh names in dedicated paths and are NOT body clearcoat
+		# panels, so they are unaffected.
 		tuned_material.emission_enabled = false
 		tuned_material.emission_energy_multiplier = 0.0
 		mesh.surface_set_material(surface_index, tuned_material)

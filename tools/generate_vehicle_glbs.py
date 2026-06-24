@@ -5,9 +5,74 @@ import math
 import struct
 from pathlib import Path
 
-from simple_glb_writer import compute_normals, compute_uvs, pack_normals, pack_uvs
+from simple_glb_writer import (
+    compute_normals,
+    compute_uvs,
+    pack_normals,
+    pack_uvs,
+    vector_cross,
+    vector_dot,
+    vector_normalized,
+    vector_sub,
+)
 
 OUT_DIR = Path("assets/models/vehicle")
+
+# --- FIDELITY (buggy-hero) palette + PBR -------------------------------------
+# Hero direction: the buggy is the most-looked-at object, so it must read as a
+# crisp manufactured machine that POPS against warm red-rock Zion -- not blend
+# into it. The world palette is dominated by red-orange / salmon / apricot
+# sandstone (zion-art-direction-bible.md), so the prior red-orange body
+# (0.93,0.18,0.07) camouflaged. The hero now wears a deep desert PETROL-TEAL --
+# the complement of the rock -- with warm CREAM number plates and a SAFETY-AMBER
+# hazard accent (ties to the kayak topper + headlight warmth). Two-tone teal +
+# amber over a matte-black anodized cage = believable hobby-grade RC livery that
+# stays legible from the chase cam and at orbit distance.
+#
+# Colors are LINEAR-RGB (Godot Color()/glTF baseColorFactor in Forward+ HDR are
+# linear), authored to sit clearly off the rock hue. PBR factors give each part
+# a real metallic/roughness response instead of the old uniform flat plastic
+# (metal 0.0 / rough 0.82). Runtime polish in procedural_buggy_visual.gd
+# (clearcoat, rim cap, cage metalness) layers on top; these base values make the
+# object correct-by-construction even before that runs.
+#
+# Render-only: NOTHING here touches mesh geometry the sim reads. The wheel_tire
+# mesh args (treaded_tire(0.031,0.034,...)) are LOCKED by D41 (rolling radius
+# 0.03765) and left untouched -- only its material/color changes. Wheel-socket
+# node translations + the rc_buggy/wheel_mesh hierarchy are the SIM contract
+# (tools/check_glb.py) and are likewise untouched.
+HERO_BODY_TEAL = [0.045, 0.205, 0.215, 1.0]        # deep petrol-teal hero paint
+HERO_BODY_TEAL_DEEP = [0.030, 0.150, 0.165, 1.0]   # shadowed side pods (darker teal)
+HERO_AMBER = [0.86, 0.30, 0.045, 1.0]              # safety-amber hazard accent
+HERO_AMBER_DEEP = [0.74, 0.235, 0.035, 1.0]        # amber fender flares (a touch deeper)
+HERO_CREAM = [0.90, 0.84, 0.70, 1.0]               # cream number plates / livery stripe
+HERO_CANOPY = [0.20, 0.40, 0.45, 0.55]             # smoked teal-tint canopy (translucent)
+ANODIZE_BLACK = [0.045, 0.050, 0.058, 1.0]         # matte-black anodized cage / wing / bumper
+GRAPHITE = [0.028, 0.030, 0.034, 1.0]              # dark composite suspension arms / vents
+RUBBER_BLACK = [0.022, 0.022, 0.025, 1.0]          # tire rubber (near-black, faint sheen)
+RIM_ALU = [0.30, 0.31, 0.33, 1.0]                  # brushed-aluminum rim
+HUB_MACHINED = [0.55, 0.52, 0.46, 1.0]             # machined warm-metal hub cap
+SKID_ALU = [0.20, 0.21, 0.225, 1.0]                # scuffed alloy skid plate
+SHOCK_AMBER = [0.78, 0.40, 0.12, 1.0]              # anodized amber shock spring (matches accent)
+HEADLIGHT_LENS = [1.00, 0.86, 0.46, 1.0]           # warm amber headlight lens
+TAILLIGHT_LENS = [0.95, 0.05, 0.025, 1.0]          # red tail-light lens
+
+# Per-material PBR response (roughness, metallic). Painted shells stay dielectric
+# with a faint flake; metal parts go metallic with lower roughness so sun reads
+# as a defined highlight instead of a flat wash.
+PBR_PAINT = (0.36, 0.10)        # automotive paint: glossy-ish, faint metallic flake
+PBR_PAINT_AMBER = (0.40, 0.08)  # accent paint: slightly more matte
+PBR_CREAM = (0.55, 0.0)         # cream decal/plate: matte dielectric
+PBR_CANOPY = (0.12, 0.0)        # smoked canopy: glossy clear
+PBR_ANODIZE = (0.34, 0.85)      # anodized cage tubing: metallic, semi-gloss
+PBR_GRAPHITE = (0.62, 0.20)     # composite arms/vents: matte, faint metal
+PBR_RUBBER = (0.88, 0.0)        # tire rubber: rough dielectric
+PBR_RIM = (0.30, 0.92)          # brushed aluminum: bright metal, micro-roughness
+PBR_HUB = (0.34, 0.88)          # machined hub: metal
+PBR_SKID = (0.42, 0.78)         # scuffed alloy skid plate: metal, rougher (wear)
+PBR_SHOCK = (0.30, 0.65)        # anodized spring: semi-metal
+PBR_LENS = (0.18, 0.0)          # glossy clear lens
+PBR_DARK_TRIM = (0.55, 0.15)    # grille / fender-lip / number-mark dark trim
 
 
 def parse_args():
@@ -90,6 +155,126 @@ def oriented_box(center, axis_a, length_a, axis_b, length_b, axis_c, length_c):
     return vertices, indices
 
 
+def vector_add(a, b):
+    return (a[0] + b[0], a[1] + b[1], a[2] + b[2])
+
+
+def vector_scale(value, scale):
+    return (value[0] * scale, value[1] * scale, value[2] * scale)
+
+
+def vector_length(value):
+    return math.sqrt(vector_dot(value, value))
+
+
+def midpoint(a, b):
+    return (
+        (a[0] + b[0]) * 0.5,
+        (a[1] + b[1]) * 0.5,
+        (a[2] + b[2]) * 0.5,
+    )
+
+
+def perpendicular_basis(axis):
+    reference = (0.0, 1.0, 0.0)
+    if abs(vector_dot(axis, reference)) > 0.88:
+        reference = (1.0, 0.0, 0.0)
+    basis_a = vector_normalized(vector_cross(axis, reference), (1.0, 0.0, 0.0))
+    basis_b = vector_normalized(vector_cross(axis, basis_a), (0.0, 0.0, 1.0))
+    return basis_a, basis_b
+
+
+def cylinder_between(start, end, radius, segments, capped=True):
+    axis = vector_sub(end, start)
+    if vector_length(axis) <= 0.000001:
+        return [], []
+    axis = vector_normalized(axis)
+    basis_a, basis_b = perpendicular_basis(axis)
+    vertices = []
+    for center in (start, end):
+        for segment in range(segments):
+            angle = math.tau * float(segment) / float(segments)
+            radial = vector_add(
+                vector_scale(basis_a, math.cos(angle) * radius),
+                vector_scale(basis_b, math.sin(angle) * radius),
+            )
+            vertices.append(vector_add(center, radial))
+    indices = []
+    for segment in range(segments):
+        next_segment = (segment + 1) % segments
+        bottom_a = segment
+        bottom_b = next_segment
+        top_a = segment + segments
+        top_b = next_segment + segments
+        indices.extend([bottom_a, bottom_b, top_b, bottom_a, top_b, top_a])
+    if capped:
+        bottom_center = len(vertices)
+        top_center = len(vertices) + 1
+        vertices.append(start)
+        vertices.append(end)
+        for segment in range(segments):
+            next_segment = (segment + 1) % segments
+            indices.extend([bottom_center, next_segment, segment])
+            indices.extend([top_center, segment + segments, next_segment + segments])
+    return vertices, indices
+
+
+def rod_box_between(start, end, width, thickness):
+    axis = vector_sub(end, start)
+    length = vector_length(axis)
+    if length <= 0.000001:
+        return [], []
+    axis = vector_normalized(axis)
+    up_axis = (0.0, 1.0, 0.0)
+    side_axis = vector_normalized(vector_cross(axis, up_axis), (0.0, 0.0, 1.0))
+    return oriented_box(midpoint(start, end), axis, length, up_axis, thickness, side_axis, width)
+
+
+def joint_ball(center, radius):
+    x = (radius, 0.0, 0.0)
+    y = (0.0, radius, 0.0)
+    z = (0.0, 0.0, radius)
+    vertices = [
+        vector_add(center, y),
+        vector_add(center, vector_scale(y, -1.0)),
+        vector_add(center, x),
+        vector_add(center, vector_scale(x, -1.0)),
+        vector_add(center, z),
+        vector_add(center, vector_scale(z, -1.0)),
+    ]
+    indices = [
+        0, 2, 4,
+        0, 4, 3,
+        0, 3, 5,
+        0, 5, 2,
+        1, 4, 2,
+        1, 3, 4,
+        1, 5, 3,
+        1, 2, 5,
+    ]
+    return vertices, indices
+
+
+def triangular_plate(points, normal, thickness):
+    offset = vector_scale(vector_normalized(normal), thickness * 0.5)
+    vertices = [
+        vector_add(points[0], vector_scale(offset, -1.0)),
+        vector_add(points[1], vector_scale(offset, -1.0)),
+        vector_add(points[2], vector_scale(offset, -1.0)),
+        vector_add(points[0], offset),
+        vector_add(points[1], offset),
+        vector_add(points[2], offset),
+    ]
+    indices = [
+        0, 1, 2,
+        3, 5, 4,
+        0, 3, 4, 0, 4, 1,
+        1, 4, 5, 1, 5, 2,
+        2, 5, 3, 2, 3, 0,
+    ]
+    return vertices, indices
+
+
 def wedge(width, height, depth):
     x = width * 0.5
     y = height * 0.5
@@ -149,6 +334,24 @@ def cylinder_y(radius, height, segments):
         indices.extend([bottom_center, bottom_a, bottom_b])
         indices.extend([top_center, top_b, top_a])
     return vertices, indices
+
+
+def coil_spring_y(radius, wire_radius, height, turns, segments_per_turn, ring_segments):
+    meshes = []
+    steps = int(turns * float(segments_per_turn))
+    previous = None
+    for step in range(steps + 1):
+        t = float(step) / float(steps)
+        angle = math.tau * turns * t
+        point = (
+            math.cos(angle) * radius,
+            -height * 0.5 + height * t,
+            math.sin(angle) * radius,
+        )
+        if previous is not None:
+            meshes.append(cylinder_between(previous, point, wire_radius, ring_segments, False))
+        previous = point
+    return combine_meshes(meshes)
 
 
 def tread_block(angle, radius, width, radial_depth, tangential_width):
@@ -223,10 +426,22 @@ def fender_lip_mesh():
 
 
 def headlight_mesh():
-    return combine_meshes([
-        translated(box(0.030, 0.014, 0.006), (-0.038, 0.030, -0.204)),
-        translated(box(0.030, 0.014, 0.006), (0.038, 0.030, -0.204)),
-    ])
+    meshes = []
+    for x_offset in (-0.038, 0.038):
+        meshes.append(cylinder_between(
+            (x_offset, 0.030, -0.211),
+            (x_offset, 0.030, -0.216),
+            0.010,
+            14,
+        ))
+    for x_offset in (-0.024, 0.024):
+        meshes.append(cylinder_between(
+            (x_offset, 0.123, -0.112),
+            (x_offset, 0.123, -0.118),
+            0.008,
+            12,
+        ))
+    return combine_meshes(meshes)
 
 
 def tail_light_mesh():
@@ -237,7 +452,14 @@ def tail_light_mesh():
 
 
 def grille_mesh():
-    return translated(box(0.073, 0.018, 0.006), (0.0, 0.020, -0.207))
+    meshes = [
+        translated(box(0.076, 0.004, 0.006), (0.0, 0.026, -0.207)),
+        translated(box(0.076, 0.004, 0.006), (0.0, 0.018, -0.207)),
+        translated(box(0.076, 0.004, 0.006), (0.0, 0.010, -0.207)),
+    ]
+    for x_offset in (-0.032, 0.0, 0.032):
+        meshes.append(translated(box(0.004, 0.020, 0.006), (x_offset, 0.018, -0.206)))
+    return combine_meshes(meshes)
 
 
 def side_number_plate_mesh():
@@ -258,43 +480,216 @@ def side_number_mark_mesh():
 
 def vent_mesh():
     meshes = []
-    for x_offset in (-0.028, 0.028):
-        meshes.append(translated(box(0.018, 0.004, 0.046), (x_offset, 0.061, -0.110)))
-    for x_offset in (-0.034, 0.0, 0.034):
-        meshes.append(translated(box(0.014, 0.004, 0.048), (x_offset, 0.054, 0.065)))
+    for x_offset in (-0.040, -0.020, 0.020, 0.040):
+        meshes.append(translated(box(0.010, 0.004, 0.052), (x_offset, 0.061, -0.110)))
+    for x_offset in (-0.040, -0.020, 0.0, 0.020, 0.040):
+        meshes.append(translated(box(0.010, 0.004, 0.046), (x_offset, 0.054, 0.065)))
+    for x_sign in (-1.0, 1.0):
+        meshes.append(translated(box(0.004, 0.030, 0.154), (0.080 * x_sign, 0.033, 0.010)))
+        for z_offset in (-0.070, -0.046, -0.022):
+            meshes.append(translated(box(0.005, 0.006, 0.018), (0.084 * x_sign, 0.034, z_offset)))
+    meshes.extend([
+        translated(box(0.004, 0.004, 0.086), (-0.032, 0.064, -0.080)),
+        translated(box(0.004, 0.004, 0.086), (0.032, 0.064, -0.080)),
+        translated(box(0.056, 0.004, 0.004), (0.0, 0.064, -0.124)),
+        translated(box(0.056, 0.004, 0.004), (0.0, 0.064, -0.036)),
+    ])
+    return combine_meshes(meshes)
+
+
+def cage_side_tube_mesh():
+    radius = 0.0044
+    meshes = [
+        cylinder_between((0.0, -0.040, -0.085), (0.0, -0.036, 0.085), radius, 10),
+        cylinder_between((0.0, 0.040, -0.078), (0.0, 0.040, 0.078), radius, 10),
+        cylinder_between((0.0, -0.040, -0.085), (0.0, 0.040, -0.078), radius, 10),
+        cylinder_between((0.0, -0.036, 0.085), (0.0, 0.040, 0.078), radius, 10),
+        cylinder_between((0.0, -0.026, -0.040), (0.0, 0.040, 0.020), radius * 0.72, 8),
+        cylinder_between((0.0, 0.036, -0.034), (0.0, -0.014, 0.040), radius * 0.72, 8),
+    ]
+    return combine_meshes(meshes)
+
+
+def cage_top_tube_mesh():
+    radius = 0.0042
+    meshes = [
+        cylinder_between((-0.060, 0.0, -0.078), (-0.060, 0.0, 0.078), radius, 10),
+        cylinder_between((0.060, 0.0, -0.078), (0.060, 0.0, 0.078), radius, 10),
+        cylinder_between((-0.060, 0.0, -0.078), (0.060, 0.0, -0.078), radius, 10),
+        cylinder_between((-0.060, 0.0, 0.078), (0.060, 0.0, 0.078), radius, 10),
+        cylinder_between((-0.052, 0.0, -0.020), (0.052, 0.0, 0.044), radius * 0.70, 8),
+        cylinder_between((0.052, 0.0, -0.020), (-0.052, 0.0, 0.044), radius * 0.70, 8),
+    ]
+    return combine_meshes(meshes)
+
+
+def cage_crossbar_tube_mesh():
+    return cylinder_between((-0.064, 0.0, 0.0), (0.064, 0.0, 0.0), 0.0045, 10)
+
+
+def bumper_bar_tube_mesh():
+    return cylinder_between((-0.083, 0.0, 0.0), (0.083, 0.0, 0.0), 0.0065, 12)
+
+
+def front_bumper_loop_mesh():
+    meshes = [
+        cylinder_between((-0.070, -0.020, 0.0), (-0.070, 0.020, 0.0), 0.0048, 10),
+        cylinder_between((0.070, -0.020, 0.0), (0.070, 0.020, 0.0), 0.0048, 10),
+        cylinder_between((-0.070, 0.020, 0.0), (0.070, 0.020, 0.0), 0.0048, 10),
+    ]
+    return combine_meshes(meshes)
+
+
+def detailed_skid_plate_mesh():
+    meshes = [
+        box(0.118, 0.006, 0.250),
+        translated(box(0.012, 0.004, 0.220), (-0.042, 0.005, 0.000)),
+        translated(box(0.012, 0.004, 0.220), (0.042, 0.005, 0.000)),
+        translated(box(0.050, 0.004, 0.010), (0.0, 0.006, -0.096)),
+        translated(box(0.050, 0.004, 0.010), (0.0, 0.006, 0.096)),
+    ]
+    for x_offset in (-0.038, 0.038):
+        for z_offset in (-0.090, 0.090):
+            meshes.append(translated(cylinder_y(0.0045, 0.003, 10), (x_offset, 0.007, z_offset)))
+    return combine_meshes(meshes)
+
+
+def roll_cage_detail_mesh():
+    meshes = []
+    for x_offset in (-0.055, 0.055):
+        x_sign = -1.0 if x_offset < 0.0 else 1.0
+        joint_points = [
+            (x_offset, 0.034, -0.105),
+            (x_offset, 0.038, 0.065),
+            (x_offset, 0.114, -0.098),
+            (x_offset, 0.114, 0.058),
+            (x_offset, 0.082, -0.105),
+            (x_offset, 0.082, 0.058),
+        ]
+        for point in joint_points:
+            meshes.append(joint_ball(point, 0.0062))
+        meshes.append(triangular_plate(
+            [
+                (x_offset, 0.040, -0.105),
+                (x_offset, 0.078, -0.105),
+                (x_offset, 0.047, -0.075),
+            ],
+            (x_sign, 0.0, 0.0),
+            0.0025,
+        ))
+        meshes.append(triangular_plate(
+            [
+                (x_offset, 0.041, 0.064),
+                (x_offset, 0.078, 0.058),
+                (x_offset, 0.050, 0.034),
+            ],
+            (x_sign, 0.0, 0.0),
+            0.0025,
+        ))
+    for x_offset in (-0.038, 0.038):
+        meshes.append(cylinder_between(
+            (x_offset, 0.030, -0.204),
+            (x_offset, 0.030, -0.218),
+            0.014,
+            14,
+        ))
+    for x_offset in (-0.024, 0.024):
+        meshes.append(cylinder_between(
+            (x_offset, 0.123, -0.104),
+            (x_offset, 0.123, -0.119),
+            0.010,
+            12,
+        ))
+        meshes.append(cylinder_between(
+            (x_offset, 0.114, -0.103),
+            (x_offset, 0.123, -0.107),
+            0.0022,
+            8,
+        ))
+    return combine_meshes(meshes)
+
+
+def suspension_a_arm_detail_mesh():
+    meshes = []
+    for x_sign in (-1.0, 1.0):
+        for z_center, z_spread in ((-0.100, 0.030), (0.100, 0.030)):
+            outer = (0.083 * x_sign, -0.022, z_center)
+            inner_front = (0.030 * x_sign, -0.022, z_center - z_spread)
+            inner_rear = (0.030 * x_sign, -0.022, z_center + z_spread)
+            meshes.append(rod_box_between(inner_front, outer, 0.006, 0.004))
+            meshes.append(rod_box_between(inner_rear, outer, 0.006, 0.004))
+            upper_outer = (0.074 * x_sign, 0.006, z_center)
+            upper_inner = (0.032 * x_sign, 0.014, z_center - z_spread * (1.0 if z_center < 0.0 else -1.0))
+            meshes.append(cylinder_between(upper_inner, upper_outer, 0.0024, 8))
+            meshes.append(joint_ball(outer, 0.0048))
+    return combine_meshes(meshes)
+
+
+def shock_hardware_mesh():
+    meshes = []
+    for center in (
+        (-0.068, 0.022, -0.096),
+        (0.068, 0.022, -0.096),
+        (-0.068, 0.024, 0.104),
+        (0.068, 0.024, 0.104),
+    ):
+        meshes.append(translated(cylinder_y(0.0022, 0.066, 10), center))
+        meshes.append(translated(cylinder_y(0.0066, 0.004, 12), (center[0], center[1] - 0.031, center[2])))
+        meshes.append(translated(cylinder_y(0.0066, 0.004, 12), (center[0], center[1] + 0.031, center[2])))
+        meshes.append(joint_ball((center[0], center[1] - 0.036, center[2]), 0.0042))
+        meshes.append(joint_ball((center[0], center[1] + 0.036, center[2]), 0.0042))
+    return combine_meshes(meshes)
+
+
+def exhaust_mesh():
+    meshes = [
+        cylinder_between((0.050, 0.028, 0.060), (0.055, 0.028, 0.100), 0.0030, 8),
+        cylinder_between((0.055, 0.028, 0.100), (0.055, 0.028, 0.140), 0.0070, 12),
+        cylinder_between((0.055, 0.028, 0.140), (0.072, 0.028, 0.164), 0.0038, 10),
+        translated(box(0.017, 0.003, 0.006), (0.055, 0.036, 0.112)),
+        translated(box(0.017, 0.003, 0.006), (0.055, 0.036, 0.130)),
+    ]
     return combine_meshes(meshes)
 
 
 def write_glb(path):
+    # (name, mesh, baseColorFactor, (roughness, metallic)). FIDELITY hero scheme:
+    # teal painted shells, cream/amber livery, anodized cage, real metal running
+    # gear. Geometry args are unchanged from the locked layout; only colors + PBR
+    # response are tuned (render-only).
     mesh_specs = [
-        ("body", buggy_body_shell(), [0.93, 0.18, 0.07, 1.0]),
-        ("nose", wedge(0.115, 0.034, 0.105), [0.98, 0.33, 0.09, 1.0]),
-        ("top_deck", box(0.105, 0.010, 0.155), [0.080, 0.086, 0.098, 1.0]),
-        ("side_panel", box(0.006, 0.042, 0.205), [0.94, 0.22, 0.08, 1.0]),
-        ("canopy", wedge(0.082, 0.034, 0.088), [0.42, 0.50, 0.56, 0.58]),
-        ("paint_stripe", box(0.026, 0.004, 0.178), [0.93, 0.88, 0.75, 1.0]),
-        ("cage_side", box(0.010, 0.080, 0.170), [0.060, 0.064, 0.072, 1.0]),
-        ("cage_top", box(0.128, 0.010, 0.168), [0.060, 0.064, 0.072, 1.0]),
-        ("cage_crossbar", box(0.128, 0.010, 0.012), [0.060, 0.064, 0.072, 1.0]),
-        ("wing_panel", box(0.178, 0.012, 0.058), [0.060, 0.064, 0.072, 1.0]),
-        ("wing_stanchion", box(0.012, 0.056, 0.012), [0.060, 0.064, 0.072, 1.0]),
-        ("bumper_bar", box(0.166, 0.018, 0.016), [0.060, 0.064, 0.072, 1.0]),
-        ("bumper_upright", box(0.012, 0.040, 0.014), [0.060, 0.064, 0.072, 1.0]),
-        ("skid_plate", box(0.118, 0.008, 0.250), [0.10, 0.105, 0.115, 1.0]),
-        ("shock_coil", cylinder_y(0.006, 0.058, 12), [0.74, 0.70, 0.56, 1.0]),
-        ("suspension_arm", box(0.074, 0.006, 0.012), [0.030, 0.032, 0.036, 1.0]),
-        ("wheel_tire", treaded_tire(0.031, 0.034, 24, 12), [0.020, 0.020, 0.023, 1.0]),
-        ("wheel_rim", cylinder_y(0.017, 0.004, 18), [0.16, 0.17, 0.18, 1.0]),
-        ("wheel_hub", cylinder_y(0.008, 0.006, 14), [0.76, 0.70, 0.54, 1.0]),
-        ("fender_flare", fender_flare_mesh(), [0.93, 0.18, 0.07, 1.0]),
-        ("fender_lip", fender_lip_mesh(), [0.040, 0.042, 0.048, 1.0]),
-        ("headlight_lens", headlight_mesh(), [1.00, 0.84, 0.42, 1.0]),
-        ("tail_light_lens", tail_light_mesh(), [0.95, 0.05, 0.025, 1.0]),
-        ("front_grille", grille_mesh(), [0.035, 0.038, 0.042, 1.0]),
-        ("side_number_plate", side_number_plate_mesh(), [0.93, 0.88, 0.75, 1.0]),
-        ("side_number_mark", side_number_mark_mesh(), [0.060, 0.064, 0.072, 1.0]),
-        ("body_vent", vent_mesh(), [0.045, 0.048, 0.054, 1.0]),
-        ("antenna", cylinder_y(0.0025, 0.118, 8), [0.045, 0.048, 0.054, 1.0]),
+        ("body", buggy_body_shell(), HERO_BODY_TEAL, PBR_PAINT),
+        ("nose", wedge(0.115, 0.034, 0.105), HERO_AMBER, PBR_PAINT_AMBER),
+        ("top_deck", box(0.105, 0.010, 0.155), GRAPHITE, PBR_GRAPHITE),
+        ("side_panel", box(0.006, 0.042, 0.205), HERO_BODY_TEAL_DEEP, PBR_PAINT),
+        ("canopy", wedge(0.082, 0.034, 0.088), HERO_CANOPY, PBR_CANOPY),
+        ("paint_stripe", box(0.026, 0.004, 0.178), HERO_CREAM, PBR_CREAM),
+        ("cage_side", cage_side_tube_mesh(), ANODIZE_BLACK, PBR_ANODIZE),
+        ("cage_top", cage_top_tube_mesh(), ANODIZE_BLACK, PBR_ANODIZE),
+        ("cage_crossbar", cage_crossbar_tube_mesh(), ANODIZE_BLACK, PBR_ANODIZE),
+        ("wing_panel", box(0.178, 0.012, 0.058), ANODIZE_BLACK, PBR_ANODIZE),
+        ("wing_stanchion", box(0.012, 0.056, 0.012), ANODIZE_BLACK, PBR_ANODIZE),
+        ("bumper_bar", bumper_bar_tube_mesh(), ANODIZE_BLACK, PBR_ANODIZE),
+        ("bumper_upright", front_bumper_loop_mesh(), ANODIZE_BLACK, PBR_ANODIZE),
+        ("skid_plate", detailed_skid_plate_mesh(), SKID_ALU, PBR_SKID),
+        ("shock_coil", coil_spring_y(0.006, 0.0012, 0.058, 4.5, 10, 6), SHOCK_AMBER, PBR_SHOCK),
+        ("suspension_arm", box(0.060, 0.004, 0.008), GRAPHITE, PBR_GRAPHITE),
+        ("wheel_tire", treaded_tire(0.031, 0.034, 24, 12), RUBBER_BLACK, PBR_RUBBER),
+        ("wheel_rim", cylinder_y(0.017, 0.004, 18), RIM_ALU, PBR_RIM),
+        ("wheel_hub", cylinder_y(0.008, 0.006, 14), HUB_MACHINED, PBR_HUB),
+        ("fender_flare", fender_flare_mesh(), HERO_AMBER_DEEP, PBR_PAINT_AMBER),
+        ("fender_lip", fender_lip_mesh(), GRAPHITE, PBR_DARK_TRIM),
+        ("headlight_lens", headlight_mesh(), HEADLIGHT_LENS, PBR_LENS),
+        ("tail_light_lens", tail_light_mesh(), TAILLIGHT_LENS, PBR_LENS),
+        ("front_grille", grille_mesh(), GRAPHITE, PBR_DARK_TRIM),
+        ("side_number_plate", side_number_plate_mesh(), HERO_CREAM, PBR_CREAM),
+        ("side_number_mark", side_number_mark_mesh(), ANODIZE_BLACK, PBR_DARK_TRIM),
+        ("body_vent", vent_mesh(), GRAPHITE, PBR_GRAPHITE),
+        ("antenna", cylinder_y(0.0025, 0.118, 8), GRAPHITE, PBR_GRAPHITE),
+        ("roll_cage_detail", roll_cage_detail_mesh(), ANODIZE_BLACK, PBR_ANODIZE),
+        ("suspension_a_arm_detail", suspension_a_arm_detail_mesh(), GRAPHITE, PBR_GRAPHITE),
+        ("shock_hardware", shock_hardware_mesh(), HUB_MACHINED, PBR_HUB),
+        ("exhaust", exhaust_mesh(), SKID_ALU, PBR_SKID),
     ]
 
     binary = bytearray()
@@ -302,7 +697,8 @@ def write_glb(path):
     accessors = []
     meshes = []
     materials = []
-    for mesh_index, (mesh_name, mesh, color) in enumerate(mesh_specs):
+    for mesh_index, (mesh_name, mesh, color, pbr) in enumerate(mesh_specs):
+        roughness_factor, metallic_factor = pbr
         vertices, indices = mesh
         position_data = pack_positions(vertices)
         normal_data = pack_normals(compute_normals(vertices, indices))
@@ -366,8 +762,8 @@ def write_glb(path):
                 "name": mesh_name + "_mat",
                 "pbrMetallicRoughness": {
                     "baseColorFactor": color,
-                    "roughnessFactor": 0.82,
-                    "metallicFactor": 0.0,
+                    "roughnessFactor": roughness_factor,
+                    "metallicFactor": metallic_factor,
                 },
             }
         )
@@ -417,6 +813,10 @@ def write_glb(path):
     side_number_mark_mesh_index = 25
     vent_mesh_index = 26
     antenna_mesh_index = 27
+    roll_cage_detail_mesh_index = 28
+    suspension_a_arm_detail_mesh_index = 29
+    shock_hardware_mesh_index = 30
+    exhaust_mesh_index = 31
     nodes = [
         {"name": "rc_buggy", "children": [1, 2, 3, 4, 5, 6, 7, 13, 17, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 36, 41, 46, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60]},
         {"name": "body", "mesh": body_mesh, "translation": [0.0, 0.010, 0.015]},
@@ -480,6 +880,15 @@ def write_glb(path):
         {"name": "body_vents", "mesh": vent_mesh_index},
         {"name": "antenna", "mesh": antenna_mesh_index, "translation": [0.052, 0.115, 0.063]},
     ]
+    detail_nodes = [
+        {"name": "roll_cage_detail", "mesh": roll_cage_detail_mesh_index},
+        {"name": "suspension_a_arm_detail", "mesh": suspension_a_arm_detail_mesh_index},
+        {"name": "shock_hardware", "mesh": shock_hardware_mesh_index},
+        {"name": "exhaust", "mesh": exhaust_mesh_index},
+    ]
+    detail_start_index = len(nodes)
+    nodes.extend(detail_nodes)
+    nodes[0]["children"].extend(range(detail_start_index, len(nodes)))
 
     bin_chunk = pad4(bytes(binary), b"\0")
     gltf = {
