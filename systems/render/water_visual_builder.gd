@@ -18,6 +18,26 @@ const FRESNEL_GLINT_COLOR: Color = Color(1.0, 0.74, 0.46)
 const FRESNEL_GLINT_STRENGTH: float = 0.12
 const ZION_RIVER_WIDTH_M: float = 9.5
 const ZION_RIVER_SURFACE_RISE_M: float = 0.30
+# Bank-detail river-width model — used only by the Virgin-River bank detail
+# meshes (wet shoreline / gravel bars / riffles / cobbles), not the water ribbon
+# itself, which keeps its fixed ZION_RIVER_WIDTH_M envelope on main.
+const ZION_RIVER_MIN_WIDTH_M: float = 8.0
+const ZION_RIVER_MAX_WIDTH_M: float = 15.0
+const ZION_RIVER_BASE_WIDTH_M: float = 10.4
+const ZION_BANK_DETAIL_ROOT_NAME: String = "VirginRiverBankDetails"
+const ZION_BANK_DETAIL_GROUP: String = "render_river_bank_detail"
+const ZION_BANK_WET_STRIP_WIDTH_M: float = 2.1
+const ZION_BANK_WET_STRIP_INSET_M: float = 0.18
+const ZION_BANK_DECAL_LIFT_M: float = 0.045
+const ZION_GRAVEL_BAR_SURFACE_LIFT_M: float = 0.014
+const ZION_GRAVEL_BAR_SEGMENTS: int = 12
+const ZION_RIFFLE_SURFACE_LIFT_M: float = 0.020
+const ZION_COBBLES_PER_BANK_POINT: int = 5
+const ZION_COBBLE_SEGMENTS: int = 6
+const ZION_WET_SHORELINE_COLOR: Color = Color(0.24, 0.20, 0.145, 0.56)
+const ZION_GRAVEL_BAR_COLOR: Color = Color(0.57, 0.51, 0.40, 1.0)
+const ZION_COBBLE_COLOR: Color = Color(0.48, 0.43, 0.35, 1.0)
+const ZION_RIFFLE_COLOR: Color = Color(0.82, 0.76, 0.62, 0.34)
 # Defensive guard band — same envelope as the terrain builder; see
 # planning/codex-skyline-geometry-guard-plan.md §3.
 const RIVER_HEIGHT_GUARD_MIN_M: float = -200.0
@@ -57,6 +77,7 @@ static func build_zion_virgin_river(parent: Node3D) -> Node3D:
 	parent.add_child(root)
 	_add_water_ribbon(root, "virgin_river_west", ZION_RIVER_WEST_POINTS, ZION_RIVER_WIDTH_M)
 	_add_water_ribbon(root, "virgin_river_east", ZION_RIVER_EAST_POINTS, ZION_RIVER_WIDTH_M)
+	_add_zion_bank_details(root)
 	return root
 
 
@@ -155,6 +176,264 @@ static func _zion_river_surface_points(river_points_xz: Array[Vector2], terrain_
 	return world_points
 
 
+static func _add_zion_bank_details(parent: Node3D) -> Node3D:
+	var detail_root: Node3D = Node3D.new()
+	detail_root.name = ZION_BANK_DETAIL_ROOT_NAME
+	detail_root.add_to_group(ZION_BANK_DETAIL_GROUP)
+	parent.add_child(detail_root)
+	var terrain_def: Resource = TerrainBuilderScript.cedar_hollow_10m_terrain_def()
+	# CRITICAL: bank detail meshes must sample the SAME streamed coord space the
+	# water ribbon uses (cedar_hollow_10m_streamed_horizontal_offset, not the
+	# un-streamed spawn-relative offset) or the banks float ~270m off the river.
+	var horizontal_offset: Vector2 = TerrainBuilderScript.cedar_hollow_10m_streamed_horizontal_offset()
+	var west_points: Array[Vector3] = _zion_river_surface_points(ZION_RIVER_WEST_POINTS, terrain_def, horizontal_offset)
+	var east_points: Array[Vector3] = _zion_river_surface_points(ZION_RIVER_EAST_POINTS, terrain_def, horizontal_offset)
+	_add_zion_shoreline_mesh(detail_root, "virgin_river_wet_shoreline_west", west_points, terrain_def, horizontal_offset)
+	_add_zion_shoreline_mesh(detail_root, "virgin_river_wet_shoreline_east", east_points, terrain_def, horizontal_offset)
+	_add_zion_gravel_bar_mesh(detail_root, "virgin_river_gravel_bars_west", west_points, terrain_def, horizontal_offset)
+	_add_zion_gravel_bar_mesh(detail_root, "virgin_river_gravel_bars_east", east_points, terrain_def, horizontal_offset)
+	_add_zion_riffle_mesh(detail_root, "virgin_river_riffle_streaks_west", west_points, terrain_def, horizontal_offset)
+	_add_zion_riffle_mesh(detail_root, "virgin_river_riffle_streaks_east", east_points, terrain_def, horizontal_offset)
+	_add_zion_cobble_mesh(detail_root, "virgin_river_bank_cobbles_west", west_points, terrain_def, horizontal_offset)
+	_add_zion_cobble_mesh(detail_root, "virgin_river_bank_cobbles_east", east_points, terrain_def, horizontal_offset)
+	return detail_root
+
+
+static func _add_zion_shoreline_mesh(parent: Node3D, node_name: String, world_points: Array[Vector3], terrain_def: Resource, horizontal_offset: Vector2) -> MeshInstance3D:
+	var vertices: PackedVector3Array = PackedVector3Array()
+	var normals: PackedVector3Array = PackedVector3Array()
+	var uvs: PackedVector2Array = PackedVector2Array()
+	var indices: PackedInt32Array = PackedInt32Array()
+	var cumulative_distances: PackedFloat32Array = _water_cumulative_distances(world_points)
+	var total_distance_m: float = _water_total_distance(cumulative_distances)
+	for side_index in range(2):
+		var side_sign: float = -1.0 if side_index == 0 else 1.0
+		var side_vertex_start: int = vertices.size()
+		for point_index in range(world_points.size()):
+			var point: Vector3 = world_points[point_index]
+			var distance_t: float = _water_distance_t(cumulative_distances, total_distance_m, point_index)
+			var width_m: float = _zion_river_width_m(world_points, point_index, distance_t)
+			var half_width: float = width_m * 0.5
+			var tangent_xz: Vector2 = _water_point_tangent_xz(world_points, point_index)
+			var side_xz: Vector2 = Vector2(-tangent_xz.y, tangent_xz.x) * side_sign
+			var inner_offset: float = half_width + ZION_BANK_WET_STRIP_INSET_M
+			var outer_offset: float = inner_offset + ZION_BANK_WET_STRIP_WIDTH_M
+			var inner_xz: Vector2 = Vector2(point.x + side_xz.x * inner_offset, point.z + side_xz.y * inner_offset)
+			var outer_xz: Vector2 = Vector2(point.x + side_xz.x * outer_offset, point.z + side_xz.y * outer_offset)
+			var inner_world: Vector3 = Vector3(inner_xz.x, _zion_bank_ground_y(inner_xz, terrain_def, horizontal_offset), inner_xz.y)
+			var outer_world: Vector3 = Vector3(outer_xz.x, _zion_bank_ground_y(outer_xz, terrain_def, horizontal_offset), outer_xz.y)
+			vertices.append(inner_world)
+			vertices.append(outer_world)
+			normals.append(Vector3.UP)
+			normals.append(Vector3.UP)
+			uvs.append(Vector2(cumulative_distances[point_index] * 0.08, 0.0))
+			uvs.append(Vector2(cumulative_distances[point_index] * 0.08, 1.0))
+		for segment_index in range(world_points.size() - 1):
+			var inner_0: int = side_vertex_start + segment_index * 2
+			var outer_0: int = inner_0 + 1
+			var inner_1: int = inner_0 + 2
+			var outer_1: int = inner_0 + 3
+			indices.append(inner_0)
+			indices.append(inner_1)
+			indices.append(outer_0)
+			indices.append(outer_0)
+			indices.append(inner_1)
+			indices.append(outer_1)
+	return _add_zion_bank_mesh_instance(parent, node_name, vertices, normals, uvs, indices, _bank_material(node_name, ZION_WET_SHORELINE_COLOR, 0.34))
+
+
+static func _add_zion_gravel_bar_mesh(parent: Node3D, node_name: String, world_points: Array[Vector3], terrain_def: Resource, horizontal_offset: Vector2) -> MeshInstance3D:
+	var vertices: PackedVector3Array = PackedVector3Array()
+	var normals: PackedVector3Array = PackedVector3Array()
+	var uvs: PackedVector2Array = PackedVector2Array()
+	var indices: PackedInt32Array = PackedInt32Array()
+	var cumulative_distances: PackedFloat32Array = _water_cumulative_distances(world_points)
+	var total_distance_m: float = _water_total_distance(cumulative_distances)
+	for point_index in range(1, world_points.size() - 1):
+		var distance_t: float = _water_distance_t(cumulative_distances, total_distance_m, point_index)
+		var width_m: float = _zion_river_width_m(world_points, point_index, distance_t)
+		var bend_strength: float = _zion_river_bend_strength(world_points, point_index)
+		var bar_strength: float = clampf(bend_strength * 1.8 + _zion_river_riffle_weight(distance_t, width_m) * 0.45, 0.0, 1.0)
+		if bar_strength <= 0.22:
+			continue
+		var tangent_xz: Vector2 = _water_point_tangent_xz(world_points, point_index)
+		var side_xz: Vector2 = Vector2(-tangent_xz.y, tangent_xz.x)
+		var bend_side: float = _zion_river_bend_side(world_points, point_index)
+		var center_offset_m: float = bend_side * width_m * (0.12 + bar_strength * 0.12)
+		var center: Vector2 = Vector2(world_points[point_index].x, world_points[point_index].z) + side_xz * center_offset_m
+		var half_length_m: float = 5.4 + width_m * (0.42 + bar_strength * 0.18)
+		var half_width_m: float = 0.75 + width_m * (0.10 + bar_strength * 0.045)
+		_append_gravel_bar(vertices, normals, uvs, indices, center, tangent_xz, side_xz, half_length_m, half_width_m, terrain_def, horizontal_offset, float(point_index))
+	return _add_zion_bank_mesh_instance(parent, node_name, vertices, normals, uvs, indices, _bank_material(node_name, ZION_GRAVEL_BAR_COLOR, 0.86))
+
+
+static func _add_zion_riffle_mesh(parent: Node3D, node_name: String, world_points: Array[Vector3], terrain_def: Resource, horizontal_offset: Vector2) -> MeshInstance3D:
+	var vertices: PackedVector3Array = PackedVector3Array()
+	var normals: PackedVector3Array = PackedVector3Array()
+	var uvs: PackedVector2Array = PackedVector2Array()
+	var indices: PackedInt32Array = PackedInt32Array()
+	var cumulative_distances: PackedFloat32Array = _water_cumulative_distances(world_points)
+	var total_distance_m: float = _water_total_distance(cumulative_distances)
+	for segment_index in range(world_points.size() - 1):
+		var segment_start_t: float = _water_distance_t(cumulative_distances, total_distance_m, segment_index)
+		var segment_end_t: float = _water_distance_t(cumulative_distances, total_distance_m, segment_index + 1)
+		for riffle_index in range(2):
+			var segment_t: float = 0.34 + float(riffle_index) * 0.27
+			var distance_t: float = lerpf(segment_start_t, segment_end_t, segment_t)
+			var center: Vector3 = world_points[segment_index].lerp(world_points[segment_index + 1], segment_t)
+			var width_m: float = lerpf(
+				_zion_river_width_m(world_points, segment_index, segment_start_t),
+				_zion_river_width_m(world_points, segment_index + 1, segment_end_t),
+				segment_t
+			)
+			var riffle_strength: float = _zion_river_riffle_weight(distance_t, width_m)
+			if riffle_strength <= 0.35:
+				continue
+			var tangent_xz: Vector2 = _water_point_tangent_xz(world_points, segment_index)
+			var side_xz: Vector2 = Vector2(-tangent_xz.y, tangent_xz.x)
+			var half_length_m: float = width_m * (0.22 + riffle_strength * 0.12)
+			var half_thickness_m: float = 0.16 + riffle_strength * 0.12
+			var lateral_offset_m: float = (0.18 - float(riffle_index) * 0.36) * width_m
+			var center_xz: Vector2 = Vector2(center.x, center.z) + side_xz * lateral_offset_m
+			_append_riffle_band(vertices, normals, uvs, indices, center_xz, tangent_xz, side_xz, half_length_m, half_thickness_m, terrain_def, horizontal_offset)
+	return _add_zion_bank_mesh_instance(parent, node_name, vertices, normals, uvs, indices, _bank_material(node_name, ZION_RIFFLE_COLOR, 0.18))
+
+
+static func _add_zion_cobble_mesh(parent: Node3D, node_name: String, world_points: Array[Vector3], terrain_def: Resource, horizontal_offset: Vector2) -> MeshInstance3D:
+	var vertices: PackedVector3Array = PackedVector3Array()
+	var normals: PackedVector3Array = PackedVector3Array()
+	var uvs: PackedVector2Array = PackedVector2Array()
+	var indices: PackedInt32Array = PackedInt32Array()
+	var cumulative_distances: PackedFloat32Array = _water_cumulative_distances(world_points)
+	var total_distance_m: float = _water_total_distance(cumulative_distances)
+	for point_index in range(world_points.size()):
+		var distance_t: float = _water_distance_t(cumulative_distances, total_distance_m, point_index)
+		var width_m: float = _zion_river_width_m(world_points, point_index, distance_t)
+		var tangent_xz: Vector2 = _water_point_tangent_xz(world_points, point_index)
+		var side_xz: Vector2 = Vector2(-tangent_xz.y, tangent_xz.x)
+		for side_index in range(2):
+			var side_sign: float = -1.0 if side_index == 0 else 1.0
+			for cobble_index in range(ZION_COBBLES_PER_BANK_POINT):
+				var hash_seed: float = float(point_index * 41 + side_index * 17 + cobble_index * 7)
+				var along_m: float = (_hash01(hash_seed + 1.7) - 0.5) * 10.0
+				var lateral_m: float = width_m * 0.5 + 0.55 + _hash01(hash_seed + 3.1) * 2.6
+				var center_xz: Vector2 = Vector2(world_points[point_index].x, world_points[point_index].z) + tangent_xz * along_m + side_xz * side_sign * lateral_m
+				var radius_x: float = 0.16 + _hash01(hash_seed + 5.9) * 0.28
+				var radius_z: float = 0.10 + _hash01(hash_seed + 8.4) * 0.20
+				var yaw_radians: float = _hash01(hash_seed + 11.0) * TAU
+				_append_cobble(vertices, normals, uvs, indices, center_xz, radius_x, radius_z, yaw_radians, terrain_def, horizontal_offset)
+	return _add_zion_bank_mesh_instance(parent, node_name, vertices, normals, uvs, indices, _bank_material(node_name, ZION_COBBLE_COLOR, 0.92))
+
+
+static func _append_gravel_bar(vertices: PackedVector3Array, normals: PackedVector3Array, uvs: PackedVector2Array, indices: PackedInt32Array, center_xz: Vector2, tangent_xz: Vector2, side_xz: Vector2, half_length_m: float, half_width_m: float, terrain_def: Resource, horizontal_offset: Vector2, seed: float) -> void:
+	var center_index: int = vertices.size()
+	vertices.append(_zion_surface_detail_vertex(center_xz, terrain_def, horizontal_offset, ZION_GRAVEL_BAR_SURFACE_LIFT_M))
+	normals.append(Vector3.UP)
+	uvs.append(Vector2(0.5, 0.5))
+	for segment_index in range(ZION_GRAVEL_BAR_SEGMENTS):
+		var angle: float = TAU * float(segment_index) / float(ZION_GRAVEL_BAR_SEGMENTS)
+		var irregular: float = 0.84 + _hash01(seed * 19.0 + float(segment_index) * 3.7) * 0.28
+		var local_x: float = cos(angle) * half_length_m * irregular
+		var local_z: float = sin(angle) * half_width_m * irregular
+		var world_xz: Vector2 = center_xz + tangent_xz * local_x + side_xz * local_z
+		vertices.append(_zion_surface_detail_vertex(world_xz, terrain_def, horizontal_offset, ZION_GRAVEL_BAR_SURFACE_LIFT_M))
+		normals.append(Vector3.UP)
+		uvs.append(Vector2(0.5 + cos(angle) * 0.5, 0.5 + sin(angle) * 0.5))
+	for segment_index in range(ZION_GRAVEL_BAR_SEGMENTS):
+		indices.append(center_index)
+		indices.append(center_index + segment_index + 1)
+		indices.append(center_index + ((segment_index + 1) % ZION_GRAVEL_BAR_SEGMENTS) + 1)
+
+
+static func _append_riffle_band(vertices: PackedVector3Array, normals: PackedVector3Array, uvs: PackedVector2Array, indices: PackedInt32Array, center_xz: Vector2, tangent_xz: Vector2, side_xz: Vector2, half_length_m: float, half_thickness_m: float, terrain_def: Resource, horizontal_offset: Vector2) -> void:
+	var vertex_start: int = vertices.size()
+	var points: Array[Vector2] = [
+		center_xz - side_xz * half_length_m - tangent_xz * half_thickness_m,
+		center_xz + side_xz * half_length_m - tangent_xz * half_thickness_m,
+		center_xz - side_xz * half_length_m + tangent_xz * half_thickness_m,
+		center_xz + side_xz * half_length_m + tangent_xz * half_thickness_m,
+	]
+	var band_uvs: Array[Vector2] = [
+		Vector2.ZERO,
+		Vector2.RIGHT,
+		Vector2.UP,
+		Vector2.ONE,
+	]
+	for point_index in range(points.size()):
+		vertices.append(_zion_surface_detail_vertex(points[point_index], terrain_def, horizontal_offset, ZION_RIFFLE_SURFACE_LIFT_M))
+		normals.append(Vector3.UP)
+		uvs.append(band_uvs[point_index])
+	indices.append(vertex_start)
+	indices.append(vertex_start + 2)
+	indices.append(vertex_start + 1)
+	indices.append(vertex_start + 1)
+	indices.append(vertex_start + 2)
+	indices.append(vertex_start + 3)
+
+
+static func _append_cobble(vertices: PackedVector3Array, normals: PackedVector3Array, uvs: PackedVector2Array, indices: PackedInt32Array, center_xz: Vector2, radius_x: float, radius_z: float, yaw_radians: float, terrain_def: Resource, horizontal_offset: Vector2) -> void:
+	var center_index: int = vertices.size()
+	vertices.append(Vector3(center_xz.x, _zion_bank_ground_y(center_xz, terrain_def, horizontal_offset) + 0.012, center_xz.y))
+	normals.append(Vector3.UP)
+	uvs.append(Vector2(0.5, 0.5))
+	var yaw_basis_x: Vector2 = Vector2(cos(yaw_radians), sin(yaw_radians))
+	var yaw_basis_z: Vector2 = Vector2(-yaw_basis_x.y, yaw_basis_x.x)
+	for segment_index in range(ZION_COBBLE_SEGMENTS):
+		var angle: float = TAU * float(segment_index) / float(ZION_COBBLE_SEGMENTS)
+		var world_xz: Vector2 = center_xz + yaw_basis_x * (cos(angle) * radius_x) + yaw_basis_z * (sin(angle) * radius_z)
+		vertices.append(Vector3(world_xz.x, _zion_bank_ground_y(world_xz, terrain_def, horizontal_offset) + 0.012, world_xz.y))
+		normals.append(Vector3.UP)
+		uvs.append(Vector2(0.5 + cos(angle) * 0.5, 0.5 + sin(angle) * 0.5))
+	for segment_index in range(ZION_COBBLE_SEGMENTS):
+		indices.append(center_index)
+		indices.append(center_index + segment_index + 1)
+		indices.append(center_index + ((segment_index + 1) % ZION_COBBLE_SEGMENTS) + 1)
+
+
+static func _add_zion_bank_mesh_instance(parent: Node3D, node_name: String, vertices: PackedVector3Array, normals: PackedVector3Array, uvs: PackedVector2Array, indices: PackedInt32Array, material: Material) -> MeshInstance3D:
+	if vertices.size() <= 0 or indices.size() <= 0:
+		return null
+	var arrays: Array = []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = vertices
+	arrays[Mesh.ARRAY_NORMAL] = normals
+	arrays[Mesh.ARRAY_TEX_UV] = uvs
+	arrays[Mesh.ARRAY_INDEX] = indices
+	var mesh: ArrayMesh = ArrayMesh.new()
+	mesh.resource_name = node_name + "_mesh"
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	var instance: MeshInstance3D = MeshInstance3D.new()
+	instance.name = node_name
+	instance.mesh = mesh
+	instance.material_override = material
+	instance.visibility_range_end = GameConfig.vis_range_water
+	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	instance.add_to_group(ZION_BANK_DETAIL_GROUP)
+	parent.add_child(instance)
+	return instance
+
+
+static func _bank_material(resource_name: String, color: Color, roughness: float) -> StandardMaterial3D:
+	var material: StandardMaterial3D = StandardMaterial3D.new()
+	material.resource_name = resource_name + "_material"
+	material.albedo_color = color
+	material.roughness = roughness
+	material.metallic = 0.0
+	material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	if color.a < 1.0:
+		material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	return material
+
+
+static func _zion_bank_ground_y(world_xz: Vector2, terrain_def: Resource, horizontal_offset: Vector2) -> float:
+	var bed_y: float = _guarded_river_height(TerrainBuilderScript.heightmap_height_at_world_xz(terrain_def, world_xz, horizontal_offset), world_xz)
+	return bed_y + ZION_BANK_DECAL_LIFT_M
+
+
+static func _zion_surface_detail_vertex(world_xz: Vector2, terrain_def: Resource, horizontal_offset: Vector2, lift_m: float) -> Vector3:
+	return Vector3(world_xz.x, _zion_river_surface_y(world_xz, terrain_def, horizontal_offset) + lift_m, world_xz.y)
+
+
 static func _guarded_river_height(raw_height: float, world_xz: Vector2) -> float:
 	if not is_finite(raw_height):
 		push_warning("WaterVisualBuilder non-finite river bed height at " + str(world_xz) + " value " + str(raw_height))
@@ -200,6 +479,71 @@ static func _water_point_tangent_xz(world_points: Array[Vector3], point_index: i
 
 static func _water_xz_distance(a: Vector3, b: Vector3) -> float:
 	return Vector2(a.x, a.z).distance_to(Vector2(b.x, b.z))
+
+
+static func _water_cumulative_distances(world_points: Array[Vector3]) -> PackedFloat32Array:
+	var cumulative_distances: PackedFloat32Array = PackedFloat32Array()
+	var distance_m: float = 0.0
+	for point_index in range(world_points.size()):
+		if point_index > 0:
+			distance_m += _water_xz_distance(world_points[point_index - 1], world_points[point_index])
+		cumulative_distances.append(distance_m)
+	return cumulative_distances
+
+
+static func _water_total_distance(cumulative_distances: PackedFloat32Array) -> float:
+	if cumulative_distances.size() <= 0:
+		return 0.0
+	return cumulative_distances[cumulative_distances.size() - 1]
+
+
+static func _water_distance_t(cumulative_distances: PackedFloat32Array, total_distance_m: float, point_index: int) -> float:
+	if total_distance_m <= 0.001 or cumulative_distances.size() <= 0:
+		return 0.0
+	var safe_index: int = clampi(point_index, 0, cumulative_distances.size() - 1)
+	return cumulative_distances[safe_index] / total_distance_m
+
+
+static func _zion_river_width_m(world_points: Array[Vector3], point_index: int, distance_t: float) -> float:
+	var meander: float = sin(distance_t * TAU * 2.15 + 0.35) * 1.65
+	var secondary: float = sin(distance_t * TAU * 5.10 + 1.20) * 0.85
+	var bend_widening: float = _zion_river_bend_strength(world_points, point_index) * 3.4
+	var width_m: float = ZION_RIVER_BASE_WIDTH_M + meander + secondary + bend_widening
+	return clampf(width_m, ZION_RIVER_MIN_WIDTH_M, ZION_RIVER_MAX_WIDTH_M)
+
+
+static func _zion_river_riffle_weight(distance_t: float, width_m: float) -> float:
+	var narrow_weight: float = clampf((10.3 - width_m) / 2.3, 0.0, 1.0)
+	var cadence: float = sin(distance_t * TAU * 6.0 + 0.85) * 0.5 + 0.5
+	return clampf(narrow_weight * 0.70 + cadence * 0.38, 0.0, 1.0)
+
+
+static func _zion_river_bend_strength(world_points: Array[Vector3], point_index: int) -> float:
+	if point_index <= 0 or point_index >= world_points.size() - 1:
+		return 0.0
+	var previous: Vector2 = Vector2(world_points[point_index - 1].x, world_points[point_index - 1].z)
+	var current: Vector2 = Vector2(world_points[point_index].x, world_points[point_index].z)
+	var next: Vector2 = Vector2(world_points[point_index + 1].x, world_points[point_index + 1].z)
+	var in_dir: Vector2 = (current - previous).normalized()
+	var out_dir: Vector2 = (next - current).normalized()
+	var angle: float = absf(in_dir.angle_to(out_dir))
+	return clampf(angle / 1.15, 0.0, 1.0)
+
+
+static func _zion_river_bend_side(world_points: Array[Vector3], point_index: int) -> float:
+	if point_index <= 0 or point_index >= world_points.size() - 1:
+		return 1.0
+	var previous: Vector2 = Vector2(world_points[point_index - 1].x, world_points[point_index - 1].z)
+	var current: Vector2 = Vector2(world_points[point_index].x, world_points[point_index].z)
+	var next: Vector2 = Vector2(world_points[point_index + 1].x, world_points[point_index + 1].z)
+	var in_dir: Vector2 = (current - previous).normalized()
+	var out_dir: Vector2 = (next - current).normalized()
+	var turn_cross: float = in_dir.x * out_dir.y - in_dir.y * out_dir.x
+	return -1.0 if turn_cross >= 0.0 else 1.0
+
+
+static func _hash01(seed: float) -> float:
+	return fposmod(sin(seed * 12.9898) * 43758.5453, 1.0)
 
 
 static func _append_tangent(tangents: PackedFloat32Array, tangent: Vector3) -> void:
