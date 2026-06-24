@@ -158,6 +158,15 @@ const FOLIAGE_SPECIES_BOULDER_COLOR: Color = Color(0.69, 0.47, 0.31, 1.0)
 # Lane-D demo triage: keep Zion foliage lush without the graded rim/tips reading neon.
 const FOLIAGE_NEON_TAME_TIP_BOOST: Vector3 = Vector3(1.12, 1.08, 1.02)
 const FOLIAGE_NEON_TAME_BACKLIGHT_ENERGY: float = 0.10
+# Foliage visual-fidelity (fidelity/foliage-shading): travelling-wave wind + per-instance
+# tint jitter live in grass_billboard.gdshader. These tune them for the Zion region
+# foliage material so the lushness survives without re-reading neon. Wavelengths are in
+# metres; 0 disables a band (falls back to the legacy instance-only sway). Jitter
+# amplitudes are half-ranges around 1.0, so 0.14 spans [0.86, 1.14] saturation per clump.
+const FOLIAGE_WIND_WORLD_WAVELENGTH_PRIMARY: float = 9.0
+const FOLIAGE_WIND_WORLD_WAVELENGTH_GUST: float = 23.0
+const FOLIAGE_INSTANCE_SATURATION_JITTER: float = 0.14
+const FOLIAGE_INSTANCE_VALUE_JITTER: float = 0.10
 const FOLIAGE_TREE_REAL_MESH_SCALE: Vector3 = Vector3.ONE
 const FOLIAGE_SHRUB_LOD0_SCALE: Vector3 = Vector3(0.90, 1.22, 0.90)
 const FOLIAGE_SHRUB_LOD1_SCALE: Vector3 = Vector3(0.86, 0.94, 0.86)
@@ -2817,6 +2826,12 @@ static func _region_foliage_material(material_name: String, color: Color, blade_
 	material.set_shader_parameter("wind_strength", 0.035)
 	material.set_shader_parameter("wind_speed", 0.75)
 	material.set_shader_parameter("wind_time_factor", 0.018)
+	# Travelling-wave wind desyncs neighbouring clumps (ripple) and brings wind in moving
+	# gusts; per-instance tint jitter breaks the single-color plastic read. See the shader.
+	material.set_shader_parameter("wind_world_wavelength_primary", FOLIAGE_WIND_WORLD_WAVELENGTH_PRIMARY)
+	material.set_shader_parameter("wind_world_wavelength_gust", FOLIAGE_WIND_WORLD_WAVELENGTH_GUST)
+	material.set_shader_parameter("per_instance_saturation_jitter", FOLIAGE_INSTANCE_SATURATION_JITTER)
+	material.set_shader_parameter("per_instance_value_jitter", FOLIAGE_INSTANCE_VALUE_JITTER)
 	material.set_shader_parameter("backlight_color", Color(0.95, 0.74, 0.42, 1.0))
 	material.set_shader_parameter("backlight_energy", FOLIAGE_NEON_TAME_BACKLIGHT_ENERGY)
 	var is_tree: bool = (species_id == FOLIAGE_SPECIES_WILLOW or species_id == FOLIAGE_SPECIES_COTTONWOOD)
