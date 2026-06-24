@@ -169,6 +169,10 @@ const REGION_VERTEX_KEY_CELL_STRIDE: int = 65536
 const REGION_FOLIAGE_CELL_SIZE_M: float = 32.0
 const REGION_FOLIAGE_LOD0_BASE_COUNT: int = 56
 const REGION_FOLIAGE_LOD1_BASE_COUNT: int = 4
+# Foliage commit batching: build per-cell/per-tile MultiMeshInstance3D children while their
+# parent root is detached, then attach/restore that root once. false restores the legacy
+# live-tree per-species add_child path for quick rollback.
+const FOLIAGE_BATCH_DETACHED_ATTACH_ENABLED: bool = true
 const REGION_FOLIAGE_PATTERN_MODULUS: int = 1009
 const REGION_FOLIAGE_CELL_X_MULTIPLIER: int = 97
 const REGION_FOLIAGE_CELL_Z_MULTIPLIER: int = 193
@@ -883,11 +887,14 @@ static func _build_region_foliage_tile_data(region_id: String, cell: Vector2i, a
 
 
 static func region_foliage_tile_from_data(parent: Node3D, foliage_tile_data: RegionFoliageTileData) -> Node3D:
-	var tile_root: Node3D = region_foliage_tile_root_from_data(parent, foliage_tile_data)
+	var attach_after_build: bool = FOLIAGE_BATCH_DETACHED_ATTACH_ENABLED
+	var tile_root: Node3D = region_foliage_tile_root_from_data(parent, foliage_tile_data, not attach_after_build)
 	if tile_root == null:
 		return null
 	for cell_data in foliage_tile_data.cells:
 		_add_foliage_cell_from_data(tile_root, cell_data)
+	if attach_after_build:
+		parent.add_child(tile_root)
 	return tile_root
 
 
@@ -909,7 +916,10 @@ static func add_region_foliage_species_cell_from_data(parent: Node3D, cell_data:
 	if species_data.transforms.is_empty():
 		return false
 	var child_count: int = parent.get_child_count()
-	_add_foliage_species_cell_from_data(parent, cell_data, species_data)
+	if FOLIAGE_BATCH_DETACHED_ATTACH_ENABLED:
+		_add_foliage_cell_from_data(parent, cell_data)
+	else:
+		_add_foliage_species_cell_from_data(parent, cell_data, species_data)
 	return parent.get_child_count() > child_count
 
 
@@ -2380,10 +2390,14 @@ static func _add_region_foliage(parent: Node3D, manifest: Dictionary, tile_data_
 	var root: Node3D = Node3D.new()
 	root.name = REGION_FOLIAGE_ROOT_NAME
 	root.set_meta(REGION_ID_META, String(manifest.get("region_id", SPIKE_1KM_REGION_ID)))
-	parent.add_child(root)
+	var attach_after_build: bool = FOLIAGE_BATCH_DETACHED_ATTACH_ENABLED
+	if not attach_after_build:
+		parent.add_child(root)
 
 	var bounds: Rect2 = _region_bounds_xz(tile_data_list)
 	if bounds.size.x <= 0.0 or bounds.size.y <= 0.0:
+		if attach_after_build:
+			parent.add_child(root)
 		return root
 
 	var tile_data_by_cell: Dictionary[Vector2i, RegionTileData] = _tile_data_by_cell(tile_data_list)
@@ -2402,6 +2416,8 @@ static func _add_region_foliage(parent: Node3D, manifest: Dictionary, tile_data_
 			var foliage_cell: Vector2i = Vector2i(cell_x, cell_z)
 			_add_region_foliage_cell(root, tile_data_by_cell, cell_rect, foliage_cell, 0, REGION_FOLIAGE_LOD0_BASE_COUNT)
 			_add_region_foliage_cell(root, tile_data_by_cell, cell_rect, foliage_cell, 1, REGION_FOLIAGE_LOD1_BASE_COUNT)
+	if attach_after_build:
+		parent.add_child(root)
 	return root
 
 
@@ -2654,15 +2670,64 @@ static func _pack_foliage_species_buffer(species_data: FoliageSpeciesCellData) -
 
 
 static func _add_foliage_cell_from_data(parent: Node3D, cell_data: FoliageCellData) -> void:
+	if FOLIAGE_BATCH_DETACHED_ATTACH_ENABLED:
+		_add_foliage_cell_from_data_batched(parent, cell_data)
+		return
 	for species_data in cell_data.species:
 		_add_foliage_species_cell_from_data(parent, cell_data, species_data)
+
+
+static func _add_foliage_cell_from_data_batched(parent: Node3D, cell_data: FoliageCellData) -> void:
+	if parent == null or cell_data == null:
+		return
+	if not _foliage_cell_has_missing_species(parent, cell_data):
+		return
+	var live_parent: Node = null
+	var original_index: int = -1
+	if parent.is_inside_tree():
+		live_parent = parent.get_parent()
+		if live_parent != null:
+			original_index = parent.get_index()
+			live_parent.remove_child(parent)
+	for species_data in cell_data.species:
+		if species_data == null or species_data.transforms.is_empty():
+			continue
+		if _has_foliage_species_cell_node(parent, cell_data, species_data.species_id):
+			continue
+		_add_foliage_species_cell_from_data(parent, cell_data, species_data)
+	if live_parent != null:
+		live_parent.add_child(parent)
+		var restore_index: int = clampi(original_index, 0, live_parent.get_child_count() - 1)
+		if parent.get_index() != restore_index:
+			live_parent.move_child(parent, restore_index)
+
+
+static func _foliage_cell_has_missing_species(parent: Node3D, cell_data: FoliageCellData) -> bool:
+	for species_data in cell_data.species:
+		if species_data == null or species_data.transforms.is_empty():
+			continue
+		if not _has_foliage_species_cell_node(parent, cell_data, species_data.species_id):
+			return true
+	return false
+
+
+static func _has_foliage_species_cell_node(parent: Node3D, cell_data: FoliageCellData, species_id: StringName) -> bool:
+	var node_name: String = _foliage_species_cell_node_name(cell_data, species_id)
+	for child in parent.get_children():
+		if String(child.name) == node_name:
+			return true
+	return false
+
+
+static func _foliage_species_cell_node_name(cell_data: FoliageCellData, species_id: StringName) -> String:
+	return cell_data.node_name + "_" + String(species_id)
 
 
 static func _add_foliage_species_cell_from_data(parent: Node3D, cell_data: FoliageCellData, species_data: FoliageSpeciesCellData) -> void:
 	if species_data.transforms.is_empty():
 		return
 	var instance: MultiMeshInstance3D = MultiMeshInstance3D.new()
-	instance.name = cell_data.node_name + "_" + String(species_data.species_id)
+	instance.name = _foliage_species_cell_node_name(cell_data, species_data.species_id)
 	instance.position = cell_data.position
 	var material: Material = _region_foliage_material_for_lod_species(cell_data.lod_index, species_data.species_id)
 	if material != null:
