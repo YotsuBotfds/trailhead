@@ -81,6 +81,13 @@ var _queued_commits: Dictionary[Vector2i, bool] = {}
 var _queued_midlod_commits: Dictionary[Vector2i, bool] = {}
 var _foliage_subcommit_queue: Array[FoliageSubcommit] = []
 var _pending_foliage_subcommit_counts_by_cell: Dictionary[Vector2i, int] = {}
+# Cells whose foliage subcommits have all completed (the tile subtree is fully built,
+# DETACHED in _partial_foliage_tiles_by_cell) and are waiting to attach to the live
+# _foliage_root. Drained at most render_visual_foliage_tile_finishes_per_frame per frame
+# so a cell crossing — where several tiles finish together — does not burst the
+# RenderingServer materialization into one multi-second dt spike. Render-only.
+var _foliage_finish_queue: Array[Vector2i] = []
+var _queued_foliage_finishes: Dictionary[Vector2i, bool] = {}
 var _pending_free_cells: Array[Vector2i] = []
 var _pending_free_midlod_cells: Array[Vector2i] = []
 var _stream_hlod_queue: Array[Vector2i] = []
@@ -187,6 +194,8 @@ func reset_stream() -> void:
 	_queued_midlod_commits.clear()
 	_foliage_subcommit_queue.clear()
 	_pending_foliage_subcommit_counts_by_cell.clear()
+	_foliage_finish_queue.clear()
+	_queued_foliage_finishes.clear()
 	_pending_free_cells.clear()
 	_pending_free_midlod_cells.clear()
 	_stream_hlod_queue.clear()
@@ -246,6 +255,11 @@ func _process(_delta: float) -> void:
 	# (COMMIT_FRAME_BUDGET_USEC), so a burst spreads across frames instead of stalling one.
 	_drain_commit_queue()
 	_drain_foliage_subcommit_queue()
+	# Attach fully-built (detached) foliage tiles to the live root at most N per frame.
+	# Runs after the subcommit drain so tiles that finished THIS frame are eligible, and
+	# shares the COMMIT_FRAME_BUDGET_USEC window so the materialization burst spreads
+	# instead of stalling one frame. This is the cell-crossing-freeze fix.
+	_drain_foliage_finish_queue()
 	_drain_midlod_commit_queue()
 	_drain_pending_frees()
 
@@ -307,6 +321,10 @@ func pending_midlod_build_count() -> int:
 
 func pending_foliage_subcommit_count() -> int:
 	return _foliage_subcommit_queue.size()
+
+
+func pending_foliage_finish_count() -> int:
+	return _foliage_finish_queue.size()
 
 
 func stream_hlod_committed_chunk_count() -> int:
@@ -494,6 +512,7 @@ func _on_world_tile_evicted(cell: Vector2i) -> void:
 	_request_midlod_refresh()
 	_remove_queued_commit(cell)
 	_remove_queued_foliage_subcommits(cell)
+	_remove_queued_foliage_finish(cell)
 	_ready_upgrade_tile_data_by_cell.erase(cell)
 	_ready_upgrade_tile_step_by_cell.erase(cell)
 	if not _pending_free_cells.has(cell):
@@ -880,6 +899,13 @@ func _remove_queued_foliage_subcommits(cell: Vector2i) -> void:
 			retained_queue.append(subcommit)
 	_foliage_subcommit_queue = retained_queue
 	_pending_foliage_subcommit_counts_by_cell.erase(cell)
+
+
+func _remove_queued_foliage_finish(cell: Vector2i) -> void:
+	if not _queued_foliage_finishes.has(cell):
+		return
+	_queued_foliage_finishes.erase(cell)
+	_foliage_finish_queue.erase(cell)
 
 
 func _drain_commit_queue() -> int:
@@ -1274,7 +1300,7 @@ func _begin_foliage_tile_commit(cell: Vector2i, foliage_tile_data: Variant) -> v
 			_foliage_subcommit_queue.append(subcommit)
 			subcommit_count += 1
 	if subcommit_count <= 0:
-		_finish_foliage_tile_commit(cell)
+		_queue_foliage_tile_finish(cell)
 		return
 	_pending_foliage_subcommit_counts_by_cell[cell] = subcommit_count
 
@@ -1286,7 +1312,40 @@ func _finish_foliage_subcommit(cell: Vector2i) -> void:
 	if remaining_count > 0:
 		_pending_foliage_subcommit_counts_by_cell[cell] = remaining_count
 		return
-	_finish_foliage_tile_commit(cell)
+	_pending_foliage_subcommit_counts_by_cell.erase(cell)
+	_queue_foliage_tile_finish(cell)
+
+
+# Enqueue a fully-built (DETACHED) foliage tile for live attachment. The actual
+# add_child into _foliage_root — the step that makes the RenderingServer materialize
+# every MultiMesh in the tile — is deferred to _drain_foliage_finish_queue, which
+# attaches at most render_visual_foliage_tile_finishes_per_frame tiles per frame. This
+# spreads the per-crossing materialization burst (several tiles finishing together)
+# across frames instead of stalling one. Render-only, golden-neutral.
+func _queue_foliage_tile_finish(cell: Vector2i) -> void:
+	if not _partial_foliage_tiles_by_cell.has(cell):
+		return
+	if _queued_foliage_finishes.has(cell):
+		return
+	_foliage_finish_queue.append(cell)
+	_queued_foliage_finishes[cell] = true
+
+
+func _drain_foliage_finish_queue() -> int:
+	if _foliage_finish_queue.is_empty():
+		return 0
+	var finish_budget: int = maxi(GameConfig.render_visual_foliage_tile_finishes_per_frame, 1)
+	var finished_count: int = 0
+	while finished_count < finish_budget and not _foliage_finish_queue.is_empty():
+		var cell: Vector2i = _foliage_finish_queue.pop_front()
+		_queued_foliage_finishes.erase(cell)
+		if not _partial_foliage_tiles_by_cell.has(cell):
+			continue
+		_finish_foliage_tile_commit(cell)
+		finished_count += 1
+		if _commit_frame_budget_exceeded():
+			break
+	return finished_count
 
 
 func _finish_foliage_tile_commit(cell: Vector2i) -> void:
@@ -1659,6 +1718,7 @@ func _free_midlod_cell(cell: Vector2i) -> void:
 
 func _free_foliage_cell(cell: Vector2i) -> void:
 	_remove_queued_foliage_subcommits(cell)
+	_remove_queued_foliage_finish(cell)
 	var foliage_tile: Node3D = null
 	if _foliage_tiles_by_cell.has(cell):
 		foliage_tile = _foliage_tiles_by_cell[cell]

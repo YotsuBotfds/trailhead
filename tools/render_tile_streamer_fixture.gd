@@ -144,6 +144,7 @@ func _inspect() -> void:
 	await _exercise_midlod_failure_retry_after_free()
 	await _exercise_fullres_on_activation()
 	await _exercise_fullres_on_inflight_prefetch_activation()
+	await _exercise_foliage_finish_budget()
 
 	_streamer.call("reset_stream")
 	_require_cell_count("reset", 0)
@@ -727,6 +728,66 @@ func _exercise_fullres_on_inflight_prefetch_activation() -> void:
 		_errors.append("inflight-prefetch activation: committed vertex count " + str(committed_vertex_count) + " should be >= step=1 reference " + str(step1_vertex_count))
 	if committed_vertex_count <= step5_vertex_count:
 		_errors.append("inflight-prefetch activation: committed vertex count " + str(committed_vertex_count) + " should be > step=5 reference " + str(step5_vertex_count))
+
+
+func _exercise_foliage_finish_budget() -> void:
+	# Cell-crossing-freeze regression: foliage TILE attachment to the live root is
+	# budgeted at render_visual_foliage_tile_finishes_per_frame per frame so a crossing —
+	# where several tiles finish their subcommits together — does not burst the
+	# RenderingServer materialization into one multi-second dt spike. Drive two cells'
+	# foliage to "finished but unattached" together, then confirm the live foliage_cell_count
+	# never jumps by more than the configured budget in a single process_frame, and that the
+	# finish queue actually holds back the surplus tile while count < expected.
+	const FINISH_BUDGET: int = 1
+	# Lift the per-frame SUBCOMMIT budget so both tiles finish ALL their subcommits in one
+	# frame and enter the finish queue together — isolating the TILE-finish budget (the
+	# axis under test) from subcommit-drain timing. The subcommit drain runs before the
+	# finish drain each frame, so with a wide subcommit budget both tiles are queued for
+	# finish in the same frame the finish budget then holds one back.
+	const WIDE_SUBCOMMIT_BUDGET: int = 100000
+	var previous_budget: int = GameConfig.render_visual_foliage_tile_finishes_per_frame
+	var previous_subcommit_budget: int = GameConfig.render_visual_foliage_subcommits_per_frame
+	GameConfig.render_visual_foliage_tile_finishes_per_frame = FINISH_BUDGET
+	GameConfig.render_visual_foliage_subcommits_per_frame = WIDE_SUBCOMMIT_BUDGET
+	_streamer.call("reset_stream")
+	_streamer.call("configure_region", REGION_ID)
+	_streamer.call("set_worker_count_for_tests", 0)
+
+	# Prefetch both cells so their foliage data is cached and ready BEFORE activation,
+	# then activate both in the same handler pass so their foliage commits begin together.
+	EventBus.world_tile_prefetched.emit(FIRST_CELL)
+	EventBus.world_tile_prefetched.emit(SECOND_CELL)
+	await _wait_for_ready_foliage_cell_count("finish-budget: first foliage ready", 1)
+	await _wait_for_ready_foliage_cell_count("finish-budget: both foliage ready", 2)
+	EventBus.world_tile_activated.emit(FIRST_CELL)
+	EventBus.world_tile_activated.emit(SECOND_CELL)
+
+	# Watch the live attach ramp. Each frame may attach at most FINISH_BUDGET tiles; while
+	# the live count is below the expected 2, the surplus finished tile must sit in the
+	# finish queue (the spread that collapses the per-crossing burst).
+	var saw_budgeted_holdback: bool = false
+	var previous_live_count: int = int(_streamer.call("foliage_cell_count"))
+	for _frame_index in range(WAIT_FRAMES):
+		await get_tree().process_frame
+		var live_count: int = int(_streamer.call("foliage_cell_count"))
+		var delta: int = live_count - previous_live_count
+		if delta > FINISH_BUDGET:
+			_errors.append("finish-budget: live foliage attaches jumped by " + str(delta) + " in one frame, exceeds budget " + str(FINISH_BUDGET))
+		if live_count == 1 and int(_streamer.call("pending_foliage_finish_count")) >= 1:
+			saw_budgeted_holdback = true
+		previous_live_count = live_count
+		if live_count >= 2:
+			break
+
+	if int(_streamer.call("foliage_cell_count")) != 2:
+		_errors.append("finish-budget: both foliage tiles should eventually attach, got " + str(_streamer.call("foliage_cell_count")))
+	if not saw_budgeted_holdback:
+		_errors.append("finish-budget: expected the finish queue to hold back the second tile while the first attaches (budget=" + str(FINISH_BUDGET) + ")")
+	if int(_streamer.call("pending_foliage_finish_count")) != 0:
+		_errors.append("finish-budget: finish queue should drain to empty, got " + str(_streamer.call("pending_foliage_finish_count")))
+
+	GameConfig.render_visual_foliage_tile_finishes_per_frame = previous_budget
+	GameConfig.render_visual_foliage_subcommits_per_frame = previous_subcommit_budget
 
 
 func _configure_streamer_for_pressure_fixture() -> void:

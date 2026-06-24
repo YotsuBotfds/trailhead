@@ -54,6 +54,19 @@ var render_stream_hlod_densify_radius: int = 5
 # primitive count. Render-only, golden-neutral (collision authority untouched).
 var render_visual_fullres_radius_cells: int = 2
 var render_visual_foliage_subcommits_per_frame: int = 6
+# How many fully-built foliage TILES may attach to the live _foliage_root per frame.
+# Each foliage tile is assembled DETACHED (its MultiMeshInstance3D children are added to
+# an off-tree Node3D during the budgeted subcommit drain, costing nothing on the
+# RenderingServer); the engine only materializes the whole tile's MultiMeshes when that
+# subtree is add_child()'d into the live scene. At a cell crossing several tiles finish
+# their last subcommit in the same handful of frames, and attaching them all at once
+# bursts the RenderingServer into a multi-second dt spike (~4900 ms measured; the #1
+# perf pain). Queue finished tiles and attach at most N per frame so the burst spreads
+# across frames under the shared COMMIT_FRAME_BUDGET_USEC window. Default 1 = collapse
+# the spike toward the ~367 ms floor while keeping near-car foliage lush (a tile/frame
+# at 60 fps still attaches the whole crossing's foliage within a fraction of a second).
+# Render-only, golden-neutral (foliage holds no sim references).
+var render_visual_foliage_tile_finishes_per_frame: int = 1
 var stream_collision_activations_per_tick: int = 3
 var stream_collision_result_drains_per_tick: int = 8
 var stream_collision_prebuild_per_tick: int = 1
