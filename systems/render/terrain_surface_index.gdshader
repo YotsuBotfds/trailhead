@@ -235,6 +235,29 @@ uniform float floor_pbr_height_end_offset = 22.0;   // m above zion_sand_height_
 // side planes are needed for slope-safety, fall below the threshold and pay for full triplanar.
 uniform float floor_pbr_single_plane_threshold = 0.90;
 
+// TILED-DETAIL-NORMAL micro-relief. The canyon slickrock/sand surface is the dominant pixel
+// in every frame and previously read smooth/procedural away from the floor-PBR band -- the
+// strata/floor-pbr/micro normals supply structure, but the broad slickrock benches and walls
+// lacked fine, believable rock/sand grain. This blends a single tiled CC0 rock-grain normal
+// scan (neutral, non-directional) into the surface normal in WORLD XZ at a tunable strength +
+// world tiling scale, so raking golden-hour light catches micro rock/sand relief across the
+// whole terrain (not only the floor-pbr region). To avoid an obvious tiled look it sums TWO
+// octaves at different world scales (like the grass wind), and fades the strength out with
+// camera distance so far tiles do not shimmer/alias. Combined via a reoriented tangent-frame
+// tilt on top of the EXISTING surface normal (same T=+X/B=+Z convention as apply_array_normal),
+// NOT a hard replace, so it composes with the strata/floor-pbr relief already computed.
+// hint_normal => an UNBOUND sampler decodes to flat (0,0,1) = zero perturbation, so the path is
+// safe even if the render builder never binds the texture. terrain_detail_normal_strength = 0
+// is an exact no-op (early-out), preserving the golden-neutral default-safe path. ALBEDO, the
+// warm gradient, roughness/AO and fog are all untouched -- this writes only NORMAL.
+uniform sampler2D terrain_detail_normal_texture : hint_normal, filter_linear_mipmap, repeat_enable;
+uniform float terrain_detail_normal_strength = 0.35;     // tangent-tilt authority (0 = exact no-op)
+uniform float terrain_detail_normal_scale = 0.45;        // world repeats/meter for octave A (~2.2 m/tile)
+uniform float terrain_detail_normal_octave2_scale_mul = 0.30; // octave B world scale vs A (~7.4 m/tile)
+uniform float terrain_detail_normal_octave_mix = 0.40;   // weight of the broader octave B (0 = A only)
+uniform float terrain_detail_normal_fade_start_m = 120.0; // camera distance where detail begins to fade
+uniform float terrain_detail_normal_fade_end_m = 340.0;   // camera distance where detail is fully faded out
+
 varying vec2 world_xz;
 varying float world_y;
 varying float local_normal_y;
@@ -527,6 +550,45 @@ vec3 apply_array_normal(vec3 geo_world_normal, vec3 sampled_normal, float streng
 	float tz_len2 = dot(tz, tz);
 	if (tz_len2 > 1e-4) {
 		perturbed += tz * (sampled_normal.y * strength / sqrt(tz_len2));
+	}
+	return normalize(perturbed);
+}
+
+// TILED-DETAIL-NORMAL: blend a neutral tiled rock-grain normal scan into the surface normal in
+// world XZ. Two octaves at different world scales (A fine, B broad, each with its own UV offset
+// so the repeats do not correlate into a visible grid) are decoded to tangent space, summed
+// into one detail tangent normal, then applied as a tangent-frame tilt on top of the incoming
+// world normal -- the SAME T=+X / B=+Z projection convention apply_array_normal uses, so the
+// relief leans the right way and composes with the strata/floor-pbr normal already baked into
+// geo_world_normal. amp folds in strength * distance-fade (0 => exact no-op early-out). The
+// per-octave tangent xy are summed (z left implicit via the tangent projection), giving a
+// reoriented-style blend rather than a hard replace.
+vec3 apply_detail_normal(vec3 geo_world_normal, vec2 world_xz_pos, float amp) {
+	if (amp <= 0.0) {
+		return geo_world_normal;
+	}
+	vec2 uv_a = world_xz_pos * terrain_detail_normal_scale;
+	vec2 uv_b = world_xz_pos * (terrain_detail_normal_scale * max(terrain_detail_normal_octave2_scale_mul, 0.001)) + vec2(0.37, 0.61);
+	vec3 n_a = texture(terrain_detail_normal_texture, uv_a).rgb * 2.0 - 1.0;
+	vec3 n_b = texture(terrain_detail_normal_texture, uv_b).rgb * 2.0 - 1.0;
+	float octave_mix = clamp(terrain_detail_normal_octave_mix, 0.0, 1.0);
+	// Blend the two octaves' tangent xy (broader octave B weighted in by octave_mix), keep a
+	// healthy z so the normalized detail normal stays near-up, then scale by amp downstream --
+	// subtle micro-relief, not a busy bump. The differing octave scales + B's UV offset keep the
+	// repeats from correlating into a visible tile grid.
+	vec2 detail_xy = mix(n_a.xy, n_b.xy, octave_mix);
+	vec3 detail_n = normalize(vec3(detail_xy, max(mix(n_a.z, n_b.z, octave_mix * 0.5), 0.20)));
+	vec2 tilt = detail_n.xy * amp;
+	vec3 perturbed = geo_world_normal;
+	vec3 tx = vec3(1.0, 0.0, 0.0) - geo_world_normal * geo_world_normal.x;
+	float tx_len2 = dot(tx, tx);
+	if (tx_len2 > 1e-4) {
+		perturbed += tx * (tilt.x / sqrt(tx_len2));
+	}
+	vec3 tz = vec3(0.0, 0.0, 1.0) - geo_world_normal * geo_world_normal.z;
+	float tz_len2 = dot(tz, tz);
+	if (tz_len2 > 1e-4) {
+		perturbed += tz * (tilt.y / sqrt(tz_len2));
 	}
 	return normalize(perturbed);
 }
@@ -894,6 +956,15 @@ void fragment() {
 	if (floor_pbr_gate > 0.001) {
 		world_detail_normal = normalize(mix(world_detail_normal, floor_pbr_normal_w, floor_pbr_normal_strength * floor_pbr_gate));
 	}
+	// TILED-DETAIL-NORMAL: fine rock/sand grain across the whole terrain (the dominant surface),
+	// summed two octaves, faded out with camera distance so far tiles do not shimmer/alias. Folds
+	// strength * fade into amp; amp == 0 (strength 0 or beyond the fade end) is an exact no-op.
+	// Applied on top of the strata/floor-pbr relief, before the procedural micro/fine octaves, so
+	// the cavity-AO below naturally reads the added grain. Writes only NORMAL.
+	vec3 detail_camera_pos = INV_VIEW_MATRIX[3].xyz;
+	float detail_camera_dist = length(vec3(world_xz.x, world_y, world_xz.y) - detail_camera_pos);
+	float detail_fade = 1.0 - smoothstep(terrain_detail_normal_fade_start_m, max(terrain_detail_normal_fade_end_m, terrain_detail_normal_fade_start_m + 1.0), detail_camera_dist);
+	world_detail_normal = apply_detail_normal(world_detail_normal, world_xz, terrain_detail_normal_strength * detail_fade);
 	vec3 world_micro_normal = apply_micro_normal(world_detail_normal, world_xz, micro_strength);
 	world_micro_normal = apply_floor_fine_normal(world_micro_normal, world_xz, micro_strength, low_flat_mask);
 	NORMAL = normalize((VIEW_MATRIX * vec4(world_micro_normal, 0.0)).xyz);

@@ -359,6 +359,13 @@ const USE_ALBEDO_ARRAY_UNIFORM: StringName = &"use_albedo_array"
 const NORMAL_ARRAY_UNIFORM: StringName = &"normal_array"
 const USE_NORMAL_ARRAY_UNIFORM: StringName = &"use_normal_array"
 const NORMAL_ARRAY_STRENGTH_UNIFORM: StringName = &"normal_array_strength"
+# TILED-DETAIL-NORMAL micro-relief (see terrain_surface_index.gdshader). A single neutral,
+# non-directional CC0 rock-grain normal scan (ambientCG Ground079L, rocky sand/talus) tiled in
+# world XZ at two octaves to add fine rock/sand grain across the dominant canyon surface. Bound
+# alongside the normal_array; the shader's sampler is hint_normal so an unbound binding is a
+# flat no-op, and terrain_detail_normal_strength = 0 is an exact no-op too.
+const TERRAIN_DETAIL_NORMAL_TEXTURE_UNIFORM: StringName = &"terrain_detail_normal_texture"
+const TERRAIN_DETAIL_NORMAL_TEXTURE_PATH: String = "res://assets/textures/surface_visuals/ground_pbr/Ground079L/Ground079L_1K-JPG_NormalGL.jpg"
 const MACRO_ALBEDO_TEXTURE_PATH: String = "res://data/terrain/cedar_hollow_zion_macro_albedo.png"
 const MACRO_ALBEDO_TEXTURE_UNIFORM: StringName = &"macro_albedo_texture"
 const MACRO_ALBEDO_ORIGIN_XZ_UNIFORM: StringName = &"macro_albedo_origin_xz"
@@ -1551,6 +1558,12 @@ static func _surface_index_material_locked(surface_data: MeshSurfaceData) -> Sha
 	if normal_array != null:
 		material.set_shader_parameter(NORMAL_ARRAY_UNIFORM, normal_array)
 		material.set_shader_parameter(USE_NORMAL_ARRAY_UNIFORM, true)
+	# TILED-DETAIL-NORMAL: bind the neutral CC0 rock-grain scan so the shader's tiled detail
+	# normal has real micro-relief. If it fails to load the sampler stays unbound (hint_normal =
+	# flat no-op), so this never breaks the golden-neutral default-safe path.
+	var detail_normal_texture: Texture2D = _load_texture(TERRAIN_DETAIL_NORMAL_TEXTURE_PATH)
+	if detail_normal_texture != null:
+		material.set_shader_parameter(TERRAIN_DETAIL_NORMAL_TEXTURE_UNIFORM, detail_normal_texture)
 	var macro_albedo_texture: Texture2D = _surface_index_macro_albedo_texture_locked()
 	if macro_albedo_texture != null:
 		material.set_shader_parameter(MACRO_ALBEDO_TEXTURE_UNIFORM, macro_albedo_texture)
