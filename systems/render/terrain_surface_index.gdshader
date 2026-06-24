@@ -115,6 +115,18 @@ uniform float zion_kayenta_skirt_height_m = 120.0;
 uniform float zion_kayenta_strength = 0.55;
 uniform float zion_kayenta_contact_step_m = 4.5;    // vertical jitter of the Kayenta/Navajo contact step
 uniform float zion_kayenta_ledge_period_m = 5.5;    // ledge-and-recess banding period in the Kayenta skirt
+// FAR-WALL WARM GRADIENT: large-scale height-driven warm Navajo-red tint + mild contrast boost so
+// the far canyon walls (HLOD, 5-8 km out) keep a warm stratified read when sub-pixel strata bands
+// average to a flat mid-tone. Driven by world height (upper wall rims correlate with far geometry).
+// Gated to cliff/wall pixels (cliff_mask) so the drivable floor is untouched. Near terrain walls
+// already receive the full Navajo palette (navajo_mask * zion_navajo_palette_strength); this adds a
+// broad-scale warm push that survives LOD flattening without altering the near look. Set to 0 = no-op.
+uniform vec4 zion_far_wall_warm_color : source_color = vec4(0.52, 0.18, 0.07, 1.0);  // warm red-orange anchor
+uniform float zion_far_wall_height_start = 1280.0;  // world Y where warm push begins (above canyon floor)
+uniform float zion_far_wall_height_end = 1600.0;    // world Y of full warm push (upper rims)
+uniform float zion_far_wall_warm_strength = 0.22;   // tint authority (0 = off, 0.22 = visible but conservative)
+uniform float zion_far_wall_contrast = 0.14;        // luminance contrast lift (0 = off, 0.14 = modest pop)
+
 // Upper-wall bleach: pale buff cream tint driven by world height (Great White Throne reads near-white).
 uniform vec4 zion_bleach_color : source_color = vec4(0.91, 0.84, 0.72, 1.0);  // pale buff cream
 uniform float zion_bleach_height_start = 1550.0;   // lower edge of the bleached upper walls
@@ -705,6 +717,23 @@ void fragment() {
 	zion_albedo = mix(zion_albedo, kayenta_base, kayenta_mask * cliff_face_mask * min(zion_kayenta_strength + 0.15, 1.0) * 0.45);
 	zion_albedo = mix(zion_albedo, zion_kayenta_ledge_shadow_color.rgb, kayenta_contact_line * 0.42);
 	zion_albedo *= 1.0 + detile * zion_detile_strength * max(cliff_mask, low_flat_mask * 0.5);
+	// FAR-WALL WARM GRADIENT: height-driven warm Navajo-red tint + mild contrast boost.
+	// Gated to cliff_mask (walls only) so the drivable floor is fully unaffected.
+	// Blends toward zion_far_wall_warm_color as world_y rises through the canyon-wall range,
+	// so sub-pixel strata bands that flatten to a mid-tone at distance still read warm+stratified.
+	if (zion_far_wall_warm_strength > 0.0 && cliff_mask > 0.0) {
+		float far_wall_height_t = smoothstep(zion_far_wall_height_start, zion_far_wall_height_end, world_y);
+		float far_wall_gate = far_wall_height_t * cliff_mask;
+		// Warm tint: lerp albedo toward the warm anchor color
+		zion_albedo = mix(zion_albedo, zion_far_wall_warm_color.rgb, far_wall_gate * zion_far_wall_warm_strength);
+		// Contrast lift: push luma away from 0.5 (darks darker, lights lighter) to counter post-stack flattening
+		if (zion_far_wall_contrast > 0.0) {
+			float lum = luminance(zion_albedo);
+			float contrast_lum = clamp((lum - 0.5) * (1.0 + zion_far_wall_contrast * far_wall_gate) + 0.5, 0.0, 1.0);
+			float lum_safe = max(lum, 0.001);
+			zion_albedo = clamp(zion_albedo * (contrast_lum / lum_safe), vec3(0.0), vec3(1.0));
+		}
+	}
 	ALBEDO = clamp(zion_albedo, vec3(0.0), vec3(1.0));
 	// FLOOR-PBR inject: detail-blend the real CC0 PBR triplanar albedo into the floor. The
 	// procedural tints above (de-orange, wash/slickrock/sand patches) keep supplying the Zion
