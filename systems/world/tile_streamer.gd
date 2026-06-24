@@ -8,7 +8,16 @@ const COLLISION_TILES_MANIFEST_PATH: String = "collision_tiles_manifest.json"
 const HEIGHTMAP_SIDE_CAR_PATH: String = "tile.json"
 const HEIGHTMAP_BIN_PATH: String = "heightmap.bin"
 const DEFAULT_WORKER_COUNT: int = 2
-const MAX_WORKER_COUNT: int = 3
+# Collision builds are the gate on the streaming-collision freeze: the vehicle
+# is pinned until the HeightMapShape3D for the cell it enters is built + drained.
+# More production workers ⇒ that build finishes sooner ⇒ a shorter freeze. The
+# ceiling is raised (was 3) to spend more of a fat host's cores on collision so
+# the cell under the car never waits behind the prefetch ring. This changes only
+# how MANY workers race the same build queue, never WHICH tiles exist nor the
+# deterministic worker<2 activation order (those paths are worker-count agnostic
+# / synchronous).
+const MAX_WORKER_COUNT: int = 6
+const WORKER_CORES_PER_WORKER: int = 2
 
 var _region_id: String = ""
 var _followed_node: Node3D = null
@@ -20,7 +29,7 @@ var _streaming_enabled: bool = false
 var _current_cell: Vector2i = Vector2i.ZERO
 var _stream_generation: int = 0
 var _stream_tick: int = 0
-var _worker_count: int = clampi(OS.get_processor_count() / 4, DEFAULT_WORKER_COUNT, MAX_WORKER_COUNT)
+var _worker_count: int = clampi(OS.get_processor_count() / WORKER_CORES_PER_WORKER, DEFAULT_WORKER_COUNT, MAX_WORKER_COUNT)
 var _forced_unready_ticks_by_cell: Dictionary[Vector2i, int] = {}
 var _withheld_cells_previous_tick: Dictionary[Vector2i, bool] = {}
 var _withheld_cells_current_tick: Dictionary[Vector2i, bool] = {}
@@ -246,10 +255,18 @@ func _physics_process(_delta: float) -> void:
 	_cancel_prefetch_builds_outside(desired_prefetch_cells)
 	_enqueue_builds_for_cells(travel_ahead_prebuild_cells)
 	_enqueue_builds_for_cells(desired_prefetch_cells)
+	# Prioritize the active ring (the cell under the vehicle + its immediate
+	# neighbors) ahead of the wider prefetch ring so the collision build that
+	# gates the streaming freeze finishes first. Travel-ahead leads are applied
+	# last → they sit at the very front, the current cell right behind. Both
+	# helpers no-op when no production workers are running, so the deterministic
+	# worker<2 / synchronous path is byte-identical.
+	_prioritize_active_ring_builds(desired_active_cells)
 	_prioritize_queued_builds_for_cells(travel_ahead_prebuild_cells)
 	if _workers.is_empty():
 		_process_build_queue_synchronously()
 	_drain_worker_results()
+	_prioritize_active_ring_prebuilds(desired_active_cells)
 	_prioritize_prebuilds_for_cells(travel_ahead_prebuild_cells)
 	_process_loads(_last_to_load)
 	_record_sampled_world_position(sampled_world_position)
@@ -519,6 +536,33 @@ func _prioritize_queued_builds_for_cells(cells: Array[Vector2i]) -> void:
 		_build_queue.remove_at(priority_job_index)
 		_build_queue.push_front(priority_job)
 	_work_mutex.unlock()
+
+
+# Nearest-cell-first. The shared prioritizers iterate this list in REVERSE and
+# push_front each match, so the farthest cell is pushed first and the current
+# cell last → the current cell (then its closest neighbors) ends up at the very
+# front of the build/prebuild queue.
+func _active_ring_priority_order(cells: Array[Vector2i]) -> Array[Vector2i]:
+	var ordered: Array[Vector2i] = _copy_cells(cells)
+	_sort_origin_cell = _current_cell
+	ordered.sort_custom(_cell_distance_less_callable)
+	return ordered
+
+
+func _prioritize_active_ring_builds(cells: Array[Vector2i]) -> void:
+	if _workers.is_empty():
+		return
+	if cells.is_empty():
+		return
+	_prioritize_queued_builds_for_cells(_active_ring_priority_order(cells))
+
+
+func _prioritize_active_ring_prebuilds(cells: Array[Vector2i]) -> void:
+	if _workers.is_empty():
+		return
+	if cells.is_empty():
+		return
+	_prioritize_prebuilds_for_cells(_active_ring_priority_order(cells))
 
 
 func _reset_result_drain_budget() -> void:
