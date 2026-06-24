@@ -3743,6 +3743,13 @@ static func _apply_texture_paths(material: StandardMaterial3D, visual_def: Resou
 
 static func _apply_height_mapping(material: StandardMaterial3D, visual_def: Resource) -> void:
 	material.heightmap_enabled = false
+	# Godot ignores POM/height mapping on triplanar materials ("Height mapping is
+	# not supported on triplanar materials"). For those surfaces the authored
+	# relief is baked into the normal map instead (see gen_zion_surface_textures
+	# height_relief), so skip enabling the heightmap here to keep that warning out
+	# of the log and avoid an inert texture binding.
+	if bool(visual_def.get("triplanar")):
+		return
 	if not GameConfig.terrain_pom_enabled:
 		return
 	var height_texture_path: String = visual_def.get("height_texture_path")

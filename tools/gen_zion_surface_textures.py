@@ -34,6 +34,14 @@ class SurfaceSpec:
     normal_strength: float
     detail_strength: float
     palette: tuple[tuple[int, int, int], ...]
+    # Triplanar materials ignore the height/POM map (Godot: "Height mapping is
+    # not supported on triplanar materials"), so authored relief in the height
+    # map never reaches the surface. For those materials we bake a low-frequency
+    # Sobel gradient of the height map back into the normal's XY at a subtle
+    # strength, so crevice/relief depth survives under triplanar. 0.0 = no extra
+    # baking (the height map drives POM as usual). Keep subtle (~0.4-0.6); higher
+    # overcooks the relief into noise.
+    height_relief: float = 0.0
 
 
 SURFACES: tuple[SurfaceSpec, ...] = (
@@ -117,6 +125,7 @@ SURFACES: tuple[SurfaceSpec, ...] = (
         8.4,
         3.6,
         ((193, 144, 98), (150, 92, 66), (217, 177, 125), (117, 86, 70), (230, 203, 161)),
+        0.55,
     ),
     SurfaceSpec(
         "wet_stone_default",
@@ -126,6 +135,7 @@ SURFACES: tuple[SurfaceSpec, ...] = (
         6.5,
         2.8,
         ((77, 83, 76), (93, 91, 79), (50, 57, 54), (124, 111, 88), (42, 47, 43)),
+        0.5,
     ),
     SurfaceSpec(
         "slickrock_dry_default",
@@ -135,6 +145,7 @@ SURFACES: tuple[SurfaceSpec, ...] = (
         2.7,
         2.0,
         ((214, 160, 105), (231, 194, 145), (186, 113, 80), (238, 218, 179), (151, 75, 57)),
+        0.45,
     ),
     SurfaceSpec(
         "mossy_wet_stone",
@@ -144,6 +155,7 @@ SURFACES: tuple[SurfaceSpec, ...] = (
         5.3,
         3.0,
         ((61, 78, 58), (42, 52, 47), (80, 107, 60), (114, 111, 86), (38, 68, 42)),
+        0.5,
     ),
     SurfaceSpec(
         "wood_plank_default",
@@ -163,7 +175,7 @@ def main() -> int:
     for spec in SURFACES:
         albedo, height, detail_albedo, detail_height = render_surface(spec, args.size, args.detail_size)
         write_rgb(args.out_dir / f"{spec.name}_albedo.png", albedo)
-        write_rgb(args.out_dir / f"{spec.name}_normal.png", normal_from_height(height, spec.normal_strength))
+        write_rgb(args.out_dir / f"{spec.name}_normal.png", normal_from_height(height, spec.normal_strength, spec.height_relief))
         write_l(args.out_dir / f"{spec.name}_height.png", height)
         write_rgb(args.out_dir / f"{spec.name}_detail_albedo.png", detail_albedo)
         write_rgb(args.out_dir / f"{spec.name}_detail_normal.png", normal_from_height(detail_height, spec.detail_strength))
@@ -500,11 +512,44 @@ def render_detail(spec: SurfaceSpec, rng: np.random.Generator, x: np.ndarray, y:
     return np.clip(albedo, 0.0, 255.0), height
 
 
-def normal_from_height(height: np.ndarray, strength: float) -> np.ndarray:
+def _wrapped_box_blur(height: np.ndarray, radius: int) -> np.ndarray:
+    blurred = height.astype(np.float32)
+    for axis in (0, 1):
+        accum = np.zeros_like(blurred)
+        for shift in range(-radius, radius + 1):
+            accum = accum + np.roll(blurred, shift, axis=axis)
+        blurred = accum / np.float32(2 * radius + 1)
+    return blurred
+
+
+def height_relief_gradient(height: np.ndarray, relief: float) -> tuple[np.ndarray, np.ndarray]:
+    # Low-frequency Sobel gradient of the height map. Triplanar materials drop
+    # the POM/height map, so this perturbation is the only way the authored
+    # crevice/relief depth reaches the normal channel that triplanar honors.
+    # Blurring first keeps the relief broad (crevices/facets) rather than echoing
+    # the high-frequency grain the base normal already carries.
+    base = _wrapped_box_blur(height, 3)
+    gx = (
+        (np.roll(base, (-1, -1), axis=(0, 1)) + np.float32(2.0) * np.roll(base, -1, axis=1) + np.roll(base, (1, -1), axis=(0, 1)))
+        - (np.roll(base, (-1, 1), axis=(0, 1)) + np.float32(2.0) * np.roll(base, 1, axis=1) + np.roll(base, (1, 1), axis=(0, 1)))
+    )
+    gy = (
+        (np.roll(base, (-1, -1), axis=(0, 1)) + np.float32(2.0) * np.roll(base, -1, axis=0) + np.roll(base, (-1, 1), axis=(0, 1)))
+        - (np.roll(base, (1, -1), axis=(0, 1)) + np.float32(2.0) * np.roll(base, 1, axis=0) + np.roll(base, (1, 1), axis=(0, 1)))
+    )
+    scale = np.float32(relief) * np.float32(0.25)
+    return gx * scale, gy * scale
+
+
+def normal_from_height(height: np.ndarray, strength: float, relief: float = 0.0) -> np.ndarray:
     dx = np.roll(height, -1, axis=1) - np.roll(height, 1, axis=1)
     dy = np.roll(height, -1, axis=0) - np.roll(height, 1, axis=0)
     nx = -dx * np.float32(strength)
     ny = -dy * np.float32(strength)
+    if relief > 0.0:
+        relief_x, relief_y = height_relief_gradient(height, relief)
+        nx = nx - relief_x * np.float32(strength)
+        ny = ny - relief_y * np.float32(strength)
     nz = np.full_like(height, np.float32(NORMAL_Z))
     length = np.sqrt(nx * nx + ny * ny + nz * nz)
     normal = np.empty((height.shape[0], height.shape[1], 3), dtype=np.float32)
