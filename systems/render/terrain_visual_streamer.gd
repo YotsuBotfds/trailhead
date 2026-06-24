@@ -4,6 +4,16 @@ const TerrainVisualBuilderScript: GDScript = preload("res://systems/render/terra
 const MAX_BUILD_WORKERS: int = 7
 const MIDLOD_COMMIT_BUDGET_PER_FRAME: int = 2
 
+# Soft per-frame wall-clock budget (RENDER host — wall-clock is allowed here; this
+# never touches the deterministic sim). The commit/subcommit drains already cap how
+# MANY items they process per frame, but a burst of heavy commits (e.g. the cold-start
+# reveal wave or a fast crossing into fresh tiles) can still blow a single frame's
+# budget and read as a multi-second hitch. Each drain commits at least one item (so it
+# never deadlocks on a single fat tile) then yields the rest of its work to the next
+# frame once this many microseconds of the current frame have already been spent in the
+# streamer's commit phase. ~4 ms leaves the frame headroom for sim+render.
+const COMMIT_FRAME_BUDGET_USEC: int = 4000
+
 
 class FoliageSubcommit:
 	var cell: Vector2i = Vector2i.ZERO
@@ -87,6 +97,7 @@ var _work_mutex: Mutex = Mutex.new()
 var _work_semaphore: Semaphore = Semaphore.new()
 var _worker_should_stop: bool = false
 var _next_visual_build_id: int = 0
+var _commit_phase_start_usec: int = 0
 var _build_queue: Array[Variant] = []
 var _midlod_build_queue: Array[Variant] = []
 var _stream_hlod_densify_build_queue: Array[Variant] = []
@@ -220,10 +231,25 @@ func _process(_delta: float) -> void:
 	# commit continuously, so foliage starved to a trickle and the floor ahead of the
 	# moving car stayed bare. Foliage drain is already bounded by its own per-frame budget
 	# (GameConfig.render_visual_foliage_subcommits_per_frame), so ungating does not uncap work.
+	# The commit/subcommit/mid-LOD drains additionally share a soft wall-clock budget
+	# (COMMIT_FRAME_BUDGET_USEC) measured from this stamp, so a burst spreads across frames
+	# instead of stalling one. Render host only — wall-clock here never feeds the sim.
+	_commit_phase_start_usec = Time.get_ticks_usec()
 	_drain_commit_queue()
 	_drain_foliage_subcommit_queue()
 	_drain_midlod_commit_queue()
 	_drain_pending_frees()
+
+
+func _commit_frame_budget_exceeded() -> bool:
+	# True once this frame's commit phase has already spent COMMIT_FRAME_BUDGET_USEC.
+	# Callers always commit at least one item before consulting this, so a single fat
+	# tile can never deadlock the queue — it just yields the remainder to next frame.
+	# Headless fixtures busy-loop a single frame and rely on draining the whole queue
+	# in one _process tick, so the budget is disabled under the headless DisplayServer.
+	if DisplayServer.get_name() == "headless":
+		return false
+	return Time.get_ticks_usec() - _commit_phase_start_usec >= COMMIT_FRAME_BUDGET_USEC
 
 
 func active_visual_cells() -> Array[Vector2i]:
@@ -423,11 +449,16 @@ func _on_world_tile_activated(cell: Vector2i) -> void:
 		# and seed the full-res upgrade without leaving an active-cell hole.
 		return
 	# Active cells are the vehicle-near loaded physics tiles (STREAM_ACTIVE_RADIUS
-	# around the car). Build their visual mesh at full collision resolution
-	# (step=1) so the visible ground matches the surface the wheels actually
-	# touch; the 5x downsample on near tiles let the visual mesh wander several
-	# cm above/below the collision heightmap on slopes, reading as tire sink/float.
-	_enqueue_build(cell, TerrainVisualBuilderScript.REGION_DETAIL_FULLRES_SAMPLE_STEP)
+	# around the car). They MUST end up at full collision resolution (step=1) so the
+	# visible ground matches the surface the wheels touch (the 5x downsample let the
+	# visual mesh wander cm above/below the collision heightmap, reading as tire
+	# sink/float). But building fullres FIRST serialized ~49 heavy step-1 GPU uploads
+	# on the cold-start reveal path -> a multi-second boot freeze before the title
+	# card lifts. Instead spawn the COARSE step (step=5) first so the world appears
+	# fast; _drain_worker_results auto-chains the step=1 fullres UPGRADE the moment the
+	# coarse build commits (see the sample_step > FULLRES branch there), so near tiles
+	# still sharpen to collision-matched fullres over the next frames.
+	_enqueue_build(cell, TerrainVisualBuilderScript.REGION_DETAIL_SAMPLE_STEP)
 	if _workers.is_empty():
 		_process_build_queue_synchronously()
 		_drain_worker_results()
@@ -839,6 +870,8 @@ func _drain_commit_queue() -> int:
 			continue
 		_commit_ready_cell(cell)
 		committed_count += 1
+		if _commit_frame_budget_exceeded():
+			break
 	return committed_count
 
 
@@ -858,6 +891,8 @@ func _drain_midlod_commit_queue() -> int:
 			continue
 		_commit_midlod_tile(cell, _ready_midlod_data_by_cell[cell])
 		committed_count += 1
+		if _commit_frame_budget_exceeded():
+			break
 	return committed_count
 
 
@@ -886,6 +921,8 @@ func _drain_foliage_subcommit_queue() -> void:
 		TerrainVisualBuilderScript.add_region_foliage_species_cell_from_data(tile_root, subcommit.cell_data, subcommit.species_data)
 		_finish_foliage_subcommit(subcommit.cell)
 		committed_count += 1
+		if _commit_frame_budget_exceeded():
+			break
 
 
 func _drain_pending_frees() -> void:

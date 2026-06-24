@@ -380,6 +380,13 @@ func _setup_world() -> void:
 		return
 	_terrain_visual_streamer.name = "TerrainVisualStreamer"
 	_world.add_child(_terrain_visual_streamer)
+	# Pay the ~44 MB surface-index Texture2DArray realization + shared terrain
+	# ShaderMaterial build HERE in _ready (before the drive) so the first live terrain
+	# commit is a pure cache hit. configure_region's pipeline-warmup mesh binds the same
+	# cached material right after, so nothing is rebuilt. Render-only; inert effect on the
+	# sim. (Cold-start boot-freeze fix — kept ahead of configure_region so the cache is
+	# warm before the first tile activation enqueues a build.)
+	TerrainVisualBuilderScript.prewarm_surface_index_pipeline()
 	_terrain_visual_streamer.call("configure_region", ZION_REGION_ID)
 	_setup_terrain_tracks(_terrain_visual_streamer)
 	WaterVisualBuilderScript.build_zion_virgin_river(_world)
@@ -655,7 +662,7 @@ func _visual_streaming_ready_for_reveal() -> bool:
 		return _visual_streaming_ready_signal_observed(active_count)
 	if active_count < expected_count:
 		return false
-	if not _spawn_visual_cells_fullres_for_reveal(active_cells):
+	if not _spawn_visual_cells_committed_for_reveal(active_cells):
 		return false
 	if _terrain_visual_streamer.has_method("foliage_cell_count"):
 		var foliage_count: int = int(_terrain_visual_streamer.call("foliage_cell_count"))
@@ -664,7 +671,14 @@ func _visual_streaming_ready_for_reveal() -> bool:
 	return true
 
 
-func _spawn_visual_cells_fullres_for_reveal(active_cells: Array) -> bool:
+func _spawn_visual_cells_committed_for_reveal(active_cells: Array) -> bool:
+	# Reveal as soon as every expected spawn cell has a COMMITTED visual tile at ANY
+	# resolution (coarse step=5 is fine). Previously this blocked the title card until
+	# all ~49 spawn tiles reached fullres step=1, which serialized 49 heavy step-1 GPU
+	# uploads on the main thread -> a multi-second boot freeze. The streamer now commits
+	# the coarse tile first and progressively upgrades each active cell to fullres after
+	# reveal (see terrain_visual_streamer._on_world_tile_activated), so the world appears
+	# fast and sharpens over the next frames instead of stalling the boot.
 	if _terrain_visual_streamer == null:
 		return false
 	if not _terrain_visual_streamer.has_method("committed_visual_cell_sample_step"):
@@ -680,7 +694,8 @@ func _spawn_visual_cells_fullres_for_reveal(active_cells: Array) -> bool:
 		if not active_lookup.has(cell):
 			return false
 		var sample_step: int = int(_terrain_visual_streamer.call("committed_visual_cell_sample_step", cell))
-		if sample_step != TerrainVisualBuilderScript.REGION_DETAIL_FULLRES_SAMPLE_STEP:
+		# -1 == not committed yet; any step >= fullres (i.e. >= 1) means a tile is on screen.
+		if sample_step < TerrainVisualBuilderScript.REGION_DETAIL_FULLRES_SAMPLE_STEP:
 			return false
 	return true
 

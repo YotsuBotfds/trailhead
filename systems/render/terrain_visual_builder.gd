@@ -1553,6 +1553,22 @@ static func _surface_index_warmup_material() -> ShaderMaterial:
 	return _surface_index_material(surface_data)
 
 
+# Cold-start pre-realization. Force the heavy surface-index Texture2DArrays
+# (~44 MB albedo + normal) and the shared terrain ShaderMaterial into their static
+# caches NOW, during the host's _ready/setup, so the FIRST live terrain commit doesn't
+# pay the image-decode + create_from_images cost on a drive frame (a multi-hundred-ms
+# boot hitch). The pipeline-warmup mesh built by build_region_stream_root already binds
+# the same shared material; calling this first means that path is a pure cache hit and
+# nothing is duplicated. All cache accessors are static + mutex-guarded, so this is
+# idempotent and safe to call once up front. Returns true if both arrays realized.
+static func prewarm_surface_index_pipeline() -> bool:
+	var albedo_array: Texture2DArray = _surface_index_albedo_array()
+	var normal_array: Texture2DArray = _surface_index_normal_array()
+	_surface_index_macro_albedo_texture()
+	var _shared_material: ShaderMaterial = _surface_index_warmup_material()
+	return albedo_array != null and normal_array != null
+
+
 static func _apply_surface_index_palette(material: ShaderMaterial) -> void:
 	for id_value in range(8):
 		var surface_id: StringName = _surface_id_for_value(id_value)
