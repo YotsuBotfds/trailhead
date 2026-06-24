@@ -416,7 +416,7 @@ var atmosphere_grade_brightness: float = 1.00
 var atmosphere_grade_color_correction_path: String = ""
 var atmosphere_auto_exposure_enabled: bool = false
 var atmosphere_ssao_enabled: bool = true
-var atmosphere_ssao_radius: float = 0.03
+var atmosphere_ssao_radius: float = 0.6
 var atmosphere_ssao_intensity: float = 1.45
 var atmosphere_ssao_power: float = 2.0
 var atmosphere_ssao_detail: float = 0.6
@@ -433,24 +433,22 @@ var atmosphere_glow_blend_mode: int = 2  # Environment.GLOW_BLEND_MODE_SOFTLIGHT
 var atmosphere_pcss_sun_angular_distance: float = 0.53
 var atmosphere_pcss_shadow_blur: float = 0.20
 var atmosphere_pcss_shadow_opacity: float = 0.78
-var atmosphere_pcss_shadow_max_distance: float = 40.0
-var atmosphere_directional_shadow_mode: int = DIRECTIONAL_SHADOW_PARALLEL_2_SPLITS
+var atmosphere_pcss_shadow_max_distance: float = 200.0
+var atmosphere_directional_shadow_mode: int = DIRECTIONAL_SHADOW_PARALLEL_4_SPLITS
 var atmosphere_directional_shadow_blend_splits: bool = false
 var atmosphere_sun_volumetric_fog_energy: float = 0.91  # was 0.35; target 1.1-1.2 (visual-fidelity-wave §1.1); conservative ~75% to low end
 var contact_fill_light_enabled: bool = true
-# FIDELITY (vehicle grounding): this warm fill lamp sits ~0.09 m BELOW the chassis
+# FIDELITY (vehicle grounding): this fill lamp sits ~0.09 m BELOW the chassis
 # origin -- i.e. just under the ground plane at rest (resting min_y ~0.047 m) -- and
 # floods the contact pocket directly beneath the tires, lifting away the very
 # contact shadow that grounds the buggy ("hard flat blob, no contact shadow" /
-# L17). Halved 0.18 -> 0.09 so the under-car contact darkening reads; this is
-# COMPLEMENTARY to the SSAO grounding being raised on the in-flight
-# fidelity/lighting-atmosphere lane (it stops the fill from fighting that AO at the
-# wheel contacts), not a duplicate of it. Inspector-safe: cedar/mood inspectors
-# assert light_energy == GameConfig.contact_fill_light_energy, so they track this.
-var contact_fill_light_energy: float = 0.09
+# L17). Keep it enabled only as a minimal neutral contact lift now that world-scale
+# shadows and SSAO carry the grounding. Inspector-safe: cedar/mood inspectors assert
+# light_energy == GameConfig.contact_fill_light_energy, so they track this.
+var contact_fill_light_energy: float = 0.02
 var contact_fill_light_range: float = 0.55
 var contact_fill_light_height: float = 0.09
-var contact_fill_light_color: Color = Color(1.0, 0.76, 0.48)
+var contact_fill_light_color: Color = Color(1.0, 1.0, 1.0)
 var dust_mote_count: int = 0
 var dust_mote_field_size: Vector3 = Vector3(10.0, 2.0, 10.0)
 var dust_mote_drift_speed: float = 0.05
