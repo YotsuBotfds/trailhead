@@ -74,6 +74,7 @@ const ZION_REGION_ID: String = "cedar_hollow_zion"
 const ZION_SPAWN_ID: StringName = &"zion_wall_vista"
 const DEMO_PROPS_ROOT_NAME: StringName = &"DemoProps"
 const DEMO_PROP_GROUND_Y_OFFSET: float = 0.02
+const DEMO_PROP_VISTA_ANCHOR_XZ: Vector2 = Vector2(1900.0, 1650.0)
 const WORLD_REGION_ID_META: StringName = &"trailhead_world_region_id"
 const GAMEPAD_DEVICE_ANY: int = -1
 const TRACK_APPLY_CELLS_PER_FRAME: int = 1
@@ -430,16 +431,22 @@ func _setup_demo_props() -> void:
 	var root: Node3D = Node3D.new()
 	root.name = String(DEMO_PROPS_ROOT_NAME)
 	_world.add_child(root)
-	# Trailhead rest-stop cluster at demo_canyon_junction (spawn ~1550,1550).
-	_place_demo_prop(root, DesertPropBuilderScript.PROP_TRAILHEAD_SIGN, 1543.0, 1533.0, 210.0, 11)
-	_place_demo_prop(root, DesertPropBuilderScript.PROP_PICNIC_TABLE, 1527.0, 1546.0, 25.0, 0)
-	_place_demo_prop(root, DesertPropBuilderScript.PROP_FIRE_RING, 1514.0, 1528.0, 0.0, 0)
-	# Scenic corridor toward the river thalweg (east fork ~1330-1500, 1400-1550).
-	_place_demo_prop(root, DesertPropBuilderScript.PROP_PARK_BENCH, 1498.0, 1570.0, 250.0, 0)
-	_place_demo_prop(root, DesertPropBuilderScript.PROP_MARKER_POST, 1458.0, 1508.0, 90.0, 7)
-	_place_demo_prop(root, DesertPropBuilderScript.PROP_TRAILHEAD_SIGN, 1408.0, 1458.0, 275.0, 23)
-	_place_demo_prop(root, DesertPropBuilderScript.PROP_PARK_BENCH, 1372.0, 1430.0, 35.0, 0)
-	_place_demo_prop(root, DesertPropBuilderScript.PROP_FIRE_RING, 1338.0, 1398.0, 175.0, 0)
+	# Trailhead rest-stop cluster at zion_wall_vista. Offsets are relative to the
+	# vista anchor so the dressing can be tuned or moved back as one reversible set.
+	_place_demo_prop_offset(root, DesertPropBuilderScript.PROP_TRAILHEAD_SIGN, Vector2(-12.0, -18.0), 210.0, 11)
+	_place_demo_prop_offset(root, DesertPropBuilderScript.PROP_PICNIC_TABLE, Vector2(10.0, -4.0), 25.0, 0)
+	_place_demo_prop_offset(root, DesertPropBuilderScript.PROP_FIRE_RING, Vector2(24.0, -20.0), 0.0, 0)
+	# Scenic pullout dressing along the new east Virgin River thalweg.
+	_place_demo_prop_offset(root, DesertPropBuilderScript.PROP_PARK_BENCH, Vector2(-28.0, 18.0), 250.0, 0)
+	_place_demo_prop_offset(root, DesertPropBuilderScript.PROP_MARKER_POST, Vector2(-82.0, -12.0), 90.0, 7)
+	_place_demo_prop_offset(root, DesertPropBuilderScript.PROP_TRAILHEAD_SIGN, Vector2(-145.0, -22.0), 275.0, 23)
+	_place_demo_prop_offset(root, DesertPropBuilderScript.PROP_PARK_BENCH, Vector2(-205.0, -28.0), 35.0, 0)
+	_place_demo_prop_offset(root, DesertPropBuilderScript.PROP_FIRE_RING, Vector2(-282.0, -40.0), 175.0, 0)
+
+
+func _place_demo_prop_offset(parent: Node3D, prop_id: StringName, offset_xz: Vector2, yaw_degrees: float, seed: int) -> void:
+	var world_xz: Vector2 = DEMO_PROP_VISTA_ANCHOR_XZ + offset_xz
+	_place_demo_prop(parent, prop_id, world_xz.x, world_xz.y, yaw_degrees, seed)
 
 
 func _place_demo_prop(parent: Node3D, prop_id: StringName, world_x: float, world_z: float, yaw_degrees: float, seed: int) -> void:

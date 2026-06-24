@@ -61,6 +61,10 @@ const ZION_RIVER_EAST_POINTS: Array[Vector2] = [
 	Vector2(1410.0, 1450.0),
 	Vector2(1500.0, 1550.0),
 	Vector2(1530.0, 1600.0),
+	Vector2(1605.0, 1618.0),
+	Vector2(1705.0, 1636.0),
+	Vector2(1810.0, 1646.0),
+	Vector2(1905.0, 1652.0),
 ]
 
 
