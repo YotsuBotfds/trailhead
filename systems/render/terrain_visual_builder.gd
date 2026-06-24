@@ -203,6 +203,23 @@ const FOLIAGE_SPECIES_WILLOW_DUSK_TINT: Color = Color(0.25, 0.32, 0.14, 0.95)
 const FOLIAGE_SPECIES_COTTONWOOD_DUSK_TINT: Color = Color(0.38, 0.40, 0.11, 0.96)
 const FOLIAGE_SPECIES_MATERIAL_DUSK_STRENGTH: float = 0.18
 const FOLIAGE_SPECIES_INSTANCE_DUSK_JITTER: float = 0.18
+# Per-instance tonal variety for the GLB tree leaf canopy (willow/cottonwood). A stand of
+# cottonwoods read as the SAME asset cloned: instances already get full-360 yaw + non-uniform
+# width/height scale (see _build_region_foliage_cell_data_with_audit), but the MultiMesh per-
+# instance COLOR the builder writes was inert on trees -- the GLB StandardMaterial3D leaf
+# surfaces ignore instance colour unless vertex_color_use_as_albedo is set, and the tree colour
+# itself was a near-identical base->dusk lerp. _foliage_tree_instance_color now returns a
+# near-WHITE multiplier (mean 1.0, so the average tree is unchanged -- identity at zero jitter)
+# with a small deterministic per-instance value spread + warm/cool bias, derived from the
+# existing color_warmth unit (no Time/randi). Enabling vertex_color_use_as_albedo on the leaf
+# cards (alpha-scissor branch only) lets it read, so a grove varies in brightness/tone tree to
+# tree without darkening into mud. Amplitudes are half-ranges around 1.0; clamped so the bright
+# side never neons and the dark side never crushes. Set both to 0.0 for the legacy flat look.
+const FOLIAGE_TREE_INSTANCE_VALUE_JITTER: float = 0.16
+const FOLIAGE_TREE_INSTANCE_WARM_JITTER: float = 0.05
+const FOLIAGE_TREE_INSTANCE_VALUE_MIN: float = 0.80
+const FOLIAGE_TREE_INSTANCE_VALUE_MAX: float = 1.12
+const FOLIAGE_TREE_INSTANCE_WARM_DECORRELATE: float = 7.13
 # Lane-D demo triage: keep Zion foliage lush without the graded rim/tips reading neon.
 const FOLIAGE_NEON_TAME_TIP_BOOST: Vector3 = Vector3(1.12, 1.08, 1.02)
 const FOLIAGE_NEON_TAME_BACKLIGHT_ENERGY: float = 0.10
@@ -2450,6 +2467,12 @@ static func _build_region_foliage_cell_data_with_audit(tile_data_by_cell: Dictio
 		var color_warmth: float = _region_foliage_unit(foliage_cell, lod_index, attempt, 7)
 		if is_grass_clump:
 			species_data.colors.append(_grass_clump_instance_color(species_id, color_warmth, foliage_cell, lod_index, attempt))
+		elif _foliage_species_uses_source_material(species_id):
+			# GLB tree canopy (willow/cottonwood read it via vertex_color_use_as_albedo on the leaf
+			# cards; juniper/yucca leaf surfaces leave it inert, so this is a harmless white-ish
+			# multiplier there). Gives a grove per-instance tonal variety on top of the existing
+			# yaw + scale jitter.
+			species_data.colors.append(_foliage_tree_instance_color(color_warmth))
 		else:
 			species_data.colors.append(_foliage_instance_color(species_id, color_warmth))
 		var wind_weight: float = 0.45 + _region_foliage_unit(foliage_cell, lod_index, attempt, 8) * 0.55
@@ -2878,6 +2901,13 @@ static func _source_foliage_mesh_with_species_materials(source_mesh: Mesh, mesh_
 				# per-species albedo_color (set above) multiplies the atlas — lighten it so the
 				# atlas leaf colour reads (mirrors the bark wiring) without neon blowout.
 				_apply_foliage_leaf_atlas(material)
+				# Per-instance canopy tonal variety: the MultiMesh writes a near-white per-instance
+				# COLOR multiplier (_foliage_tree_instance_color) so a grove of cottonwoods varies in
+				# brightness/temperature tree to tree instead of reading as one cloned asset. A
+				# StandardMaterial3D ignores instance COLOR unless this is set, so the buffer colour
+				# was previously inert on trees. Gated inside the alpha-scissor (willow/cottonwood)
+				# branch so opaque juniper/yucca leaves are untouched.
+				material.vertex_color_use_as_albedo = true
 				material.alpha_antialiasing_mode = BaseMaterial3D.ALPHA_ANTIALIASING_ALPHA_TO_COVERAGE_AND_TO_ONE
 				# Tame leaf-highlight sparkle that FSR1 amplifies on the cutout edge: push
 				# roughness toward matte and disable the specular lobe. Colour is unchanged.
@@ -3620,6 +3650,28 @@ static func _foliage_instance_color(species_id: StringName, color_warmth: float)
 	var dusk_color: Color = _foliage_dusk_tint_for_species(species_id)
 	var dusk_amount: float = clampf(FOLIAGE_SPECIES_MATERIAL_DUSK_STRENGTH + color_warmth * FOLIAGE_SPECIES_INSTANCE_DUSK_JITTER, 0.0, 1.0)
 	return base_color.lerp(dusk_color, dusk_amount)
+
+
+static func _foliage_tree_instance_color(color_warmth: float) -> Color:
+	# Per-instance MULTIPLIER for the willow/cottonwood leaf canopy (read because the leaf cards
+	# set vertex_color_use_as_albedo). Centered on WHITE so the mean tree is unchanged (identity at
+	# zero jitter, fully reversible); a small value spread + warm/cool bias breaks the cloned-asset
+	# read. Deterministic: both axes derive from the existing color_warmth unit (caller passes a
+	# per-instance _region_foliage_unit hash). The warm axis is decorrelated from the value axis via
+	# a fract() fold so brightness and hue do not move in lockstep. No Time/randi.
+	var value_unit: float = clampf(color_warmth, 0.0, 1.0)
+	var warm_unit: float = fmod(color_warmth * FOLIAGE_TREE_INSTANCE_WARM_DECORRELATE, 1.0)
+	var value_mul: float = clampf(
+		1.0 + (value_unit * 2.0 - 1.0) * FOLIAGE_TREE_INSTANCE_VALUE_JITTER,
+		FOLIAGE_TREE_INSTANCE_VALUE_MIN,
+		FOLIAGE_TREE_INSTANCE_VALUE_MAX
+	)
+	var warm_bias: float = (warm_unit * 2.0 - 1.0) * FOLIAGE_TREE_INSTANCE_WARM_JITTER
+	# Warm tree biases red up / blue down (sun-bleached canopy); cool does the reverse. Green is the
+	# pivot so the leaves stay green, only the temperature drifts.
+	var red_mul: float = clampf(value_mul + warm_bias, 0.0, FOLIAGE_TREE_INSTANCE_VALUE_MAX)
+	var blue_mul: float = clampf(value_mul - warm_bias, 0.0, FOLIAGE_TREE_INSTANCE_VALUE_MAX)
+	return Color(red_mul, value_mul, blue_mul, 1.0)
 
 
 static func _grass_clump_offset_m(foliage_cell: Vector2i, lod_index: int, attempt: int, axis: int) -> float:
