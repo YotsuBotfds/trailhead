@@ -1123,7 +1123,7 @@ func _is_cell_in_stream_hlod_densify_radius(cell: Vector2i) -> bool:
 	if _active_cells.is_empty():
 		return false
 	var center: Vector2i = _active_cell_center()
-	var radius: int = maxi(int(ceilf(TerrainVisualBuilderScript.REGION_STREAM_MIDLOD_RANGE_END_M / maxf(GameConfig.STREAM_TILE_SIZE_M, 0.001))), 1)
+	var radius: int = maxi(GameConfig.render_stream_hlod_densify_radius, 1)
 	return absi(cell.x - center.x) <= radius and absi(cell.y - center.y) <= radius
 
 
