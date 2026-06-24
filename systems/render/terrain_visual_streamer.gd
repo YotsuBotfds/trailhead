@@ -426,9 +426,20 @@ func _on_world_tile_activated(cell: Vector2i) -> void:
 	_resort_stream_hlod_queue()
 	_queue_near_stream_hlod_densification()
 	_request_midlod_refresh()
+	# Decouple the heavy step-1 full-res VISUAL upgrade from the collision radius: only
+	# active cells within render_visual_fullres_radius_cells (Chebyshev) of the active
+	# center upgrade to full res. Outer active cells (still within STREAM_ACTIVE_RADIUS,
+	# so collision is full res for them) stay at the coarse REGION_DETAIL_SAMPLE_STEP
+	# visual mesh — cutting the per-cell-crossing full-res materialization and the
+	# steady-state primitive count. Render-only; golden-neutral.
+	var wants_fullres: bool = _is_cell_in_visual_fullres_radius(cell)
 	if _visual_tiles_by_cell.has(cell):
 		var committed_step: int = int(_committed_tile_step_by_cell.get(cell, TerrainVisualBuilderScript.REGION_DETAIL_SAMPLE_STEP))
 		if committed_step <= TerrainVisualBuilderScript.REGION_DETAIL_FULLRES_SAMPLE_STEP:
+			return
+		if not wants_fullres:
+			# Already committed at the coarse step and outside the full-res ring — leave
+			# the coarse mesh in place (collision authority is unchanged).
 			return
 		if _ready_tile_data_by_cell.has(cell):
 			var visible_ready_step: int = int(_ready_tile_step_by_cell.get(cell, TerrainVisualBuilderScript.REGION_DETAIL_SAMPLE_STEP))
@@ -444,7 +455,7 @@ func _on_world_tile_activated(cell: Vector2i) -> void:
 	if _ready_tile_data_by_cell.has(cell):
 		var ready_step: int = int(_ready_tile_step_by_cell.get(cell, TerrainVisualBuilderScript.REGION_DETAIL_SAMPLE_STEP))
 		_enqueue_ready_commit(cell)
-		if ready_step > TerrainVisualBuilderScript.REGION_DETAIL_FULLRES_SAMPLE_STEP:
+		if wants_fullres and ready_step > TerrainVisualBuilderScript.REGION_DETAIL_FULLRES_SAMPLE_STEP:
 			_enqueue_build(cell, TerrainVisualBuilderScript.REGION_DETAIL_FULLRES_SAMPLE_STEP)
 			if _workers.is_empty():
 				_process_build_queue_synchronously()
@@ -751,7 +762,10 @@ func _drain_worker_results() -> void:
 			if ready_step <= sample_step:
 				if _active_cells.has(cell):
 					_enqueue_ready_commit(cell)
-				if sample_step > TerrainVisualBuilderScript.REGION_DETAIL_FULLRES_SAMPLE_STEP:
+				# Auto-chain the step-1 full-res upgrade only for active cells inside the
+				# visual full-res ring; outer active cells keep the coarse mesh (collision
+				# stays full res for them). Render-only; golden-neutral.
+				if sample_step > TerrainVisualBuilderScript.REGION_DETAIL_FULLRES_SAMPLE_STEP and _active_cells.has(cell) and _is_cell_in_visual_fullres_radius(cell):
 					_enqueue_build(cell, TerrainVisualBuilderScript.REGION_DETAIL_FULLRES_SAMPLE_STEP)
 				continue
 			if _queued_commits.has(cell) and not _visual_tiles_by_cell.has(cell):
@@ -768,7 +782,9 @@ func _drain_worker_results() -> void:
 			_ready_foliage_data_by_cell[cell] = result["foliage_tile_data"]
 		if _active_cells.has(cell):
 			_enqueue_ready_commit(cell)
-			if sample_step > TerrainVisualBuilderScript.REGION_DETAIL_FULLRES_SAMPLE_STEP:
+			# Chain the step-1 full-res upgrade only inside the visual full-res ring;
+			# outer active cells keep the coarse mesh. Render-only; golden-neutral.
+			if sample_step > TerrainVisualBuilderScript.REGION_DETAIL_FULLRES_SAMPLE_STEP and _is_cell_in_visual_fullres_radius(cell):
 				_enqueue_build(cell, TerrainVisualBuilderScript.REGION_DETAIL_FULLRES_SAMPLE_STEP)
 
 
@@ -1124,6 +1140,20 @@ func _is_cell_in_stream_hlod_densify_radius(cell: Vector2i) -> bool:
 		return false
 	var center: Vector2i = _active_cell_center()
 	var radius: int = maxi(GameConfig.render_stream_hlod_densify_radius, 1)
+	return absi(cell.x - center.x) <= radius and absi(cell.y - center.y) <= radius
+
+
+func _is_cell_in_visual_fullres_radius(cell: Vector2i) -> bool:
+	# Gate the step-1 full-res VISUAL upgrade (REGION_DETAIL_FULLRES_SAMPLE_STEP) to a
+	# small Chebyshev ring around the active center, decoupling the heavy full-res
+	# visual radius from the collision radius (STREAM_ACTIVE_RADIUS). Active cells
+	# outside this ring stay committed at the coarse REGION_DETAIL_SAMPLE_STEP — render
+	# only, collision is unaffected (every active cell still gets its full-res
+	# HeightMapShape3D from the collision streamer; D30/D35). Mirrors the densify-radius
+	# helper above; uses _active_cell_center() (== the just-activated cell when it is
+	# the sole active cell, as in the fullres fixtures, so the near cell still upgrades).
+	var center: Vector2i = _active_cell_center()
+	var radius: int = maxi(GameConfig.render_visual_fullres_radius_cells, 0)
 	return absi(cell.x - center.x) <= radius and absi(cell.y - center.y) <= radius
 
 

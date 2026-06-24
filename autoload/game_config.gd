@@ -43,6 +43,16 @@ var render_stream_hlod_commits_per_frame: int = 1
 # 500m / STREAM_TILE_SIZE_M 100m); exposed so the densify ring can be tuned
 # without editing the streamer. Render-only, golden-neutral.
 var render_stream_hlod_densify_radius: int = 5
+# Chebyshev radius (in stream tiles) around the active cell within which active
+# visual tiles upgrade to the collision-matched step-1 full-res mesh
+# (REGION_DETAIL_FULLRES_SAMPLE_STEP). Active cells beyond this radius (but still
+# within STREAM_ACTIVE_RADIUS) stay committed at the coarse REGION_DETAIL_SAMPLE_STEP
+# (5x downsample). Default 2 (5x5 = ~25 cells) decouples the heavy full-res visual
+# ring from the collision radius (STREAM_ACTIVE_RADIUS=3, ~49 cells): collision is
+# UNCHANGED (still radius 3), only how many near tiles materialize the dense step-1
+# mesh per frame is reduced — cutting per-cell-crossing render cost and steady-state
+# primitive count. Render-only, golden-neutral (collision authority untouched).
+var render_visual_fullres_radius_cells: int = 2
 var render_visual_foliage_subcommits_per_frame: int = 6
 var stream_collision_activations_per_tick: int = 3
 var stream_collision_result_drains_per_tick: int = 8
