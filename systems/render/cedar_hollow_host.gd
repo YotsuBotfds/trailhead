@@ -64,7 +64,14 @@ const DUSK_GOLDEN_CIRRUS_INTENSITY: float = 0.16
 const DUSK_GOLDEN_ENERGY_MULTIPLIER: float = 1.08  # vivid dusk sky (was 1.00); brightens the dome to read like a glowing Zion evening
 const ZION_SHADOW_ATLAS_SIZE: int = 8192
 const ZION_REGION_ID: String = "cedar_hollow_zion"
-const ZION_SPAWN_ID: StringName = &"demo_canyon_junction"
+# Demo/initial vehicle spawn for the playable scene. Resolved to a Transform3D via
+# CedarRoute.spawn_transform at _spawn_vehicle / _setup_terrain_tracks (and mirrored by
+# tools/zion_playable_inspector.gd, which reads THIS constant to assert wherever the demo
+# opens). zion_wall_vista faces east into the striated canyon walls from the flat floor at
+# the wall base (terrain Y ~1209) so the demo opens on the scenic red-rock vista rather than
+# the open western floor. Headless no-fall fixtures pin their own --spawn ids explicitly via
+# the sim runner and are intentionally NOT coupled to this demo default.
+const ZION_SPAWN_ID: StringName = &"zion_wall_vista"
 const DEMO_PROPS_ROOT_NAME: StringName = &"DemoProps"
 const DEMO_PROP_GROUND_Y_OFFSET: float = 0.02
 const WORLD_REGION_ID_META: StringName = &"trailhead_world_region_id"
