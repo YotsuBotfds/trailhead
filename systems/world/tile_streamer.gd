@@ -4,6 +4,7 @@ const HEIGHTMAP_FLOAT_BYTE_SIZE: int = 4
 const DEFAULT_COLLISION_LAYER: int = 1
 const DEFAULT_COLLISION_MASK: int = 1
 const TILE_KEY_SEPARATOR: String = "_"
+const COLLISION_TILES_MANIFEST_PATH: String = "collision_tiles_manifest.json"
 const HEIGHTMAP_SIDE_CAR_PATH: String = "tile.json"
 const HEIGHTMAP_BIN_PATH: String = "heightmap.bin"
 const DEFAULT_WORKER_COUNT: int = 2
@@ -25,6 +26,8 @@ var _withheld_cells_previous_tick: Dictionary[Vector2i, bool] = {}
 var _withheld_cells_current_tick: Dictionary[Vector2i, bool] = {}
 var _sort_origin_cell: Vector2i = Vector2i.ZERO
 var _cell_distance_less_callable: Callable = Callable()
+var _has_manifest_tile_cells: bool = false
+var _manifest_tile_cells: Dictionary[Vector2i, bool] = {}
 
 var _ready_flags: Dictionary[Vector2i, bool] = {}
 var _heightmap_data_by_cell: Dictionary[Vector2i, Dictionary] = {}
@@ -65,6 +68,7 @@ func configure_region(new_region_id: String, vehicle_node: Node3D) -> void:
 	_followed_node = vehicle_node
 	_use_fixed_world_position = false
 	_streaming_enabled = true
+	_load_region_tile_manifest()
 	_start_workers()
 	set_physics_process(true)
 
@@ -75,6 +79,7 @@ func configure_fixed_position(new_region_id: String, world_position: Vector3) ->
 	_fixed_world_position = world_position
 	_use_fixed_world_position = true
 	_streaming_enabled = true
+	_load_region_tile_manifest()
 	_start_workers()
 	set_physics_process(true)
 
@@ -164,6 +169,8 @@ func reset() -> void:
 	_withheld_cells_previous_tick.clear()
 	_withheld_cells_current_tick.clear()
 	_sort_origin_cell = Vector2i.ZERO
+	_has_manifest_tile_cells = false
+	_manifest_tile_cells.clear()
 	_result_drains_remaining_this_tick = 0
 	_clear_worker_queues()
 
@@ -453,6 +460,8 @@ func _enqueue_builds_for_cells(cells: Array[Vector2i]) -> void:
 
 
 func _enqueue_build(cell: Vector2i) -> void:
+	if _has_manifest_tile_cells and not _manifest_tile_cells.has(cell):
+		return
 	if _ready_flags.has(cell):
 		return
 	if _active_bodies_by_cell.has(cell):
@@ -672,6 +681,45 @@ func _build_result_less(left: Dictionary, right: Dictionary) -> bool:
 	var left_cell: Vector2i = left["cell"] as Vector2i
 	var right_cell: Vector2i = right["cell"] as Vector2i
 	return _cell_less(left_cell, right_cell)
+
+
+func _load_region_tile_manifest() -> void:
+	_has_manifest_tile_cells = false
+	_manifest_tile_cells.clear()
+	var manifest_path: String = _region_path().path_join(COLLISION_TILES_MANIFEST_PATH)
+	if not FileAccess.file_exists(manifest_path):
+		push_error("missing collision tile manifest: " + manifest_path)
+		return
+	var file: FileAccess = FileAccess.open(manifest_path, FileAccess.READ)
+	if file == null:
+		push_error("could not open collision tile manifest: " + manifest_path)
+		return
+	var parsed: Variant = JSON.parse_string(file.get_as_text())
+	file.close()
+	if not (parsed is Dictionary):
+		push_error("collision tile manifest is not a JSON object: " + manifest_path)
+		return
+	var manifest: Dictionary[Variant, Variant] = parsed as Dictionary[Variant, Variant]
+	if not manifest.has("tiles"):
+		push_error("collision tile manifest missing tiles: " + manifest_path)
+		return
+	var tiles_value: Variant = manifest["tiles"]
+	if not (tiles_value is Array):
+		push_error("collision tile manifest tiles is not an array: " + manifest_path)
+		return
+	var tiles: Array = tiles_value as Array
+	for tile_value in tiles:
+		if not (tile_value is Array):
+			push_error("collision tile manifest tile entry is not an array: " + manifest_path)
+			_manifest_tile_cells.clear()
+			return
+		var tile: Array = tile_value as Array
+		if tile.size() != 2:
+			push_error("collision tile manifest tile entry must have two values: " + manifest_path)
+			_manifest_tile_cells.clear()
+			return
+		_manifest_tile_cells[Vector2i(int(tile[0]), int(tile[1]))] = true
+	_has_manifest_tile_cells = true
 
 
 func _start_workers() -> void:

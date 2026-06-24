@@ -6,6 +6,9 @@ const RaycastVehicleStateScript: GDScript = preload("res://systems/vehicle/vehic
 const VehicleContaminationStateScript: GDScript = preload("res://systems/vehicle/vehicle_contamination_state.gd")
 const STREAMING_COLLISION_RELEASE_RAY_UP_MARGIN_M: float = 2.0
 const STREAMING_COLLISION_RELEASE_RAY_DOWN_LENGTH_M: float = 512.0
+const STREAMING_COLLISION_RELEASE_SETTLE_TICKS: int = 2
+const STREAMING_COLLISION_RELEASE_STABILIZE_TICKS: int = 36
+const STREAMING_COLLISION_RELEASE_MIN_UP_DOT: float = 0.85
 
 var _body: RigidBody3D = null
 var _wheel_rays: Array[RayCast3D] = []
@@ -39,6 +42,9 @@ var _streaming_collision_release_max_downward_speed_mps: float = 0.0
 var _streaming_collision_last_release_stream_tick: int = -1
 var _streaming_collision_last_release_activation_tick: int = -1
 var _streaming_collision_snap_count: int = 0
+var _streaming_collision_release_pose_ready: bool = false
+var _streaming_collision_release_settle_ticks_remaining: int = 0
+var _streaming_collision_release_stabilize_ticks_remaining: int = 0
 
 
 func _ready() -> void:
@@ -164,6 +170,7 @@ func _physics_process(_delta: float) -> void:
 		return
 	if _update_streaming_collision_freeze():
 		return
+	_stabilize_streaming_collision_release()
 	_update_flip_events()
 	_update_recovery_tracking()
 	if _pending_input.self_right:
@@ -476,17 +483,31 @@ func _update_streaming_collision_freeze() -> bool:
 		return false
 	var ready: bool = bool(_tile_streamer.call("is_collision_ready_at", _body.global_position))
 	if not ready:
+		_streaming_collision_release_pose_ready = false
+		_streaming_collision_release_settle_ticks_remaining = 0
 		_continue_streaming_collision_freeze()
 		return true
 	if _streaming_collision_freeze_active:
 		var settled: bool = bool(_tile_streamer.call("is_collision_settled_at", _streaming_collision_hold_transform.origin))
 		if not settled:
+			_streaming_collision_release_pose_ready = false
+			_streaming_collision_release_settle_ticks_remaining = 0
 			_continue_streaming_collision_freeze()
+			return true
+		if _streaming_collision_release_pose_ready:
+			if _streaming_collision_release_settle_ticks_remaining > 0:
+				_streaming_collision_release_settle_ticks_remaining -= 1
+				_apply_streaming_collision_body_state(true)
+				return true
+			_release_streaming_collision_freeze()
 			return true
 		if not _place_streaming_collision_hold_on_confirmed_ground():
+			_streaming_collision_release_pose_ready = false
+			_streaming_collision_release_settle_ticks_remaining = 0
 			_continue_streaming_collision_freeze()
 			return true
-		_release_streaming_collision_freeze()
+		_streaming_collision_release_pose_ready = true
+		_streaming_collision_release_settle_ticks_remaining = STREAMING_COLLISION_RELEASE_SETTLE_TICKS
 		return true
 	return false
 
@@ -558,6 +579,9 @@ func _release_streaming_collision_freeze() -> void:
 	_record_streaming_collision_release()
 	_streaming_collision_freeze_active = false
 	_streaming_collision_consecutive_freeze_ticks = 0
+	_streaming_collision_release_pose_ready = false
+	_streaming_collision_release_settle_ticks_remaining = 0
+	_streaming_collision_release_stabilize_ticks_remaining = STREAMING_COLLISION_RELEASE_STABILIZE_TICKS
 
 
 func _reset_streaming_collision_freeze(spawn: Transform3D) -> void:
@@ -574,6 +598,9 @@ func _reset_streaming_collision_freeze(spawn: Transform3D) -> void:
 	_streaming_collision_last_release_stream_tick = -1
 	_streaming_collision_last_release_activation_tick = -1
 	_streaming_collision_snap_count = 0
+	_streaming_collision_release_pose_ready = false
+	_streaming_collision_release_settle_ticks_remaining = 0
+	_streaming_collision_release_stabilize_ticks_remaining = 0
 	if _streaming_collision_guard_enabled():
 		_streaming_collision_freeze_active = true
 		_apply_streaming_collision_body_state(true)
@@ -587,31 +614,92 @@ func _place_streaming_collision_hold_on_confirmed_ground() -> bool:
 	var world: World3D = _body.get_world_3d()
 	if world == null:
 		return false
-	var position: Vector3 = _streaming_collision_hold_transform.origin
-	var from: Vector3 = position + Vector3.UP * STREAMING_COLLISION_RELEASE_RAY_UP_MARGIN_M
-	var to: Vector3 = position + Vector3.DOWN * STREAMING_COLLISION_RELEASE_RAY_DOWN_LENGTH_M
-	var exclude: Array[RID] = [_body.get_rid()]
-	var query: PhysicsRayQueryParameters3D = PhysicsRayQueryParameters3D.create(from, to, _streaming_collision_terrain_collision_mask(), exclude)
-	var hit: Dictionary[Variant, Variant] = world.direct_space_state.intersect_ray(query)
-	if not hit.has("position"):
+	var wheel_hits: Array[Vector3] = _streaming_collision_wheel_ground_hits(world)
+	var has_wheel_footprint_ground: bool = wheel_hits.size() == _wheel_rays.size()
+	var candidate_transform: Transform3D = _streaming_collision_hold_transform
+	if has_wheel_footprint_ground:
+		var basis: Basis = _streaming_collision_basis_from_wheel_hits(wheel_hits)
+		var origin: Vector3 = _streaming_collision_hold_transform.origin
+		var origin_y: float = 0.0
+		var clearance: float = _streaming_collision_spawn_clearance()
+		for i in range(_wheel_rays.size()):
+			var ray: RayCast3D = _wheel_rays[i]
+			origin_y += wheel_hits[i].y + basis.y.y * clearance - (basis * ray.position).y
+		origin.y = origin_y / float(_wheel_rays.size())
+		candidate_transform = Transform3D(basis, origin)
+	else:
+		var position: Vector3 = _streaming_collision_hold_transform.origin
+		var hit: Dictionary[Variant, Variant] = _streaming_collision_ground_hit(world, position)
+		if not hit.has("position"):
+			return false
+		var hit_position: Vector3 = hit["position"] as Vector3
+		position.y = hit_position.y + _streaming_collision_spawn_clearance()
+		candidate_transform.origin = position
+	if candidate_transform.basis.y.normalized().dot(Vector3.UP) < STREAMING_COLLISION_RELEASE_MIN_UP_DOT:
 		return false
-	var hit_position: Vector3 = hit["position"] as Vector3
-	position.y = hit_position.y + _streaming_collision_spawn_clearance()
-	_streaming_collision_hold_transform.origin = position
+	var previous_hold_transform: Transform3D = _streaming_collision_hold_transform
+	_streaming_collision_hold_transform = candidate_transform
 	_apply_streaming_collision_body_state(true)
-	if not _streaming_collision_hold_has_wheel_contact():
+	if not has_wheel_footprint_ground and not _streaming_collision_hold_has_stable_wheel_contact():
+		_streaming_collision_hold_transform = previous_hold_transform
+		_apply_streaming_collision_body_state(true)
 		return false
 	_streaming_collision_snap_count += 1
 	return true
 
 
-func _streaming_collision_hold_has_wheel_contact() -> bool:
+func _streaming_collision_wheel_ground_hits(world: World3D) -> Array[Vector3]:
+	var hits: Array[Vector3] = []
+	var basis: Basis = _streaming_collision_hold_transform.basis
+	var origin: Vector3 = _streaming_collision_hold_transform.origin
+	for ray in _wheel_rays:
+		var wheel_position: Vector3 = origin + basis * ray.position
+		var hit: Dictionary[Variant, Variant] = _streaming_collision_ground_hit(world, wheel_position)
+		if not hit.has("position"):
+			return []
+		hits.append(hit["position"] as Vector3)
+	return hits
+
+
+func _streaming_collision_ground_hit(world: World3D, position: Vector3) -> Dictionary[Variant, Variant]:
+	var from: Vector3 = position + Vector3.UP * STREAMING_COLLISION_RELEASE_RAY_UP_MARGIN_M
+	var to: Vector3 = position + Vector3.DOWN * STREAMING_COLLISION_RELEASE_RAY_DOWN_LENGTH_M
+	var exclude: Array[RID] = [_body.get_rid()]
+	var query: PhysicsRayQueryParameters3D = PhysicsRayQueryParameters3D.create(from, to, _streaming_collision_terrain_collision_mask(), exclude)
+	return world.direct_space_state.intersect_ray(query)
+
+
+func _streaming_collision_basis_from_wheel_hits(wheel_hits: Array[Vector3]) -> Basis:
+	var front_mid: Vector3 = (wheel_hits[0] + wheel_hits[1]) * 0.5
+	var rear_mid: Vector3 = (wheel_hits[2] + wheel_hits[3]) * 0.5
+	var left_mid: Vector3 = (wheel_hits[0] + wheel_hits[2]) * 0.5
+	var right_mid: Vector3 = (wheel_hits[1] + wheel_hits[3]) * 0.5
+	var forward: Vector3 = front_mid - rear_mid
+	if forward.length() <= GameConfig.self_right_forward_epsilon:
+		forward = _horizontal_forward(_streaming_collision_hold_transform.basis)
+	forward = forward.normalized()
+	var right: Vector3 = right_mid - left_mid
+	right -= forward * right.dot(forward)
+	if right.length() <= GameConfig.self_right_forward_epsilon:
+		right = forward.cross(Vector3.UP)
+	right = right.normalized()
+	var up: Vector3 = right.cross(forward).normalized()
+	if up.dot(Vector3.UP) < 0.0:
+		up = -up
+		right = -right
+	right = forward.cross(up).normalized()
+	forward = up.cross(right).normalized()
+	return Basis(right, up, -forward)
+
+
+func _streaming_collision_hold_has_stable_wheel_contact() -> bool:
+	var contact_count: int = 0
 	for ray in _wheel_rays:
 		ray.force_update_transform()
 		ray.force_raycast_update()
 		if ray.is_colliding():
-			return true
-	return false
+			contact_count += 1
+	return contact_count >= mini(GameConfig.self_right_stable_contact_count, _wheel_rays.size())
 
 
 func _streaming_collision_terrain_collision_mask() -> int:
@@ -625,8 +713,7 @@ func _streaming_collision_terrain_collision_mask() -> int:
 
 func _streaming_collision_spawn_clearance() -> float:
 	var ray_length: float = GameConfig.susp_rest_length + GameConfig.susp_travel + GameConfig.wheel_radius
-	var static_compression: float = clampf((GameConfig.chassis_mass * GameConfig.GRAVITY_MAGNITUDE * 0.25) / maxf(GameConfig.susp_stiffness, 0.001), 0.0, 1.0)
-	return ray_length - static_compression * GameConfig.susp_travel
+	return ray_length + GameConfig.chassis_collision_size.y
 
 
 func _record_streaming_collision_release() -> void:
@@ -670,6 +757,20 @@ func _apply_streaming_collision_body_state(should_freeze: bool) -> void:
 	for ray in _wheel_rays:
 		ray.force_update_transform()
 		ray.force_raycast_update()
+
+
+func _stabilize_streaming_collision_release() -> void:
+	if _streaming_collision_release_stabilize_ticks_remaining <= 0:
+		return
+	_streaming_collision_release_stabilize_ticks_remaining -= 1
+	var velocity: Vector3 = _body.linear_velocity
+	if velocity.y > 0.0:
+		velocity.y = 0.0
+	_body.linear_velocity = velocity
+	_body.angular_velocity = Vector3.ZERO
+	var body_rid: RID = _body.get_rid()
+	PhysicsServer3D.body_set_state(body_rid, PhysicsServer3D.BODY_STATE_LINEAR_VELOCITY, velocity)
+	PhysicsServer3D.body_set_state(body_rid, PhysicsServer3D.BODY_STATE_ANGULAR_VELOCITY, Vector3.ZERO)
 
 
 func _update_flip_events() -> void:
