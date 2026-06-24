@@ -2811,6 +2811,20 @@ static func _source_foliage_mesh_with_species_materials(source_mesh: Mesh, mesh_
 			# so bark/source-material rendering and the streamer warmup contract stay intact.
 			var leaf_color: Color = _foliage_material_color_for_species(species_id)
 			material.albedo_color = Color(leaf_color.r, leaf_color.g, leaf_color.b, material.albedo_color.a)
+			# Willow/cottonwood leaf cards import from glTF alphaMode=MASK as a hard
+			# alpha-scissor cutout; under TAA+FSR1 the sub-pixel leaf edges flip binary
+			# coverage every jittered frame and shimmer. These trees are static MultiMesh
+			# (no wind), so alpha-to-coverage lets the existing MSAA resolve the cutout edge
+			# with sub-pixel coverage that survives the jitter — the correct stabiliser for a
+			# non-animated cutout (opposite of the animated-grass A2C removal). Gate strictly
+			# on the alpha-scissor transparency mode so opaque juniper/yucca leaves and all
+			# bark surfaces are never touched; keep the imported scissor threshold intact.
+			if material.transparency == BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR:
+				material.alpha_antialiasing_mode = BaseMaterial3D.ALPHA_ANTIALIASING_ALPHA_TO_COVERAGE_AND_TO_ONE
+				# Tame leaf-highlight sparkle that FSR1 amplifies on the cutout edge: push
+				# roughness toward matte and disable the specular lobe. Colour is unchanged.
+				material.roughness = maxf(material.roughness, 0.9)
+				material.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
 		mesh.surface_set_material(surface_index, material)
 	return mesh
 
