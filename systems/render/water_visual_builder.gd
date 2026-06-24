@@ -16,6 +16,9 @@ const RIPPLE_NORMAL_SCALE: float = 1.60
 const SHORELINE_SOFTNESS: float = 0.22
 const FRESNEL_GLINT_COLOR: Color = Color(1.0, 0.74, 0.46)
 const FRESNEL_GLINT_STRENGTH: float = 0.12
+const FLOW_DIRECTION: Vector2 = Vector2(0.0, 1.0)
+const FOAM_INTENSITY: float = 0.55
+const RIPPLE_TIGHTNESS: float = 3.5
 const ZION_RIVER_WIDTH_M: float = 9.5
 const ZION_RIVER_SURFACE_RISE_M: float = 0.30
 # Bank-detail river-width model — used only by the Virgin-River bank detail
@@ -584,4 +587,7 @@ static func _water_material(resource_name: String) -> ShaderMaterial:
 	material.set_shader_parameter("shoreline_softness", SHORELINE_SOFTNESS)
 	material.set_shader_parameter("fresnel_glint_color", FRESNEL_GLINT_COLOR)
 	material.set_shader_parameter("fresnel_glint_strength", FRESNEL_GLINT_STRENGTH)
+	material.set_shader_parameter("flow_direction", FLOW_DIRECTION)
+	material.set_shader_parameter("foam_intensity", FOAM_INTENSITY)
+	material.set_shader_parameter("ripple_tightness", RIPPLE_TIGHTNESS)
 	return material

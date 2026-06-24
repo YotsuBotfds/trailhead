@@ -30,6 +30,9 @@ uniform float ripple_normal_scale : hint_range(0.1, 8.0) = 1.60;
 uniform float shoreline_softness : hint_range(0.001, 0.8) = 0.22;
 uniform vec4 fresnel_glint_color : source_color = vec4(1.0, 0.74, 0.46, 1.0);
 uniform float fresnel_glint_strength : hint_range(0.0, 0.5) = 0.12;
+uniform vec2 flow_direction = vec2(0.0, 1.0);
+uniform float foam_intensity : hint_range(0.0, 1.0) = 0.55;
+uniform float ripple_tightness : hint_range(0.5, 16.0) = 3.5;
 
 const int SSR_STEP_LIMIT = 32;
 const float SSR_EDGE_FADE = 0.065;
@@ -75,9 +78,19 @@ vec2 flow_ripple_gradient(vec2 position, vec2 flow_dir, float flow_time) {
 	vec2 side_dir = vec2(-flow_dir.y, flow_dir.x);
 	float downstream_pos = dot(position, flow_dir) * ripple_normal_scale;
 	float cross_pos = dot(position, side_dir) * ripple_normal_scale;
+	// Primary downstream ripple layer
 	float wave_a = sin(downstream_pos * 4.0 - flow_time * 8.0 + sin(cross_pos * 1.5) * 0.45);
 	float wave_b = sin(downstream_pos * 7.5 + cross_pos * 2.2 - flow_time * 13.0);
-	return flow_dir * (wave_a * 0.70 + wave_b * 0.25) + side_dir * (wave_b * 0.18);
+	vec2 primary_grad = flow_dir * (wave_a * 0.70 + wave_b * 0.25) + side_dir * (wave_b * 0.18);
+	// Secondary cross-hatch layer at 45-degree offset for finer surface texture
+	vec2 diag_dir = normalize(flow_dir + side_dir);
+	vec2 anti_dir = normalize(flow_dir - side_dir);
+	float diag_pos = dot(position, diag_dir) * ripple_normal_scale * ripple_tightness;
+	float anti_pos = dot(position, anti_dir) * ripple_normal_scale * ripple_tightness;
+	float wave_c = sin(diag_pos * 3.1 - flow_time * 11.0 + sin(anti_pos * 0.8) * 0.3);
+	float wave_d = sin(anti_pos * 5.0 + diag_pos * 1.4 - flow_time * 7.0);
+	vec2 cross_grad = diag_dir * (wave_c * 0.38) + anti_dir * (wave_d * 0.28);
+	return primary_grad * 0.72 + cross_grad * 0.28;
 }
 
 vec3 view_from_depth(vec2 uv, float raw_depth, mat4 inv_projection) {
@@ -138,7 +151,10 @@ void vertex() {
 	world_xz = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xz;
 	vec2 flow_xz = MODEL_MATRIX[0].xz;
 	float flow_len = length(flow_xz);
-	downstream_dir = flow_len > 0.00001 ? flow_xz / flow_len : vec2(1.0, 0.0);
+	vec2 mesh_dir = flow_len > 0.00001 ? flow_xz / flow_len : vec2(1.0, 0.0);
+	float user_dir_len = length(flow_direction);
+	vec2 user_dir = user_dir_len > 0.00001 ? flow_direction / user_dir_len : vec2(0.0, 0.0);
+	downstream_dir = normalize(mix(mesh_dir, user_dir, clamp(user_dir_len, 0.0, 1.0)));
 	float downstream_pos = dot(world_xz, downstream_dir);
 	VERTEX.y += sin((downstream_pos + TIME * flow_speed) * 18.0) * wave_amplitude;
 }
@@ -170,8 +186,8 @@ void fragment() {
 	vec3 water_color = mix(shallow_color.rgb, deep_color.rgb, depth_mix);
 	float bed_visibility = pow(1.0 - depth_mix, 1.35);
 	water_color = mix(water_color, bed_tint_color.rgb, bed_visibility * bed_tint_strength);
-	water_color = mix(water_color, foam_color.rgb, shoreline * (0.30 + ripple * 0.12));
-	water_color = mix(water_color, foam_color.rgb, foam * (0.18 + ripple * 0.10));
+	water_color = mix(water_color, foam_color.rgb, shoreline * foam_intensity * (0.55 + ripple * 0.22));
+	water_color = mix(water_color, foam_color.rgb, foam * foam_intensity * (0.32 + ripple * 0.18));
 	float wetline_inside = smoothstep(foam_edge_width, shoreline_softness, depth_delta);
 	float wetline_deep = 1.0 - smoothstep(shoreline_softness, shoreline_softness * 2.8, depth_delta);
 	water_color *= mix(1.0, 0.82, wetline_inside * wetline_deep * wetline_strength);
