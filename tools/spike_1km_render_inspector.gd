@@ -154,6 +154,12 @@ func _inspect_foliage_cells(foliage_root: Node) -> void:
 				_errors.append(label + " LOD1 cast_shadow expected OFF, got " + str(multimesh_instance.cast_shadow))
 			var expected_lod1_begin: float = TerrainVisualBuilderScript.foliage_lod1_visibility_range_begin_for_species(visibility_radius, species_id)
 			var expected_lod1_end: float = TerrainVisualBuilderScript.foliage_lod1_visibility_range_end_for_species(visibility_radius, species_id)
+			if TerrainVisualBuilderScript._foliage_species_uses_source_material(species_id):
+				var expected_tree_lod1_end: float = TerrainVisualBuilderScript.FOLIAGE_VIS_RANGE_TREE_LOD1_END + visibility_radius
+				if absf(expected_lod1_end - expected_tree_lod1_end) > FLOAT_EPSILON:
+					_errors.append(label + " tree LOD1 visibility_range_end should use tree far cap " + str(expected_tree_lod1_end) + ", got " + str(expected_lod1_end))
+				if multimesh_instance.visibility_range_end >= GameConfig.cam_far:
+					_errors.append(label + " tree LOD1 visibility_range_end should stay below cam_far, got " + str(multimesh_instance.visibility_range_end))
 			if absf(multimesh_instance.visibility_range_begin - expected_lod1_begin) > FLOAT_EPSILON:
 				_errors.append(label + " LOD1 visibility_range_begin expected " + str(expected_lod1_begin) + ", got " + str(multimesh_instance.visibility_range_begin))
 			if absf(multimesh_instance.visibility_range_end - expected_lod1_end) > FLOAT_EPSILON:
@@ -174,6 +180,11 @@ func _inspect_pipeline_warmup(warmup_root: Node) -> void:
 		_errors.append("PipelineWarmup should be visible for PSO warmup")
 	if warmup_root.process_mode != Node.PROCESS_MODE_INHERIT:
 		_errors.append("PipelineWarmup process_mode should be INHERIT")
+	if not bool(warmup_root.get_meta(TerrainVisualBuilderScript.PIPELINE_WARMUP_TRANSIENT_META, false)):
+		_errors.append("PipelineWarmup should declare its transient warmup contract")
+	var release_frames: int = int(warmup_root.get_meta(TerrainVisualBuilderScript.PIPELINE_WARMUP_RELEASE_FRAMES_META, -1))
+	if release_frames != TerrainVisualBuilderScript.PIPELINE_WARMUP_RELEASE_AFTER_FRAMES:
+		_errors.append("PipelineWarmup release frames expected " + str(TerrainVisualBuilderScript.PIPELINE_WARMUP_RELEASE_AFTER_FRAMES) + ", got " + str(release_frames))
 	var terrain_material_count: int = _require_int_meta(
 		warmup_root,
 		TerrainVisualBuilderScript.PIPELINE_WARMUP_TERRAIN_MATERIAL_COUNT_META,

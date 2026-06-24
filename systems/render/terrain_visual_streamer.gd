@@ -929,6 +929,7 @@ func _commit_visual_tile(cell: Vector2i, visual_tile_data: Variant, sample_step:
 		if previous_visual_tile.get_parent() != null:
 			previous_visual_tile.get_parent().remove_child(previous_visual_tile)
 		previous_visual_tile.queue_free()
+		visual_tile.name = visual_tile_data.node_name
 	_promote_ready_visual_upgrade(cell)
 
 
@@ -1167,7 +1168,7 @@ func _begin_foliage_tile_commit(cell: Vector2i, foliage_tile_data: Variant) -> v
 	if foliage_tile_data == null or not bool(foliage_tile_data.ok):
 		_ready_foliage_data_by_cell.erase(cell)
 		return
-	var foliage_tile: Node3D = TerrainVisualBuilderScript.region_foliage_tile_root_from_data(_foliage_root, foliage_tile_data) as Node3D
+	var foliage_tile: Node3D = TerrainVisualBuilderScript.region_foliage_tile_root_from_data(_foliage_root, foliage_tile_data, false) as Node3D
 	if foliage_tile == null:
 		_ready_foliage_data_by_cell.erase(cell)
 		return
@@ -1210,13 +1211,19 @@ func _finish_foliage_tile_commit(cell: Vector2i) -> void:
 	var foliage_tile: Node3D = _partial_foliage_tiles_by_cell[cell]
 	_partial_foliage_tiles_by_cell.erase(cell)
 	_pending_foliage_subcommit_counts_by_cell.erase(cell)
+	if foliage_tile == null:
+		return
 	if _active_cells.has(cell):
+		if foliage_tile.get_parent() == null:
+			if _foliage_root == null:
+				foliage_tile.queue_free()
+				return
+			_foliage_root.add_child(foliage_tile)
 		_foliage_tiles_by_cell[cell] = foliage_tile
 		return
-	if foliage_tile != null:
-		if foliage_tile.get_parent() != null:
-			foliage_tile.get_parent().remove_child(foliage_tile)
-		foliage_tile.queue_free()
+	if foliage_tile.get_parent() != null:
+		foliage_tile.get_parent().remove_child(foliage_tile)
+	foliage_tile.queue_free()
 
 
 func _record_load_failure(cell: Vector2i, message: String) -> void:

@@ -13,6 +13,7 @@ const EXPECTED_STREAM_MIDLOD_MIN_PRIMITIVES: int = 1000
 const PRESSURE_CENTER_CELL: Vector2i = Vector2i(5, 5)
 const PRESSURE_ACTIVE_RADIUS: int = 2
 const MIDLOD_DRAIN_SLACK_FRAMES: int = 8
+const PIPELINE_WARMUP_RELEASE_WAIT_FRAMES: int = 12
 
 var _streamer: Node3D = null
 var _errors: PackedStringArray = PackedStringArray()
@@ -31,6 +32,8 @@ func _inspect() -> void:
 		_finish()
 		return
 
+	TerrainVisualBuilderScript.clear_region_tile_data_cache_for_tests()
+	TerrainVisualBuilderScript.clear_surface_index_tile_material_cache_for_tests()
 	await _exercise_stream_hlod_budget()
 	_streamer.call("configure_region", REGION_ID)
 	_streamer.call("set_worker_count_for_tests", 0)
@@ -40,6 +43,7 @@ func _inspect() -> void:
 	_require_stream_midlod_root()
 	_require_streamed_foliage_root()
 	_require_pipeline_warmup()
+	await _wait_for_pipeline_warmup_release()
 	_require_stream_hlod(false)
 
 	EventBus.world_tile_prefetched.emit(FIRST_CELL)
@@ -150,6 +154,8 @@ func _inspect() -> void:
 	_require_cells("reset cells", [])
 	EventBus.world_tile_activated.emit(FIRST_CELL)
 	_require_cell_count("post-reset disconnected", 0)
+	_require_region_tile_data_cache_contract()
+	_require_surface_index_tile_material_cache_contract()
 	_finish()
 
 
@@ -196,6 +202,11 @@ func _require_pipeline_warmup() -> void:
 		_errors.append("PipelineWarmup should be visible for PSO warmup")
 	if warmup_root.process_mode != Node.PROCESS_MODE_INHERIT:
 		_errors.append("PipelineWarmup process_mode should be INHERIT")
+	if not bool(warmup_root.get_meta(TerrainVisualBuilderScript.PIPELINE_WARMUP_TRANSIENT_META, false)):
+		_errors.append("PipelineWarmup should declare its transient warmup contract")
+	var release_frames: int = int(warmup_root.get_meta(TerrainVisualBuilderScript.PIPELINE_WARMUP_RELEASE_FRAMES_META, -1))
+	if release_frames != TerrainVisualBuilderScript.PIPELINE_WARMUP_RELEASE_AFTER_FRAMES:
+		_errors.append("PipelineWarmup release frames expected " + str(TerrainVisualBuilderScript.PIPELINE_WARMUP_RELEASE_AFTER_FRAMES) + ", got " + str(release_frames))
 	var terrain_material_count: int = _require_int_meta(
 		warmup_root,
 		TerrainVisualBuilderScript.PIPELINE_WARMUP_TERRAIN_MATERIAL_COUNT_META,
@@ -226,6 +237,33 @@ func _require_pipeline_warmup() -> void:
 	var collision_count: int = _count_collision_objects(warmup_root)
 	if collision_count > 0:
 		_errors.append("PipelineWarmup should not contain collision objects: " + str(collision_count))
+
+
+func _require_region_tile_data_cache_contract() -> void:
+	var cache_size: int = TerrainVisualBuilderScript.region_tile_data_cache_size_for_tests()
+	if cache_size <= 0:
+		_errors.append("Region tile data cache should retain recent loaded tiles")
+	if cache_size > TerrainVisualBuilderScript.REGION_TILE_DATA_CACHE_CAPACITY:
+		_errors.append("Region tile data cache size expected <= " + str(TerrainVisualBuilderScript.REGION_TILE_DATA_CACHE_CAPACITY) + ", got " + str(cache_size))
+
+
+func _require_surface_index_tile_material_cache_contract() -> void:
+	var cache_size: int = TerrainVisualBuilderScript.surface_index_tile_material_cache_size_for_tests()
+	if cache_size <= 0:
+		_errors.append("Surface-index tile material cache should retain recent loaded tile materials")
+	if cache_size > TerrainVisualBuilderScript.SURFACE_INDEX_TILE_MATERIAL_CACHE_CAPACITY:
+		_errors.append("Surface-index tile material cache size expected <= " + str(TerrainVisualBuilderScript.SURFACE_INDEX_TILE_MATERIAL_CACHE_CAPACITY) + ", got " + str(cache_size))
+
+
+func _wait_for_pipeline_warmup_release() -> void:
+	for _frame_index in range(PIPELINE_WARMUP_RELEASE_WAIT_FRAMES):
+		var terrain_root: Node = _streamer.get_node_or_null(TerrainVisualBuilderScript.REGION_ROOT_NAME)
+		if terrain_root == null:
+			return
+		if terrain_root.get_node_or_null(TerrainVisualBuilderScript.REGION_PIPELINE_WARMUP_ROOT_NAME) == null:
+			return
+		await get_tree().process_frame
+	_errors.append("PipelineWarmup should release itself after PSO warmup frames")
 
 
 func _require_stream_hlod(expected_visible: bool) -> void:
@@ -678,6 +716,7 @@ func _exercise_fullres_on_inflight_prefetch_activation() -> void:
 	EventBus.world_tile_activated.emit(FIRST_CELL)
 	await _wait_for_cell_count("inflight-prefetch activation: fullres tile committed", 1)
 	await _wait_for_foliage_cell_count("inflight-prefetch activation: foliage committed", 1)
+	await _wait_for_visual_vertex_count_at_least("inflight-prefetch activation: fullres upgrade committed", FIRST_CELL, step1_vertex_count)
 
 	var committed_tile: MeshInstance3D = _streamer.call("visual_cell_node", FIRST_CELL) as MeshInstance3D
 	if committed_tile == null or committed_tile.mesh == null:
@@ -951,6 +990,19 @@ func _wait_for_foliage_cell_count(label: String, expected_count: int) -> void:
 			return
 		await get_tree().process_frame
 	_require_foliage_cell_count(label, expected_count)
+
+
+func _wait_for_visual_vertex_count_at_least(label: String, cell: Vector2i, expected_minimum: int) -> void:
+	for _frame_index in range(WAIT_FRAMES):
+		var tile: MeshInstance3D = _streamer.call("visual_cell_node", cell) as MeshInstance3D
+		if tile != null and tile.mesh != null and _mesh_vertex_count(tile.mesh) >= expected_minimum:
+			return
+		await get_tree().process_frame
+	var committed_tile: MeshInstance3D = _streamer.call("visual_cell_node", cell) as MeshInstance3D
+	var observed_count: int = 0
+	if committed_tile != null and committed_tile.mesh != null:
+		observed_count = _mesh_vertex_count(committed_tile.mesh)
+	_errors.append(label + " expected >= " + str(expected_minimum) + " vertices, got " + str(observed_count))
 
 
 func _wait_for_ready_cell_count(label: String, expected_count: int) -> void:

@@ -31,6 +31,9 @@ const STRESS_OUTWARD_BIAS_PERIOD_SECONDS: float = 7.0
 const STRESS_OUTWARD_BIAS_DURATION_SECONDS: float = 2.5
 const STRESS_OUTWARD_MIN_STEER: float = 0.2
 const STRESS_OUTWARD_STEER_GAIN: float = 1.5
+const DYNAMIC_RESOLUTION_CONTROLLER_NAME: String = "RenderDynamicResolutionController"
+const DYNAMIC_RESOLUTION_TARGET_FRAME_MS_META: StringName = &"trailhead_dynamic_resolution_target_frame_ms"
+const SCALE_CHANGE_EPSILON: float = 0.0001
 
 var _host: Node = null
 var _duration_seconds: float = DEFAULT_DURATION_SECONDS
@@ -46,12 +49,20 @@ var _fps_samples: Array[float] = []
 var _draw_call_samples: Array[float] = []
 var _video_mem_samples_mb: Array[float] = []
 var _focus_samples: Array[float] = []
+var _viewport_cpu_samples_ms: Array[float] = []
+var _viewport_gpu_samples_ms: Array[float] = []
+var _scaling_3d_scale_samples: Array[float] = []
+var _positive_gpu_sample_count: int = 0
 var _hitch_count: int = 0
 var _crossing_hitch_count: int = 0
 var _crossing_count: int = 0
+var _scaling_change_count: int = 0
+var _scaling_change_hitch_count: int = 0
 var _frame_index: int = 0
 var _last_cell: Vector2i = Vector2i.ZERO
 var _has_last_cell: bool = false
+var _last_scaling_3d_scale: float = 1.0
+var _has_last_scaling_3d_scale: bool = false
 var _last_crossing_frame: int = -1000000
 var _stress_phase: int = STRESS_PHASE_ACCEL
 var _stress_phase_elapsed: float = 0.0
@@ -133,7 +144,8 @@ func _run() -> void:
 	if not _errors.is_empty():
 		await _finish()
 		return
-	_frame_rows.append("frame,dt_ms,fps,process_ms,physics_process_ms,draw_calls,primitives,objects,video_mem_mb,static_mem_mb,current_cell,active_cells,ready_cells,stream_tick,crossing_flag,hitch_flag,hitch_at_crossing,window_is_focused")
+	_enable_viewport_render_time_measurement()
+	_frame_rows.append("frame,dt_ms,fps,process_ms,physics_process_ms,viewport_cpu_ms,viewport_gpu_ms,scaling_3d_scale,scaling_3d_scale_changed,dynamic_res_target_ms,draw_calls,primitives,objects,video_mem_mb,static_mem_mb,current_cell,active_cells,ready_cells,stream_tick,crossing_flag,hitch_flag,hitch_at_crossing,window_is_focused")
 	await _drive_and_sample()
 	_release_input()
 	await _write_reports()
@@ -390,6 +402,13 @@ func _sample_frame(dt: float) -> void:
 	var objects: int = int(Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME))
 	var process_ms: float = float(Performance.get_monitor(Performance.TIME_PROCESS)) * 1000.0
 	var physics_ms: float = float(Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS)) * 1000.0
+	var viewport: Viewport = get_viewport()
+	var viewport_rid: RID = viewport.get_viewport_rid()
+	var viewport_cpu_ms: float = maxf(float(RenderingServer.viewport_get_measured_render_time_cpu(viewport_rid)), 0.0)
+	var viewport_gpu_ms: float = maxf(float(RenderingServer.viewport_get_measured_render_time_gpu(viewport_rid)), 0.0)
+	var scaling_3d_scale: float = viewport.scaling_3d_scale
+	var scaling_3d_scale_changed: bool = _scaling_3d_scale_changed(scaling_3d_scale)
+	var dynamic_res_target_ms: float = _dynamic_resolution_target_frame_ms()
 	var video_mem_mb: float = float(Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED)) / (1024.0 * 1024.0)
 	var static_mem_mb: float = float(Performance.get_monitor(Performance.MEMORY_STATIC)) / (1024.0 * 1024.0)
 	var active_count: int = _active_cell_count(streamer)
@@ -401,6 +420,10 @@ func _sample_frame(dt: float) -> void:
 		_hitch_count += 1
 		if hitch_at_crossing:
 			_crossing_hitch_count += 1
+		if scaling_3d_scale_changed:
+			_scaling_change_hitch_count += 1
+	if scaling_3d_scale_changed:
+		_scaling_change_count += 1
 	var window_focused: bool = DisplayServer.window_is_focused()
 	if _scenario == SCENARIO_STRESS:
 		_sample_stress_metrics(streamer, current_cell, crossing_flag, hitch_flag, dt_ms)
@@ -410,12 +433,22 @@ func _sample_frame(dt: float) -> void:
 	_draw_call_samples.append(float(draw_calls))
 	_video_mem_samples_mb.append(video_mem_mb)
 	_focus_samples.append(1.0 if window_focused else 0.0)
-	_frame_rows.append("%d,%.3f,%.3f,%.3f,%.3f,%d,%d,%d,%.3f,%.3f,%s,%d,%d,%d,%d,%d,%d,%d" % [
+	_viewport_cpu_samples_ms.append(viewport_cpu_ms)
+	_viewport_gpu_samples_ms.append(viewport_gpu_ms)
+	_scaling_3d_scale_samples.append(scaling_3d_scale)
+	if viewport_gpu_ms > 0.0:
+		_positive_gpu_sample_count += 1
+	_frame_rows.append("%d,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.4f,%d,%.3f,%d,%d,%d,%.3f,%.3f,%s,%d,%d,%d,%d,%d,%d,%d" % [
 		_frame_index,
 		dt_ms,
 		fps,
 		process_ms,
 		physics_ms,
+		viewport_cpu_ms,
+		viewport_gpu_ms,
+		scaling_3d_scale,
+		1 if scaling_3d_scale_changed else 0,
+		dynamic_res_target_ms,
 		draw_calls,
 		primitives,
 		objects,
@@ -510,6 +543,14 @@ func _summary_text() -> String:
 	var max_draw_calls: float = _max_value(_draw_call_samples)
 	var avg_vram: float = _average(_video_mem_samples_mb)
 	var max_vram: float = _max_value(_video_mem_samples_mb)
+	var avg_viewport_cpu_ms: float = _average(_viewport_cpu_samples_ms)
+	var p95_viewport_cpu_ms: float = _percentile(_viewport_cpu_samples_ms, 0.95)
+	var max_viewport_cpu_ms: float = _max_value(_viewport_cpu_samples_ms)
+	var avg_viewport_gpu_ms: float = _average(_viewport_gpu_samples_ms)
+	var p95_viewport_gpu_ms: float = _percentile(_viewport_gpu_samples_ms, 0.95)
+	var max_viewport_gpu_ms: float = _max_value(_viewport_gpu_samples_ms)
+	var min_scaling_3d_scale: float = _min_value(_scaling_3d_scale_samples)
+	var max_scaling_3d_scale: float = _max_value(_scaling_3d_scale_samples)
 	var hitch_crossing_pct: float = 0.0
 	if _hitch_count > 0:
 		hitch_crossing_pct = float(_crossing_hitch_count) / float(_hitch_count) * 100.0
@@ -522,6 +563,9 @@ func _summary_text() -> String:
 		"fps avg=%.3f min=%.3f" % [avg_fps, min_fps],
 		"window_is_focused ratio=%.3f  walls_110_145ms=%d" % [focus_ratio, walls_110_145],
 		"hitches count=%d at_crossing=%d at_crossing_pct=%.1f threshold_ms=%.3f median_multiplier=%.1f crossing_window_frames=%d" % [_hitch_count, _crossing_hitch_count, hitch_crossing_pct, _hitch_threshold_ms, HITCH_MEDIAN_MULTIPLIER, CROSSING_WINDOW_FRAMES],
+		"viewport_cpu_ms avg=%.3f p95=%.3f max=%.3f" % [avg_viewport_cpu_ms, p95_viewport_cpu_ms, max_viewport_cpu_ms],
+		"viewport_gpu_ms positive_samples=%d/%d avg=%.3f p95=%.3f max=%.3f" % [_positive_gpu_sample_count, _viewport_gpu_samples_ms.size(), avg_viewport_gpu_ms, p95_viewport_gpu_ms, max_viewport_gpu_ms],
+		"scaling_3d_scale min=%.4f max=%.4f changes=%d hitches_on_change=%d" % [min_scaling_3d_scale, max_scaling_3d_scale, _scaling_change_count, _scaling_change_hitch_count],
 		"draw_calls avg=%.1f max=%.0f" % [avg_draw_calls, max_draw_calls],
 		"video_mem_mb avg=%.1f max=%.1f" % [avg_vram, max_vram],
 	])
@@ -542,6 +586,7 @@ func _summary_text() -> String:
 
 func _finish() -> void:
 	_release_input()
+	_disable_viewport_render_time_measurement()
 	var exit_code: int = 0
 	if not _errors.is_empty():
 		exit_code = FAIL_EXIT_CODE
@@ -616,6 +661,44 @@ func _stream_tick(streamer: Node) -> int:
 	if streamer != null and streamer.has_method("current_stream_tick"):
 		return int(streamer.call("current_stream_tick"))
 	return 0
+
+
+func _enable_viewport_render_time_measurement() -> void:
+	var viewport: Viewport = get_viewport()
+	if viewport == null:
+		return
+	RenderingServer.viewport_set_measure_render_time(viewport.get_viewport_rid(), true)
+
+
+func _disable_viewport_render_time_measurement() -> void:
+	var viewport: Viewport = get_viewport()
+	if viewport == null:
+		return
+	RenderingServer.viewport_set_measure_render_time(viewport.get_viewport_rid(), false)
+
+
+func _scaling_3d_scale_changed(scaling_3d_scale: float) -> bool:
+	var changed: bool = false
+	if _has_last_scaling_3d_scale:
+		changed = absf(scaling_3d_scale - _last_scaling_3d_scale) > SCALE_CHANGE_EPSILON
+	_last_scaling_3d_scale = scaling_3d_scale
+	_has_last_scaling_3d_scale = true
+	return changed
+
+
+func _dynamic_resolution_target_frame_ms() -> float:
+	var controller: Node = _dynamic_resolution_controller()
+	if controller != null and controller.has_meta(DYNAMIC_RESOLUTION_TARGET_FRAME_MS_META):
+		return float(controller.get_meta(DYNAMIC_RESOLUTION_TARGET_FRAME_MS_META))
+	if Engine.max_fps > 0:
+		return 1000.0 / float(Engine.max_fps)
+	return 0.0
+
+
+func _dynamic_resolution_controller() -> Node:
+	if _host == null:
+		return null
+	return _host.get_node_or_null(NodePath(DYNAMIC_RESOLUTION_CONTROLLER_NAME))
 
 
 func _cell_to_text(cell: Vector2i) -> String:

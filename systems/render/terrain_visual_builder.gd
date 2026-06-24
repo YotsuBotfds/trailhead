@@ -1,6 +1,21 @@
 class_name TerrainVisualBuilder
 extends Node3D
 
+class PipelineWarmupRoot:
+	extends Node3D
+
+	var release_after_frames: int = 2
+
+	func _ready() -> void:
+		call_deferred("_release_after_render_warmup")
+
+	func _release_after_render_warmup() -> void:
+		for _frame_index in range(maxi(release_after_frames, 0)):
+			if not is_inside_tree():
+				return
+			await get_tree().process_frame
+		queue_free()
+
 const CedarTerrainDef: Resource = preload("res://data/terrain/cedar_hollow_terrain_def.tres")
 const TerrainSurfacePaletteResource: Resource = preload("res://data/surface_palettes/cedar_hollow_zion_surface_palette.tres")
 const SurfaceVisualCatalogResource: Resource = preload("res://data/surface_visuals/cedar_hollow_surface_visuals.tres")
@@ -25,12 +40,16 @@ const SURFACE_INDEX_ARRAY_RESIZE_FILTER_NAME: String = "LANCZOS"
 static var _terrain_material_cache: Dictionary[StringName, StandardMaterial3D] = {}
 static var _surface_index_material_cache: Dictionary[String, ShaderMaterial] = {}
 static var _surface_index_tile_material_cache: Dictionary[String, ShaderMaterial] = {}
+static var _surface_index_tile_material_cache_order: PackedStringArray = PackedStringArray()
 static var _foliage_mesh_cache: Dictionary[String, Mesh] = {}
 static var _foliage_material_cache: Dictionary[String, Material] = {}
 static var _surface_index_albedo_array_cache: Texture2DArray = null
 static var _surface_index_normal_array_cache: Texture2DArray = null
 static var _surface_index_macro_albedo_cache: Texture2D = null
 static var _surface_cache_mutex: Mutex = Mutex.new()
+static var _region_tile_data_cache: Dictionary[String, Variant] = {}
+static var _region_tile_cache_order: PackedStringArray = PackedStringArray()
+static var _region_tile_cache_mutex: Mutex = Mutex.new()
 
 const REGION_ID_META: StringName = &"trailhead_region_id"
 const REGION_LOD_META: StringName = &"trailhead_region_lod"
@@ -60,8 +79,13 @@ const REGION_MANIFEST_FILE: String = "collision_tiles_manifest.json"
 const REGION_TILE_SIDE_CAR_FILE: String = "tile.json"
 const REGION_TILE_HEIGHTMAP_FILE: String = "heightmap.bin"
 const REGION_TILE_SURFACE_ID_FILE: String = "surface_id.png"
+const REGION_TILE_DATA_CACHE_CAPACITY: int = 24
+const SURFACE_INDEX_TILE_MATERIAL_CACHE_CAPACITY: int = 48
 const PIPELINE_WARMUP_TERRAIN_MATERIAL_COUNT_META: StringName = &"trailhead_pipeline_warmup_terrain_material_count"
 const PIPELINE_WARMUP_FOLIAGE_LOD_COUNT_META: StringName = &"trailhead_pipeline_warmup_foliage_lod_count"
+const PIPELINE_WARMUP_TRANSIENT_META: StringName = &"trailhead_pipeline_warmup_transient"
+const PIPELINE_WARMUP_RELEASE_FRAMES_META: StringName = &"trailhead_pipeline_warmup_release_frames"
+const PIPELINE_WARMUP_RELEASE_AFTER_FRAMES: int = 2
 const HEIGHTMAP_FLOAT_BYTE_SIZE: int = 4
 # Detail (near-vehicle) terrain visual sample step. The visual mesh is built by
 # striding through the full-resolution collision heightmap; step=5 downsamples
@@ -174,9 +198,9 @@ const FOLIAGE_DENSITY_MUD: float = 0.30
 # Distance-LOD fade for foliage. Every foliage MultiMeshInstance3D used to ship with
 # VISIBILITY_RANGE_FADE_DISABLED, so foliage popped hard at the streaming/visibility boundary.
 # Each species/LOD now self-fades (VISIBILITY_RANGE_FADE_SELF): LOD0 fades out over its end
-# margin at the LOD0->LOD1 handoff, and LOD1 fades in over its begin margin and out at the far
-# clip (LOD1's range end sits at cam_far, so distant foliage is removed by the camera far plane
-# instead of popping at its own end). DEPENDENCIES was ruled out: it requires visibility_parent
+# margin at the LOD0->LOD1 handoff. Grass/scrub fades out near the ground-detail band; GLB tree
+# LOD1 is capped well before cam_far so canyon HLOD carries the far silhouette instead of drawing
+# thousands of full meshes into the haze. DEPENDENCIES was ruled out: it requires visibility_parent
 # wiring (Node3D.visibility_parent, a fragile cross-node LOD hierarchy) and is Forward+ only.
 # Per species: trees (tall, sparse) reach farther and cross-fade slowly; grass (small, dense)
 # keeps the existing closer range with a quick fade so distant draw cost stays low; boulders
@@ -184,6 +208,7 @@ const FOLIAGE_DENSITY_MUD: float = 0.30
 const FOLIAGE_VIS_RANGE_BASE_TREE: float = 70.0
 const FOLIAGE_VIS_RANGE_BASE_BOULDER: float = 60.0
 const FOLIAGE_VIS_RANGE_BASE_GRASS_LOD1_END: float = 60.0
+const FOLIAGE_VIS_RANGE_TREE_LOD1_END: float = 650.0
 const FOLIAGE_FADE_MARGIN_GRASS: float = 28.0
 const FOLIAGE_FADE_MARGIN_TREE: float = 55.0
 const FOLIAGE_FADE_MARGIN_BOULDER: float = 35.0
@@ -743,14 +768,15 @@ static func region_foliage_tile_from_data(parent: Node3D, foliage_tile_data: Reg
 	return tile_root
 
 
-static func region_foliage_tile_root_from_data(parent: Node3D, foliage_tile_data: RegionFoliageTileData) -> Node3D:
+static func region_foliage_tile_root_from_data(parent: Node3D, foliage_tile_data: RegionFoliageTileData, attach_to_parent: bool = true) -> Node3D:
 	if parent == null or foliage_tile_data == null or not foliage_tile_data.ok:
 		return null
 	var tile_root: Node3D = Node3D.new()
 	tile_root.name = "foliage_tile_" + str(foliage_tile_data.cell.x) + "_" + str(foliage_tile_data.cell.y)
 	tile_root.position = foliage_tile_data.position
 	tile_root.set_meta(TILE_INDEX_META, foliage_tile_data.cell)
-	parent.add_child(tile_root)
+	if attach_to_parent:
+		parent.add_child(tile_root)
 	return tile_root
 
 
@@ -900,10 +926,12 @@ static func foliage_lod1_visibility_range_begin_for_species(cell_radius: float, 
 
 
 static func foliage_lod1_visibility_range_end_for_species(cell_radius: float, species_id: StringName) -> float:
-	if not _foliage_species_uses_source_material(species_id) and species_id != FOLIAGE_SPECIES_BOULDER:
+	if _foliage_species_uses_source_material(species_id):
+		return maxf(FOLIAGE_VIS_RANGE_TREE_LOD1_END + cell_radius, foliage_lod1_visibility_range_begin_for_species(cell_radius, species_id))
+	if species_id != FOLIAGE_SPECIES_BOULDER:
 		return maxf(FOLIAGE_VIS_RANGE_BASE_GRASS_LOD1_END + cell_radius, foliage_lod1_visibility_range_begin_for_species(cell_radius, species_id))
-	# Trees and boulders run out to the far clip (cam_far) so distant silhouettes are removed by
-	# the camera far plane (consistent with terrain/HLOD), not by a hard pop at their own range end.
+	# Boulders still run out to the far clip: they are cheap procedural geometry and help steep
+	# talus slopes read until the terrain/HLOD takes over in fog.
 	return maxf(GameConfig.cam_far + cell_radius, foliage_lod1_visibility_range_begin_for_species(cell_radius, species_id))
 
 
@@ -932,15 +960,18 @@ static func foliage_pipeline_warmup_node_names() -> PackedStringArray:
 
 
 static func _add_region_pipeline_warmup(parent: Node3D) -> Node3D:
-	var root: Node3D = Node3D.new()
+	var root: PipelineWarmupRoot = PipelineWarmupRoot.new()
 	root.name = REGION_PIPELINE_WARMUP_ROOT_NAME
 	root.visible = true
+	root.release_after_frames = PIPELINE_WARMUP_RELEASE_AFTER_FRAMES
 	parent.add_child(root)
 
 	var terrain_material_count: int = _add_terrain_pipeline_warmup(root)
 	var foliage_lod_count: int = _add_foliage_pipeline_warmup(root)
 	root.set_meta(PIPELINE_WARMUP_TERRAIN_MATERIAL_COUNT_META, terrain_material_count)
 	root.set_meta(PIPELINE_WARMUP_FOLIAGE_LOD_COUNT_META, foliage_lod_count)
+	root.set_meta(PIPELINE_WARMUP_TRANSIENT_META, true)
+	root.set_meta(PIPELINE_WARMUP_RELEASE_FRAMES_META, PIPELINE_WARMUP_RELEASE_AFTER_FRAMES)
 	return root
 
 
@@ -1481,6 +1512,7 @@ static func _surface_index_tile_material(surface_data: MeshSurfaceData) -> Shade
 static func _surface_index_tile_material_locked(surface_data: MeshSurfaceData) -> ShaderMaterial:
 	var tile_cache_key: String = _surface_index_material_cache_key(surface_data) + "|" + surface_data.surface_id_path
 	if _surface_index_tile_material_cache.has(tile_cache_key):
+		_surface_index_tile_material_cache_touch_locked(tile_cache_key)
 		return _surface_index_tile_material_cache[tile_cache_key]
 	var shared_material: ShaderMaterial = _surface_index_material_locked(surface_data)
 	var tile_material: ShaderMaterial = shared_material.duplicate(false) as ShaderMaterial
@@ -1491,7 +1523,23 @@ static func _surface_index_tile_material_locked(surface_data: MeshSurfaceData) -
 	if surface_texture != null:
 		tile_material.set_shader_parameter(SURFACE_ID_TEXTURE_UNIFORM, surface_texture)
 	_surface_index_tile_material_cache[tile_cache_key] = tile_material
+	_surface_index_tile_material_cache_order.append(tile_cache_key)
+	_surface_index_tile_material_cache_prune_locked()
 	return tile_material
+
+
+static func _surface_index_tile_material_cache_touch_locked(cache_key: String) -> void:
+	var cache_index: int = _surface_index_tile_material_cache_order.find(cache_key)
+	if cache_index >= 0:
+		_surface_index_tile_material_cache_order.remove_at(cache_index)
+	_surface_index_tile_material_cache_order.append(cache_key)
+
+
+static func _surface_index_tile_material_cache_prune_locked() -> void:
+	while _surface_index_tile_material_cache_order.size() > SURFACE_INDEX_TILE_MATERIAL_CACHE_CAPACITY:
+		var evicted_key: String = String(_surface_index_tile_material_cache_order[0])
+		_surface_index_tile_material_cache_order.remove_at(0)
+		_surface_index_tile_material_cache.erase(evicted_key)
 
 
 static func _surface_index_material_cache_key(surface_data: MeshSurfaceData) -> String:
@@ -1609,6 +1657,7 @@ static func _surface_index_albedo_array_locked() -> Texture2DArray:
 		_surface_index_albedo_array_cache = null
 		_surface_index_material_cache.clear()
 		_surface_index_tile_material_cache.clear()
+		_surface_index_tile_material_cache_order.clear()
 	var target_size: Vector2i = _surface_index_albedo_target_size()
 	var cache_path: String = _surface_index_array_cache_path(SURFACE_INDEX_ALBEDO_ARRAY_CACHE_KIND, target_size)
 	var cached_array: Texture2DArray = _load_surface_index_array_cache(cache_path)
@@ -1657,6 +1706,7 @@ static func _surface_index_normal_array_locked() -> Texture2DArray:
 		_surface_index_normal_array_cache = null
 		_surface_index_material_cache.clear()
 		_surface_index_tile_material_cache.clear()
+		_surface_index_tile_material_cache_order.clear()
 	var target_size: Vector2i = _surface_index_normal_target_size()
 	var cache_path: String = _surface_index_array_cache_path(SURFACE_INDEX_NORMAL_ARRAY_CACHE_KIND, target_size)
 	var cached_array: Texture2DArray = _load_surface_index_array_cache(cache_path)
@@ -1964,6 +2014,19 @@ static func region_tile_cells(region_id: String) -> Array[Vector2i]:
 
 
 static func _load_region_tile(region_id: String, cell: Vector2i) -> RegionTileData:
+	var cache_key: String = _region_tile_cache_key(region_id, cell)
+	var cached_tile_data: RegionTileData = _region_tile_cache_get(cache_key)
+	if cached_tile_data != null:
+		return _clone_region_tile_data(cached_tile_data)
+
+	var loaded_tile_data: RegionTileData = _load_region_tile_uncached(region_id, cell)
+	if loaded_tile_data == null:
+		return null
+	var stored_tile_data: RegionTileData = _region_tile_cache_store_or_get(cache_key, loaded_tile_data)
+	return _clone_region_tile_data(stored_tile_data)
+
+
+static func _load_region_tile_uncached(region_id: String, cell: Vector2i) -> RegionTileData:
 	var sidecar_path: String = _tile_sidecar_path(region_id, cell)
 	var sidecar: Dictionary = _load_json_dictionary(sidecar_path)
 	if sidecar.is_empty():
@@ -2021,6 +2084,89 @@ static func _load_region_tile(region_id: String, cell: Vector2i) -> RegionTileDa
 		push_error("TerrainVisualBuilder surface_id image failed to load: " + tile_data.surface_id_path)
 		return null
 	return tile_data
+
+
+static func _region_tile_cache_key(region_id: String, cell: Vector2i) -> String:
+	return region_id + ":" + _tile_key(cell)
+
+
+static func _region_tile_cache_get(cache_key: String) -> RegionTileData:
+	_region_tile_cache_mutex.lock()
+	var cached_variant: Variant = _region_tile_data_cache.get(cache_key, null)
+	var cached_tile_data: RegionTileData = cached_variant as RegionTileData
+	if cached_tile_data != null:
+		_region_tile_cache_touch_locked(cache_key)
+	_region_tile_cache_mutex.unlock()
+	return cached_tile_data
+
+
+static func _region_tile_cache_store_or_get(cache_key: String, tile_data: RegionTileData) -> RegionTileData:
+	_region_tile_cache_mutex.lock()
+	var cached_variant: Variant = _region_tile_data_cache.get(cache_key, null)
+	var cached_tile_data: RegionTileData = cached_variant as RegionTileData
+	if cached_tile_data != null:
+		_region_tile_cache_touch_locked(cache_key)
+		_region_tile_cache_mutex.unlock()
+		return cached_tile_data
+
+	_region_tile_data_cache[cache_key] = tile_data
+	_region_tile_cache_order.append(cache_key)
+	while _region_tile_cache_order.size() > REGION_TILE_DATA_CACHE_CAPACITY:
+		var evicted_key: String = String(_region_tile_cache_order[0])
+		_region_tile_cache_order.remove_at(0)
+		_region_tile_data_cache.erase(evicted_key)
+	_region_tile_cache_mutex.unlock()
+	return tile_data
+
+
+static func _region_tile_cache_touch_locked(cache_key: String) -> void:
+	var cache_index: int = _region_tile_cache_order.find(cache_key)
+	if cache_index >= 0:
+		_region_tile_cache_order.remove_at(cache_index)
+	_region_tile_cache_order.append(cache_key)
+
+
+static func _clone_region_tile_data(source_tile_data: RegionTileData) -> RegionTileData:
+	var tile_data: RegionTileData = RegionTileData.new()
+	tile_data.cell = source_tile_data.cell
+	tile_data.key = source_tile_data.key
+	tile_data.tile_size_m = source_tile_data.tile_size_m
+	tile_data.width = source_tile_data.width
+	tile_data.depth = source_tile_data.depth
+	tile_data.heightmap_path = source_tile_data.heightmap_path
+	tile_data.surface_id_path = source_tile_data.surface_id_path
+	tile_data.heights = source_tile_data.heights
+	if source_tile_data.surface_image != null:
+		tile_data.surface_image = source_tile_data.surface_image.duplicate() as Image
+	return tile_data
+
+
+static func clear_surface_index_tile_material_cache_for_tests() -> void:
+	_surface_cache_mutex.lock()
+	_surface_index_tile_material_cache.clear()
+	_surface_index_tile_material_cache_order.clear()
+	_surface_cache_mutex.unlock()
+
+
+static func surface_index_tile_material_cache_size_for_tests() -> int:
+	_surface_cache_mutex.lock()
+	var cache_size: int = _surface_index_tile_material_cache.size()
+	_surface_cache_mutex.unlock()
+	return cache_size
+
+
+static func clear_region_tile_data_cache_for_tests() -> void:
+	_region_tile_cache_mutex.lock()
+	_region_tile_data_cache.clear()
+	_region_tile_cache_order.clear()
+	_region_tile_cache_mutex.unlock()
+
+
+static func region_tile_data_cache_size_for_tests() -> int:
+	_region_tile_cache_mutex.lock()
+	var cache_size: int = _region_tile_data_cache.size()
+	_region_tile_cache_mutex.unlock()
+	return cache_size
 
 
 static func _load_json_dictionary(path: String) -> Dictionary:
@@ -2140,7 +2286,7 @@ static func _build_region_foliage_cell_data_with_audit(tile_data_by_cell: Dictio
 		var species_id: StringName = _foliage_species_for_candidate(surface_id_value, foliage_cell, lod_index, attempt, world_x, world_z)
 		if species_id == &"":
 			continue
-		var density: float = _foliage_density_for_surface_species(surface_id_value, species_id)
+		var density: float = _foliage_density_for_surface_species(surface_id_value, species_id, world_x, world_z)
 		if density <= 0.0:
 			continue
 		# Talus enrichment: boost boulder keep-probability on steep ground (cliff bases /
@@ -2878,7 +3024,7 @@ static func _foliage_density_for_surface_value(surface_id_value: int) -> float:
 	return _foliage_density_for_surface_species(surface_id_value, _foliage_species_for_surface_value(surface_id_value))
 
 
-static func _foliage_density_for_surface_species(surface_id_value: int, species_id: StringName) -> float:
+static func _foliage_density_for_surface_species(surface_id_value: int, species_id: StringName, world_x: float = -1.0, world_z: float = -1.0) -> float:
 	if not bool(TerrainSurfacePaletteResource.call("has_surface_id_value", surface_id_value)):
 		return 0.0
 	var surface_id: StringName = _surface_id_for_value(surface_id_value)
@@ -2900,6 +3046,8 @@ static func _foliage_density_for_surface_species(surface_id_value: int, species_
 		return GameConfig.scrub_density_wet_stone
 	if species_id == FOLIAGE_SPECIES_GRASS and surface_id == &"mud":
 		return GameConfig.scrub_density_mud
+	if species_id == FOLIAGE_SPECIES_GRASS and surface_id == &"loose_rock" and _foliage_is_corridor_scrub_position(world_x, world_z):
+		return GameConfig.scrub_density_loose_rock_corridor
 	if species_id == FOLIAGE_SPECIES_BOULDER and surface_id == &"packed_gravel":
 		return GameConfig.boulder_density_packed_gravel
 	if species_id == FOLIAGE_SPECIES_BOULDER and surface_id == &"loose_rock":
@@ -2962,6 +3110,14 @@ static func _talus_foliage_species_for_selector(selector: float) -> StringName:
 	return FOLIAGE_SPECIES_GRASS
 
 
+static func _corridor_loose_rock_species_for_selector(selector: float) -> StringName:
+	if selector <= GameConfig.scrub_loose_rock_corridor_grass_share:
+		return FOLIAGE_SPECIES_GRASS
+	if selector <= GameConfig.scrub_loose_rock_corridor_grass_share + GameConfig.scrub_loose_rock_corridor_shrub_share:
+		return FOLIAGE_SPECIES_SHRUB
+	return FOLIAGE_SPECIES_YUCCA
+
+
 static func _bench_foliage_selector(foliage_cell: Vector2i, lod_index: int, attempt: int) -> float:
 	var selector_a: float = _region_foliage_unit(foliage_cell, lod_index, attempt, FOLIAGE_BENCH_SELECTOR_SALT_A)
 	var selector_b: float = _region_foliage_unit(foliage_cell, lod_index, attempt, FOLIAGE_BENCH_SELECTOR_SALT_B)
@@ -2994,6 +3150,8 @@ static func _foliage_species_for_candidate(surface_id_value: int, foliage_cell: 
 	if surface_id == &"loose_rock":
 		if boulder_selector <= GameConfig.boulder_loose_rock_candidate_share:
 			return FOLIAGE_SPECIES_BOULDER
+		if _foliage_is_corridor_scrub_position(world_x, world_z):
+			return _corridor_loose_rock_species_for_selector(_surface_class_foliage_selector(foliage_cell, lod_index, attempt))
 		return _talus_foliage_species_for_selector(_surface_class_foliage_selector(foliage_cell, lod_index, attempt))
 	if surface_id == &"packed_dirt":
 		return _woodland_foliage_species_for_selector(_surface_class_foliage_selector(foliage_cell, lod_index, attempt))
@@ -3032,6 +3190,12 @@ static func _riparian_species_for_candidate(foliage_cell: Vector2i, lod_index: i
 	if selector <= 0.62:
 		return FOLIAGE_SPECIES_RIPARIAN_GRASS
 	return &""
+
+
+static func _foliage_is_corridor_scrub_position(world_x: float, world_z: float) -> bool:
+	if world_x < 0.0 or world_z < 0.0:
+		return false
+	return _distance_to_zion_river_xz(Vector2(world_x, world_z)) <= GameConfig.scrub_loose_rock_corridor_river_distance_m
 
 
 static func _riparian_gallery_density_multiplier(species_id: StringName, world_x: float, world_z: float) -> float:
@@ -3322,6 +3486,27 @@ static func clear_track_texture(parent: Node, track_texture: Texture2D) -> void:
 		_clear_track_texture_from_mesh(mesh_instance, track_texture)
 	for child in parent.get_children():
 		clear_track_texture(child, track_texture)
+
+
+static func has_track_texture(parent: Node, track_texture: Texture2D) -> bool:
+	if track_texture == null:
+		return false
+	var mesh_instance: MeshInstance3D = parent as MeshInstance3D
+	if mesh_instance != null:
+		var mesh: Mesh = mesh_instance.mesh
+		if mesh != null:
+			for surface_index in range(mesh.get_surface_count()):
+				var material: Material = mesh_instance.get_surface_override_material(surface_index)
+				if material == null:
+					material = mesh.surface_get_material(surface_index)
+				if material == null:
+					continue
+				if _material_has_track_texture(material, track_texture):
+					return true
+	for child in parent.get_children():
+		if has_track_texture(child, track_texture):
+			return true
+	return false
 
 
 static func _apply_surface_visuals_to_mesh(mesh_instance: MeshInstance3D) -> void:

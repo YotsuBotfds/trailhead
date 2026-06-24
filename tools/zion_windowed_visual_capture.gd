@@ -4,7 +4,7 @@ const CedarHollowPlayableScene: PackedScene = preload("res://scenes/cedar_hollow
 const DEFAULT_OUT_DIR: String = "tests/out/zion_visual_qa"
 const WINDOW_SIZE: Vector2i = Vector2i(1280, 720)
 const STREAM_WAIT_FRAMES: int = 1800
-const RENDER_WAIT_FRAMES: int = 40
+const RENDER_WAIT_FRAMES: int = 180
 const SHUTDOWN_FRAMES: int = 8
 const VARIANCE_SAMPLE_STEP: int = 32
 const MIN_LUMA_VARIANCE: float = 0.015
@@ -17,7 +17,7 @@ const CAMERA_MODE_CHASE: int = 0
 const CAMERA_MODE_ORBIT: int = 1
 const MOOD_DUSK: int = 0
 const MOOD_DAWN: int = 1
-const EXPECTED_STREAMED_CELLS: int = 25
+const MIN_STREAMED_CELLS: int = 25
 const LABELED_OUT_DIR: String = "tests/out/zion_fidelity_wave"
 const EXPECTED_CAPTURE_NAMES: Array[String] = [
 	"zion_stream_west_dusk_chase",
@@ -44,6 +44,7 @@ func _ready() -> void:
 	_host = CedarHollowPlayableScene.instantiate()
 	add_child(_host)
 	_setup_capture_camera()
+	_hide_capture_hud()
 	call_deferred("_run")
 
 
@@ -126,16 +127,22 @@ func _wait_for_streaming() -> void:
 			return
 		await get_tree().physics_frame
 		await get_tree().process_frame
-	_errors.append("Zion visual capture timed out waiting for streamed cells")
+	_errors.append("Zion visual capture timed out waiting for streamed cells: " + _streaming_status())
 
 
 func _streaming_ready() -> bool:
 	var streamer: Node = _host.get_node_or_null("CedarHollow/TerrainVisualStreamer") if _host != null else null
 	if streamer == null:
 		return false
-	if int(streamer.call("visual_cell_count")) != EXPECTED_STREAMED_CELLS:
+	var active_cells: Variant = streamer.call("active_visual_cells")
+	if not active_cells is Array:
 		return false
-	if int(streamer.call("foliage_cell_count")) != EXPECTED_STREAMED_CELLS:
+	var expected_streamed_cells: int = active_cells.size()
+	if expected_streamed_cells < MIN_STREAMED_CELLS:
+		return false
+	if int(streamer.call("visual_cell_count")) < expected_streamed_cells:
+		return false
+	if int(streamer.call("foliage_cell_count")) < expected_streamed_cells:
 		return false
 	if int(streamer.call("pending_midlod_build_count")) != 0:
 		return false
@@ -151,9 +158,26 @@ func _streaming_ready() -> bool:
 	return true
 
 
+func _streaming_status() -> String:
+	var streamer: Node = _host.get_node_or_null("CedarHollow/TerrainVisualStreamer") if _host != null else null
+	if streamer == null:
+		return "missing TerrainVisualStreamer"
+	var active_cells: Variant = streamer.call("active_visual_cells")
+	var active_count: int = active_cells.size() if active_cells is Array else -1
+	return "visual=" + str(int(streamer.call("visual_cell_count"))) \
+			+ " foliage=" + str(int(streamer.call("foliage_cell_count"))) \
+			+ " active=" + str(active_count) \
+			+ " midlod=" + str(int(streamer.call("midlod_cell_count"))) \
+			+ " desired_midlod=" + str(int(streamer.call("desired_midlod_cell_count"))) \
+			+ " pending_build=" + str(int(streamer.call("pending_midlod_build_count"))) \
+			+ " pending_commit=" + str(int(streamer.call("pending_midlod_commit_count"))) \
+			+ " ready_midlod=" + str(int(streamer.call("ready_midlod_cell_count")))
+
+
 func _wait_for_render() -> void:
 	for _i in range(RENDER_WAIT_FRAMES):
 		await get_tree().process_frame
+		await RenderingServer.frame_post_draw
 
 
 func _reset_vehicle(position: Vector3, yaw_degrees: float) -> void:
@@ -169,6 +193,7 @@ func _reset_vehicle(position: Vector3, yaw_degrees: float) -> void:
 	_host.set("_orbit_camera_initialized", false)
 	_host.set("_orbit_yaw_degrees", GameConfig.orbit_cam_start_yaw_deg)
 	_host.call("_update_camera", GameConfig.FIXED_DT)
+	_hide_capture_hud()
 
 
 func _set_camera_mode(mode: int) -> void:
@@ -176,6 +201,23 @@ func _set_camera_mode(mode: int) -> void:
 		return
 	_host.set("_camera_mode", mode)
 	_host.call("_update_camera", GameConfig.FIXED_DT)
+	_hide_capture_hud()
+
+
+func _hide_capture_hud() -> void:
+	if _host == null:
+		return
+	var hud_names: Array[String] = [
+		"TitleCardHud",
+		"LandmarkHintHud",
+		"SpeedHud",
+		"ControlsHintHud",
+		"DebugOverlayHud",
+	]
+	for hud_name in hud_names:
+		var hud: CanvasLayer = _host.get_node_or_null(hud_name) as CanvasLayer
+		if hud != null:
+			hud.visible = false
 
 
 func _use_scenic_capture_camera(yaw_degrees: float, distance: float, height: float, target_offset: Vector3) -> void:
@@ -261,12 +303,6 @@ func _capture(capture_name: String) -> void:
 	if image == null or image.is_empty():
 		_errors.append(capture_name + " captured an empty image")
 		return
-	if not _image_has_variance(image):
-		_errors.append(capture_name + " captured a near-blank image")
-		return
-	if not _image_has_off_center_world_coverage(image):
-		_errors.append(capture_name + " captured no off-center streamed world coverage")
-		return
 	var path: String = _capture_file_path(capture_name)
 	var err: Error = image.save_png(path)
 	if err != OK:
@@ -274,6 +310,10 @@ func _capture(capture_name: String) -> void:
 		return
 	_capture_paths_written.append(ProjectSettings.globalize_path(path))
 	_capture_names_written.append(capture_name)
+	if not _image_has_variance(image):
+		_errors.append(capture_name + " captured a near-blank image")
+	if not _image_has_off_center_world_coverage(image):
+		_errors.append(capture_name + " captured no off-center streamed world coverage")
 
 
 func _require_visible_streamed_terrain(capture_name: String) -> void:

@@ -229,7 +229,8 @@ func _physics_process(delta: float) -> void:
 	_sample_golden_line()
 	_update_visual_wheels(delta)
 	_update_terrain_tracks()
-	_update_camera(delta)
+	if _runtime_camera_updates_enabled():
+		_update_camera(delta)
 
 
 func _process(delta: float) -> void:
@@ -1144,16 +1145,19 @@ func _update_visual_wheels(delta: float) -> void:
 		return
 	var state: RefCounted = _vehicle.call("get_state")
 	var acceleration: Vector3 = _visual_acceleration(state, delta)
-	_update_vehicle_residue_visual(state)
+	if _vehicle_residue_runtime_updates_enabled():
+		_update_vehicle_residue_visual(state)
 	_update_vehicle_visual_body(state, acceleration, delta)
 	_update_whip_antenna_visual(state, acceleration, delta)
-	_update_grass_crush(state)
-	var tail_material: StandardMaterial3D = ProceduralBuggyVisualScript.get_tail_light_material(_vehicle_visual_root)
-	if tail_material != null:
-		var braking: float = float(_vehicle_input.get("brake"))
-		var ebrake: bool = bool(_vehicle_input.get("ebrake"))
-		var glowing: bool = braking > 0.0 or ebrake
-		tail_material.emission_energy_multiplier = GameConfig.brake_light_energy if glowing else 0.0
+	if _runtime_shader_feedback_enabled():
+		_update_grass_crush(state)
+	if _runtime_shader_feedback_enabled():
+		var tail_material: StandardMaterial3D = ProceduralBuggyVisualScript.get_tail_light_material(_vehicle_visual_root)
+		if tail_material != null:
+			var braking: float = float(_vehicle_input.get("brake"))
+			var ebrake: bool = bool(_vehicle_input.get("ebrake"))
+			var glowing: bool = braking > 0.0 or ebrake
+			tail_material.emission_energy_multiplier = GameConfig.brake_light_energy if glowing else 0.0
 	if _wheel_sockets.is_empty():
 		return
 	ProceduralBuggyVisualScript.sync_wheel_socket_heights(_vehicle_visual_root, _wheel_sockets, state)
@@ -1348,6 +1352,18 @@ func _update_vehicle_residue_visual(state: RefCounted) -> void:
 	_vehicle_residue_visual.call("apply_state", _vehicle_visual_root, state)
 
 
+func _vehicle_residue_runtime_updates_enabled() -> bool:
+	return DisplayServer.get_name() != &"headless"
+
+
+func _runtime_shader_feedback_enabled() -> bool:
+	return DisplayServer.get_name() != &"headless"
+
+
+func _runtime_camera_updates_enabled() -> bool:
+	return DisplayServer.get_name() != &"headless"
+
+
 func _update_terrain_tracks() -> void:
 	if _terrain_track_painter == null:
 		return
@@ -1445,6 +1461,13 @@ func _sync_track_apply_queue(active_cells: Array, bounds_min: Vector2, bounds_ma
 			continue
 		if force_refresh or not _track_applied_cells.has(cell):
 			_queue_track_apply_cell(cell)
+			continue
+		# Streamed visual tiles can be swapped during full-res upgrades; re-queue
+		# if the fresh node no longer carries the track overlay we recorded.
+		var visual_cell: Node = _visual_cell_node(cell)
+		if visual_cell == null or not TerrainVisualBuilderScript.has_track_texture(visual_cell, _track_last_texture):
+			_track_applied_cells.erase(cell)
+			_queue_track_apply_cell(cell)
 	for applied_cell_variant in _track_applied_cells.keys():
 		var applied_cell: Vector2i = applied_cell_variant
 		if not active_lookup.has(applied_cell):
@@ -1476,6 +1499,7 @@ func _clear_track_apply_cell(cell: Vector2i) -> void:
 
 func _drain_track_apply_queue(track_texture: Texture2D, bounds_min: Vector2, bounds_max: Vector2) -> void:
 	var applied_count: int = 0
+	var not_ready_cells: Array[Vector2i] = []
 	while applied_count < TRACK_APPLY_CELLS_PER_FRAME and not _track_apply_queue.is_empty():
 		var cell: Vector2i = _track_apply_queue.pop_front()
 		_track_apply_queue_lookup.erase(cell)
@@ -1483,10 +1507,13 @@ func _drain_track_apply_queue(track_texture: Texture2D, bounds_min: Vector2, bou
 			continue
 		var visual_cell: Node = _visual_cell_node(cell)
 		if visual_cell == null:
+			not_ready_cells.append(cell)
 			continue
 		TerrainVisualBuilderScript.apply_track_texture(visual_cell, track_texture, bounds_min, bounds_max)
 		_track_applied_cells[cell] = true
 		applied_count += 1
+	for cell in not_ready_cells:
+		_queue_track_apply_cell(cell)
 
 
 func _visual_cell_node(cell: Vector2i) -> Node:

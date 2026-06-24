@@ -156,6 +156,11 @@ func _require_stream_roots(visual_root: Node) -> void:
 
 
 func _require_pipeline_warmup(warmup_root: Node) -> void:
+	if not bool(warmup_root.get_meta(TerrainVisualBuilderScript.PIPELINE_WARMUP_TRANSIENT_META, false)):
+		_errors.append("PipelineWarmup should declare its transient warmup contract")
+	var release_frames: int = int(warmup_root.get_meta(TerrainVisualBuilderScript.PIPELINE_WARMUP_RELEASE_FRAMES_META, -1))
+	if release_frames != TerrainVisualBuilderScript.PIPELINE_WARMUP_RELEASE_AFTER_FRAMES:
+		_errors.append("PipelineWarmup release frames expected " + str(TerrainVisualBuilderScript.PIPELINE_WARMUP_RELEASE_AFTER_FRAMES) + ", got " + str(release_frames))
 	var foliage_warmup_count: int = _require_int_meta(
 		warmup_root,
 		TerrainVisualBuilderScript.PIPELINE_WARMUP_FOLIAGE_LOD_COUNT_META,

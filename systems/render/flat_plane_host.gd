@@ -39,7 +39,8 @@ func _physics_process(delta: float) -> void:
 	_update_vehicle_input()
 	_vehicle.call("apply_input", _vehicle_input)
 	_update_visual_wheels(delta)
-	_update_camera(delta)
+	if _runtime_camera_updates_enabled():
+		_update_camera(delta)
 
 
 func _ensure_default_input_map() -> void:
@@ -158,7 +159,8 @@ func _collect_visual_wheels() -> void:
 
 func _update_visual_wheels(delta: float) -> void:
 	var state: RefCounted = _vehicle.call("get_state")
-	_update_vehicle_residue_visual(state)
+	if _vehicle_residue_runtime_updates_enabled():
+		_update_vehicle_residue_visual(state)
 	if _wheel_sockets.is_empty():
 		return
 	ProceduralBuggyVisualScript.sync_wheel_socket_heights(_vehicle_visual_root, _wheel_sockets, state)
@@ -182,6 +184,14 @@ func _update_vehicle_residue_visual(state: RefCounted) -> void:
 	if _vehicle_visual_root == null:
 		return
 	_vehicle_residue_visual.call("apply_state", _vehicle_visual_root, state)
+
+
+func _vehicle_residue_runtime_updates_enabled() -> bool:
+	return DisplayServer.get_name() != &"headless"
+
+
+func _runtime_camera_updates_enabled() -> bool:
+	return DisplayServer.get_name() != &"headless"
 
 
 func _wheel_mesh_for_socket(socket: Node3D) -> Node3D:
