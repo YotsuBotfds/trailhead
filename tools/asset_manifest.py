@@ -67,8 +67,10 @@ GENERATED_ASSETS = {
     ],
     "foliage": [
         "cottonwood.glb",
+        "cottonwood_candidate.glb",
         "juniper.glb",
         "willow.glb",
+        "willow_candidate.glb",
         "yucca.glb",
     ],
     "terrain": terrain_asset_filenames(),

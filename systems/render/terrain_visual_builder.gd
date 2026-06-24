@@ -144,17 +144,28 @@ const FOLIAGE_SPECIES_WILLOW: StringName = &"willow"
 const FOLIAGE_SPECIES_COTTONWOOD: StringName = &"cottonwood"
 const FOLIAGE_SPECIES_BOULDER: StringName = &"boulder"
 const FOLIAGE_SPECIES_LIST: Array[StringName] = [FOLIAGE_SPECIES_GRASS, FOLIAGE_SPECIES_RIPARIAN_GRASS, FOLIAGE_SPECIES_SHRUB, FOLIAGE_SPECIES_YUCCA, FOLIAGE_SPECIES_JUNIPER, FOLIAGE_SPECIES_WILLOW, FOLIAGE_SPECIES_COTTONWOOD, FOLIAGE_SPECIES_BOULDER]
-const FOLIAGE_SPECIES_GRASS_COLOR: Color = Color(0.58, 0.66, 0.38, 0.92)
-const FOLIAGE_SPECIES_RIPARIAN_GRASS_COLOR: Color = Color(0.42, 0.55, 0.28, 0.92)
-const FOLIAGE_SPECIES_SHRUB_COLOR: Color = Color(0.62, 0.58, 0.34, 0.94)
-const FOLIAGE_SHRUB_RABBITBRUSH_COLOR: Color = Color(0.80, 0.70, 0.30, 0.95)
-const FOLIAGE_SHRUB_SAGE_COLOR: Color = Color(0.55, 0.58, 0.45, 0.95)
-const FOLIAGE_SHRUB_MORMON_TEA_COLOR: Color = Color(0.42, 0.46, 0.30, 0.95)
-const FOLIAGE_SPECIES_YUCCA_COLOR: Color = Color(0.557, 0.608, 0.471, 0.95)
-const FOLIAGE_SPECIES_JUNIPER_COLOR: Color = Color(0.165, 0.259, 0.157, 0.97)
-const FOLIAGE_SPECIES_WILLOW_COLOR: Color = Color(0.29, 0.45, 0.22, 0.95)
-const FOLIAGE_SPECIES_COTTONWOOD_COLOR: Color = Color(0.36, 0.52, 0.26, 0.96)
+# Zion foliage identity palette (art-direction bible §2): varied desert-riparian species
+# colors, with dusk tints kept muted so the river corridor reads botanical instead of rainbow.
+const FOLIAGE_SPECIES_GRASS_COLOR: Color = Color(0.64, 0.53, 0.25, 0.92)
+const FOLIAGE_SPECIES_RIPARIAN_GRASS_COLOR: Color = Color(0.18, 0.28, 0.08, 0.92)
+const FOLIAGE_SPECIES_SHRUB_COLOR: Color = Color(0.46, 0.50, 0.39, 0.94)
+const FOLIAGE_SHRUB_RABBITBRUSH_COLOR: Color = Color(0.72, 0.62, 0.26, 0.95)
+const FOLIAGE_SHRUB_SAGE_COLOR: Color = Color(0.44, 0.50, 0.42, 0.95)
+const FOLIAGE_SHRUB_MORMON_TEA_COLOR: Color = Color(0.31, 0.39, 0.27, 0.95)
+const FOLIAGE_SPECIES_YUCCA_COLOR: Color = Color(0.36, 0.43, 0.30, 0.95)
+const FOLIAGE_SPECIES_JUNIPER_COLOR: Color = Color(0.14, 0.22, 0.16, 0.97)
+const FOLIAGE_SPECIES_WILLOW_COLOR: Color = Color(0.22, 0.27, 0.11, 0.95)
+const FOLIAGE_SPECIES_COTTONWOOD_COLOR: Color = Color(0.27, 0.39, 0.075, 0.96)
 const FOLIAGE_SPECIES_BOULDER_COLOR: Color = Color(0.69, 0.47, 0.31, 1.0)
+const FOLIAGE_SPECIES_GRASS_DUSK_TINT: Color = Color(0.76, 0.55, 0.30, 0.92)
+const FOLIAGE_SPECIES_RIPARIAN_GRASS_DUSK_TINT: Color = Color(0.23, 0.29, 0.11, 0.92)
+const FOLIAGE_SPECIES_SHRUB_DUSK_TINT: Color = Color(0.52, 0.46, 0.34, 0.94)
+const FOLIAGE_SPECIES_YUCCA_DUSK_TINT: Color = Color(0.42, 0.43, 0.31, 0.95)
+const FOLIAGE_SPECIES_JUNIPER_DUSK_TINT: Color = Color(0.17, 0.22, 0.16, 0.97)
+const FOLIAGE_SPECIES_WILLOW_DUSK_TINT: Color = Color(0.25, 0.27, 0.13, 0.95)
+const FOLIAGE_SPECIES_COTTONWOOD_DUSK_TINT: Color = Color(0.34, 0.35, 0.10, 0.96)
+const FOLIAGE_SPECIES_MATERIAL_DUSK_STRENGTH: float = 0.18
+const FOLIAGE_SPECIES_INSTANCE_DUSK_JITTER: float = 0.18
 # Lane-D demo triage: keep Zion foliage lush without the graded rim/tips reading neon.
 const FOLIAGE_NEON_TAME_TIP_BOOST: Vector3 = Vector3(1.12, 1.08, 1.02)
 const FOLIAGE_NEON_TAME_BACKLIGHT_ENERGY: float = 0.10
@@ -2619,7 +2630,7 @@ static func _region_foliage_material_for_lod_species(lod_index: int, species_id:
 		var boulder_material: Material = _region_boulder_material("region_foliage_boulder_lod" + str(safe_lod_index) + "_material")
 		_foliage_material_cache[cache_key] = boulder_material
 		return boulder_material
-	var material_color: Color = _foliage_color_for_species(species_id)
+	var material_color: Color = _foliage_material_color_for_species(species_id)
 	if safe_lod_index > 0:
 		material_color = material_color.lerp(Color(0.30, 0.32, 0.24, material_color.a), 0.22)
 	var blade_height_reference: float = _foliage_base_scale_for_lod_species(safe_lod_index, species_id).y
@@ -2694,22 +2705,50 @@ static func _region_foliage_mesh(mesh_name: String) -> ArrayMesh:
 
 
 static func _region_yucca_mesh(mesh_name: String, _lod_index: int) -> Mesh:
-	return _extract_first_mesh(YuccaTreeScene, mesh_name)
+	return _extract_first_mesh(YuccaTreeScene, mesh_name, FOLIAGE_SPECIES_YUCCA)
 
 
 static func _region_juniper_mesh(mesh_name: String, _lod_index: int) -> Mesh:
-	return _extract_first_mesh(JuniperTreeScene, mesh_name)
+	return _extract_first_mesh(JuniperTreeScene, mesh_name, FOLIAGE_SPECIES_JUNIPER)
 
 
-static func _region_willow_mesh(mesh_name: String, _lod_index: int) -> Mesh:
-	return _extract_first_mesh(WillowTreeScene, mesh_name)
+static func _region_willow_mesh(mesh_name: String, lod_index: int) -> Mesh:
+	var lod_node_names: Array[String] = [
+		"willow_lod" + str(lod_index),
+	]
+	return _extract_named_or_first_mesh(WillowTreeScene, mesh_name, lod_node_names, FOLIAGE_SPECIES_WILLOW)
 
 
-static func _region_cottonwood_mesh(mesh_name: String, _lod_index: int) -> Mesh:
-	return _extract_first_mesh(CottonwoodTreeScene, mesh_name)
+static func _region_cottonwood_mesh(mesh_name: String, lod_index: int) -> Mesh:
+	var lod_node_names: Array[String] = [
+		"cottonwood_lod" + str(lod_index),
+	]
+	return _extract_named_or_first_mesh(CottonwoodTreeScene, mesh_name, lod_node_names, FOLIAGE_SPECIES_COTTONWOOD)
 
 
-static func _extract_first_mesh(scene: PackedScene, node_name: String) -> Mesh:
+static func _extract_named_or_first_mesh(scene: PackedScene, node_name: String, lod_node_names: Array[String], species_id: StringName = &"") -> Mesh:
+	var root: Node = scene.instantiate()
+	if root == null:
+		push_error("TerrainVisualBuilder: failed to instantiate " + node_name)
+		return null
+	var mesh: Mesh = null
+	for name_index in range(lod_node_names.size()):
+		var lod_node_name: String = lod_node_names[name_index]
+		mesh = _find_mesh_by_node_name(root, lod_node_name)
+		if mesh != null:
+			break
+	if mesh == null:
+		mesh = _find_first_mesh(root)
+	root.free()
+	if mesh == null:
+		push_error("TerrainVisualBuilder: failed to extract mesh from " + node_name)
+		return null
+	if species_id != &"":
+		return _source_foliage_mesh_with_species_materials(mesh, node_name, species_id)
+	return mesh
+
+
+static func _extract_first_mesh(scene: PackedScene, node_name: String, species_id: StringName = &"") -> Mesh:
 	var root: Node = scene.instantiate()
 	if root == null:
 		push_error("TerrainVisualBuilder: failed to instantiate " + node_name)
@@ -2718,6 +2757,9 @@ static func _extract_first_mesh(scene: PackedScene, node_name: String) -> Mesh:
 	root.free()
 	if mesh == null:
 		push_error("TerrainVisualBuilder: failed to extract mesh from " + node_name)
+		return null
+	if species_id != &"":
+		return _source_foliage_mesh_with_species_materials(mesh, node_name, species_id)
 	return mesh
 
 
@@ -2730,6 +2772,48 @@ static func _find_first_mesh(parent: Node) -> Mesh:
 		if child_mesh != null:
 			return child_mesh
 	return null
+
+
+static func _find_mesh_by_node_name(parent: Node, target_name: String) -> Mesh:
+	if String(parent.name) == target_name:
+		var mesh_instance: MeshInstance3D = parent as MeshInstance3D
+		if mesh_instance != null and mesh_instance.mesh != null:
+			return mesh_instance.mesh
+	for child in parent.get_children():
+		var child_mesh: Mesh = _find_mesh_by_node_name(child, target_name)
+		if child_mesh != null:
+			return child_mesh
+	return null
+
+
+static func _source_foliage_mesh_with_species_materials(source_mesh: Mesh, mesh_name: String, species_id: StringName) -> Mesh:
+	var mesh: ArrayMesh = source_mesh.duplicate(true) as ArrayMesh
+	if mesh == null:
+		return source_mesh
+	mesh.resource_name = mesh_name
+	for surface_index in range(mesh.get_surface_count()):
+		var source_material: StandardMaterial3D = mesh.surface_get_material(surface_index) as StandardMaterial3D
+		if source_material == null:
+			continue
+		var material: StandardMaterial3D = source_material.duplicate(true) as StandardMaterial3D
+		if material == null:
+			continue
+		if _foliage_source_material_is_leaf(species_id, material, surface_index):
+			# GLB species intentionally keep no material_override; tint cloned leaf surfaces here
+			# so bark/source-material rendering and the streamer warmup contract stay intact.
+			var leaf_color: Color = _foliage_material_color_for_species(species_id)
+			material.albedo_color = Color(leaf_color.r, leaf_color.g, leaf_color.b, material.albedo_color.a)
+		mesh.surface_set_material(surface_index, material)
+	return mesh
+
+
+static func _foliage_source_material_is_leaf(species_id: StringName, material: StandardMaterial3D, surface_index: int) -> bool:
+	var material_name: String = material.resource_name.to_lower()
+	if material_name.find("leaf") >= 0 or material_name.find("leaves") >= 0:
+		return true
+	if species_id == FOLIAGE_SPECIES_YUCCA:
+		return surface_index == 0
+	return surface_index == 1
 
 
 static func _region_boulder_mesh(mesh_name: String, lod_index: int) -> ArrayMesh:
@@ -3329,6 +3413,31 @@ static func _foliage_color_for_species(species_id: StringName) -> Color:
 	return FOLIAGE_SPECIES_GRASS_COLOR
 
 
+static func _foliage_dusk_tint_for_species(species_id: StringName) -> Color:
+	if species_id == FOLIAGE_SPECIES_RIPARIAN_GRASS:
+		return FOLIAGE_SPECIES_RIPARIAN_GRASS_DUSK_TINT
+	if species_id == FOLIAGE_SPECIES_SHRUB:
+		return FOLIAGE_SPECIES_SHRUB_DUSK_TINT
+	if species_id == FOLIAGE_SPECIES_YUCCA:
+		return FOLIAGE_SPECIES_YUCCA_DUSK_TINT
+	if species_id == FOLIAGE_SPECIES_JUNIPER:
+		return FOLIAGE_SPECIES_JUNIPER_DUSK_TINT
+	if species_id == FOLIAGE_SPECIES_WILLOW:
+		return FOLIAGE_SPECIES_WILLOW_DUSK_TINT
+	if species_id == FOLIAGE_SPECIES_COTTONWOOD:
+		return FOLIAGE_SPECIES_COTTONWOOD_DUSK_TINT
+	if species_id == FOLIAGE_SPECIES_BOULDER:
+		return FOLIAGE_SPECIES_BOULDER_COLOR
+	return FOLIAGE_SPECIES_GRASS_DUSK_TINT
+
+
+static func _foliage_material_color_for_species(species_id: StringName) -> Color:
+	var base_color: Color = _foliage_color_for_species(species_id)
+	if species_id == FOLIAGE_SPECIES_BOULDER:
+		return base_color
+	return base_color.lerp(_foliage_dusk_tint_for_species(species_id), FOLIAGE_SPECIES_MATERIAL_DUSK_STRENGTH)
+
+
 static func _foliage_shrub_variant_color(selector: float) -> Color:
 	if selector < 0.34:
 		return FOLIAGE_SHRUB_RABBITBRUSH_COLOR
@@ -3339,10 +3448,13 @@ static func _foliage_shrub_variant_color(selector: float) -> Color:
 
 static func _foliage_instance_color(species_id: StringName, color_warmth: float) -> Color:
 	var base_color: Color = _foliage_color_for_species(species_id)
+	if species_id == FOLIAGE_SPECIES_BOULDER:
+		return base_color
 	if species_id == FOLIAGE_SPECIES_SHRUB:
 		base_color = _foliage_shrub_variant_color(color_warmth)
-	var warm_color: Color = Color(minf(base_color.r * 1.16, 1.0), minf(base_color.g * 1.10, 1.0), minf(base_color.b * 1.06, 1.0), 1.0)
-	return base_color.lerp(warm_color, color_warmth)
+	var dusk_color: Color = _foliage_dusk_tint_for_species(species_id)
+	var dusk_amount: float = clampf(FOLIAGE_SPECIES_MATERIAL_DUSK_STRENGTH + color_warmth * FOLIAGE_SPECIES_INSTANCE_DUSK_JITTER, 0.0, 1.0)
+	return base_color.lerp(dusk_color, dusk_amount)
 
 
 static func _grass_clump_offset_m(foliage_cell: Vector2i, lod_index: int, attempt: int, axis: int) -> float:
