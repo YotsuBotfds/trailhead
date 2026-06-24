@@ -110,6 +110,22 @@ static func _directional_shadow_mode(mode: int) -> int:
 			return DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
 
 
+static func _glow_blend_mode(mode: int) -> int:
+	match mode:
+		Environment.GLOW_BLEND_MODE_ADDITIVE:
+			return Environment.GLOW_BLEND_MODE_ADDITIVE
+		Environment.GLOW_BLEND_MODE_SCREEN:
+			return Environment.GLOW_BLEND_MODE_SCREEN
+		Environment.GLOW_BLEND_MODE_SOFTLIGHT:
+			return Environment.GLOW_BLEND_MODE_SOFTLIGHT
+		Environment.GLOW_BLEND_MODE_REPLACE:
+			return Environment.GLOW_BLEND_MODE_REPLACE
+		Environment.GLOW_BLEND_MODE_MIX:
+			return Environment.GLOW_BLEND_MODE_MIX
+		_:
+			return Environment.GLOW_BLEND_MODE_SOFTLIGHT
+
+
 static func _apply_mood_environment(environment: Environment, mood: int) -> void:
 	environment.fog_enabled = true
 	if mood == MOOD_NIGHT:
@@ -169,6 +185,7 @@ static func _apply_volumetric_fog(environment: Environment, mood: int) -> void:
 static func _apply_golden_hour_glow(environment: Environment, mood: int) -> void:
 	environment.glow_enabled = true
 	environment.glow_normalized = true
+	environment.glow_blend_mode = _glow_blend_mode(GameConfig.atmosphere_glow_blend_mode)
 	environment.glow_bloom = GLOW_BLOOM
 	if mood == MOOD_NIGHT:
 		environment.glow_intensity = NIGHT_GLOW_INTENSITY
@@ -200,6 +217,8 @@ static func _apply_screen_space_grounding(environment: Environment) -> void:
 	environment.ssao_enabled = GameConfig.atmosphere_ssao_enabled
 	environment.ssao_radius = maxf(GameConfig.atmosphere_ssao_radius, 0.0)
 	environment.ssao_intensity = maxf(GameConfig.atmosphere_ssao_intensity, 0.0)
+	environment.ssao_power = maxf(GameConfig.atmosphere_ssao_power, 0.0)
+	environment.ssao_detail = maxf(GameConfig.atmosphere_ssao_detail, 0.0)
 	environment.ssao_light_affect = clampf(GameConfig.atmosphere_ssao_light_affect, 0.0, 1.0)
 	environment.ssil_enabled = GameConfig.atmosphere_ssil_enabled
 	environment.ssil_radius = maxf(GameConfig.atmosphere_ssil_radius, 0.0)
