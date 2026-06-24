@@ -365,7 +365,7 @@ func _shape_from_heightmap_data(heightmap_data: Dictionary) -> HeightMapShape3D:
 	return shape
 
 
-func _load_heightmap_data(cell: Vector2i, sidecar_path: String, heightmap_path: String, build_shape: bool) -> Dictionary:
+func _load_heightmap_data(cell: Vector2i, sidecar_path: String, heightmap_path: String) -> Dictionary:
 	var result: Dictionary = {
 		"ok": false,
 		"cell": cell,
@@ -434,12 +434,7 @@ func _load_heightmap_data(cell: Vector2i, sidecar_path: String, heightmap_path: 
 	result["width"] = width
 	result["depth"] = depth
 	result["map_data"] = map_data
-	# Only build the HeightMapShape3D here when the caller wants it inline
-	# (worker<2 / synchronous golden path). In the production ≥2-worker path the
-	# build is deferred to the main-thread prebuild queue to keep the heavy
-	# deferred `shape_set_data` flush off the cell-crossing physics tick.
-	if build_shape:
-		result["shape"] = _shape_from_heightmap_data(result)
+	result["shape"] = _shape_from_heightmap_data(result)
 	return result
 
 
@@ -494,23 +489,11 @@ func _enqueue_build(cell: Vector2i) -> void:
 		return
 
 	_queued_builds[cell] = true
-	# Production (≥2 workers) defers the HeightMapShape3D realization to the
-	# MAIN-thread prebuild queue (drained as cells become ready, ahead of the
-	# car) instead of building it on the worker. A worker-side `map_data =`
-	# assignment is command-queued by PhysicsServer3DWrapMT and the heavy
-	# heightfield `shape_set_data` build only executes later, batched, on the
-	# main physics thread — that batched flush at a cell crossing IS the
-	# multi-second freeze.
-	# The single-/zero-worker path keeps the worker/synchronous inline build so
-	# its deterministic golden baselines (activation order/ticks) stay
-	# byte-identical (the shape is consumed directly at activation there).
-	var build_shape_on_load: bool = _worker_count < 2
 	var job: Dictionary = {
 		"cell": cell,
 		"generation": _stream_generation,
 		"sidecar_path": _tile_sidecar_path(cell),
 		"heightmap_path": _tile_heightmap_path(cell),
-		"build_shape": build_shape_on_load,
 	}
 	_work_mutex.lock()
 	_cancelled_builds.erase(cell)
@@ -634,7 +617,7 @@ func _drain_worker_results() -> void:
 
 
 func _drain_prebuild_queue() -> void:
-	var budget: int = _prebuild_drain_budget()
+	var budget: int = maxi(GameConfig.stream_collision_prebuild_per_tick, 0)
 	while budget > 0 and not _prebuild_queue.is_empty():
 		var cell: Vector2i = _prebuild_queue.pop_front()
 		if (
@@ -645,22 +628,6 @@ func _drain_prebuild_queue() -> void:
 		):
 			_prebuilt_shapes_by_cell[cell] = _shape_from_heightmap_data(_heightmap_data_by_cell[cell])
 			budget -= 1
-
-
-func _prebuild_drain_budget() -> int:
-	# In the production ≥2-worker path the prebuild queue is the ONLY place the
-	# HeightMapShape3D is realized (the worker no longer builds it — see
-	# `_enqueue_build`), so it must keep pace with the rate cells become ready
-	# (the result-drain cap). Cells become ready gradually as the car approaches
-	# (the prefetch ring leads ~400 m), so draining at that cap warms them as
-	# they arrive — never a backlog that bursts on a crossing tick — while the
-	# fixed-position bulk fill (spawn / the workers≥2 fixture) still converges
-	# inside the activation budget window. The worker<2 / synchronous path builds
-	# the shape inline at load, so its prebuild queue is a no-op and keeps the
-	# GameConfig per-tick budget (golden baselines unchanged).
-	if _worker_count < 2:
-		return maxi(GameConfig.stream_collision_prebuild_per_tick, 0)
-	return maxi(GameConfig.stream_collision_result_drains_per_tick, 1)
 
 
 func _enqueue_prebuild(cell: Vector2i) -> void:
@@ -850,8 +817,7 @@ func _process_build_queue_synchronously() -> void:
 		var result: Dictionary = _load_heightmap_data(
 			cell,
 			String(job["sidecar_path"]),
-			String(job["heightmap_path"]),
-			bool(job.get("build_shape", true))
+			String(job["heightmap_path"])
 		)
 		result["generation"] = generation
 
@@ -895,8 +861,7 @@ func _worker_loop() -> void:
 		var result: Dictionary = _load_heightmap_data(
 			cell,
 			String(job["sidecar_path"]),
-			String(job["heightmap_path"]),
-			bool(job.get("build_shape", true))
+			String(job["heightmap_path"])
 		)
 		result["generation"] = generation
 
