@@ -28,6 +28,16 @@ const JuniperTreeScene: PackedScene = preload("res://assets/models/foliage/junip
 const YuccaTreeScene: PackedScene = preload("res://assets/models/foliage/yucca.glb")
 const DETAIL_MASK_TEXTURE_PATH: String = "res://assets/textures/surface_visuals/generated/terrain_detail_mask.png"
 const GENERATED_SURFACE_TEXTURE_DIR: String = "res://assets/textures/surface_visuals/generated/"
+# CC0 bark PBR (C1): one shared furrowed riparian bark wired onto every trunk/stem/stalk surface of
+# the foliage GLBs (which ship with zero textures). Per-species bark albedo_color tints differentiate
+# trunk hue. ARM is a packed Poly Haven map (AO=R, Roughness=G, Metallic=B). Render-only, golden-safe.
+const FOLIAGE_BARK_ALBEDO_TEXTURE_PATH: String = "res://assets/textures/foliage/bark_willow_albedo.jpg"
+const FOLIAGE_BARK_NORMAL_TEXTURE_PATH: String = "res://assets/textures/foliage/bark_willow_normal.jpg"
+const FOLIAGE_BARK_ARM_TEXTURE_PATH: String = "res://assets/textures/foliage/bark_willow_arm.jpg"
+# Lighten each surface's imported bark baseColorFactor toward this so the texture reads (it is
+# multiplied by the albedo tint), without fully dropping the per-species hue — lerp strength below.
+const FOLIAGE_BARK_ALBEDO_LIGHTEN_TARGET: Color = Color(0.85, 0.82, 0.78, 1.0)
+const FOLIAGE_BARK_ALBEDO_LIGHTEN_STRENGTH: float = 0.6
 const TEXTURE_SOURCE_PATH_META: StringName = &"trailhead_source_path"
 const SURFACE_INDEX_LAYER_COUNT: int = 8
 const SURFACE_INDEX_ARRAY_CACHE_DIR: String = "user://trailhead/terrain_surface_index_arrays"
@@ -43,6 +53,10 @@ static var _surface_index_tile_material_cache: Dictionary[String, ShaderMaterial
 static var _surface_index_tile_material_cache_order: PackedStringArray = PackedStringArray()
 static var _foliage_mesh_cache: Dictionary[String, Mesh] = {}
 static var _foliage_material_cache: Dictionary[String, Material] = {}
+static var _foliage_bark_textures_loaded: bool = false
+static var _foliage_bark_albedo_texture: Texture2D = null
+static var _foliage_bark_normal_texture: Texture2D = null
+static var _foliage_bark_arm_texture: Texture2D = null
 static var _surface_index_albedo_array_cache: Texture2DArray = null
 static var _surface_index_normal_array_cache: Texture2DArray = null
 static var _surface_index_macro_albedo_cache: Texture2D = null
@@ -2833,8 +2847,57 @@ static func _source_foliage_mesh_with_species_materials(source_mesh: Mesh, mesh_
 				# roughness toward matte and disable the specular lobe. Colour is unchanged.
 				material.roughness = maxf(material.roughness, 0.9)
 				material.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
+		elif _foliage_source_material_is_bark(material):
+			# C1 Approach A: the foliage GLBs ship with zero textures, so trunks read as flat
+			# pale pillars. Bark/stem/stalk surfaces have clean cone-projected UVs, so a real
+			# CC0 bark PBR can be wired material-only (no GLB/mesh/count change — golden-safe).
+			# albedo_color is multiplied by the albedo texture: lighten it toward near-white so
+			# the texture reads, but keep the per-species hue so willow/cottonwood/juniper/yucca
+			# trunks stay distinct. Leaf surfaces are untouched (handled above).
+			_apply_foliage_bark_pbr(material)
 		mesh.surface_set_material(surface_index, material)
 	return mesh
+
+
+static func _ensure_foliage_bark_textures_loaded() -> void:
+	if _foliage_bark_textures_loaded:
+		return
+	_foliage_bark_textures_loaded = true
+	if ResourceLoader.exists(FOLIAGE_BARK_ALBEDO_TEXTURE_PATH):
+		_foliage_bark_albedo_texture = load(FOLIAGE_BARK_ALBEDO_TEXTURE_PATH) as Texture2D
+	if ResourceLoader.exists(FOLIAGE_BARK_NORMAL_TEXTURE_PATH):
+		_foliage_bark_normal_texture = load(FOLIAGE_BARK_NORMAL_TEXTURE_PATH) as Texture2D
+	if ResourceLoader.exists(FOLIAGE_BARK_ARM_TEXTURE_PATH):
+		_foliage_bark_arm_texture = load(FOLIAGE_BARK_ARM_TEXTURE_PATH) as Texture2D
+
+
+static func _apply_foliage_bark_pbr(material: StandardMaterial3D) -> void:
+	_ensure_foliage_bark_textures_loaded()
+	if _foliage_bark_albedo_texture == null:
+		# Texture not on disk (or import not built yet): leave the imported flat bark colour
+		# untouched so the build still renders rather than going pure-white.
+		return
+	var tint: Color = material.albedo_color
+	material.albedo_color = Color(
+		lerpf(tint.r, FOLIAGE_BARK_ALBEDO_LIGHTEN_TARGET.r, FOLIAGE_BARK_ALBEDO_LIGHTEN_STRENGTH),
+		lerpf(tint.g, FOLIAGE_BARK_ALBEDO_LIGHTEN_TARGET.g, FOLIAGE_BARK_ALBEDO_LIGHTEN_STRENGTH),
+		lerpf(tint.b, FOLIAGE_BARK_ALBEDO_LIGHTEN_TARGET.b, FOLIAGE_BARK_ALBEDO_LIGHTEN_STRENGTH),
+		tint.a
+	)
+	material.albedo_texture = _foliage_bark_albedo_texture
+	if _foliage_bark_normal_texture != null:
+		material.normal_enabled = true
+		material.normal_texture = _foliage_bark_normal_texture
+		material.normal_scale = 1.0
+	if _foliage_bark_arm_texture != null:
+		# Poly Haven ARM packs AO=R, Roughness=G, Metallic=B. Drive roughness from GREEN and AO
+		# from RED off the single packed texture; keep the roughness scalar at its imported value
+		# (multiplied through) so the texture controls relief. Metallic stays 0 (bark is dielectric).
+		material.roughness_texture = _foliage_bark_arm_texture
+		material.roughness_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_GREEN
+		material.ao_enabled = true
+		material.ao_texture = _foliage_bark_arm_texture
+		material.ao_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_RED
 
 
 static func _foliage_source_material_is_leaf(species_id: StringName, material: StandardMaterial3D, surface_index: int) -> bool:
@@ -2844,6 +2907,15 @@ static func _foliage_source_material_is_leaf(species_id: StringName, material: S
 	if species_id == FOLIAGE_SPECIES_YUCCA:
 		return surface_index == 0
 	return surface_index == 1
+
+
+static func _foliage_source_material_is_bark(material: StandardMaterial3D) -> bool:
+	# Wire the bark PBR only onto woody trunk/stem/stalk surfaces (clean cone UVs). Matches the
+	# GLB material names: willow *_bark_stems_mat / *_stems_mat, cottonwood *_bark_mat, juniper
+	# *_shaggy_bark, yucca *_flower_stalk. Excludes yucca spine tips and flowers (no atlas) — and
+	# leaves are already routed to the leaf branch before this is reached.
+	var material_name: String = material.resource_name.to_lower()
+	return material_name.find("bark") >= 0 or material_name.find("stem") >= 0 or material_name.find("stalk") >= 0
 
 
 static func _region_boulder_mesh(mesh_name: String, lod_index: int) -> ArrayMesh:
