@@ -2,10 +2,17 @@
 
 importer="texture"
 type="CompressedTexture2D"
+uid="uid://dfw2slbumoage"
+path.bptc="res://.godot/imported/bark006_normal.jpg-b5fca485c2fa6ee0d66dd8cd8dee731e.bptc.ctex"
+metadata={
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
+}
 
 [deps]
 
 source_file="res://assets/textures/foliage/bark006_normal.jpg"
+dest_files=["res://.godot/imported/bark006_normal.jpg-b5fca485c2fa6ee0d66dd8cd8dee731e.bptc.ctex"]
 
 [params]
 

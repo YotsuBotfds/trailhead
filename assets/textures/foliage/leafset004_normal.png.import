@@ -2,10 +2,17 @@
 
 importer="texture"
 type="CompressedTexture2D"
+uid="uid://oyvb8d07diqt"
+path.bptc="res://.godot/imported/leafset004_normal.png-71dc83c98b733ce8e44b3e7964a8434f.bptc.ctex"
+metadata={
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
+}
 
 [deps]
 
 source_file="res://assets/textures/foliage/leafset004_normal.png"
+dest_files=["res://.godot/imported/leafset004_normal.png-71dc83c98b733ce8e44b3e7964a8434f.bptc.ctex"]
 
 [params]
 

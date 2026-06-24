@@ -2,10 +2,17 @@
 
 importer="texture"
 type="CompressedTexture2D"
+uid="uid://p3y68a4irf2x"
+path.bptc="res://.godot/imported/leafset004_roughness.png-53295240aae8b7f347f1bc75786e1687.bptc.ctex"
+metadata={
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
+}
 
 [deps]
 
 source_file="res://assets/textures/foliage/leafset004_roughness.png"
+dest_files=["res://.godot/imported/leafset004_roughness.png-53295240aae8b7f347f1bc75786e1687.bptc.ctex"]
 
 [params]
 

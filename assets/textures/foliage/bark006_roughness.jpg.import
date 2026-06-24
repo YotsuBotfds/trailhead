@@ -2,10 +2,17 @@
 
 importer="texture"
 type="CompressedTexture2D"
+uid="uid://dxj7o5wwst67y"
+path.bptc="res://.godot/imported/bark006_roughness.jpg-629d27cebd07f2322e29d2559dc7d3e4.bptc.ctex"
+metadata={
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
+}
 
 [deps]
 
 source_file="res://assets/textures/foliage/bark006_roughness.jpg"
+dest_files=["res://.godot/imported/bark006_roughness.jpg-629d27cebd07f2322e29d2559dc7d3e4.bptc.ctex"]
 
 [params]
 

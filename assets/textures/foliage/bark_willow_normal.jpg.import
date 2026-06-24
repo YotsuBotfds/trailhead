@@ -2,10 +2,17 @@
 
 importer="texture"
 type="CompressedTexture2D"
+uid="uid://b7uk4qvtkbox1"
+path.bptc="res://.godot/imported/bark_willow_normal.jpg-58567a1fd540e0a9184f687eec212f8d.bptc.ctex"
+metadata={
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
+}
 
 [deps]
 
 source_file="res://assets/textures/foliage/bark_willow_normal.jpg"
+dest_files=["res://.godot/imported/bark_willow_normal.jpg-58567a1fd540e0a9184f687eec212f8d.bptc.ctex"]
 
 [params]
 

@@ -2,10 +2,17 @@
 
 importer="texture"
 type="CompressedTexture2D"
+uid="uid://cpbe18xpbnfp"
+path.bptc="res://.godot/imported/bark006_albedo.jpg-122879bb9a646df3646d0eac1f6d2356.bptc.ctex"
+metadata={
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
+}
 
 [deps]
 
 source_file="res://assets/textures/foliage/bark006_albedo.jpg"
+dest_files=["res://.godot/imported/bark006_albedo.jpg-122879bb9a646df3646d0eac1f6d2356.bptc.ctex"]
 
 [params]
 

@@ -2,10 +2,17 @@
 
 importer="texture"
 type="CompressedTexture2D"
+uid="uid://bctno8lep62wt"
+path.bptc="res://.godot/imported/leafset004_atlas_rgba.png-3b13bfb978cc0bfd3b6da8c7761b8515.bptc.ctex"
+metadata={
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
+}
 
 [deps]
 
 source_file="res://assets/textures/foliage/leafset004_atlas_rgba.png"
+dest_files=["res://.godot/imported/leafset004_atlas_rgba.png-3b13bfb978cc0bfd3b6da8c7761b8515.bptc.ctex"]
 
 [params]
 

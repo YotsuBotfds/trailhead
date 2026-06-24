@@ -2,10 +2,17 @@
 
 importer="texture"
 type="CompressedTexture2D"
+uid="uid://cb2d10hbig0ap"
+path.bptc="res://.godot/imported/leafset004_opacity.png-db8515f2c8e7bb3082bd9dbda001613f.bptc.ctex"
+metadata={
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
+}
 
 [deps]
 
 source_file="res://assets/textures/foliage/leafset004_opacity.png"
+dest_files=["res://.godot/imported/leafset004_opacity.png-db8515f2c8e7bb3082bd9dbda001613f.bptc.ctex"]
 
 [params]
 
