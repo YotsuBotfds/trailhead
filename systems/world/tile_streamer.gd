@@ -37,6 +37,12 @@ var _sort_origin_cell: Vector2i = Vector2i.ZERO
 var _cell_distance_less_callable: Callable = Callable()
 var _has_manifest_tile_cells: bool = false
 var _manifest_tile_cells: Dictionary[Vector2i, bool] = {}
+var _desired_active_cells_cache: Array[Vector2i] = []
+var _desired_active_cells_cache_cell: Vector2i = Vector2i.ZERO
+var _desired_active_cells_cache_radius: int = -1
+var _desired_active_cells_dirty: bool = true
+var _sorted_body_cells_cache: Array[Vector2i] = []
+var _sorted_body_cells_dirty: bool = true
 
 var _ready_flags: Dictionary[Vector2i, bool] = {}
 var _heightmap_data_by_cell: Dictionary[Vector2i, Dictionary] = {}
@@ -163,6 +169,7 @@ func reset() -> void:
 	_last_to_load.clear()
 	_last_to_unload.clear()
 	_unload_all_active_bodies()
+	_clear_cell_caches()
 	_ready_flags.clear()
 	_heightmap_data_by_cell.clear()
 	_active_shapes_by_cell.clear()
@@ -238,8 +245,11 @@ func _physics_process(_delta: float) -> void:
 	_drain_prebuild_queue()
 
 	var sampled_world_position: Vector3 = _sample_world_position()
-	_current_cell = _cell_for_world_position(sampled_world_position)
-	var desired_active_cells: Array[Vector2i] = _cells_in_radius(_current_cell, GameConfig.STREAM_ACTIVE_RADIUS)
+	var sampled_cell: Vector2i = _cell_for_world_position(sampled_world_position)
+	if sampled_cell != _current_cell:
+		_current_cell = sampled_cell
+		_desired_active_cells_dirty = true
+	var desired_active_cells: Array[Vector2i] = _desired_active_cells_for_current_cell()
 	var desired_prefetch_cells: Array[Vector2i] = _prefetch_cells_for_sample(sampled_world_position, _current_cell)
 	var travel_ahead_prebuild_cells: Array[Vector2i] = _travel_ahead_prebuild_cells(sampled_world_position, _current_cell)
 	var current_active_cells: Array[Vector2i] = _sorted_body_cells()
@@ -351,6 +361,7 @@ func _activate_cell(cell: Vector2i) -> bool:
 	)
 	PhysicsServer3D.body_set_space(body_rid, _physics_space())
 	_active_bodies_by_cell[cell] = body_rid
+	_sorted_body_cells_dirty = true
 	_active_shapes_by_cell[cell] = shape
 	_activated_ticks_by_cell[cell] = _stream_tick
 	EventBus.world_tile_activated.emit(cell)
@@ -693,6 +704,7 @@ func _evict_cell_now(cell: Vector2i) -> void:
 		PhysicsServer3D.body_set_space(body_rid, RID())
 		PhysicsServer3D.free_rid(body_rid)
 	_active_bodies_by_cell.erase(cell)
+	_sorted_body_cells_dirty = true
 	_active_shapes_by_cell.erase(cell)
 	_activated_ticks_by_cell.erase(cell)
 	_ready_flags.erase(cell)
@@ -880,6 +892,7 @@ func _unload_all_active_bodies() -> void:
 			PhysicsServer3D.body_set_space(body_rid, RID())
 			PhysicsServer3D.free_rid(body_rid)
 	_active_bodies_by_cell.clear()
+	_sorted_body_cells_dirty = true
 	_active_shapes_by_cell.clear()
 	_activated_ticks_by_cell.clear()
 
@@ -1020,6 +1033,7 @@ func _deactivate_cell_for_tests(cell: Vector2i) -> void:
 		PhysicsServer3D.body_set_space(body_rid, RID())
 		PhysicsServer3D.free_rid(body_rid)
 	_active_bodies_by_cell.erase(cell)
+	_sorted_body_cells_dirty = true
 	_active_shapes_by_cell.erase(cell)
 	_activated_ticks_by_cell.erase(cell)
 
@@ -1042,9 +1056,12 @@ func _cells_in_radius(center_cell: Vector2i, radius: int) -> Array[Vector2i]:
 
 
 func _cell_difference(left_cells: Array[Vector2i], right_cells: Array[Vector2i]) -> Array[Vector2i]:
+	var right_lookup: Dictionary[Vector2i, bool] = {}
+	for cell in right_cells:
+		right_lookup[cell] = true
 	var difference: Array[Vector2i] = []
 	for cell in left_cells:
-		if not right_cells.has(cell):
+		if not right_lookup.has(cell):
 			difference.append(cell)
 	_sort_cells(difference)
 	return difference
@@ -1074,11 +1091,36 @@ func _cell_distance_less(left: Vector2i, right: Vector2i) -> bool:
 
 
 func _sorted_body_cells() -> Array[Vector2i]:
-	var cells: Array[Vector2i] = []
-	for cell in _active_bodies_by_cell.keys():
-		cells.append(cell)
-	_sort_cells(cells)
-	return cells
+	if _sorted_body_cells_dirty:
+		_sorted_body_cells_cache.clear()
+		for cell in _active_bodies_by_cell.keys():
+			_sorted_body_cells_cache.append(cell)
+		_sort_cells(_sorted_body_cells_cache)
+		_sorted_body_cells_dirty = false
+	return _copy_cells(_sorted_body_cells_cache)
+
+
+func _desired_active_cells_for_current_cell() -> Array[Vector2i]:
+	var active_radius: int = GameConfig.STREAM_ACTIVE_RADIUS
+	if (
+		_desired_active_cells_dirty
+		or _desired_active_cells_cache_cell != _current_cell
+		or _desired_active_cells_cache_radius != active_radius
+	):
+		_desired_active_cells_cache = _cells_in_radius(_current_cell, active_radius)
+		_desired_active_cells_cache_cell = _current_cell
+		_desired_active_cells_cache_radius = active_radius
+		_desired_active_cells_dirty = false
+	return _copy_cells(_desired_active_cells_cache)
+
+
+func _clear_cell_caches() -> void:
+	_desired_active_cells_cache.clear()
+	_desired_active_cells_cache_cell = Vector2i.ZERO
+	_desired_active_cells_cache_radius = -1
+	_desired_active_cells_dirty = true
+	_sorted_body_cells_cache.clear()
+	_sorted_body_cells_dirty = true
 
 
 func _sorted_ready_cells() -> Array[Vector2i]:
