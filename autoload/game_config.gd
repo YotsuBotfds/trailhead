@@ -541,6 +541,36 @@ var buggy_body_rim_enabled: bool = true
 var buggy_body_rim_energy: float = 0.35
 var buggy_cage_metallic: float = 0.85
 var buggy_cage_roughness: float = 0.34
+# --- Buggy PBR material response (FIDELITY): a conservative per-surface-class
+# light-response pass layered over the GLB-baked materials so the hero vehicle
+# reads as painted bodywork / rubber / metal / glass instead of flat plastic
+# against the photoreal Zion world. Albedo/colors are NEVER touched here -- only
+# metallic / roughness / specular response. Classified by the GLB material's
+# resource_name (body_mat, wheel_tire_mat, wheel_rim_mat, ...). Surfaces that
+# can't be confidently classified fall back to a safe satin-plastic neutral
+# (rough 0.6, metallic 0) rather than a guessed metallic. Render-only +
+# golden-neutral (sim/collision use shapes, not these materials). Default ON;
+# flip false to revert to the bare GLB-baked look.
+var buggy_pbr_response_enabled: bool = true
+# Painted body: a subtle metallic_specular bump so highlights form on bodywork
+# (layered onto the existing clearcoat duplicate in _apply_clearcoat).
+var buggy_body_specular: float = 0.6
+# Tires / rubber: matte.
+var buggy_tire_roughness: float = 0.92
+var buggy_tire_metallic: float = 0.0
+# Bare polished metal (wheel rims, hub caps, shock hardware).
+var buggy_metal_roughness: float = 0.32
+var buggy_metal_metallic: float = 1.0
+# Cast / blasted metal (skid plate, exhaust) -- metal, but rougher than polished.
+var buggy_cast_metal_roughness: float = 0.42
+var buggy_cast_metal_metallic: float = 1.0
+# Glass / clear canopy: smooth.
+var buggy_glass_roughness: float = 0.08
+var buggy_glass_metallic: float = 0.0
+# Safe neutral for unclassified dark trim (top deck, suspension arms, vents,
+# grille, antenna, fender lips, number marks): satin plastic, no guessed metal.
+var buggy_neutral_roughness: float = 0.6
+var buggy_neutral_metallic: float = 0.0
 var brake_light_energy: float = 1.8
 # --- Headlight tunables (Q46): promoted from procedural_buggy_visual.gd local
 # consts so the golden-hour cones are live-tunable. Range tightened from 6.0 m

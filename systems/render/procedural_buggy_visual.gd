@@ -11,6 +11,37 @@ const CLEARCOAT_MATERIAL_TOKENS: Array[String] = [
 	"fender_flare",
 	"side_number_plate"
 ]
+# FIDELITY PBR-response classification. Keyed on the exact GLB material
+# resource_name (see tools/generate_vehicle_glbs.py). Painted body, the roll
+# cage, and the emissive lenses (headlight_lens_mat / tail_light_lens_mat) are
+# handled by their own dedicated paths (_apply_clearcoat, _apply_roll_cage_polish,
+# _apply_*_emission) and are intentionally EXCLUDED here so this pass never
+# fights them. Everything else gets a conservative per-class light response;
+# anything unlisted falls through to the safe satin-plastic neutral.
+const TIRE_MATERIAL_NAMES: Array[String] = ["wheel_tire_mat"]
+const POLISHED_METAL_MATERIAL_NAMES: Array[String] = [
+	"wheel_rim_mat",
+	"wheel_hub_mat",
+	"shock_hardware_mat"
+]
+const CAST_METAL_MATERIAL_NAMES: Array[String] = [
+	"skid_plate_mat",
+	"exhaust_mat"
+]
+const GLASS_MATERIAL_NAMES: Array[String] = ["canopy_mat"]
+# Materials owned by other paths -- skipped by the generic response pass.
+const PBR_RESPONSE_EXCLUDED_NAMES: Array[String] = [
+	"headlight_lens_mat",
+	"tail_light_lens_mat",
+	"cage_side_mat",
+	"cage_top_mat",
+	"cage_crossbar_mat",
+	"wing_panel_mat",
+	"wing_stanchion_mat",
+	"bumper_bar_mat",
+	"bumper_upright_mat",
+	"roll_cage_detail_mat"
+]
 const CHASSIS_DROP_NODE_NAMES: Array[StringName] = [
 	&"body",
 	&"nose",
@@ -166,6 +197,7 @@ static func _apply_vehicle_render_tuning(node: Node) -> void:
 		geometry.visibility_range_end = maxf(GameConfig.vis_range_vehicle, 0.0)
 	var mesh_instance: MeshInstance3D = node as MeshInstance3D
 	if mesh_instance != null:
+		_apply_pbr_response(mesh_instance)
 		_apply_clearcoat(mesh_instance)
 		_apply_roll_cage_polish(mesh_instance)
 		if mesh_instance.name == TAIL_LIGHT_NODE_NAME:
@@ -199,6 +231,12 @@ static func _apply_clearcoat(mesh_instance: MeshInstance3D) -> void:
 		# the authored two-tone survives. The GLB already carries a low metallic for
 		# these panels; this re-asserts it from GameConfig so the flake is tunable.
 		tuned_material.metallic = clampf(GameConfig.buggy_body_metallic, 0.0, 1.0)
+		# FIDELITY: a subtle metallic_specular bump so a sharper highlight forms on
+		# the painted shells under golden-hour sun (the GLB bake gives the body real
+		# roughness but no specular lift). Roughness/albedo are left exactly as the
+		# clearcoat/GLB authored them.
+		if GameConfig.buggy_pbr_response_enabled:
+			tuned_material.metallic_specular = clampf(GameConfig.buggy_body_specular, 0.0, 1.0)
 		tuned_material.rim_enabled = GameConfig.buggy_body_rim_enabled
 		# Cap the fresnel rim so it doesn't read as a self-lit underglow on saturated
 		# paint (see BUGGY_BODY_RIM_GROUNDED_CAP).
@@ -239,6 +277,51 @@ static func _is_clearcoat_body_material(material_name: String) -> bool:
 		if material_name.contains(token):
 			return true
 	return false
+
+
+# FIDELITY: conservative per-surface-class PBR light response. Walks the mesh
+# surfaces and re-asserts metallic / roughness / specular per material class so
+# the hero buggy reads as painted bodywork, rubber, metal and glass rather than
+# flat plastic. Albedo/colors are never touched. Painted body, the cage family
+# and the emissive lenses are owned by dedicated paths and skipped here. Anything
+# not confidently classified falls back to a safe satin-plastic neutral instead
+# of a guessed metallic.
+static func _apply_pbr_response(mesh_instance: MeshInstance3D) -> void:
+	if not GameConfig.buggy_pbr_response_enabled:
+		return
+	var mesh: Mesh = mesh_instance.mesh
+	if mesh == null:
+		return
+	for surface_index in range(mesh.get_surface_count()):
+		var material: StandardMaterial3D = mesh.surface_get_material(surface_index) as StandardMaterial3D
+		if material == null:
+			continue
+		var material_name: String = material.resource_name
+		# Painted body shells + cage family + emissive lenses are tuned elsewhere.
+		if _is_clearcoat_body_material(material_name):
+			continue
+		if PBR_RESPONSE_EXCLUDED_NAMES.has(material_name):
+			continue
+		var target_roughness: float = clampf(GameConfig.buggy_neutral_roughness, 0.0, 1.0)
+		var target_metallic: float = clampf(GameConfig.buggy_neutral_metallic, 0.0, 1.0)
+		if TIRE_MATERIAL_NAMES.has(material_name):
+			target_roughness = clampf(GameConfig.buggy_tire_roughness, 0.0, 1.0)
+			target_metallic = clampf(GameConfig.buggy_tire_metallic, 0.0, 1.0)
+		elif POLISHED_METAL_MATERIAL_NAMES.has(material_name):
+			target_roughness = clampf(GameConfig.buggy_metal_roughness, 0.0, 1.0)
+			target_metallic = clampf(GameConfig.buggy_metal_metallic, 0.0, 1.0)
+		elif CAST_METAL_MATERIAL_NAMES.has(material_name):
+			target_roughness = clampf(GameConfig.buggy_cast_metal_roughness, 0.0, 1.0)
+			target_metallic = clampf(GameConfig.buggy_cast_metal_metallic, 0.0, 1.0)
+		elif GLASS_MATERIAL_NAMES.has(material_name):
+			target_roughness = clampf(GameConfig.buggy_glass_roughness, 0.0, 1.0)
+			target_metallic = clampf(GameConfig.buggy_glass_metallic, 0.0, 1.0)
+		var tuned_material: StandardMaterial3D = material.duplicate() as StandardMaterial3D
+		if tuned_material == null:
+			continue
+		tuned_material.roughness = target_roughness
+		tuned_material.metallic = target_metallic
+		mesh.surface_set_material(surface_index, tuned_material)
 
 
 static func _apply_tail_light_emission(mesh_instance: MeshInstance3D) -> void:
