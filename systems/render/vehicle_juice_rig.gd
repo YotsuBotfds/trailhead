@@ -47,6 +47,10 @@ const PEBBLE_BURST_PROCESS_SCALE_MAX: float = 0.82
 const PEBBLE_COLOR_DARKEN: float = 0.72
 const PEBBLE_COLOR_MIN_CHANNEL: float = 0.14
 const PEBBLE_COLOR_MAX_CHANNEL: float = 0.68
+const SOFT_DUST_MATERIAL_META: StringName = &"vehicle_juice_soft_radial_alpha"
+const SOFT_DUST_TEXTURE_SIZE: int = 32
+const SOFT_DUST_INNER_RADIUS: float = 0.18
+const SOFT_DUST_OUTER_RADIUS: float = 0.96
 
 var _vehicle: Node = null
 var _camera: Camera3D = null
@@ -67,6 +71,8 @@ var _dust_kick_boost: float = 0.0
 var _was_hard_accel: bool = false
 var _was_sliding: bool = false
 var _hard_drive_ratio: float = 0.0
+var _drive_chatter_phase: float = 0.0
+var _soft_dust_texture: Texture2D = null
 
 
 func _ready() -> void:
@@ -129,6 +135,7 @@ func _update_from_vehicle_state() -> void:
 	var linear_velocity: Vector3 = state.get("linear_velocity")
 	_previous_speed = _last_speed
 	_last_speed = linear_velocity.length()
+	_surface_id = _contact_surface_from_state(state, _surface_id)
 	if on_ground and not _previous_on_ground:
 		var impact_speed: float = maxf(-_previous_vertical_velocity, 0.0)
 		if impact_speed >= GameConfig.cam_shake_landing_speed_threshold:
@@ -187,16 +194,77 @@ func _update_dust_kick_events(state: RefCounted, linear_velocity: Vector3) -> vo
 func _update_camera_shake(delta: float) -> void:
 	if _camera == null:
 		return
-	if _shake_strength <= 0.001:
-		_camera.h_offset = 0.0
-		_camera.v_offset = 0.0
+	var landing_h_offset: float = 0.0
+	var landing_v_offset: float = 0.0
+	if _shake_strength > 0.001:
+		var max_offset: float = maxf(GameConfig.cam_shake_max_offset, 0.0)
+		var phase: float = _shake_strength * 11.0
+		landing_h_offset = sin(phase * 1.7) * max_offset * _shake_strength
+		landing_v_offset = cos(phase * 2.1) * max_offset * 0.6 * _shake_strength
+		_shake_strength = maxf(0.0, _shake_strength - maxf(GameConfig.cam_shake_decay, 0.1) * delta)
+	else:
 		_shake_strength = 0.0
-		return
-	var max_offset: float = maxf(GameConfig.cam_shake_max_offset, 0.0)
-	var phase: float = _shake_strength * 11.0
-	_camera.h_offset = sin(phase * 1.7) * max_offset * _shake_strength
-	_camera.v_offset = cos(phase * 2.1) * max_offset * 0.6 * _shake_strength
-	_shake_strength = maxf(0.0, _shake_strength - maxf(GameConfig.cam_shake_decay, 0.1) * delta)
+	var chatter_strength: float = _drive_chatter_strength()
+	var chatter_h_offset: float = 0.0
+	var chatter_v_offset: float = 0.0
+	if chatter_strength > 0.001:
+		_drive_chatter_phase = fposmod(
+			_drive_chatter_phase + maxf(GameConfig.cam_drive_chatter_frequency_hz, 0.1) * delta * TAU,
+			TAU
+		)
+		var chatter_max_offset: float = maxf(GameConfig.cam_drive_chatter_max_offset, 0.0)
+		chatter_h_offset = sin(_drive_chatter_phase * 1.13) * chatter_max_offset * chatter_strength
+		chatter_v_offset = cos(_drive_chatter_phase * 1.71) * chatter_max_offset * 0.65 * chatter_strength
+	_camera.h_offset = landing_h_offset + chatter_h_offset
+	_camera.v_offset = landing_v_offset + chatter_v_offset
+
+
+func _contact_surface_from_state(state: RefCounted, fallback: StringName) -> StringName:
+	var wheel_contact: Array[bool] = state.get("wheel_contact")
+	var wheel_surfaces: Array[StringName] = state.get("wheel_surface")
+	var wheel_count: int = mini(wheel_contact.size(), wheel_surfaces.size())
+	for wheel_index in range(wheel_count):
+		var surface_id: StringName = wheel_surfaces[wheel_index]
+		if bool(wheel_contact[wheel_index]) and surface_id != &"":
+			return surface_id
+	return fallback
+
+
+func _drive_chatter_strength() -> float:
+	if not GameConfig.cam_drive_chatter_enabled:
+		return 0.0
+	if _vehicle == null:
+		return 0.0
+	var speed_floor: float = maxf(GameConfig.cam_drive_chatter_speed_threshold, 0.001)
+	var speed_full: float = maxf(GameConfig.cam_drive_chatter_speed_full, speed_floor + 0.001)
+	var speed_ratio: float = clampf((_last_speed - speed_floor) / (speed_full - speed_floor), 0.0, 1.0)
+	if speed_ratio <= 0.0:
+		return 0.0
+	return speed_ratio * _drive_chatter_surface_gain(_surface_id)
+
+
+func _drive_chatter_surface_gain(surface_id: StringName) -> float:
+	if surface_id == &"loose_rock":
+		return 1.0
+	if surface_id == &"sand_wash":
+		return 0.82
+	if surface_id == &"mud":
+		return 0.74
+	if surface_id == &"tall_grass":
+		return 0.68
+	if surface_id == &"packed_gravel":
+		return 0.66
+	if surface_id == &"wet_stone":
+		return 0.54
+	if surface_id == &"packed_dirt":
+		return 0.48
+	if surface_id == &"wood_plank":
+		return 0.42
+	if surface_id == &"slickrock_dry":
+		return 0.28
+	if surface_id == &"paved_road":
+		return 0.18
+	return 0.50
 
 
 func _update_squash(delta: float) -> void:
@@ -233,9 +301,64 @@ func _emit_surface_burst(surface_id: StringName, position: Vector3) -> void:
 	var particles: GPUParticles3D = _burst_for_surface(surface_id)
 	if particles == null:
 		return
-	particles.global_position = position + Vector3.UP * 0.035
+	var origin: Vector3 = _surface_burst_position_for(surface_id, position)
+	particles.global_position = origin + Vector3.UP * WHEEL_DUST_HEIGHT_OFFSET
 	particles.restart()
 	particles.emitting = true
+
+
+func _surface_burst_position_for(surface_id: StringName, fallback_position: Vector3) -> Vector3:
+	if _vehicle == null:
+		return fallback_position
+	var state: RefCounted = _vehicle.call("get_state") as RefCounted
+	if state == null:
+		return fallback_position
+	var wheel_contact: Array[bool] = state.get("wheel_contact")
+	var wheel_surfaces: Array[StringName] = state.get("wheel_surface")
+	var wheel_hit_points: Array[Vector3] = state.get("wheel_hit_point")
+	var rear_surface_sum: Vector3 = Vector3.ZERO
+	var rear_surface_count: int = 0
+	for wheel_index in range(REAR_WHEEL_START_INDEX, WHEEL_COUNT):
+		if _wheel_contact_matches(wheel_index, surface_id, wheel_contact, wheel_surfaces, wheel_hit_points, true):
+			rear_surface_sum += wheel_hit_points[wheel_index]
+			rear_surface_count += 1
+	if rear_surface_count > 0:
+		return rear_surface_sum / float(rear_surface_count)
+	var any_surface_sum: Vector3 = Vector3.ZERO
+	var any_surface_count: int = 0
+	for wheel_index in range(WHEEL_COUNT):
+		if _wheel_contact_matches(wheel_index, surface_id, wheel_contact, wheel_surfaces, wheel_hit_points, true):
+			any_surface_sum += wheel_hit_points[wheel_index]
+			any_surface_count += 1
+	if any_surface_count > 0:
+		return any_surface_sum / float(any_surface_count)
+	var rear_contact_sum: Vector3 = Vector3.ZERO
+	var rear_contact_count: int = 0
+	for wheel_index in range(REAR_WHEEL_START_INDEX, WHEEL_COUNT):
+		if _wheel_contact_matches(wheel_index, surface_id, wheel_contact, wheel_surfaces, wheel_hit_points, false):
+			rear_contact_sum += wheel_hit_points[wheel_index]
+			rear_contact_count += 1
+	if rear_contact_count > 0:
+		return rear_contact_sum / float(rear_contact_count)
+	return fallback_position
+
+
+func _wheel_contact_matches(
+		wheel_index: int,
+		surface_id: StringName,
+		wheel_contact: Array[bool],
+		wheel_surfaces: Array[StringName],
+		wheel_hit_points: Array[Vector3],
+		require_surface: bool) -> bool:
+	if wheel_index < 0 or wheel_index >= wheel_contact.size() or wheel_index >= wheel_hit_points.size():
+		return false
+	if not bool(wheel_contact[wheel_index]):
+		return false
+	if require_surface:
+		if surface_id == &"" or wheel_index >= wheel_surfaces.size():
+			return false
+		return wheel_surfaces[wheel_index] == surface_id
+	return true
 
 
 func _burst_for_surface(surface_id: StringName) -> GPUParticles3D:
@@ -298,14 +421,41 @@ func _burst_process_material(color: Color, particle_scale: float) -> ParticlePro
 func _burst_mesh(node_name: String, color: Color, particle_scale: float) -> QuadMesh:
 	var mesh: QuadMesh = QuadMesh.new()
 	mesh.size = Vector2(particle_scale, particle_scale)
+	mesh.material = _soft_dust_billboard_material(node_name + "_material", color)
+	return mesh
+
+
+func _soft_dust_billboard_material(material_name: String, color: Color) -> StandardMaterial3D:
 	var material: StandardMaterial3D = StandardMaterial3D.new()
-	material.resource_name = node_name + "_material"
+	material.resource_name = material_name
 	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	material.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
 	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	material.albedo_color = color
-	mesh.material = material
-	return mesh
+	material.albedo_texture = _soft_dust_alpha_texture()
+	material.set_meta(SOFT_DUST_MATERIAL_META, true)
+	return material
+
+
+func _soft_dust_alpha_texture() -> Texture2D:
+	if _soft_dust_texture != null:
+		return _soft_dust_texture
+	var image: Image = Image.create(SOFT_DUST_TEXTURE_SIZE, SOFT_DUST_TEXTURE_SIZE, false, Image.FORMAT_RGBA8)
+	var texture_size: float = float(SOFT_DUST_TEXTURE_SIZE)
+	var fade_span: float = maxf(SOFT_DUST_OUTER_RADIUS - SOFT_DUST_INNER_RADIUS, 0.001)
+	for y in range(SOFT_DUST_TEXTURE_SIZE):
+		for x in range(SOFT_DUST_TEXTURE_SIZE):
+			var uv: Vector2 = Vector2(
+				((float(x) + 0.5) / texture_size) * 2.0 - 1.0,
+				((float(y) + 0.5) / texture_size) * 2.0 - 1.0
+			)
+			var edge_ratio: float = clampf((uv.length() - SOFT_DUST_INNER_RADIUS) / fade_span, 0.0, 1.0)
+			var smooth_edge: float = edge_ratio * edge_ratio * (3.0 - 2.0 * edge_ratio)
+			var alpha: float = (1.0 - smooth_edge) * (1.0 - smooth_edge)
+			image.set_pixel(x, y, Color(1.0, 1.0, 1.0, alpha))
+	_soft_dust_texture = ImageTexture.create_from_image(image)
+	_soft_dust_texture.set_meta(SOFT_DUST_MATERIAL_META, true)
+	return _soft_dust_texture
 
 
 # === W3-DUST: continuous wheel dust + spray ============================================
@@ -550,13 +700,7 @@ func _wheel_dust_process_material() -> ParticleProcessMaterial:
 func _wheel_dust_mesh() -> QuadMesh:
 	var mesh: QuadMesh = QuadMesh.new()
 	mesh.size = Vector2(WHEEL_DUST_BILLBOARD_SCALE, WHEEL_DUST_BILLBOARD_SCALE)
-	var material: StandardMaterial3D = StandardMaterial3D.new()
-	material.resource_name = "wheel_dust_billboard_material"
-	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	material.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
-	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	material.albedo_color = Color.WHITE
-	mesh.material = material
+	mesh.material = _soft_dust_billboard_material("wheel_dust_billboard_material", Color.WHITE)
 	return mesh
 
 
@@ -631,13 +775,7 @@ func _rooster_process_material() -> ParticleProcessMaterial:
 func _rooster_dust_mesh() -> QuadMesh:
 	var mesh: QuadMesh = QuadMesh.new()
 	mesh.size = Vector2(ROOSTER_BILLBOARD_SCALE, ROOSTER_BILLBOARD_SCALE)
-	var material: StandardMaterial3D = StandardMaterial3D.new()
-	material.resource_name = "rear_rooster_dust_material"
-	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	material.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
-	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	material.albedo_color = Color.WHITE
-	mesh.material = material
+	mesh.material = _soft_dust_billboard_material("rear_rooster_dust_material", Color.WHITE)
 	return mesh
 
 
@@ -804,13 +942,7 @@ func _landing_ring_process_material() -> ParticleProcessMaterial:
 func _landing_ring_mesh() -> QuadMesh:
 	var mesh: QuadMesh = QuadMesh.new()
 	mesh.size = Vector2(GameConfig.landing_ring_scale, GameConfig.landing_ring_scale)
-	var material: StandardMaterial3D = StandardMaterial3D.new()
-	material.resource_name = "landing_dust_ring_material"
-	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	material.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
-	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	material.albedo_color = Color.WHITE
-	mesh.material = material
+	mesh.material = _soft_dust_billboard_material("landing_dust_ring_material", Color.WHITE)
 	return mesh
 
 

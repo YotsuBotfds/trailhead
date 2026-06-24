@@ -25,10 +25,38 @@ const EXPECTED_VOLUMETRIC_FOG_VOLUME_DEPTH: int = 16
 const VOLUMETRIC_FOG_USE_FILTER_SETTING_PATH: String = "rendering/environment/volumetric_fog/use_filter"
 const EXPECTED_VOLUMETRIC_FOG_USE_FILTER: int = 1
 const PEBBLE_MATERIAL_META: StringName = &"vehicle_juice_pebble_material"
+const SOFT_DUST_MATERIAL_META: StringName = &"vehicle_juice_soft_radial_alpha"
 const VEHICLE_WHEEL_COUNT: int = 4
 const REAR_ROOSTER_COUNT: int = 2
 const PEBBLE_DRAW_MESH_MAX_EXTENT: float = 0.030
 const BARE_WHITE_CHANNEL: float = 0.92
+const ACTIVE_PARTICLE_RATIO_FLOOR: float = 0.01
+
+
+class FakeJuiceVehicleState:
+	extends RefCounted
+
+	var on_ground: bool = true
+	var linear_velocity: Vector3 = Vector3.ZERO
+	var position: Vector3 = Vector3.ZERO
+	var wheel_contact: Array[bool] = [true, true, true, true]
+	var wheel_surface: Array[StringName] = [&"sand_wash", &"sand_wash", &"loose_rock", &"loose_rock"]
+	var wheel_hit_point: Array[Vector3] = [
+		Vector3(-0.38, 0.0, -0.42),
+		Vector3(0.38, 0.0, -0.42),
+		Vector3(-0.38, 0.0, 0.42),
+		Vector3(0.38, 0.0, 0.42),
+	]
+	var basis: Basis = Basis.IDENTITY
+
+
+class FakeJuiceVehicle:
+	extends Node
+
+	var state: FakeJuiceVehicleState = FakeJuiceVehicleState.new()
+
+	func get_state() -> RefCounted:
+		return state
 
 var _scene_root: Node = null
 var _errors: PackedStringArray = PackedStringArray()
@@ -409,6 +437,7 @@ func _inspect_vehicle_juice() -> void:
 	var mud_burst: GPUParticles3D = juice_rig.get_node_or_null("MudSurfaceBurst") as GPUParticles3D
 	if mud_burst != null and not mud_burst.emitting:
 		_errors.append("VehicleJuiceRig should emit mud burst particles for mud surface changes")
+	_inspect_driven_vehicle_juice_emitters()
 
 
 func _require_surface_burst(parent: Node, path: String) -> void:
@@ -423,9 +452,11 @@ func _require_surface_burst(parent: Node, path: String) -> void:
 		_errors.append(path + " should avoid particle randomness")
 	if burst.amount < DUST_MOTE_COUNT_FLOOR:
 		_errors.append(path + " should have particles")
+	_require_soft_dust_draw_material(burst, 0, path + " draw_pass_1")
 
 
 func _inspect_vehicle_debris_particles(juice_rig: Node) -> void:
+	_inspect_wheel_dust_particles(juice_rig)
 	for rear_slot in range(REAR_ROOSTER_COUNT):
 		var rooster_name: String = "RearRoosterDebris" + str(rear_slot)
 		var rooster: GPUParticles3D = _require_node(juice_rig, rooster_name) as GPUParticles3D
@@ -433,6 +464,7 @@ func _inspect_vehicle_debris_particles(juice_rig: Node) -> void:
 			continue
 		if rooster.draw_passes != 2:
 			_errors.append(rooster_name + " should keep dust + pebble draw passes")
+		_require_soft_dust_draw_material(rooster, 0, rooster_name + " draw_pass_1")
 		_require_pebble_draw_mesh(rooster, 1, rooster_name + " draw_pass_2")
 	for wheel_index in range(VEHICLE_WHEEL_COUNT):
 		var burst_name: String = "PebbleScatterBurst" + str(wheel_index)
@@ -440,6 +472,119 @@ func _inspect_vehicle_debris_particles(juice_rig: Node) -> void:
 		if burst == null:
 			continue
 		_require_pebble_draw_mesh(burst, 0, burst_name + " draw_pass_1")
+		var ring_name: String = "LandingDustRing" + str(wheel_index)
+		var ring: GPUParticles3D = _require_node(juice_rig, ring_name) as GPUParticles3D
+		if ring == null:
+			continue
+		_require_soft_dust_draw_material(ring, 0, ring_name + " draw_pass_1")
+
+
+func _inspect_wheel_dust_particles(juice_rig: Node) -> void:
+	for wheel_index in range(VEHICLE_WHEEL_COUNT):
+		var dust_name: String = "WheelDust" + str(wheel_index)
+		var dust: GPUParticles3D = _require_node(juice_rig, dust_name) as GPUParticles3D
+		if dust == null:
+			continue
+		if dust.amount < GameConfig.wheel_dust_particles_per_wheel:
+			_errors.append(dust_name + " should use GameConfig wheel dust particle count")
+		if not dust.use_fixed_seed:
+			_errors.append(dust_name + " should use a fixed seed")
+		if dust.randomness > FLOAT_EPSILON:
+			_errors.append(dust_name + " should avoid particle randomness")
+		if absf(dust.visibility_range_end - GameConfig.vis_range_dust) > FLOAT_EPSILON:
+			_errors.append(dust_name + " visibility range should follow GameConfig")
+		if dust.get_meta("visual_contract", "") != "deterministic_wheel_dust":
+			_errors.append(dust_name + " should declare deterministic wheel dust contract")
+		var mesh: Mesh = dust.get_draw_pass_mesh(0) as Mesh
+		if _particle_draw_material(mesh) == null:
+			_errors.append(dust_name + " should have a materialized dust draw pass")
+		_require_soft_dust_draw_material(dust, 0, dust_name + " draw_pass_1")
+
+
+func _inspect_driven_vehicle_juice_emitters() -> void:
+	var fake_vehicle: FakeJuiceVehicle = FakeJuiceVehicle.new()
+	fake_vehicle.name = "DrivenJuiceFakeVehicle"
+	fake_vehicle.state.position = Vector3(3.0, 0.0, -9.0)
+	fake_vehicle.state.linear_velocity = Vector3(1.2, 0.0, -GameConfig.cam_drive_chatter_speed_full)
+	var camera: Camera3D = Camera3D.new()
+	camera.name = "DrivenJuiceCamera"
+	var rig: VehicleJuiceRig = VehicleJuiceRig.new()
+	rig.name = "DrivenVehicleJuiceRig"
+	add_child(fake_vehicle)
+	add_child(camera)
+	add_child(rig)
+	rig.configure(fake_vehicle, camera, null)
+	rig.call("debug_trigger_dust_kick")
+	rig.call("_process", GameConfig.FIXED_DT)
+	if absf(camera.h_offset) <= FLOAT_EPSILON and absf(camera.v_offset) <= FLOAT_EPSILON:
+		_errors.append("driven VehicleJuiceRig should apply speed/surface camera chatter")
+	for wheel_index in range(VEHICLE_WHEEL_COUNT):
+		var dust_name: String = "WheelDust" + str(wheel_index)
+		var dust: GPUParticles3D = rig.get_node_or_null(dust_name) as GPUParticles3D
+		if dust == null:
+			_errors.append("driven " + dust_name + " should exist")
+			continue
+		if not dust.emitting:
+			_errors.append("driven " + dust_name + " should emit from contacted moving wheels")
+		if dust.amount_ratio <= ACTIVE_PARTICLE_RATIO_FLOOR:
+			_errors.append("driven " + dust_name + " should have a nonzero amount_ratio, got " + str(dust.amount_ratio))
+		_require_particle_not_bare_white(dust, dust_name)
+	for rear_slot in range(REAR_ROOSTER_COUNT):
+		var rooster_name: String = "RearRoosterDebris" + str(rear_slot)
+		var rooster: GPUParticles3D = rig.get_node_or_null(rooster_name) as GPUParticles3D
+		if rooster == null:
+			_errors.append("driven " + rooster_name + " should exist")
+			continue
+		if not rooster.emitting:
+			_errors.append("driven " + rooster_name + " should emit under hard drive")
+		if rooster.amount_ratio <= ACTIVE_PARTICLE_RATIO_FLOOR:
+			_errors.append("driven " + rooster_name + " should have a nonzero amount_ratio, got " + str(rooster.amount_ratio))
+		_require_particle_not_bare_white(rooster, rooster_name)
+	if GameConfig.vehicle_surface_burst_enabled:
+		rig.call("debug_trigger_surface_burst", &"loose_rock", fake_vehicle.state.position, GameConfig.surface_burst_speed_threshold * 2.0)
+		var dust_burst: GPUParticles3D = rig.get_node_or_null("DustSurfaceBurst") as GPUParticles3D
+		if dust_burst == null:
+			_errors.append("driven DustSurfaceBurst should exist when surface bursts are enabled")
+		else:
+			if not dust_burst.emitting:
+				_errors.append("driven DustSurfaceBurst should emit for contacted loose_rock rear wheels")
+			var expected_burst_position: Vector3 = Vector3(0.0, 0.035, 0.42)
+			if dust_burst.global_position.distance_to(expected_burst_position) > 0.025:
+				_errors.append("driven DustSurfaceBurst should spawn from rear wheel contacts, got " + str(dust_burst.global_position))
+			_require_soft_dust_draw_material(dust_burst, 0, "driven DustSurfaceBurst draw_pass_1")
+	fake_vehicle.state.linear_velocity = Vector3.ZERO
+	rig.call("_process", GameConfig.FIXED_DT)
+	if absf(camera.h_offset) > FLOAT_EPSILON or absf(camera.v_offset) > FLOAT_EPSILON:
+		_errors.append("driven VehicleJuiceRig should clear camera chatter when speed drops to zero")
+	rig.queue_free()
+	camera.queue_free()
+	fake_vehicle.queue_free()
+
+
+func _require_particle_not_bare_white(particles: GPUParticles3D, context: String) -> void:
+	var process_material: ParticleProcessMaterial = particles.process_material as ParticleProcessMaterial
+	if process_material == null:
+		_errors.append(context + " should have a ParticleProcessMaterial")
+		return
+	var color: Color = process_material.color
+	if color.r >= BARE_WHITE_CHANNEL and color.g >= BARE_WHITE_CHANNEL and color.b >= BARE_WHITE_CHANNEL:
+		_errors.append(context + " should tint particles from the contacted surface")
+
+
+func _require_soft_dust_draw_material(particles: GPUParticles3D, pass_index: int, context: String) -> void:
+	var mesh: Mesh = particles.get_draw_pass_mesh(pass_index) as Mesh
+	var material: StandardMaterial3D = _particle_draw_material(mesh)
+	if material == null:
+		_errors.append(context + " should have a StandardMaterial3D soft dust material")
+		return
+	if not bool(material.get_meta(SOFT_DUST_MATERIAL_META, false)):
+		_errors.append(context + " should use the tagged soft radial dust material")
+	if material.albedo_texture == null:
+		_errors.append(context + " should use a soft alpha texture instead of a hard-edged quad")
+	if material.transparency != BaseMaterial3D.TRANSPARENCY_ALPHA:
+		_errors.append(context + " should render as alpha-blended dust")
+	if material.billboard_mode != BaseMaterial3D.BILLBOARD_ENABLED:
+		_errors.append(context + " should stay billboarded toward the camera")
 
 
 func _require_pebble_draw_mesh(particles: GPUParticles3D, pass_index: int, context: String) -> void:
