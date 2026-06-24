@@ -41,6 +41,21 @@ class MeshPart:
     alpha_mode: str = OPAQUE
     double_sided: bool = False
     alpha_cutoff: float = 0.45
+    # Optional explicit per-vertex UVs. Leaf-card parts supply per-card planar atlas-cell UVs so
+    # each quad samples one whole leaf of the LeafSet004 atlas; bark parts leave this None and fall
+    # back to the bounding-box projection in compute_uvs (their cone UVs read fine untextured/tinted).
+    uvs: list[tuple[float, float]] | None = None
+
+
+# LeafSet004 atlas layout: the RGBA sheet is a 3-column x 2-row grid of 6 upright leaves on a white
+# background (stem at the cell bottom, tip at the cell top). Each leaf card is UV-mapped to one whole
+# cell so alphaMode=MASK cuts the leaf silhouette; a small inset keeps card edges off the neighbouring
+# cell / sheet border under mipmapping. Cells are chosen deterministically per card (no RNG dependence
+# on draw order) so regeneration stays byte-stable.
+LEAF_ATLAS_COLUMNS = 3
+LEAF_ATLAS_ROWS = 2
+LEAF_ATLAS_CELL_COUNT = LEAF_ATLAS_COLUMNS * LEAF_ATLAS_ROWS
+LEAF_ATLAS_CELL_INSET = 0.035
 
 
 @dataclass(frozen=True)
@@ -126,12 +141,17 @@ def merge_meshes(meshes: list[tuple[list[tuple[float, float, float]], list[int]]
 
 
 def mesh_part(
-    mesh: tuple[list[tuple[float, float, float]], list[int]],
+    mesh: tuple,
     color: tuple[float, float, float, float],
     name: str,
     alpha_mode: str = OPAQUE,
     double_sided: bool = False,
 ) -> MeshPart:
+    # Bark meshes pass (vertices, indices); leaf-card meshes pass (vertices, indices, uvs) with
+    # explicit per-card atlas UVs. Carry the UVs through so write_lod_glb skips the bbox projection.
+    if len(mesh) == 3:
+        vertices, indices, uvs = mesh
+        return MeshPart(vertices, indices, color, name, alpha_mode, double_sided, uvs=uvs)
     vertices, indices = mesh
     return MeshPart(vertices, indices, color, name, alpha_mode, double_sided)
 
@@ -196,6 +216,20 @@ def card_basis(yaw: float, pitch: float) -> tuple[tuple[float, float, float], tu
     return right, up
 
 
+def leaf_cell_uv_bounds(cell_index: int) -> tuple[float, float, float, float]:
+    cell = cell_index % LEAF_ATLAS_CELL_COUNT
+    column = cell % LEAF_ATLAS_COLUMNS
+    row = cell // LEAF_ATLAS_COLUMNS
+    cell_width = 1.0 / float(LEAF_ATLAS_COLUMNS)
+    cell_height = 1.0 / float(LEAF_ATLAS_ROWS)
+    u0 = column * cell_width + LEAF_ATLAS_CELL_INSET * cell_width
+    u1 = (column + 1) * cell_width - LEAF_ATLAS_CELL_INSET * cell_width
+    # Image V grows downward: the cell top edge (tip) is the smaller V, the bottom edge (stem) larger.
+    v_top = row * cell_height + LEAF_ATLAS_CELL_INSET * cell_height
+    v_bottom = (row + 1) * cell_height - LEAF_ATLAS_CELL_INSET * cell_height
+    return u0, u1, v_top, v_bottom
+
+
 def leaf_cards(
     centers: list[tuple[float, float, float]],
     rng: random.Random,
@@ -203,15 +237,19 @@ def leaf_cards(
     height_range: tuple[float, float],
     pitch_range: tuple[float, float],
     narrow: bool,
-) -> tuple[list[tuple[float, float, float]], list[int]]:
+) -> tuple[list[tuple[float, float, float]], list[int], list[tuple[float, float]]]:
     vertices: list[tuple[float, float, float]] = []
     indices: list[int] = []
-    for center in centers:
+    uvs: list[tuple[float, float]] = []
+    for card_index, center in enumerate(centers):
         yaw = rng.random() * math.tau
         pitch = math.radians(rng.uniform(pitch_range[0], pitch_range[1]))
         right, up = card_basis(yaw, pitch)
         width = rng.uniform(width_range[0], width_range[1])
         height = rng.uniform(height_range[0], height_range[1])
+        # Deterministic atlas cell per card (independent of RNG/draw order so the GLB stays byte-stable).
+        u0, u1, v_top, v_bottom = leaf_cell_uv_bounds((card_index * 7 + (1 if narrow else 0) * 3) % LEAF_ATLAS_CELL_COUNT)
+        u_mid = (u0 + u1) * 0.5
         base = len(vertices)
         if narrow:
             top = vec_add(center, vec_mul(up, height * 0.58))
@@ -223,6 +261,15 @@ def leaf_cards(
                 top,
                 vec_add(center, vec_add(vec_mul(right, -width * 0.50), vec_mul(up, height * 0.10))),
             ])
+            # Narrow willow leaf: bottom pair = stem edge (v_bottom), apex = tip (v_top), mid pair near centre.
+            v_card_mid = v_top + (v_bottom - v_top) * 0.46
+            uvs.extend([
+                (u0, v_bottom),
+                (u1, v_bottom),
+                (u1, v_card_mid),
+                (u_mid, v_top),
+                (u0, v_card_mid),
+            ])
             indices.extend([base, base + 1, base + 2, base, base + 2, base + 4, base + 4, base + 2, base + 3])
         else:
             vertices.extend([
@@ -231,8 +278,15 @@ def leaf_cards(
                 vec_add(center, vec_add(vec_mul(right, width * 0.50), vec_mul(up, height * 0.50))),
                 vec_add(center, vec_add(vec_mul(right, -width * 0.50), vec_mul(up, height * 0.50))),
             ])
+            # Quad corners BL, BR, TR, TL: card +up is the leaf tip (v_top), card -up is the stem (v_bottom).
+            uvs.extend([
+                (u0, v_bottom),
+                (u1, v_bottom),
+                (u1, v_top),
+                (u0, v_top),
+            ])
             indices.extend([base, base + 1, base + 2, base, base + 2, base + 3])
-    return vertices, indices
+    return vertices, indices, uvs
 
 
 def crown_centers(
@@ -449,7 +503,8 @@ def write_lod_glb(path: Path, asset_name: str, lods: list[LodMesh]) -> None:
                 raise ValueError(mesh_part.name + " exceeds uint16 index range")
             position_data = pack_positions(mesh_part.vertices)
             normal_data = pack_normals(compute_normals(mesh_part.vertices, mesh_part.indices))
-            uv_data = pack_uvs(compute_uvs(mesh_part.vertices))
+            part_uvs = mesh_part.uvs if mesh_part.uvs is not None else compute_uvs(mesh_part.vertices)
+            uv_data = pack_uvs(part_uvs)
             index_data = pack_indices(mesh_part.indices)
             position_offset = append_aligned(bin_data, position_data)
             normal_offset = append_aligned(bin_data, normal_data)
@@ -576,6 +631,7 @@ def grounded_lods(lods: list[LodMesh]) -> list[LodMesh]:
                 part.alpha_mode,
                 part.double_sided,
                 part.alpha_cutoff,
+                part.uvs,
             ))
         grounded.append(LodMesh(lod.name, parts))
     return grounded

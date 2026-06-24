@@ -34,10 +34,23 @@ const GENERATED_SURFACE_TEXTURE_DIR: String = "res://assets/textures/surface_vis
 const FOLIAGE_BARK_ALBEDO_TEXTURE_PATH: String = "res://assets/textures/foliage/bark_willow_albedo.jpg"
 const FOLIAGE_BARK_NORMAL_TEXTURE_PATH: String = "res://assets/textures/foliage/bark_willow_normal.jpg"
 const FOLIAGE_BARK_ARM_TEXTURE_PATH: String = "res://assets/textures/foliage/bark_willow_arm.jpg"
+# CC0 leaf atlas (C1 Approach B): RGBA sheet (RGB=color, A=opacity) of 6 upright leaves on a 3x2 grid.
+# The willow/cottonwood leaf surfaces are now crossed leaf cards with per-card planar atlas-cell UVs
+# (gen_foliage_species_glb.py), so this albedo texture maps one whole leaf per card instead of smearing.
+# Wired albedo-only; the per-species albedo_color stays as a MULTIPLY tint over it (kept muted to avoid
+# the chartreuse neon blowout that commit a02214fb1 fought). Render-only; geometry change is in the GLB.
+const FOLIAGE_LEAF_ATLAS_TEXTURE_PATH: String = "res://assets/textures/foliage/leafset004_atlas_rgba.png"
 # Lighten each surface's imported bark baseColorFactor toward this so the texture reads (it is
 # multiplied by the albedo tint), without fully dropping the per-species hue — lerp strength below.
 const FOLIAGE_BARK_ALBEDO_LIGHTEN_TARGET: Color = Color(0.85, 0.82, 0.78, 1.0)
 const FOLIAGE_BARK_ALBEDO_LIGHTEN_STRENGTH: float = 0.6
+# When the leaf atlas is wired, albedo_color multiplies it. The per-species leaf tints are dark
+# saturated greens (good for flat-shaded surfaces) that would double-darken the already-green atlas
+# into mud. Lighten the tint toward this near-white so the atlas's own leaf colour reads, while a
+# fraction of the species hue still biases willow cool / cottonwood yellow-green. Kept below full
+# white so we never push back into the chartreuse neon blowout (commit a02214fb1).
+const FOLIAGE_LEAF_ALBEDO_LIGHTEN_TARGET: Color = Color(0.82, 0.86, 0.74, 1.0)
+const FOLIAGE_LEAF_ALBEDO_LIGHTEN_STRENGTH: float = 0.62
 const TEXTURE_SOURCE_PATH_META: StringName = &"trailhead_source_path"
 const SURFACE_INDEX_LAYER_COUNT: int = 8
 const SURFACE_INDEX_ARRAY_CACHE_DIR: String = "user://trailhead/terrain_surface_index_arrays"
@@ -57,6 +70,8 @@ static var _foliage_bark_textures_loaded: bool = false
 static var _foliage_bark_albedo_texture: Texture2D = null
 static var _foliage_bark_normal_texture: Texture2D = null
 static var _foliage_bark_arm_texture: Texture2D = null
+static var _foliage_leaf_atlas_loaded: bool = false
+static var _foliage_leaf_atlas_texture: Texture2D = null
 static var _surface_index_albedo_array_cache: Texture2DArray = null
 static var _surface_index_normal_array_cache: Texture2DArray = null
 static var _surface_index_macro_albedo_cache: Texture2D = null
@@ -2842,6 +2857,14 @@ static func _source_foliage_mesh_with_species_materials(source_mesh: Mesh, mesh_
 			# on the alpha-scissor transparency mode so opaque juniper/yucca leaves and all
 			# bark surfaces are never touched; keep the imported scissor threshold intact.
 			if material.transparency == BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR:
+				# C1 Approach B: the willow/cottonwood leaf cards now carry per-card planar
+				# atlas-cell UVs, so wire the CC0 leaf atlas as albedo here. Gating on the
+				# alpha-scissor mode keeps it off opaque juniper/yucca leaves (rosette/scale
+				# geometry with bbox UVs would smear the cutout sheet). The atlas alpha drives
+				# the scissor silhouette; keep the imported cutoff threshold untouched. The
+				# per-species albedo_color (set above) multiplies the atlas — lighten it so the
+				# atlas leaf colour reads (mirrors the bark wiring) without neon blowout.
+				_apply_foliage_leaf_atlas(material)
 				material.alpha_antialiasing_mode = BaseMaterial3D.ALPHA_ANTIALIASING_ALPHA_TO_COVERAGE_AND_TO_ONE
 				# Tame leaf-highlight sparkle that FSR1 amplifies on the cutout edge: push
 				# roughness toward matte and disable the specular lobe. Colour is unchanged.
@@ -2898,6 +2921,33 @@ static func _apply_foliage_bark_pbr(material: StandardMaterial3D) -> void:
 		material.ao_enabled = true
 		material.ao_texture = _foliage_bark_arm_texture
 		material.ao_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_RED
+
+
+static func _ensure_foliage_leaf_atlas_loaded() -> void:
+	if _foliage_leaf_atlas_loaded:
+		return
+	_foliage_leaf_atlas_loaded = true
+	if ResourceLoader.exists(FOLIAGE_LEAF_ATLAS_TEXTURE_PATH):
+		_foliage_leaf_atlas_texture = load(FOLIAGE_LEAF_ATLAS_TEXTURE_PATH) as Texture2D
+
+
+static func _apply_foliage_leaf_atlas(material: StandardMaterial3D) -> void:
+	_ensure_foliage_leaf_atlas_loaded()
+	if _foliage_leaf_atlas_texture == null:
+		# Atlas not on disk (or import not built yet): leave the imported flat leaf colour so the
+		# build still renders rather than going untextured-but-retinted in a way that hides the issue.
+		return
+	# Lighten the per-species leaf tint toward near-white so the atlas multiplies through and reads as
+	# the atlas's own green, while a fraction of the species hue (willow cool / cottonwood yellow-green)
+	# still biases it. Kept below full white to stay clear of the chartreuse neon blowout (a02214fb1).
+	var tint: Color = material.albedo_color
+	material.albedo_color = Color(
+		lerpf(tint.r, FOLIAGE_LEAF_ALBEDO_LIGHTEN_TARGET.r, FOLIAGE_LEAF_ALBEDO_LIGHTEN_STRENGTH),
+		lerpf(tint.g, FOLIAGE_LEAF_ALBEDO_LIGHTEN_TARGET.g, FOLIAGE_LEAF_ALBEDO_LIGHTEN_STRENGTH),
+		lerpf(tint.b, FOLIAGE_LEAF_ALBEDO_LIGHTEN_TARGET.b, FOLIAGE_LEAF_ALBEDO_LIGHTEN_STRENGTH),
+		tint.a
+	)
+	material.albedo_texture = _foliage_leaf_atlas_texture
 
 
 static func _foliage_source_material_is_leaf(species_id: StringName, material: StandardMaterial3D, surface_index: int) -> bool:
