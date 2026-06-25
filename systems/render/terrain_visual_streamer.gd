@@ -108,6 +108,8 @@ var _ready_stream_hlod_densify_results_by_cell: Dictionary[Vector2i, Dictionary]
 var _stream_hlod_densify_commit_queue: Array[Vector2i] = []
 var _queued_stream_hlod_densify_commits: Dictionary[Vector2i, bool] = {}
 var _densified_stream_hlod_cells: Dictionary[Vector2i, bool] = {}
+var _stream_hlod_queue_resort_requested: bool = false
+var _stream_hlod_densify_refresh_requested: bool = false
 var _stream_priority_center_cell: Vector2i = Vector2i.ZERO
 var _stream_priority_has_center: bool = false
 var _stream_priority_forward_cell_delta: Vector2i = Vector2i.ZERO
@@ -127,12 +129,16 @@ var _visual_commits_last_frame: int = 0
 var _visual_commit_usec_last_frame: int = 0
 # Perf-log-only render attribution. These accumulate main-thread streamer work:
 # detail_refresh=active detail-ring diff/queueing; evict=eviction callback + queued
-# frees; hlod_queue=HLOD priority/dispatch queue work; midlod_refresh=MidLOD active-ring
-# diff/queueing; worker_result=main-thread staging of finished worker jobs;
+# frees; hlod_queue=all HLOD priority/dispatch/sync queue work; hlod_dispatch/densify/sync
+# split the HLOD drains; midlod_refresh=MidLOD active-ring diff/queueing;
+# worker_result=main-thread staging of finished worker jobs;
 # *_build=synchronous no-worker fallback builds or foliage materialization.
 var _detail_refresh_usec_last_frame: int = 0
 var _evict_usec_last_frame: int = 0
 var _hlod_queue_usec_last_frame: int = 0
+var _hlod_dispatch_usec_last_frame: int = 0
+var _hlod_densify_usec_last_frame: int = 0
+var _hlod_sync_usec_last_frame: int = 0
 var _midlod_refresh_usec_last_frame: int = 0
 var _worker_result_usec_last_frame: int = 0
 var _visual_build_usec_last_frame: int = 0
@@ -242,6 +248,8 @@ func reset_stream() -> void:
 	_stream_hlod_densify_commit_queue.clear()
 	_queued_stream_hlod_densify_commits.clear()
 	_densified_stream_hlod_cells.clear()
+	_stream_hlod_queue_resort_requested = false
+	_stream_hlod_densify_refresh_requested = false
 	_stream_priority_center_cell = Vector2i.ZERO
 	_stream_priority_has_center = false
 	_stream_priority_forward_cell_delta = Vector2i.ZERO
@@ -275,13 +283,14 @@ func _process(_delta: float) -> void:
 	if _hlod_dirty:
 		_update_hlod_visibility()
 		_hlod_dirty = false
-	var hlod_queue_start_usec: int = 0
-	if _perf_attribution_enabled:
-		hlod_queue_start_usec = Time.get_ticks_usec()
+	if _stream_hlod_queue_resort_requested:
+		_stream_hlod_queue_resort_requested = false
+		_resort_stream_hlod_queue()
+	if _stream_hlod_densify_refresh_requested:
+		_stream_hlod_densify_refresh_requested = false
+		_queue_near_stream_hlod_densification()
 	_drain_stream_hlod_queue()
 	_drain_stream_hlod_densify_queue()
-	if _perf_attribution_enabled:
-		_hlod_queue_usec_last_frame += maxi(Time.get_ticks_usec() - hlod_queue_start_usec, 0)
 	if _midlod_refresh_requested:
 		_midlod_refresh_requested = false
 		var midlod_refresh_start_usec: int = 0
@@ -355,6 +364,9 @@ func _reset_perf_attribution_frame() -> void:
 	_detail_refresh_usec_last_frame = 0
 	_evict_usec_last_frame = 0
 	_hlod_queue_usec_last_frame = 0
+	_hlod_dispatch_usec_last_frame = 0
+	_hlod_densify_usec_last_frame = 0
+	_hlod_sync_usec_last_frame = 0
 	_midlod_refresh_usec_last_frame = 0
 	_worker_result_usec_last_frame = 0
 	_visual_build_usec_last_frame = 0
@@ -451,6 +463,18 @@ func hlod_queue_ms_last_frame() -> float:
 	return float(_hlod_queue_usec_last_frame) / 1000.0
 
 
+func hlod_dispatch_ms_last_frame() -> float:
+	return float(_hlod_dispatch_usec_last_frame) / 1000.0
+
+
+func hlod_densify_ms_last_frame() -> float:
+	return float(_hlod_densify_usec_last_frame) / 1000.0
+
+
+func hlod_sync_ms_last_frame() -> float:
+	return float(_hlod_sync_usec_last_frame) / 1000.0
+
+
 func midlod_refresh_ms_last_frame() -> float:
 	return float(_midlod_refresh_usec_last_frame) / 1000.0
 
@@ -473,6 +497,10 @@ func hlod_build_ms_last_frame() -> float:
 
 func foliage_build_ms_last_frame() -> float:
 	return float(_foliage_build_usec_last_frame) / 1000.0
+
+
+func worker_count() -> int:
+	return _workers.size()
 
 
 func set_perf_attribution_enabled(enabled: bool) -> void:
@@ -579,8 +607,8 @@ func _on_world_tile_activated(cell: Vector2i) -> void:
 	_active_cells[cell] = true
 	_update_stream_priority_from_active_cells()
 	_hlod_dirty = true
-	_resort_stream_hlod_queue()
-	_queue_near_stream_hlod_densification()
+	_request_stream_hlod_queue_resort()
+	_request_near_stream_hlod_densification()
 	_request_midlod_refresh()
 	_refresh_visual_detail_streaming()
 	# Any cell activation can shift the active center and pull a previously LOD1-only foliage
@@ -680,7 +708,8 @@ func _on_world_tile_evicted(cell: Vector2i) -> void:
 	_active_cells.erase(cell)
 	_update_stream_priority_from_active_cells()
 	_hlod_dirty = true
-	_queue_near_stream_hlod_densification()
+	_request_stream_hlod_queue_resort()
+	_request_near_stream_hlod_densification()
 	_request_midlod_refresh()
 	_refresh_visual_detail_streaming()
 	_remove_queued_commit(cell)
@@ -1281,10 +1310,14 @@ func _resort_stream_hlod_queue() -> void:
 		_hlod_queue_usec_last_frame += maxi(Time.get_ticks_usec() - hlod_queue_start_usec, 0)
 
 
+func _request_stream_hlod_queue_resort() -> void:
+	_stream_hlod_queue_resort_requested = true
+
+
 func _stream_hlod_cell_less(left: Vector2i, right: Vector2i) -> bool:
 	if _active_cells.is_empty():
 		return _cell_less(left, right)
-	var center: Vector2i = _active_cell_center()
+	var center: Vector2i = _stream_hlod_active_center_cell()
 	var left_distance: int = absi(left.x - center.x) + absi(left.y - center.y)
 	var right_distance: int = absi(right.x - center.x) + absi(right.y - center.y)
 	if left_distance == right_distance:
@@ -1295,6 +1328,9 @@ func _stream_hlod_cell_less(left: Vector2i, right: Vector2i) -> bool:
 func _drain_stream_hlod_queue() -> int:
 	if _hlod_instance == null or _stream_hlod_queue.is_empty():
 		return 0
+	var dispatch_start_usec: int = 0
+	if _perf_attribution_enabled:
+		dispatch_start_usec = Time.get_ticks_usec()
 	var dispatch_budget: int = maxi(GameConfig.render_stream_hlod_commits_per_frame, 1)
 	var dispatched_count: int = 0
 	while dispatched_count < dispatch_budget and not _stream_hlod_queue.is_empty():
@@ -1308,8 +1344,12 @@ func _drain_stream_hlod_queue() -> int:
 		dispatched_count += 1
 		if _commit_frame_budget_exceeded():
 			break
+	if _perf_attribution_enabled:
+		var dispatch_usec: int = maxi(Time.get_ticks_usec() - dispatch_start_usec, 0)
+		_hlod_dispatch_usec_last_frame += dispatch_usec
+		_hlod_queue_usec_last_frame += dispatch_usec
 	if dispatched_count > 0 and _workers.is_empty():
-		_process_build_queue_synchronously()
+		_process_hlod_build_queue_synchronously()
 	return dispatched_count
 
 
@@ -1466,20 +1506,38 @@ func _queue_near_stream_hlod_densification() -> void:
 		if _perf_attribution_enabled:
 			_hlod_queue_usec_last_frame += maxi(Time.get_ticks_usec() - hlod_queue_start_usec, 0)
 		return
+	if _active_cells.is_empty():
+		if _perf_attribution_enabled:
+			_hlod_queue_usec_last_frame += maxi(Time.get_ticks_usec() - hlod_queue_start_usec, 0)
+		return
+	var center: Vector2i = _stream_hlod_active_center_cell()
+	var radius: int = maxi(GameConfig.render_stream_hlod_densify_radius, 1)
 	for cell in _sorted_cells(_stream_hlod_chunks_by_cell.keys()):
-		_queue_stream_hlod_densification(cell)
+		_queue_stream_hlod_densification_in_radius(cell, center, radius)
 	if _perf_attribution_enabled:
 		_hlod_queue_usec_last_frame += maxi(Time.get_ticks_usec() - hlod_queue_start_usec, 0)
+
+
+func _request_near_stream_hlod_densification() -> void:
+	_stream_hlod_densify_refresh_requested = true
 
 
 func _queue_stream_hlod_densification(cell: Vector2i) -> void:
 	if _region_id != STREAM_HLOD_DENSIFY_REGION_ID:
 		return
+	if _active_cells.is_empty():
+		return
+	var center: Vector2i = _stream_hlod_active_center_cell()
+	var radius: int = maxi(GameConfig.render_stream_hlod_densify_radius, 1)
+	_queue_stream_hlod_densification_in_radius(cell, center, radius)
+
+
+func _queue_stream_hlod_densification_in_radius(cell: Vector2i, center: Vector2i, radius: int) -> void:
 	if not _stream_hlod_chunks_by_cell.has(cell):
 		return
 	if _densified_stream_hlod_cells.has(cell) or _queued_stream_hlod_densify_cells.has(cell):
 		return
-	if not _is_cell_in_stream_hlod_densify_radius(cell):
+	if absi(cell.x - center.x) > radius or absi(cell.y - center.y) > radius:
 		return
 	_stream_hlod_densify_queue.append(cell)
 	_queued_stream_hlod_densify_cells[cell] = true
@@ -1488,7 +1546,7 @@ func _queue_stream_hlod_densification(cell: Vector2i) -> void:
 func _is_cell_in_stream_hlod_densify_radius(cell: Vector2i) -> bool:
 	if _active_cells.is_empty():
 		return false
-	var center: Vector2i = _active_cell_center()
+	var center: Vector2i = _stream_hlod_active_center_cell()
 	var radius: int = maxi(GameConfig.render_stream_hlod_densify_radius, 1)
 	return absi(cell.x - center.x) <= radius and absi(cell.y - center.y) <= radius
 
@@ -1528,6 +1586,9 @@ func _is_cell_in_foliage_radius(cell: Vector2i) -> bool:
 func _drain_stream_hlod_densify_queue() -> int:
 	if _stream_hlod_densify_queue.is_empty():
 		return 0
+	var densify_start_usec: int = 0
+	if _perf_attribution_enabled:
+		densify_start_usec = Time.get_ticks_usec()
 	var commit_budget: int = maxi(GameConfig.render_stream_hlod_commits_per_frame, 1)
 	var dispatched_count: int = 0
 	while dispatched_count < commit_budget and not _stream_hlod_densify_queue.is_empty():
@@ -1539,8 +1600,12 @@ func _drain_stream_hlod_densify_queue() -> int:
 		dispatched_count += 1
 		if _commit_frame_budget_exceeded():
 			break
+	if _perf_attribution_enabled:
+		var densify_usec: int = maxi(Time.get_ticks_usec() - densify_start_usec, 0)
+		_hlod_densify_usec_last_frame += densify_usec
+		_hlod_queue_usec_last_frame += densify_usec
 	if dispatched_count > 0 and _workers.is_empty():
-		_process_build_queue_synchronously()
+		_process_hlod_build_queue_synchronously()
 	return dispatched_count
 
 
@@ -1892,6 +1957,17 @@ func _process_build_queue_synchronously() -> void:
 		if not _worker_should_stop:
 			_result_queue.append(result)
 		_work_mutex.unlock()
+
+
+func _process_hlod_build_queue_synchronously() -> void:
+	var sync_start_usec: int = 0
+	if _perf_attribution_enabled:
+		sync_start_usec = Time.get_ticks_usec()
+	_process_build_queue_synchronously()
+	if _perf_attribution_enabled:
+		var sync_usec: int = maxi(Time.get_ticks_usec() - sync_start_usec, 0)
+		_hlod_sync_usec_last_frame += sync_usec
+		_hlod_queue_usec_last_frame += sync_usec
 
 
 func _pop_next_synchronous_build_job_locked() -> Dictionary:
@@ -2352,6 +2428,12 @@ func _update_stream_priority_from_active_cells() -> void:
 	else:
 		_stream_priority_has_center = true
 	_stream_priority_center_cell = next_center
+
+
+func _stream_hlod_active_center_cell() -> Vector2i:
+	if _stream_priority_has_center:
+		return _stream_priority_center_cell
+	return _active_cell_center()
 
 
 func _visual_commit_cell_less(left: Vector2i, right: Vector2i) -> bool:

@@ -88,7 +88,7 @@ const SCREENSHOT_CAPTURE_INTERVAL_SECONDS: float = 0.5
 const PERF_LOG_USER_ARG: String = "--perf-log"
 const PERF_LOG_DEFAULT_DIR: String = "user://trailhead/perf"
 const PERF_LOG_FLUSH_ROW_COUNT: int = 120
-const PERF_LOG_HEADER: String = "frame,dt_ms,fps,process_ms,physics_process_ms,viewport_cpu_ms,viewport_gpu_ms,scaling_3d_scale,scaling_3d_scale_changed,dynamic_res_target_ms,draw_calls,primitives,objects,video_mem_mb,static_mem_mb,current_cell,active_cells,ready_cells,stream_tick,crossing_flag,hitch_flag,hitch_at_crossing,window_is_focused,collision_cooks,visual_commits,visual_commit_ms,detail_refresh_ms,evict_ms,hlod_queue_ms,midlod_refresh_ms,worker_result_ms,visual_build_ms,midlod_build_ms,hlod_build_ms,foliage_build_ms"
+const PERF_LOG_HEADER: String = "frame,dt_ms,fps,process_ms,physics_process_ms,viewport_cpu_ms,viewport_gpu_ms,scaling_3d_scale,scaling_3d_scale_changed,dynamic_res_target_ms,draw_calls,primitives,objects,video_mem_mb,static_mem_mb,current_cell,active_cells,ready_cells,stream_tick,crossing_flag,hitch_flag,hitch_at_crossing,window_is_focused,collision_cooks,visual_commits,visual_commit_ms,detail_refresh_ms,evict_ms,hlod_queue_ms,hlod_dispatch_ms,hlod_densify_ms,hlod_sync_ms,worker_count,midlod_refresh_ms,worker_result_ms,visual_build_ms,midlod_build_ms,hlod_build_ms,foliage_build_ms"
 const PERF_LOG_CROSSING_WINDOW_FRAMES: int = 5
 const PERF_LOG_MEDIAN_WINDOW_SIZE: int = 121
 const PERF_LOG_HITCH_MEDIAN_MULTIPLIER: float = 2.0
@@ -699,6 +699,10 @@ func _sample_perf_log_frame() -> void:
 	var detail_refresh_ms: float = _perf_log_streamer_ms("detail_refresh_ms_last_frame")
 	var evict_ms: float = _perf_log_streamer_ms("evict_ms_last_frame")
 	var hlod_queue_ms: float = _perf_log_streamer_ms("hlod_queue_ms_last_frame")
+	var hlod_dispatch_ms: float = _perf_log_streamer_ms("hlod_dispatch_ms_last_frame")
+	var hlod_densify_ms: float = _perf_log_streamer_ms("hlod_densify_ms_last_frame")
+	var hlod_sync_ms: float = _perf_log_streamer_ms("hlod_sync_ms_last_frame")
+	var worker_count: int = _perf_log_visual_worker_count()
 	var midlod_refresh_ms: float = _perf_log_streamer_ms("midlod_refresh_ms_last_frame")
 	var worker_result_ms: float = _perf_log_streamer_ms("worker_result_ms_last_frame")
 	var visual_build_ms: float = _perf_log_streamer_ms("visual_build_ms_last_frame")
@@ -710,7 +714,7 @@ func _sample_perf_log_frame() -> void:
 	var window_focused: bool = DisplayServer.window_is_focused()
 	_record_perf_log_dt_sample(dt_ms)
 
-	_perf_log_rows.append("%d,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.4f,%d,%.3f,%d,%d,%d,%.3f,%.3f,%s,%d,%d,%d,%d,%d,%d,%d,%d,%d,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f" % [
+	_perf_log_rows.append("%d,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.4f,%d,%.3f,%d,%d,%d,%.3f,%.3f,%s,%d,%d,%d,%d,%d,%d,%d,%d,%d,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%d,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f" % [
 		_perf_log_frame_index,
 		dt_ms,
 		fps,
@@ -740,6 +744,10 @@ func _sample_perf_log_frame() -> void:
 		detail_refresh_ms,
 		evict_ms,
 		hlod_queue_ms,
+		hlod_dispatch_ms,
+		hlod_densify_ms,
+		hlod_sync_ms,
+		worker_count,
 		midlod_refresh_ms,
 		worker_result_ms,
 		visual_build_ms,
@@ -833,6 +841,12 @@ func _perf_log_streamer_ms(method_name: String) -> float:
 	if _terrain_visual_streamer != null and _terrain_visual_streamer.has_method(method_name):
 		return float(_terrain_visual_streamer.call(method_name))
 	return 0.0
+
+
+func _perf_log_visual_worker_count() -> int:
+	if _terrain_visual_streamer != null and _terrain_visual_streamer.has_method("worker_count"):
+		return int(_terrain_visual_streamer.call("worker_count"))
+	return 0
 
 
 func _perf_log_scaling_3d_scale_changed(scaling_3d_scale: float) -> bool:

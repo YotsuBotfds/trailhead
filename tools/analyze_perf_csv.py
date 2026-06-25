@@ -27,6 +27,9 @@ STREAMER_MS_COLUMNS = [
     ("detail_refresh_ms", "render-detail-refresh", "detail"),
     ("evict_ms", "render-evict", "evict"),
     ("hlod_queue_ms", "render-hlod-queue", "hlodq"),
+    ("hlod_dispatch_ms", "render-hlod-dispatch", "hdisp"),
+    ("hlod_densify_ms", "render-hlod-densify", "hden"),
+    ("hlod_sync_ms", "render-hlod-sync", "hsync"),
     ("midlod_refresh_ms", "render-midlod-refresh", "midref"),
     ("worker_result_ms", "render-worker-result", "result"),
     ("visual_build_ms", "render-visual-build", "vbuild"),
@@ -34,6 +37,8 @@ STREAMER_MS_COLUMNS = [
     ("hlod_build_ms", "render-hlod-build", "hbuild"),
     ("foliage_build_ms", "render-foliage-build", "fbuild"),
 ]
+HLOD_SPLIT_COLUMNS = {"hlod_dispatch_ms", "hlod_densify_ms", "hlod_sync_ms"}
+DERIVED_HLOD_MAINTENANCE_COLUMN = "__hlod_maintenance_ms"
 VISUAL_COMMIT_COUNT_HIGH = 4
 VISUAL_COMMIT_DOMINANCE_RATIO = 0.50
 VISUAL_COMMIT_DOMINANCE_MIN_MS = 10.0
@@ -57,14 +62,35 @@ def flag(row, key):
 
 
 def available_streamer_columns(fieldnames):
-    return [item for item in STREAMER_MS_COLUMNS if item[0] in fieldnames]
+    has_hlod_split = HLOD_SPLIT_COLUMNS.issubset(fieldnames) and "hlod_queue_ms" in fieldnames
+    columns = []
+    for item in STREAMER_MS_COLUMNS:
+        column = item[0]
+        if column == "hlod_queue_ms" and has_hlod_split:
+            continue
+        if column in fieldnames:
+            columns.append(item)
+    if has_hlod_split:
+        columns.append((DERIVED_HLOD_MAINTENANCE_COLUMN, "render-hlod-maint", "hmaint"))
+    return columns
+
+
+def streamer_value(row, column):
+    if column == DERIVED_HLOD_MAINTENANCE_COLUMN:
+        return max(0.0, (
+            fnum(row, "hlod_queue_ms")
+            - fnum(row, "hlod_dispatch_ms")
+            - fnum(row, "hlod_densify_ms")
+            - fnum(row, "hlod_sync_ms")
+        ))
+    return fnum(row, column)
 
 
 def dominant_streamer_column(row, streamer_columns):
     label = ""
     value = 0.0
     for column, candidate_label, _short_name in streamer_columns:
-        candidate_value = fnum(row, column)
+        candidate_value = streamer_value(row, column)
         if candidate_value > value:
             label = candidate_label
             value = candidate_value
@@ -76,7 +102,7 @@ def format_streamer_columns(row, streamer_columns):
         return ""
     parts = []
     for column, _label, short_name in streamer_columns:
-        value = fnum(row, column)
+        value = streamer_value(row, column)
         if value > 0.0:
             parts.append(f"{short_name}={value:.1f}")
     return " ".join(parts) if parts else "-"
@@ -89,8 +115,6 @@ def classify_hitch(row, frame, dt_ms, at_crossing, object_delta, has_attribution
         collision_cooks = inum(row, "collision_cooks")
         visual_commits = inum(row, "visual_commits")
         visual_commit_ms = fnum(row, "visual_commit_ms")
-        if collision_cooks > 0:
-            return "collision"
         if visual_commits >= VISUAL_COMMIT_COUNT_HIGH:
             return "visual-commit"
         if visual_commit_ms >= max(VISUAL_COMMIT_DOMINANCE_MIN_MS, dt_ms * VISUAL_COMMIT_DOMINANCE_RATIO):
@@ -98,6 +122,8 @@ def classify_hitch(row, frame, dt_ms, at_crossing, object_delta, has_attribution
         streamer_label, streamer_ms = dominant_streamer_column(row, streamer_columns)
         if streamer_label and streamer_ms >= max(STREAMER_DOMINANCE_MIN_MS, dt_ms * STREAMER_DOMINANCE_RATIO):
             return streamer_label
+        if collision_cooks > 0:
+            return "collision"
         return "other"
     if object_delta >= 150:
         return "visual-commit"
@@ -153,9 +179,9 @@ def main() -> int:
     base_header = f"{'frame':>7} {'dt_ms':>8} {'cell':>7} {'atc':>4} {'dobj':>6} {'ddraw':>6}"
     if has_attribution:
         if streamer_columns:
-            print(f"{base_header} {'cooks':>5} {'vcom':>5} {'vc_ms':>8}  streamer_ms  class")
+            print(f"{base_header} {'cooks':>5} {'vcom':>5} {'vc_ms':>8} {'wrk':>4}  streamer_ms  class")
         else:
-            print(f"{base_header} {'cooks':>5} {'vcom':>5} {'vc_ms':>8}  class")
+            print(f"{base_header} {'cooks':>5} {'vcom':>5} {'vc_ms':>8} {'wrk':>4}  class")
     else:
         print(f"{base_header}  class")
     for i in range(n):
@@ -173,7 +199,7 @@ def main() -> int:
             base = (f"{fr:>7} {dts[i]:>8.0f} {r.get('current_cell','?'):>7} "
                     f"{'Y' if atc else 'n':>4} {dobj:>6} {ddraw:>6} "
                     f"{inum(r, 'collision_cooks'):>5} {inum(r, 'visual_commits'):>5} "
-                    f"{fnum(r, 'visual_commit_ms'):>8.1f}")
+                    f"{fnum(r, 'visual_commit_ms'):>8.1f} {inum(r, 'worker_count'):>4}")
             if streamer_columns:
                 print(f"{base}  {format_streamer_columns(r, streamer_columns):<88}  {cls}")
             else:
@@ -189,9 +215,13 @@ def main() -> int:
         print(f"  {label:17} count={item['count']:>3} total_ms={item['total_ms']:>8.0f} max_ms={item['max_ms']:>8.0f}")
     if has_attribution:
         print(f"collision → collision_cooks>0; visual-commit → visual_commits>={VISUAL_COMMIT_COUNT_HIGH} "
-              f"or visual_commit_ms>={VISUAL_COMMIT_DOMINANCE_RATIO:.0%} of dt.")
+              f"or visual_commit_ms>={VISUAL_COMMIT_DOMINANCE_RATIO:.0%} of dt. Measured render durations "
+              "win over collision cook counts when they dominate.")
         if streamer_columns:
-            names = ", ".join(column for column, _label, _short_name in streamer_columns)
+            names = ", ".join(
+                "hlod_maintenance_ms(derived)" if column == DERIVED_HLOD_MAINTENANCE_COLUMN else column
+                for column, _label, _short_name in streamer_columns
+            )
             print(f"render-streamer → dominant new *_ms column >= {STREAMER_DOMINANCE_RATIO:.0%} of dt "
                   f"(columns present: {names}).")
     else:
