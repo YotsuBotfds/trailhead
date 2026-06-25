@@ -30,6 +30,12 @@ const DIRECTIONAL_SHADOW_PARALLEL_2_SPLITS: int = 1
 const DIRECTIONAL_SHADOW_PARALLEL_4_SPLITS: int = 2
 const RENDER_SCREEN_SPACE_GI_TIER_LOW: int = 0
 const RENDER_SCREEN_SPACE_GI_TIER_HIGH: int = 1
+const AMBIENT_LIFE_TIER_OFF: int = 0
+const AMBIENT_LIFE_TIER_LOW: int = 1
+const AMBIENT_LIFE_TIER_MEDIUM: int = 2
+const AMBIENT_LIFE_TIER_HIGH: int = 3
+const AMBIENT_LIFE_BIRD_COUNT_MIN: int = 3
+const AMBIENT_LIFE_BIRD_COUNT_MAX: int = 6
 # 3D scaling modes mirror Viewport.Scaling3DMode exactly (Godot 4.6). Referenced
 # via the Viewport enum so a 4.x rename is a compile error, not a silent miss.
 const SCALING_3D_MODE_BILINEAR: int = Viewport.SCALING_3D_MODE_BILINEAR
@@ -478,6 +484,26 @@ var contact_fill_light_energy: float = 0.02
 var contact_fill_light_range: float = 0.55
 var contact_fill_light_height: float = 0.09
 var contact_fill_light_color: Color = Color(1.0, 1.0, 1.0)
+
+# --- Ambient life: tiny deterministic birds high against the Zion walls.
+# Render-only. CedarHollowHost advances the phase from the fixed tick and the
+# builder maps (phase, bird_index) directly to transforms, with no wall-clock or RNG.
+var ambient_life_quality_tier: int = AMBIENT_LIFE_TIER_HIGH
+var ambient_life_bird_count: int = 5
+var ambient_life_bird_count_medium_tier: int = 4
+var ambient_life_bird_count_low_tier: int = 3
+var ambient_life_bird_center: Vector3 = Vector3(1905.0, 1348.0, 1615.0)
+var ambient_life_bird_center_spread: Vector3 = Vector3(90.0, 18.0, 70.0)
+var ambient_life_bird_radius_min: float = 46.0
+var ambient_life_bird_radius_max: float = 92.0
+var ambient_life_bird_vertical_radius: float = 18.0
+var ambient_life_bird_phase_radians_per_second: float = 0.13
+var ambient_life_bird_wing_flap_rate: float = 5.4
+var ambient_life_bird_wing_flap_amplitude: float = 0.36
+var ambient_life_bird_roll_radians: float = 0.42
+var ambient_life_bird_scale: float = 4.4
+var ambient_life_bird_visibility_range: float = 4200.0
+var ambient_life_bird_color: Color = Color(0.045, 0.039, 0.033, 1.0)
 # Ambient camera-space motes are render-only. High is the full 4090 capture tier;
 # medium/low reduce count, and OFF disables the field for weak hardware.
 var dust_mote_quality_tier: int = DUST_MOTE_TIER_HIGH
@@ -906,6 +932,21 @@ var default_landmark_radius: float = 0.4
 
 func render_screen_space_gi_high_tier_enabled() -> bool:
 	return render_screen_space_gi_tier >= RENDER_SCREEN_SPACE_GI_TIER_HIGH
+
+
+func ambient_life_effective_tier() -> int:
+	return mini(maxi(ambient_life_quality_tier, AMBIENT_LIFE_TIER_OFF), AMBIENT_LIFE_TIER_HIGH)
+
+
+func resolved_ambient_life_bird_count() -> int:
+	var base_count: int = mini(maxi(ambient_life_bird_count, AMBIENT_LIFE_BIRD_COUNT_MIN), AMBIENT_LIFE_BIRD_COUNT_MAX)
+	if ambient_life_effective_tier() <= AMBIENT_LIFE_TIER_OFF:
+		return 0
+	if ambient_life_effective_tier() == AMBIENT_LIFE_TIER_LOW:
+		return mini(mini(maxi(ambient_life_bird_count_low_tier, AMBIENT_LIFE_BIRD_COUNT_MIN), AMBIENT_LIFE_BIRD_COUNT_MAX), base_count)
+	if ambient_life_effective_tier() == AMBIENT_LIFE_TIER_MEDIUM:
+		return mini(mini(maxi(ambient_life_bird_count_medium_tier, AMBIENT_LIFE_BIRD_COUNT_MIN), AMBIENT_LIFE_BIRD_COUNT_MAX), base_count)
+	return base_count
 
 
 func wheel_dust_effective_tier() -> int:

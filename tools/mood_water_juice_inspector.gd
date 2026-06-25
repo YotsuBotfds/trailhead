@@ -3,6 +3,7 @@ extends Node
 const CedarHollowPlayableScene: PackedScene = preload("res://scenes/cedar_hollow_playable.tscn")
 const AtmosphereVisualBuilderScript: GDScript = preload("res://systems/render/atmosphere_visual_builder.gd")
 const DustTiltShiftVisualBuilderScript: GDScript = preload("res://systems/render/dust_tilt_shift_visual_builder.gd")
+const AmbientLifeBuilderScript: GDScript = preload("res://systems/render/ambient_life_builder.gd")
 const WaterVisualBuilderScript: GDScript = preload("res://systems/render/water_visual_builder.gd")
 const FLOAT_EPSILON: float = 0.001
 const COLOR_TOLERANCE: float = 0.02
@@ -82,6 +83,7 @@ func _inspect() -> void:
 	_inspect_viewport_antialiasing()
 	_inspect_mood_toggle(world_environment, sun)
 	_inspect_dust_and_tilt_shift()
+	_inspect_ambient_life()
 	_inspect_contact_fill_light()
 	_inspect_vehicle_juice()
 	_inspect_water_visuals()
@@ -369,6 +371,28 @@ func _inspect_dust_field(dust: GPUParticles3D) -> void:
 	if process_material.emission_shape != ParticleProcessMaterial.EMISSION_SHAPE_BOX:
 		_errors.append("DustMoteField should use a box field around the camera")
 	_require_float_close("DustMoteField alpha", process_material.color.a, clampf(GameConfig.dust_mote_alpha, 0.0, 1.0), FLOAT_EPSILON)
+
+
+func _inspect_ambient_life() -> void:
+	var ambient_life_root: Node = _require_node(_scene_root, "CedarHollow/" + AmbientLifeBuilderScript.ROOT_NAME)
+	if ambient_life_root == null:
+		return
+	var expected_count: int = AmbientLifeBuilderScript.bird_effective_count()
+	var actual_count: int = ambient_life_root.get_child_count()
+	if actual_count != expected_count:
+		_errors.append("AmbientLife bird count expected " + str(expected_count) + ", got " + str(actual_count))
+	var meta_count: int = int(ambient_life_root.get_meta(AmbientLifeBuilderScript.BIRD_COUNT_META, -1))
+	if meta_count != expected_count:
+		_errors.append("AmbientLife metadata bird count expected " + str(expected_count) + ", got " + str(meta_count))
+	for child in ambient_life_root.get_children():
+		var bird: MeshInstance3D = child as MeshInstance3D
+		if bird == null:
+			_errors.append("AmbientLife child should be MeshInstance3D: " + String(child.name))
+			continue
+		if bird.mesh == null:
+			_errors.append("AmbientLife/" + String(bird.name) + " should have a bird mesh")
+	if _count_collision_objects(ambient_life_root) > 0:
+		_errors.append("AmbientLife should be render-only and collision-free")
 
 
 func _inspect_camera_far_planes(chase_camera: Camera3D, orbit_camera: Camera3D, fpv_camera: Camera3D) -> void:

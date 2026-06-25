@@ -14,6 +14,7 @@ const WaterVisualBuilderScript: GDScript = preload("res://systems/render/water_v
 const ScatterVisualBuilderScript: GDScript = preload("res://systems/render/scatter_visual_builder.gd")
 const AtmosphereVisualBuilderScript: GDScript = preload("res://systems/render/atmosphere_visual_builder.gd")
 const DustTiltShiftVisualBuilderScript: GDScript = preload("res://systems/render/dust_tilt_shift_visual_builder.gd")
+const AmbientLifeBuilderScript: GDScript = preload("res://systems/render/ambient_life_builder.gd")
 const ProceduralBuggyVisualScript: GDScript = preload("res://systems/render/procedural_buggy_visual.gd")
 const RenderRuntimeConfigScript: GDScript = preload("res://systems/render/render_runtime_config.gd")
 const NightStarSkyShader: Shader = preload("res://systems/render/night_star_sky.gdshader")
@@ -207,6 +208,8 @@ var _sun: DirectionalLight3D = null
 var _mood: int = MOOD_DUSK
 var _terrain_track_painter: Node = null
 var _terrain_visual_streamer: Node3D = null
+var _ambient_life_root: Node3D = null
+var _ambient_life_tick: int = 0
 var _terrain_builder_process_node: Node = null
 var _vehicle_juice_rig: Node = null
 var _photograph_system: Node = null
@@ -289,6 +292,7 @@ func _ready() -> void:
 	_ensure_default_input_map()
 	_setup_surface_map()
 	_setup_world()
+	_setup_ambient_life()
 	_setup_demo_props()
 	_spawn_vehicle()
 	_report_render_subsystem_health()
@@ -362,6 +366,7 @@ func _physics_process(delta: float) -> void:
 	_frame_vehicle_state_cache_active = true
 	_frame_vehicle_state = null
 	_sample_golden_line()
+	_update_ambient_life_phase()
 	_update_visual_wheels(delta)
 	_update_terrain_tracks()
 	if _runtime_camera_updates_enabled():
@@ -1068,6 +1073,24 @@ func _setup_world() -> void:
 	_terrain_builder_process_node = _terrain_visual_streamer.get_node_or_null(NodePath(OTHER_PROCESS_TERRAIN_BUILDER_PATH))
 	_setup_terrain_tracks(_terrain_visual_streamer)
 	WaterVisualBuilderScript.build_zion_virgin_river(_world)
+
+
+func _setup_ambient_life() -> void:
+	if _world == null:
+		return
+	_ambient_life_root = AmbientLifeBuilderScript.build(_world)
+	_ambient_life_tick = 0
+
+
+func _update_ambient_life_phase() -> void:
+	if _ambient_life_root == null:
+		return
+	_ambient_life_tick += 1
+	var phase: float = fposmod(
+		float(_ambient_life_tick) * GameConfig.FIXED_DT * maxf(GameConfig.ambient_life_bird_phase_radians_per_second, 0.0),
+		TAU
+	)
+	AmbientLifeBuilderScript.apply_phase(_ambient_life_root, phase)
 
 
 func _setup_terrain_tracks(terrain_root: Node3D) -> void:
