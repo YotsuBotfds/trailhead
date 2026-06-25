@@ -1148,8 +1148,6 @@ func _stream_hlod_cell_less(left: Vector2i, right: Vector2i) -> bool:
 func _drain_stream_hlod_queue() -> int:
 	if _hlod_instance == null or _stream_hlod_queue.is_empty():
 		return 0
-	if _workers.is_empty():
-		return 0
 	var dispatch_budget: int = maxi(GameConfig.render_stream_hlod_commits_per_frame, 1)
 	var dispatched_count: int = 0
 	while dispatched_count < dispatch_budget and not _stream_hlod_queue.is_empty():
@@ -1161,6 +1159,8 @@ func _drain_stream_hlod_queue() -> int:
 			continue
 		_enqueue_stream_hlod_build(cell)
 		dispatched_count += 1
+	if dispatched_count > 0 and _workers.is_empty():
+		_process_build_queue_synchronously()
 	return dispatched_count
 
 
@@ -1371,8 +1371,6 @@ func _is_cell_in_foliage_radius(cell: Vector2i) -> bool:
 func _drain_stream_hlod_densify_queue() -> int:
 	if _stream_hlod_densify_queue.is_empty():
 		return 0
-	if _workers.is_empty():
-		return 0
 	var commit_budget: int = maxi(GameConfig.render_stream_hlod_commits_per_frame, 1)
 	var dispatched_count: int = 0
 	while dispatched_count < commit_budget and not _stream_hlod_densify_queue.is_empty():
@@ -1382,6 +1380,8 @@ func _drain_stream_hlod_densify_queue() -> int:
 			continue
 		_enqueue_stream_hlod_densify_build(cell)
 		dispatched_count += 1
+	if dispatched_count > 0 and _workers.is_empty():
+		_process_build_queue_synchronously()
 	return dispatched_count
 
 
@@ -1737,6 +1737,10 @@ func _pop_next_synchronous_build_job_locked() -> Dictionary:
 		return _build_queue.pop_front() as Dictionary
 	if not _midlod_build_queue.is_empty():
 		return _midlod_build_queue.pop_front() as Dictionary
+	if not _stream_hlod_build_queue.is_empty():
+		return _stream_hlod_build_queue.pop_front() as Dictionary
+	if not _stream_hlod_densify_build_queue.is_empty():
+		return _stream_hlod_densify_build_queue.pop_front() as Dictionary
 	return {}
 
 
