@@ -50,6 +50,7 @@ var _hlod_instance: MeshInstance3D = null
 var _stream_generation: int = 0
 var _worker_count: int = clampi(OS.get_processor_count() / 2, DEFAULT_WORKER_COUNT, MAX_BUILD_WORKERS)
 var _configured: bool = false
+var _headless: bool = DisplayServer.get_name() == "headless"
 var _events_connected: bool = false
 var _hlod_dirty: bool = false
 var _midlod_refresh_requested: bool = false
@@ -149,6 +150,7 @@ var _perf_attribution_enabled: bool = false
 
 
 func _ready() -> void:
+	_headless = DisplayServer.get_name() == "headless"
 	set_process(false)
 	if _configured:
 		_ensure_event_connections()
@@ -159,6 +161,7 @@ func _exit_tree() -> void:
 
 
 func configure_region(new_region_id: String) -> void:
+	_headless = DisplayServer.get_name() == "headless"
 	reset_stream()
 	_region_id = new_region_id
 	_configured = not _region_id.is_empty()
@@ -280,25 +283,7 @@ func _process(_delta: float) -> void:
 	# Render host only — wall-clock here never feeds the deterministic sim.
 	_commit_phase_start_usec = Time.get_ticks_usec()
 	_reset_worker_result_drain_budget()
-	if _hlod_dirty:
-		_update_hlod_visibility()
-		_hlod_dirty = false
-	if _stream_hlod_queue_resort_requested:
-		_stream_hlod_queue_resort_requested = false
-		_resort_stream_hlod_queue()
-	if _stream_hlod_densify_refresh_requested:
-		_stream_hlod_densify_refresh_requested = false
-		_queue_near_stream_hlod_densification()
-	_drain_stream_hlod_queue()
-	_drain_stream_hlod_densify_queue()
-	if _midlod_refresh_requested:
-		_midlod_refresh_requested = false
-		var midlod_refresh_start_usec: int = 0
-		if _perf_attribution_enabled:
-			midlod_refresh_start_usec = Time.get_ticks_usec()
-		_refresh_midlod_streaming()
-		if _perf_attribution_enabled:
-			_midlod_refresh_usec_last_frame += maxi(Time.get_ticks_usec() - midlod_refresh_start_usec, 0)
+	_drain_hlod_maintenance_requests()
 	if _workers.is_empty():
 		_process_build_queue_synchronously()
 	var worker_result_start_usec: int = 0
@@ -347,13 +332,35 @@ func _process(_delta: float) -> void:
 		_visual_commit_usec_last_frame = maxi(Time.get_ticks_usec() - visual_commit_start_usec, 0)
 
 
+func _drain_hlod_maintenance_requests() -> void:
+	if _hlod_dirty:
+		_update_hlod_visibility()
+		_hlod_dirty = false
+	if _stream_hlod_queue_resort_requested:
+		_stream_hlod_queue_resort_requested = false
+		_resort_stream_hlod_queue()
+	if _stream_hlod_densify_refresh_requested:
+		_stream_hlod_densify_refresh_requested = false
+		_queue_near_stream_hlod_densification()
+	_drain_stream_hlod_queue()
+	_drain_stream_hlod_densify_queue()
+	if _midlod_refresh_requested:
+		_midlod_refresh_requested = false
+		var midlod_refresh_start_usec: int = 0
+		if _perf_attribution_enabled:
+			midlod_refresh_start_usec = Time.get_ticks_usec()
+		_refresh_midlod_streaming()
+		if _perf_attribution_enabled:
+			_midlod_refresh_usec_last_frame += maxi(Time.get_ticks_usec() - midlod_refresh_start_usec, 0)
+
+
 func _commit_frame_budget_exceeded() -> bool:
 	# True once this frame's commit phase has already spent COMMIT_FRAME_BUDGET_USEC.
 	# Callers always commit at least one item before consulting this, so a single fat
 	# tile can never deadlock the queue — it just yields the remainder to next frame.
 	# Headless fixtures busy-loop a single frame and rely on draining the whole queue
 	# in one _process tick, so the budget is disabled under the headless DisplayServer.
-	if DisplayServer.get_name() == "headless":
+	if _headless:
 		return false
 	return Time.get_ticks_usec() - _commit_phase_start_usec >= COMMIT_FRAME_BUDGET_USEC
 
@@ -620,6 +627,8 @@ func _on_world_tile_activated(cell: Vector2i) -> void:
 	_promote_near_deferred_foliage_lod0()
 	if _perf_attribution_enabled:
 		_foliage_build_usec_last_frame += maxi(Time.get_ticks_usec() - foliage_build_start_usec, 0)
+	if _headless:
+		_drain_hlod_maintenance_requests()
 
 
 func _refresh_visual_detail_streaming() -> void:
@@ -944,7 +953,7 @@ func _cancel_midlod_build(cell: Vector2i) -> void:
 func _drain_worker_results() -> void:
 	var results: Array[Dictionary] = []
 	_work_mutex.lock()
-	if _workers.is_empty() or DisplayServer.get_name() == "headless":
+	if _workers.is_empty() or _headless:
 		for result in _result_queue:
 			results.append(result)
 		_result_queue.clear()
@@ -1024,7 +1033,7 @@ func _drain_worker_results() -> void:
 
 
 func _reset_worker_result_drain_budget() -> void:
-	if _workers.is_empty() or DisplayServer.get_name() == "headless":
+	if _workers.is_empty() or _headless:
 		_result_drains_remaining_this_frame = 0
 		return
 	_result_drains_remaining_this_frame = maxi(GameConfig.render_visual_worker_result_drains_per_frame, 1)
@@ -1915,7 +1924,7 @@ func _start_workers() -> void:
 	# carpet). Headless test fixtures busy-loop the main thread and would starve
 	# low-priority workers, so use NORMAL there.
 	var worker_priority: int = Thread.PRIORITY_LOW
-	if DisplayServer.get_name() == "headless":
+	if _headless:
 		worker_priority = Thread.PRIORITY_NORMAL
 	for _index in range(_worker_count):
 		var thread: Thread = Thread.new()
