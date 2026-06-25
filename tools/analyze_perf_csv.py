@@ -25,6 +25,10 @@ import sys
 ATTRIBUTION_COLUMNS = {"collision_cooks", "visual_commits", "visual_commit_ms"}
 STREAMER_MS_COLUMNS = [
     ("detail_refresh_ms", "render-detail-refresh", "detail"),
+    ("detail_sort_ms", "render-detail-refresh", "dsort"),
+    ("detail_ensure_ms", "render-detail-refresh", "densure"),
+    ("detail_downgrade_ms", "render-detail-refresh", "ddown"),
+    ("detail_sync_build_ms", "render-detail-refresh", "dsync"),
     ("evict_ms", "render-evict", "evict"),
     ("hlod_queue_ms", "render-hlod-queue", "hlodq"),
     ("hlod_dispatch_ms", "render-hlod-dispatch", "hdisp"),
@@ -36,6 +40,9 @@ STREAMER_MS_COLUMNS = [
     ("midlod_build_ms", "render-midlod-build", "mbuild"),
     ("hlod_build_ms", "render-hlod-build", "hbuild"),
     ("foliage_build_ms", "render-foliage-build", "fbuild"),
+]
+STREAMER_COUNT_COLUMNS = [
+    ("detail_refresh_sweeps", "sweeps"),
 ]
 HLOD_SPLIT_COLUMNS = {"hlod_dispatch_ms", "hlod_densify_ms", "hlod_sync_ms"}
 DERIVED_HLOD_MAINTENANCE_COLUMN = "__hlod_maintenance_ms"
@@ -75,6 +82,10 @@ def available_streamer_columns(fieldnames):
     return columns
 
 
+def available_streamer_count_columns(fieldnames):
+    return [item for item in STREAMER_COUNT_COLUMNS if item[0] in fieldnames]
+
+
 def streamer_value(row, column):
     if column == DERIVED_HLOD_MAINTENANCE_COLUMN:
         return max(0.0, (
@@ -97,14 +108,18 @@ def dominant_streamer_column(row, streamer_columns):
     return label, value
 
 
-def format_streamer_columns(row, streamer_columns):
-    if not streamer_columns:
+def format_streamer_columns(row, streamer_columns, streamer_count_columns):
+    if not streamer_columns and not streamer_count_columns:
         return ""
     parts = []
     for column, _label, short_name in streamer_columns:
         value = streamer_value(row, column)
         if value > 0.0:
             parts.append(f"{short_name}={value:.1f}")
+    for column, short_name in streamer_count_columns:
+        value = inum(row, column)
+        if value > 0:
+            parts.append(f"{short_name}={value}")
     return " ".join(parts) if parts else "-"
 
 
@@ -155,6 +170,7 @@ def main() -> int:
         return 1
     has_attribution = ATTRIBUTION_COLUMNS.issubset(fieldnames)
     streamer_columns = available_streamer_columns(fieldnames)
+    streamer_count_columns = available_streamer_count_columns(fieldnames)
 
     n = len(rows)
     dts = [fnum(r, "dt_ms") for r in rows]
@@ -178,8 +194,8 @@ def main() -> int:
     print(f"\n--- hitches > {thr:.0f}ms ---")
     base_header = f"{'frame':>7} {'dt_ms':>8} {'cell':>7} {'atc':>4} {'dobj':>6} {'ddraw':>6}"
     if has_attribution:
-        if streamer_columns:
-            print(f"{base_header} {'cooks':>5} {'vcom':>5} {'vc_ms':>8} {'wrk':>4}  streamer_ms  class")
+        if streamer_columns or streamer_count_columns:
+            print(f"{base_header} {'cooks':>5} {'vcom':>5} {'vc_ms':>8} {'wrk':>4}  streamer_attr  class")
         else:
             print(f"{base_header} {'cooks':>5} {'vcom':>5} {'vc_ms':>8} {'wrk':>4}  class")
     else:
@@ -200,8 +216,8 @@ def main() -> int:
                     f"{'Y' if atc else 'n':>4} {dobj:>6} {ddraw:>6} "
                     f"{inum(r, 'collision_cooks'):>5} {inum(r, 'visual_commits'):>5} "
                     f"{fnum(r, 'visual_commit_ms'):>8.1f} {inum(r, 'worker_count'):>4}")
-            if streamer_columns:
-                print(f"{base}  {format_streamer_columns(r, streamer_columns):<88}  {cls}")
+            if streamer_columns or streamer_count_columns:
+                print(f"{base}  {format_streamer_columns(r, streamer_columns, streamer_count_columns):<112}  {cls}")
             else:
                 print(f"{base}  {cls}")
         else:
@@ -217,13 +233,14 @@ def main() -> int:
         print(f"collision → collision_cooks>0; visual-commit → visual_commits>={VISUAL_COMMIT_COUNT_HIGH} "
               f"or visual_commit_ms>={VISUAL_COMMIT_DOMINANCE_RATIO:.0%} of dt. Measured render durations "
               "win over collision cook counts when they dominate.")
-        if streamer_columns:
-            names = ", ".join(
+        if streamer_columns or streamer_count_columns:
+            names = [
                 "hlod_maintenance_ms(derived)" if column == DERIVED_HLOD_MAINTENANCE_COLUMN else column
                 for column, _label, _short_name in streamer_columns
-            )
+            ]
+            names.extend(column for column, _short_name in streamer_count_columns)
             print(f"render-streamer → dominant new *_ms column >= {STREAMER_DOMINANCE_RATIO:.0%} of dt "
-                  f"(columns present: {names}).")
+                  f"(columns present: {', '.join(names)}).")
     else:
         print("legacy CSV: visual-commit uses object delta; crossing-collision uses hitch_at_crossing.")
     print("New 'other' hitches = next target.")

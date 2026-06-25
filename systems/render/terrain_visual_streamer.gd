@@ -54,6 +54,8 @@ var _headless: bool = DisplayServer.get_name() == "headless"
 var _events_connected: bool = false
 var _hlod_dirty: bool = false
 var _midlod_refresh_requested: bool = false
+var _detail_refresh_requested: bool = false
+var _deferred_foliage_promote_requested: bool = false
 var _region_cells_by_cell: Dictionary[Vector2i, bool] = {}
 var _active_cells: Dictionary[Vector2i, bool] = {}
 var _desired_midlod_cells_by_cell: Dictionary[Vector2i, bool] = {}
@@ -131,10 +133,16 @@ var _visual_commit_usec_last_frame: int = 0
 # Perf-log-only render attribution. These accumulate main-thread streamer work:
 # detail_refresh=active detail-ring diff/queueing; evict=eviction callback + queued
 # frees; hlod_queue=all HLOD priority/dispatch/sync queue work; hlod_dispatch/densify/sync
-# split the HLOD drains; midlod_refresh=MidLOD active-ring diff/queueing;
+# split the HLOD drains; detail_* split the detail-refresh sweep;
+# midlod_refresh=MidLOD active-ring diff/queueing;
 # worker_result=main-thread staging of finished worker jobs;
 # *_build=synchronous no-worker fallback builds or foliage materialization.
 var _detail_refresh_usec_last_frame: int = 0
+var _detail_sort_usec_last_frame: int = 0
+var _detail_ensure_usec_last_frame: int = 0
+var _detail_downgrade_usec_last_frame: int = 0
+var _detail_sync_build_usec_last_frame: int = 0
+var _detail_refresh_sweeps_last_frame: int = 0
 var _evict_usec_last_frame: int = 0
 var _hlod_queue_usec_last_frame: int = 0
 var _hlod_dispatch_usec_last_frame: int = 0
@@ -195,6 +203,8 @@ func reset_stream() -> void:
 	set_process(false)
 	_hlod_dirty = false
 	_midlod_refresh_requested = false
+	_detail_refresh_requested = false
+	_deferred_foliage_promote_requested = false
 	_stop_workers()
 	_stream_generation += 1
 	_disconnect_event_connections()
@@ -352,6 +362,17 @@ func _drain_hlod_maintenance_requests() -> void:
 		_refresh_midlod_streaming()
 		if _perf_attribution_enabled:
 			_midlod_refresh_usec_last_frame += maxi(Time.get_ticks_usec() - midlod_refresh_start_usec, 0)
+	if _detail_refresh_requested:
+		_refresh_visual_detail_streaming()
+		_detail_refresh_requested = false
+	if _deferred_foliage_promote_requested:
+		var foliage_build_start_usec: int = 0
+		if _perf_attribution_enabled:
+			foliage_build_start_usec = Time.get_ticks_usec()
+		_promote_near_deferred_foliage_lod0()
+		_deferred_foliage_promote_requested = false
+		if _perf_attribution_enabled:
+			_foliage_build_usec_last_frame += maxi(Time.get_ticks_usec() - foliage_build_start_usec, 0)
 
 
 func _commit_frame_budget_exceeded() -> bool:
@@ -369,6 +390,11 @@ func _reset_perf_attribution_frame() -> void:
 	_visual_commits_last_frame = 0
 	_visual_commit_usec_last_frame = 0
 	_detail_refresh_usec_last_frame = 0
+	_detail_sort_usec_last_frame = 0
+	_detail_ensure_usec_last_frame = 0
+	_detail_downgrade_usec_last_frame = 0
+	_detail_sync_build_usec_last_frame = 0
+	_detail_refresh_sweeps_last_frame = 0
 	_evict_usec_last_frame = 0
 	_hlod_queue_usec_last_frame = 0
 	_hlod_dispatch_usec_last_frame = 0
@@ -460,6 +486,26 @@ func visual_commit_ms_last_frame() -> float:
 
 func detail_refresh_ms_last_frame() -> float:
 	return float(_detail_refresh_usec_last_frame) / 1000.0
+
+
+func detail_sort_ms_last_frame() -> float:
+	return float(_detail_sort_usec_last_frame) / 1000.0
+
+
+func detail_ensure_ms_last_frame() -> float:
+	return float(_detail_ensure_usec_last_frame) / 1000.0
+
+
+func detail_downgrade_ms_last_frame() -> float:
+	return float(_detail_downgrade_usec_last_frame) / 1000.0
+
+
+func detail_sync_build_ms_last_frame() -> float:
+	return float(_detail_sync_build_usec_last_frame) / 1000.0
+
+
+func detail_refresh_sweeps_last_frame() -> int:
+	return _detail_refresh_sweeps_last_frame
 
 
 func evict_ms_last_frame() -> float:
@@ -617,29 +663,42 @@ func _on_world_tile_activated(cell: Vector2i) -> void:
 	_request_stream_hlod_queue_resort()
 	_request_near_stream_hlod_densification()
 	_request_midlod_refresh()
-	_refresh_visual_detail_streaming()
+	_request_visual_detail_refresh()
 	# Any cell activation can shift the active center and pull a previously LOD1-only foliage
 	# tile into the dense foliage ring. Sweep the deferred set after the detail-radius refresh
 	# so cells downgraded to MidLOD/HLOD cannot receive a foliage upgrade.
-	var foliage_build_start_usec: int = 0
-	if _perf_attribution_enabled:
-		foliage_build_start_usec = Time.get_ticks_usec()
-	_promote_near_deferred_foliage_lod0()
-	if _perf_attribution_enabled:
-		_foliage_build_usec_last_frame += maxi(Time.get_ticks_usec() - foliage_build_start_usec, 0)
+	_request_deferred_foliage_promote()
 	if _headless:
 		_drain_hlod_maintenance_requests()
 
 
 func _refresh_visual_detail_streaming() -> void:
+	_detail_refresh_sweeps_last_frame += 1
 	var detail_refresh_start_usec: int = 0
 	if _perf_attribution_enabled:
 		detail_refresh_start_usec = Time.get_ticks_usec()
-	for active_cell in _sorted_cells(_active_cells.keys()):
+	var sorted_active_cells: Array[Vector2i] = []
+	if _perf_attribution_enabled:
+		var detail_sort_start_usec: int = Time.get_ticks_usec()
+		sorted_active_cells = _sorted_cells(_active_cells.keys())
+		_detail_sort_usec_last_frame += maxi(Time.get_ticks_usec() - detail_sort_start_usec, 0)
+	else:
+		sorted_active_cells = _sorted_cells(_active_cells.keys())
+	for active_cell in sorted_active_cells:
 		if _is_cell_in_visual_detail_radius(active_cell):
-			_ensure_visual_detail_cell(active_cell)
+			if _perf_attribution_enabled:
+				var detail_ensure_start_usec: int = Time.get_ticks_usec()
+				_ensure_visual_detail_cell(active_cell)
+				_detail_ensure_usec_last_frame += maxi(Time.get_ticks_usec() - detail_ensure_start_usec, 0)
+			else:
+				_ensure_visual_detail_cell(active_cell)
 		else:
-			_downgrade_visual_detail_cell(active_cell)
+			if _perf_attribution_enabled:
+				var detail_downgrade_start_usec: int = Time.get_ticks_usec()
+				_downgrade_visual_detail_cell(active_cell)
+				_detail_downgrade_usec_last_frame += maxi(Time.get_ticks_usec() - detail_downgrade_start_usec, 0)
+			else:
+				_downgrade_visual_detail_cell(active_cell)
 	if _perf_attribution_enabled:
 		_detail_refresh_usec_last_frame += maxi(Time.get_ticks_usec() - detail_refresh_start_usec, 0)
 
@@ -663,8 +722,7 @@ func _ensure_visual_detail_cell(cell: Vector2i) -> void:
 		_promote_ready_visual_upgrade(cell)
 		_enqueue_build(cell, TerrainVisualBuilderScript.REGION_DETAIL_FULLRES_SAMPLE_STEP)
 		if _workers.is_empty():
-			_process_build_queue_synchronously()
-			_drain_worker_results()
+			_process_visual_detail_sync_build_queue()
 		return
 	if _ready_tile_data_by_cell.has(cell):
 		var ready_step: int = int(_ready_tile_step_by_cell.get(cell, TerrainVisualBuilderScript.REGION_DETAIL_SAMPLE_STEP))
@@ -672,8 +730,7 @@ func _ensure_visual_detail_cell(cell: Vector2i) -> void:
 		if wants_fullres and ready_step > TerrainVisualBuilderScript.REGION_DETAIL_FULLRES_SAMPLE_STEP:
 			_enqueue_build(cell, TerrainVisualBuilderScript.REGION_DETAIL_FULLRES_SAMPLE_STEP)
 			if _workers.is_empty():
-				_process_build_queue_synchronously()
-				_drain_worker_results()
+				_process_visual_detail_sync_build_queue()
 		return
 	if _queued_builds.has(cell):
 		var queued_step: int = int(_queued_build_step_by_cell.get(cell, TerrainVisualBuilderScript.REGION_DETAIL_SAMPLE_STEP))
@@ -688,8 +745,17 @@ func _ensure_visual_detail_cell(cell: Vector2i) -> void:
 	# TerrainDetailTile at all; MidLOD/HLOD carries their visual representation.
 	_enqueue_build(cell, TerrainVisualBuilderScript.REGION_DETAIL_SAMPLE_STEP)
 	if _workers.is_empty():
-		_process_build_queue_synchronously()
-		_drain_worker_results()
+		_process_visual_detail_sync_build_queue()
+
+
+func _process_visual_detail_sync_build_queue() -> void:
+	var detail_sync_start_usec: int = 0
+	if _perf_attribution_enabled:
+		detail_sync_start_usec = Time.get_ticks_usec()
+	_process_build_queue_synchronously()
+	_drain_worker_results()
+	if _perf_attribution_enabled:
+		_detail_sync_build_usec_last_frame += maxi(Time.get_ticks_usec() - detail_sync_start_usec, 0)
 
 
 func _downgrade_visual_detail_cell(cell: Vector2i) -> void:
@@ -720,7 +786,10 @@ func _on_world_tile_evicted(cell: Vector2i) -> void:
 	_request_stream_hlod_queue_resort()
 	_request_near_stream_hlod_densification()
 	_request_midlod_refresh()
-	_refresh_visual_detail_streaming()
+	if _headless:
+		_refresh_visual_detail_streaming()
+	else:
+		_request_visual_detail_refresh()
 	_remove_queued_commit(cell)
 	_remove_queued_foliage_subcommits(cell)
 	_remove_queued_foliage_finish(cell)
@@ -825,6 +894,14 @@ func _cancel_build(cell: Vector2i) -> void:
 
 func _request_midlod_refresh() -> void:
 	_midlod_refresh_requested = true
+
+
+func _request_visual_detail_refresh() -> void:
+	_detail_refresh_requested = true
+
+
+func _request_deferred_foliage_promote() -> void:
+	_deferred_foliage_promote_requested = true
 
 
 func _queue_midlod_free(cell: Vector2i) -> void:
@@ -1779,9 +1856,9 @@ func _begin_foliage_tile_commit(cell: Vector2i, foliage_tile_data: Variant) -> v
 
 func _promote_near_deferred_foliage_lod0() -> void:
 	# Materialize the deferred near-field LOD0 for every cell that is now both active and
-	# inside the dense foliage ring. Called on each activation (the active center may have
-	# shifted, pulling previously LOD1-only tiles into the ring). Snapshot the keys first so
-	# the upgrade can mutate the deferred dict mid-iteration.
+	# inside the dense foliage ring. Requested on activation and drained after the detail
+	# refresh (the active center may have shifted, pulling previously LOD1-only tiles into the
+	# ring). Snapshot the keys first so the upgrade can mutate the deferred dict mid-iteration.
 	if _deferred_lod0_foliage_data_by_cell.is_empty():
 		return
 	for cell in _sorted_cells(_deferred_lod0_foliage_data_by_cell.keys()):
