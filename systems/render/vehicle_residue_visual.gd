@@ -60,12 +60,17 @@ const WHEEL_SOCKET_NAMES: Array[String] = [
 	"wheel_rear_right"
 ]
 
+var _overlay_root: Node = null
+var _overlay_meshes: Array[MeshInstance3D] = []
+var _overlay_cache_valid: bool = false
+
 
 func attach(visual_root: Node) -> void:
 	if visual_root == null:
 		return
 	_ensure_chassis_overlays(visual_root)
 	_ensure_tire_overlays(visual_root)
+	_rebuild_overlay_cache(visual_root)
 
 
 func apply_state(visual_root: Node, state: RefCounted) -> void:
@@ -79,7 +84,8 @@ func apply_state(visual_root: Node, state: RefCounted) -> void:
 		mud_amount = clampf(float(contamination.get("mud")), 0.0, 1.0)
 		dust_amount = clampf(float(contamination.get("dust")), 0.0, 1.0)
 		wetness_amount = clampf(float(contamination.get("wetness")), 0.0, 1.0)
-	_set_contamination_amounts(visual_root, mud_amount, dust_amount, wetness_amount)
+	_ensure_overlay_cache(visual_root)
+	_set_contamination_amounts(mud_amount, dust_amount, wetness_amount)
 
 
 func _ensure_chassis_overlays(visual_root: Node) -> void:
@@ -154,6 +160,7 @@ func _ensure_mesh_overlay(source: MeshInstance3D, overlay_name: String, surface_
 	overlay.set_meta(OVERLAY_META, true)
 	overlay.set_meta(SURFACE_META, surface_kind)
 	source.add_child(overlay)
+	_overlay_cache_valid = false
 
 
 func _contamination_material(resource_name: String, mud_mask: Texture2D, dust_mask: Texture2D, wetness_mask: Texture2D, mud_alpha_scale: float, dust_alpha_scale: float, wetness_alpha_scale: float) -> ShaderMaterial:
@@ -177,13 +184,39 @@ func _contamination_material(resource_name: String, mud_mask: Texture2D, dust_ma
 	return material
 
 
-func _set_contamination_amounts(parent: Node, mud_amount: float, dust_amount: float, wetness_amount: float) -> void:
+func _ensure_overlay_cache(visual_root: Node) -> void:
+	if not _overlay_cache_valid or _overlay_root != visual_root or _overlay_cache_has_invalid_entries():
+		_rebuild_overlay_cache(visual_root)
+
+
+func _rebuild_overlay_cache(visual_root: Node) -> void:
+	_overlay_root = visual_root
+	_overlay_meshes.clear()
+	if visual_root != null:
+		_collect_overlay_meshes(visual_root)
+	_overlay_cache_valid = true
+
+
+func _collect_overlay_meshes(parent: Node) -> void:
 	for index: int in range(parent.get_child_count()):
 		var child: Node = parent.get_child(index)
 		var overlay: MeshInstance3D = child as MeshInstance3D
 		if overlay != null and bool(overlay.get_meta(OVERLAY_META, false)):
+			_overlay_meshes.append(overlay)
+		_collect_overlay_meshes(child)
+
+
+func _overlay_cache_has_invalid_entries() -> bool:
+	for overlay in _overlay_meshes:
+		if overlay == null or not is_instance_valid(overlay):
+			return true
+	return false
+
+
+func _set_contamination_amounts(mud_amount: float, dust_amount: float, wetness_amount: float) -> void:
+	for overlay in _overlay_meshes:
+		if overlay != null and is_instance_valid(overlay):
 			_set_overlay_amounts(overlay, mud_amount, dust_amount, wetness_amount)
-		_set_contamination_amounts(child, mud_amount, dust_amount, wetness_amount)
 
 
 func _set_overlay_amounts(overlay: MeshInstance3D, mud_amount: float, dust_amount: float, wetness_amount: float) -> void:

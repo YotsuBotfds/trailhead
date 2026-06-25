@@ -94,12 +94,15 @@ const PERF_LOG_MB_DIVISOR: float = 1024.0 * 1024.0
 var _world: Node3D = null
 var _vehicle: Node = null
 var _vehicle_input: RefCounted = VehicleInputScript.new()
+var _frame_vehicle_state_cache_active: bool = false
+var _frame_vehicle_state: RefCounted = null
 var _camera: Camera3D = null
 var _orbit_camera: Camera3D = null
 var _fpv_camera: Camera3D = null
 var _cinematic_camera: Camera3D = null
 var _wheel_sockets: Array[Node3D] = []
 var _vehicle_visual_root: Node = null
+var _shock_node_cache: Dictionary[String, Node3D] = {}
 var _vehicle_residue_visual: RefCounted = VehicleResidueVisualScript.new()
 var _wheel_spin: float = 0.0
 var _visual_body_pitch: float = 0.0
@@ -259,7 +262,11 @@ func _notification(what: int) -> void:
 
 func _physics_process(delta: float) -> void:
 	if _vehicle == null:
+		_frame_vehicle_state_cache_active = false
+		_frame_vehicle_state = null
 		return
+	_frame_vehicle_state_cache_active = false
+	_frame_vehicle_state = null
 	_update_vehicle_input()
 	_update_cinematic_tour_input()
 	_update_photo_mode_input()
@@ -269,11 +276,15 @@ func _physics_process(delta: float) -> void:
 	_update_frequency_input()
 	_update_mood_input()
 	_vehicle.call("apply_input", _vehicle_input)
+	_frame_vehicle_state_cache_active = true
+	_frame_vehicle_state = null
 	_sample_golden_line()
 	_update_visual_wheels(delta)
 	_update_terrain_tracks()
 	if _runtime_camera_updates_enabled():
 		_update_camera(delta)
+	_frame_vehicle_state_cache_active = false
+	_frame_vehicle_state = null
 
 
 func _process(delta: float) -> void:
@@ -566,7 +577,7 @@ func _sample_perf_log_frame() -> void:
 	var hitch_at_crossing: bool = _perf_log_frame_index - _perf_log_last_crossing_frame <= PERF_LOG_CROSSING_WINDOW_FRAMES
 	var hitch_flag: bool = _perf_log_is_hitch(dt_ms)
 	var window_focused: bool = DisplayServer.window_is_focused()
-	_perf_log_dt_samples_ms.append(dt_ms)
+	_record_perf_log_dt_sample(dt_ms)
 
 	_perf_log_rows.append("%d,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.4f,%d,%.3f,%d,%d,%d,%.3f,%.3f,%s,%d,%d,%d,%d,%d,%d,%d" % [
 		_perf_log_frame_index,
@@ -604,6 +615,12 @@ func _flush_perf_log_rows() -> void:
 		_perf_log_file.store_line(row)
 	_perf_log_rows.clear()
 	_perf_log_file.flush()
+
+
+func _record_perf_log_dt_sample(dt_ms: float) -> void:
+	_perf_log_dt_samples_ms.append(dt_ms)
+	while _perf_log_dt_samples_ms.size() > PERF_LOG_MEDIAN_WINDOW_SIZE:
+		_perf_log_dt_samples_ms.pop_front()
 
 
 func _finalize_perf_log() -> void:
@@ -1083,7 +1100,7 @@ func _sample_golden_line() -> void:
 	if _golden_line_tracker == null:
 		_sim_tick += 1
 		return
-	var state: RefCounted = _vehicle.call("get_state")
+	var state: RefCounted = _vehicle_state_for_current_pass()
 	_golden_line_tracker.call("sample_vehicle_state", state, _sim_tick)
 	_sim_tick += 1
 
@@ -1465,6 +1482,7 @@ static func _rgb(color: Color) -> Vector3:
 func _collect_visual_wheels() -> void:
 	_wheel_sockets.clear()
 	_vehicle_visual_root = null
+	_shock_node_cache.clear()
 	_visual_body_pitch = 0.0
 	_visual_body_roll = 0.0
 	_visual_body_pitch_velocity = 0.0
@@ -1497,7 +1515,7 @@ func _collect_visual_wheels() -> void:
 func _update_visual_wheels(delta: float) -> void:
 	if _vehicle_visual_root == null:
 		return
-	var state: RefCounted = _vehicle.call("get_state")
+	var state: RefCounted = _vehicle_state_for_current_pass()
 	var acceleration: Vector3 = _visual_acceleration(state, delta)
 	if _vehicle_residue_runtime_updates_enabled():
 		_update_vehicle_residue_visual(state)
@@ -1532,7 +1550,7 @@ func _update_visual_wheels(delta: float) -> void:
 	var hit_points: Array[Vector3] = state.get("wheel_hit_point")
 	for i in range(mini(ProceduralBuggyVisualScript.SHOCK_NODE_NAMES.size(), hit_points.size())):
 		var shock_name: String = String(ProceduralBuggyVisualScript.SHOCK_NODE_NAMES[i])
-		var shock: Node3D = _vehicle_visual_root.find_child(shock_name, true, false) as Node3D
+		var shock: Node3D = _cached_shock_node(shock_name)
 		if shock == null:
 			continue
 		var spring: Node3D = shock.find_child(shock_name + "_spring", false, false) as Node3D
@@ -1721,7 +1739,7 @@ func _runtime_camera_updates_enabled() -> bool:
 func _update_terrain_tracks() -> void:
 	if _terrain_track_painter == null:
 		return
-	var state: RefCounted = _vehicle.call("get_state")
+	var state: RefCounted = _vehicle_state_for_current_pass()
 	_terrain_track_painter.call("apply_vehicle_state", state, GameConfig.FIXED_DT)
 	# Re-applying the track texture to streamed tiles (a full streamer-tree walk)
 	# happens once per RENDER frame in _process(); doing it here too meant ~120Hz
@@ -1897,16 +1915,40 @@ func _wheel_mesh_for_socket(socket: Node3D) -> Node3D:
 	return null
 
 
+func _cached_shock_node(shock_name: String) -> Node3D:
+	if _shock_node_cache.has(shock_name):
+		var cached_shock: Node3D = _shock_node_cache[shock_name]
+		if cached_shock != null and is_instance_valid(cached_shock):
+			return cached_shock
+		_shock_node_cache.erase(shock_name)
+	if _vehicle_visual_root == null:
+		return null
+	var shock: Node3D = _vehicle_visual_root.find_child(shock_name, true, false) as Node3D
+	if shock != null:
+		_shock_node_cache[shock_name] = shock
+	return shock
+
+
 func _update_camera(delta: float) -> void:
 	if _vehicle == null:
 		return
 	if _cinematic_tour_active:
 		_update_cinematic_camera(delta)
 		return
-	var state: RefCounted = _vehicle.call("get_state")
+	var state: RefCounted = _vehicle_state_for_current_pass()
 	_update_chase_camera(delta, state)
 	_update_orbit_camera(delta, state)
 	_update_fpv_camera(delta, state)
+
+
+func _vehicle_state_for_current_pass() -> RefCounted:
+	if _frame_vehicle_state_cache_active:
+		if _frame_vehicle_state == null and _vehicle != null:
+			_frame_vehicle_state = _vehicle.call("get_state")
+		return _frame_vehicle_state
+	if _vehicle == null:
+		return null
+	return _vehicle.call("get_state")
 
 
 func _update_cinematic_camera(delta: float) -> void:
