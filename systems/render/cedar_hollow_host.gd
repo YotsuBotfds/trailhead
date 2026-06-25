@@ -192,6 +192,7 @@ var _audio_rig: Node = null
 var _fps_cap_enabled: bool = true
 var _autodrive_enabled: bool = false
 var _autodrive_elapsed_since_release: float = 0.0
+var _autodrive_uncapped: bool = false
 var _screenshot_capture_active: bool = false
 var _screenshot_capture_in_flight: bool = false
 var _screenshot_delay_seconds: float = 0.0
@@ -1307,6 +1308,13 @@ func _update_autodrive_vehicle_input() -> void:
 	_vehicle_input.set("ebrake", false)
 	_vehicle_input.set("self_right", false)
 	_drive_started = true
+	if not _autodrive_uncapped:
+		# Headroom capture: autodrive runs are perf tests — uncap fps (mirror F2) once
+		# driving begins so the --perf-log CSV measures true frame cost, not the 60 cap.
+		_autodrive_uncapped = true
+		_fps_cap_enabled = false
+		_apply_fps_cap_state()
+		print("perf: autodrive uncapped fps for headroom capture")
 	if _cinematic_tour_active:
 		_exit_cinematic_tour()
 
