@@ -66,6 +66,25 @@ const ZION_RIVER_EAST_POINTS: Array[Vector2] = [
 	Vector2(1810.0, 1646.0),
 	Vector2(1905.0, 1652.0),
 ]
+# EAST-river terminus (T-012). The east centerline runs from the west confluence
+# at (1130,1300)/bed ~1191.4 m monotonically UPHILL to (1905,1652)/bed ~1209.5 m
+# (~+18 m). The water surface is glued to the bed (_zion_river_surface_y =
+# heightfield + ZION_RIVER_SURFACE_RISE_M), so the ribbon visibly climbed uphill.
+# The Virgin River reaches its low point at the confluence; east of it the canyon
+# floor rises into a bench, so the river runs out into the dry sand_wash floor.
+# We keep only the gentle near-flat reach (confluence -> EAST_TERMINUS_INDEX, local
+# grades <=~1.5%, +2.3 m total over ~229 m — visually flat at vis_range_water=24 m)
+# and pinch the channel width to a thread over the last EAST_RUNOUT_M so it fades
+# into sand instead of ending on a hard wall. Vertices still sit on bed+rise, so
+# the zion_water_ribbon_height_fixture per-vertex contract is preserved. WEST is
+# untouched (it never climbs past the terminus tolerance; truncation is east-only
+# and opt-in). Indices E[3..9] (the +8..+18 m cliff) are dropped.
+const ZION_RIVER_EAST_TERMINUS_INDEX: int = 2
+const ZION_RIVER_EAST_RUNOUT_M: float = 130.0
+# Width-taper floor at the very terminus (fraction of full half-width). Small but
+# non-zero so the final cross-section is a thin thread, not a degenerate zero-area
+# strip; the existing narrow-width riffle weighting then reads it as shallow/foamy.
+const ZION_RIVER_RUNOUT_WIDTH_FLOOR: float = 0.12
 
 
 static func build_cedar_hollow(parent: Node3D) -> Node3D:
@@ -83,9 +102,21 @@ static func build_zion_virgin_river(parent: Node3D) -> Node3D:
 	root.name = ROOT_NAME
 	parent.add_child(root)
 	_add_water_ribbon(root, "virgin_river_west", ZION_RIVER_WEST_POINTS)
-	_add_water_ribbon(root, "virgin_river_east", ZION_RIVER_EAST_POINTS)
+	_add_water_ribbon(root, "virgin_river_east", _zion_river_east_water_points(), ZION_RIVER_EAST_RUNOUT_M)
 	_add_zion_bank_details(root)
 	return root
+
+
+# East water reach: the centerline truncated at the terminus where the canyon
+# floor begins its steep climb (see ZION_RIVER_EAST_TERMINUS_INDEX). The water
+# ribbon and the wet shoreline use this; dry-bed debris (gravel bars, cobbles)
+# keep the full east centerline so they read as wash material on the rising floor.
+static func _zion_river_east_water_points() -> Array[Vector2]:
+	var clipped: Array[Vector2] = []
+	var last_index: int = clampi(ZION_RIVER_EAST_TERMINUS_INDEX, 1, ZION_RIVER_EAST_POINTS.size() - 1)
+	for point_index in range(last_index + 1):
+		clipped.append(ZION_RIVER_EAST_POINTS[point_index])
+	return clipped
 
 
 static func _add_water_plane(parent: Node3D, node_name: String, position: Vector3, size: Vector2, yaw_degrees: float) -> MeshInstance3D:
@@ -104,7 +135,7 @@ static func _add_water_plane(parent: Node3D, node_name: String, position: Vector
 	return instance
 
 
-static func _add_water_ribbon(parent: Node3D, node_name: String, river_points_xz: Array[Vector2]) -> MeshInstance3D:
+static func _add_water_ribbon(parent: Node3D, node_name: String, river_points_xz: Array[Vector2], runout_taper_m: float = 0.0) -> MeshInstance3D:
 	if river_points_xz.size() < 2:
 		return null
 	var terrain_def: Resource = TerrainBuilderScript.cedar_hollow_10m_terrain_def()
@@ -124,7 +155,8 @@ static func _add_water_ribbon(parent: Node3D, node_name: String, river_points_xz
 		var point: Vector3 = world_points[point_index]
 		var distance_m: float = cumulative_distances[point_index]
 		var distance_t: float = _water_distance_t(cumulative_distances, total_distance_m, point_index)
-		var width_m: float = _zion_river_width_m(world_points, point_index, distance_t)
+		var runout_scale: float = _zion_river_runout_scale(distance_m, total_distance_m, runout_taper_m)
+		var width_m: float = _zion_river_width_m(world_points, point_index, distance_t) * runout_scale
 		var half_width: float = width_m * 0.5
 		var riffle_weight: float = _zion_river_riffle_weight(distance_t, width_m)
 		var tangent_xz: Vector2 = _water_point_tangent_xz(world_points, point_index)
@@ -204,8 +236,13 @@ static func _add_zion_bank_details(parent: Node3D) -> Node3D:
 	var horizontal_offset: Vector2 = TerrainBuilderScript.cedar_hollow_10m_streamed_horizontal_offset()
 	var west_points: Array[Vector3] = _zion_river_surface_points(ZION_RIVER_WEST_POINTS, terrain_def, horizontal_offset)
 	var east_points: Array[Vector3] = _zion_river_surface_points(ZION_RIVER_EAST_POINTS, terrain_def, horizontal_offset)
+	# The WET shoreline marks ground that the water actually touches, so it ends at
+	# the same terminus as the east water ribbon (no wet strip climbing the dry
+	# rising floor). Gravel bars / riffles / cobbles keep the full east centerline:
+	# past the terminus they read as dry wash debris on the rising sand floor.
+	var east_water_points: Array[Vector3] = _zion_river_surface_points(_zion_river_east_water_points(), terrain_def, horizontal_offset)
 	_add_zion_shoreline_mesh(detail_root, "virgin_river_wet_shoreline_west", west_points, terrain_def, horizontal_offset)
-	_add_zion_shoreline_mesh(detail_root, "virgin_river_wet_shoreline_east", east_points, terrain_def, horizontal_offset)
+	_add_zion_shoreline_mesh(detail_root, "virgin_river_wet_shoreline_east", east_water_points, terrain_def, horizontal_offset)
 	_add_zion_gravel_bar_mesh(detail_root, "virgin_river_gravel_bars_west", west_points, terrain_def, horizontal_offset)
 	_add_zion_gravel_bar_mesh(detail_root, "virgin_river_gravel_bars_east", east_points, terrain_def, horizontal_offset)
 	_add_zion_riffle_mesh(detail_root, "virgin_river_riffle_streaks_west", west_points, terrain_def, horizontal_offset)
@@ -526,6 +563,22 @@ static func _zion_river_width_m(world_points: Array[Vector3], point_index: int, 
 	var bend_widening: float = _zion_river_bend_strength(world_points, point_index) * 3.4
 	var width_m: float = ZION_RIVER_BASE_WIDTH_M + meander + secondary + bend_widening
 	return clampf(width_m, ZION_RIVER_MIN_WIDTH_M, ZION_RIVER_MAX_WIDTH_M)
+
+
+# Longitudinal run-out multiplier (1.0 except in the final runout_taper_m of a
+# terminated ribbon, where it eases to ZION_RIVER_RUNOUT_WIDTH_FLOOR so the
+# channel pinches to a thread and fades into the dry wash). Returns 1.0 when
+# runout_taper_m <= 0 (west ribbon and any non-terminated ribbon are unaffected).
+static func _zion_river_runout_scale(distance_m: float, total_distance_m: float, runout_taper_m: float) -> float:
+	if runout_taper_m <= 0.0 or total_distance_m <= 0.001:
+		return 1.0
+	var taper_start_m: float = maxf(total_distance_m - runout_taper_m, 0.0)
+	if distance_m <= taper_start_m:
+		return 1.0
+	var taper_span_m: float = maxf(total_distance_m - taper_start_m, 0.001)
+	var taper_t: float = clampf((distance_m - taper_start_m) / taper_span_m, 0.0, 1.0)
+	var eased: float = taper_t * taper_t * (3.0 - 2.0 * taper_t)
+	return lerpf(1.0, ZION_RIVER_RUNOUT_WIDTH_FLOOR, eased)
 
 
 static func _zion_river_riffle_weight(distance_t: float, width_m: float) -> float:
