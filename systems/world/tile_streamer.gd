@@ -48,6 +48,7 @@ var _ready_flags: Dictionary[Vector2i, bool] = {}
 var _heightmap_data_by_cell: Dictionary[Vector2i, Dictionary] = {}
 var _active_shapes_by_cell: Dictionary[Vector2i, HeightMapShape3D] = {}
 var _active_bodies_by_cell: Dictionary[Vector2i, RID] = {}
+var _prewarmed_bodies_by_cell: Dictionary[Vector2i, RID] = {}
 var _activated_ticks_by_cell: Dictionary[Vector2i, int] = {}
 var _load_failures_by_cell: Dictionary[Vector2i, String] = {}
 var _queued_builds: Dictionary[Vector2i, bool] = {}
@@ -66,6 +67,7 @@ var _worker_should_stop: bool = false
 var _build_queue: Array[Variant] = []
 var _result_queue: Array[Variant] = []
 var _result_drains_remaining_this_tick: int = 0
+var _collision_cooks_this_tick: int = 0
 
 
 func _ready() -> void:
@@ -135,6 +137,10 @@ func current_stream_tick() -> int:
 	return _stream_tick
 
 
+func collision_cooks_this_tick() -> int:
+	return _collision_cooks_this_tick
+
+
 func region_id() -> String:
 	return _region_id
 
@@ -169,6 +175,7 @@ func reset() -> void:
 	_last_to_load.clear()
 	_last_to_unload.clear()
 	_unload_all_active_bodies()
+	_unload_all_prewarmed_bodies()
 	_clear_cell_caches()
 	_ready_flags.clear()
 	_heightmap_data_by_cell.clear()
@@ -188,6 +195,7 @@ func reset() -> void:
 	_has_manifest_tile_cells = false
 	_manifest_tile_cells.clear()
 	_result_drains_remaining_this_tick = 0
+	_collision_cooks_this_tick = 0
 	_clear_worker_queues()
 
 
@@ -204,6 +212,14 @@ func ready_flags() -> Dictionary[Vector2i, bool]:
 	for cell in _sorted_ready_cells():
 		copy[cell] = true
 	return copy
+
+
+func prewarmed_cells_for_tests() -> Array[Vector2i]:
+	var cells: Array[Vector2i] = []
+	for cell in _prewarmed_bodies_by_cell.keys():
+		cells.append(cell)
+	_sort_cells(cells)
+	return cells
 
 
 func load_failures() -> Dictionary[Vector2i, String]:
@@ -240,6 +256,7 @@ func _physics_process(_delta: float) -> void:
 	if _region_id.is_empty():
 		return
 	_stream_tick += 1
+	_collision_cooks_this_tick = 0
 	_reset_result_drain_budget()
 	_begin_withhold_tracking_tick()
 	_drain_prebuild_queue()
@@ -340,6 +357,9 @@ func _activate_cell(cell: Vector2i) -> bool:
 	if not _heightmap_data_by_cell.has(cell):
 		return false
 
+	if _prewarmed_bodies_by_cell.has(cell):
+		return _promote_prewarmed_cell(cell)
+
 	var shape: HeightMapShape3D
 	var prebuilt_shape: Variant = _prebuilt_shapes_by_cell.get(cell, null)
 	if prebuilt_shape == null:
@@ -360,6 +380,24 @@ func _activate_cell(cell: Vector2i) -> bool:
 		Transform3D(Basis().scaled(_heightmap_collision_scale(shape)), _tile_center_world_position(cell))
 	)
 	PhysicsServer3D.body_set_space(body_rid, _physics_space())
+	_collision_cooks_this_tick += 1
+	_active_bodies_by_cell[cell] = body_rid
+	_sorted_body_cells_dirty = true
+	_active_shapes_by_cell[cell] = shape
+	_activated_ticks_by_cell[cell] = _stream_tick
+	EventBus.world_tile_activated.emit(cell)
+	return true
+
+
+func _promote_prewarmed_cell(cell: Vector2i) -> bool:
+	var body_rid: RID = _prewarmed_bodies_by_cell[cell]
+	_prewarmed_bodies_by_cell.erase(cell)
+	var shape: HeightMapShape3D = _prebuilt_shapes_by_cell.get(cell, null) as HeightMapShape3D
+	if shape == null:
+		shape = _shape_from_heightmap_data(_heightmap_data_by_cell[cell])
+	_prebuilt_shapes_by_cell.erase(cell)
+	PhysicsServer3D.body_set_collision_layer(body_rid, DEFAULT_COLLISION_LAYER)
+	PhysicsServer3D.body_set_collision_mask(body_rid, DEFAULT_COLLISION_MASK)
 	_active_bodies_by_cell[cell] = body_rid
 	_sorted_body_cells_dirty = true
 	_active_shapes_by_cell[cell] = shape
@@ -621,7 +659,7 @@ func _drain_worker_results() -> void:
 		_ready_flags[cell] = true
 		var result_shape: Variant = result.get("shape", null)
 		if result_shape != null and not _active_bodies_by_cell.has(cell):
-			_prebuilt_shapes_by_cell[cell] = result_shape as HeightMapShape3D
+			_install_prebuilt_shape(cell, result_shape as HeightMapShape3D)
 		else:
 			_enqueue_prebuild(cell)
 		EventBus.world_tile_prefetched.emit(cell)
@@ -637,8 +675,29 @@ func _drain_prebuild_queue() -> void:
 			and not _active_bodies_by_cell.has(cell)
 			and not _prebuilt_shapes_by_cell.has(cell)
 		):
-			_prebuilt_shapes_by_cell[cell] = _shape_from_heightmap_data(_heightmap_data_by_cell[cell])
+			_install_prebuilt_shape(cell, _shape_from_heightmap_data(_heightmap_data_by_cell[cell]))
 			budget -= 1
+
+
+func _install_prebuilt_shape(cell: Vector2i, shape: HeightMapShape3D) -> void:
+	_prebuilt_shapes_by_cell[cell] = shape
+	if _workers.size() >= 2 and not _prewarmed_bodies_by_cell.has(cell):
+		_prewarm_cell_body(cell, shape)
+
+
+func _prewarm_cell_body(cell: Vector2i, shape: HeightMapShape3D) -> void:
+	var body_rid: RID = PhysicsServer3D.body_create()
+	PhysicsServer3D.body_set_mode(body_rid, PhysicsServer3D.BODY_MODE_STATIC)
+	PhysicsServer3D.body_set_collision_layer(body_rid, 0)
+	PhysicsServer3D.body_set_collision_mask(body_rid, 0)
+	PhysicsServer3D.body_add_shape(
+		body_rid,
+		shape.get_rid(),
+		Transform3D(Basis().scaled(_heightmap_collision_scale(shape)), _tile_center_world_position(cell))
+	)
+	PhysicsServer3D.body_set_space(body_rid, _physics_space())
+	_collision_cooks_this_tick += 1
+	_prewarmed_bodies_by_cell[cell] = body_rid
 
 
 func _enqueue_prebuild(cell: Vector2i) -> void:
@@ -678,6 +737,17 @@ func _can_prebuild_cell(cell: Vector2i) -> bool:
 func _remove_prebuild_state(cell: Vector2i) -> void:
 	_prebuild_queue.erase(cell)
 	_prebuilt_shapes_by_cell.erase(cell)
+	_teardown_prewarmed_body(cell)
+
+
+func _teardown_prewarmed_body(cell: Vector2i) -> void:
+	if not _prewarmed_bodies_by_cell.has(cell):
+		return
+	var body_rid: RID = _prewarmed_bodies_by_cell[cell]
+	if body_rid.is_valid():
+		PhysicsServer3D.body_set_space(body_rid, RID())
+		PhysicsServer3D.free_rid(body_rid)
+	_prewarmed_bodies_by_cell.erase(cell)
 
 
 func _cancel_pending_evictions_for_cells(cells: Array[Vector2i]) -> void:
@@ -895,6 +965,19 @@ func _unload_all_active_bodies() -> void:
 	_sorted_body_cells_dirty = true
 	_active_shapes_by_cell.clear()
 	_activated_ticks_by_cell.clear()
+
+
+func _unload_all_prewarmed_bodies() -> void:
+	var cells: Array[Vector2i] = []
+	for cell in _prewarmed_bodies_by_cell.keys():
+		cells.append(cell)
+	_sort_cells(cells)
+	for cell in cells:
+		var body_rid: RID = _prewarmed_bodies_by_cell[cell]
+		if body_rid.is_valid():
+			PhysicsServer3D.body_set_space(body_rid, RID())
+			PhysicsServer3D.free_rid(body_rid)
+	_prewarmed_bodies_by_cell.clear()
 
 
 func _sample_current_cell() -> Vector2i:
