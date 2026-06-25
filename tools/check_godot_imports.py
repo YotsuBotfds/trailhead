@@ -8,6 +8,7 @@ ASSET_ROOTS = (ROOT / "assets" / "models", ROOT / "assets" / "textures")
 CHECKED_SUFFIXES = {".glb", ".png", ".jpg", ".jpeg"}
 TEXTURE_SUFFIXES = {".png", ".jpg", ".jpeg"}
 SURFACE_ID_PNG_NAME = "cedar_hollow_surface_id.png"
+GRADE_LUT_PNG_NAME = "zion_splittone_lut.png"
 RESIDUE_TEXTURE_DIR = Path("assets/textures/vehicle/residue")
 SURFACE_VISUALS_DIRS = (
     Path("assets/textures/surface_visuals/ambientcg"),
@@ -106,6 +107,13 @@ def validate_glb_import(path, import_path, values, errors):
 
 def validate_texture_import(path, import_path, values, errors):
     label = str(import_path.relative_to(ROOT))
+    if path.name == GRADE_LUT_PNG_NAME:
+        # Warm/cool color-grade LUT is a legitimate 3D texture (CompressedTexture3D),
+        # imported with the 3d_texture importer (a sliced HALD strip), not the 2D
+        # texture importer. Layers under FILMIC via Environment.adjustment_color_correction.
+        if values.get("importer", "") != "3d_texture":
+            errors.append(label + " grade LUT should use the 3d_texture importer")
+        return
     if values.get("importer", "") != "texture":
         errors.append(label + " importer should be texture for image asset")
     rel_path = path.relative_to(ROOT)
