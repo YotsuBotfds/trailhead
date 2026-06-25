@@ -78,6 +78,18 @@ const DEMO_PROP_VISTA_ANCHOR_XZ: Vector2 = Vector2(1900.0, 1650.0)
 const WORLD_REGION_ID_META: StringName = &"trailhead_world_region_id"
 const GAMEPAD_DEVICE_ANY: int = -1
 const TRACK_APPLY_CELLS_PER_FRAME: int = 1
+const PERF_LOG_USER_ARG: String = "--perf-log"
+const PERF_LOG_DEFAULT_DIR: String = "user://trailhead/perf"
+const PERF_LOG_FLUSH_ROW_COUNT: int = 120
+const PERF_LOG_HEADER: String = "frame,dt_ms,fps,process_ms,physics_process_ms,viewport_cpu_ms,viewport_gpu_ms,scaling_3d_scale,scaling_3d_scale_changed,dynamic_res_target_ms,draw_calls,primitives,objects,video_mem_mb,static_mem_mb,current_cell,active_cells,ready_cells,stream_tick,crossing_flag,hitch_flag,hitch_at_crossing,window_is_focused"
+const PERF_LOG_CROSSING_WINDOW_FRAMES: int = 5
+const PERF_LOG_MEDIAN_WINDOW_SIZE: int = 121
+const PERF_LOG_HITCH_MEDIAN_MULTIPLIER: float = 2.0
+const PERF_LOG_HITCH_THRESHOLD_MS: float = 20.0
+const PERF_LOG_DYNAMIC_RESOLUTION_CONTROLLER_NAME: String = "RenderDynamicResolutionController"
+const PERF_LOG_DYNAMIC_RESOLUTION_TARGET_FRAME_MS_META: StringName = &"trailhead_dynamic_resolution_target_frame_ms"
+const PERF_LOG_SCALE_CHANGE_EPSILON: float = 0.0001
+const PERF_LOG_MB_DIVISOR: float = 1024.0 * 1024.0
 
 var _world: Node3D = null
 var _vehicle: Node = null
@@ -167,11 +179,27 @@ var _track_last_active_cells: Dictionary[Vector2i, bool] = {}
 var _cold_start_streaming_released: bool = false
 var _cold_start_hold_elapsed: float = 0.0
 var _audio_rig: Node = null
+var _fps_cap_enabled: bool = true
+var _perf_log_active: bool = false
+var _perf_log_finalized: bool = false
+var _perf_log_absolute_path: String = ""
+var _perf_log_file: FileAccess = null
+var _perf_log_rows: PackedStringArray = PackedStringArray()
+var _perf_log_frame_index: int = 0
+var _perf_log_last_usec: int = 0
+var _perf_log_last_cell: Vector2i = Vector2i.ZERO
+var _perf_log_has_last_cell: bool = false
+var _perf_log_last_crossing_frame: int = -1000000
+var _perf_log_last_scaling_3d_scale: float = 1.0
+var _perf_log_has_last_scaling_3d_scale: bool = false
+var _perf_log_dt_samples_ms: Array[float] = []
 
 
 func _ready() -> void:
 	RenderRuntimeConfigScript.apply_to(self)
+	_sync_fps_cap_state_from_runtime()
 	_apply_render_quality()
+	_setup_perf_logging()
 	_ensure_default_input_map()
 	_setup_surface_map()
 	_setup_world()
@@ -218,9 +246,15 @@ func _apply_render_quality() -> void:
 
 
 func _exit_tree() -> void:
+	_finalize_perf_log()
 	var streamer: Node = get_node_or_null("/root/TileStreamer")
 	if streamer != null:
 		streamer.call("reset")
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_CLOSE_REQUEST:
+		_finalize_perf_log()
 
 
 func _physics_process(delta: float) -> void:
@@ -231,6 +265,7 @@ func _physics_process(delta: float) -> void:
 	_update_photo_mode_input()
 	_update_camera_input()
 	_update_hud_input()
+	_update_perf_input()
 	_update_frequency_input()
 	_update_mood_input()
 	_vehicle.call("apply_input", _vehicle_input)
@@ -243,6 +278,7 @@ func _physics_process(delta: float) -> void:
 
 func _process(delta: float) -> void:
 	_update_cold_start_streaming_gate(delta)
+	_sample_perf_log_frame()
 	if _terrain_track_painter == null:
 		return
 	_apply_terrain_tracks_to_streamed_tiles()
@@ -270,6 +306,38 @@ func _toggle_fullscreen() -> void:
 		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
 
 
+func _sync_fps_cap_state_from_runtime() -> void:
+	_fps_cap_enabled = GameConfig.render_frame_cap_enabled and Engine.max_fps > 0
+
+
+func _update_perf_input() -> void:
+	if Input.is_action_just_pressed(&"toggle_fps_cap"):
+		_toggle_fps_cap()
+
+
+func _toggle_fps_cap() -> void:
+	_fps_cap_enabled = not _fps_cap_enabled
+	_apply_fps_cap_state()
+
+
+func _apply_fps_cap_state() -> void:
+	if not _windowed_rendering_enabled():
+		return
+	if _fps_cap_enabled:
+		var target_max_fps: int = GameConfig.render_max_fps
+		Engine.max_fps = target_max_fps
+		DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED)
+		print("perf: fps cap ON - " + str(target_max_fps) + ", vsync on")
+	else:
+		Engine.max_fps = 0
+		DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
+		print("perf: fps cap OFF - uncapped, vsync off")
+
+
+func _windowed_rendering_enabled() -> bool:
+	return DisplayServer.get_name() != &"headless"
+
+
 func _ensure_default_input_map() -> void:
 	_ensure_action(&"throttle", [KEY_W, KEY_UP])
 	_ensure_action(&"brake", [KEY_S, KEY_DOWN])
@@ -287,6 +355,7 @@ func _ensure_default_input_map() -> void:
 	_ensure_action(&"photo_mode", [KEY_V])
 	_ensure_action(&"cinematic_tour", [KEY_T])
 	_ensure_action(&"debug_overlay", [KEY_F3])
+	_ensure_action(&"toggle_fps_cap", [KEY_F2])
 	_ensure_action(&"toggle_fullscreen", [KEY_F11, KEY_BACKSLASH])
 	_ensure_joypad_bindings()
 
@@ -367,6 +436,262 @@ func _has_joypad_button(action_string: String, button_index: int) -> bool:
 		if button != null and button.button_index == button_index:
 			return true
 	return false
+
+
+func _setup_perf_logging() -> void:
+	var requested: bool = false
+	var requested_path: String = ""
+	for arg in OS.get_cmdline_user_args():
+		var text: String = String(arg)
+		if text == PERF_LOG_USER_ARG:
+			requested = true
+			requested_path = ""
+		elif text.begins_with(PERF_LOG_USER_ARG + "="):
+			requested = true
+			requested_path = text.trim_prefix(PERF_LOG_USER_ARG + "=")
+	if not requested:
+		return
+	if not _windowed_rendering_enabled():
+		print("perf: --perf-log ignored under headless DisplayServer")
+		return
+	_perf_log_absolute_path = _resolve_perf_log_absolute_path(requested_path)
+	if _perf_log_absolute_path.is_empty():
+		push_error("perf: failed to resolve CSV path")
+		return
+	if not _ensure_perf_log_directory(_perf_log_absolute_path):
+		return
+	_perf_log_file = FileAccess.open(_perf_log_absolute_path, FileAccess.WRITE)
+	if _perf_log_file == null:
+		push_error("perf: failed to open CSV: " + _perf_log_absolute_path)
+		return
+	_perf_log_file.store_line(PERF_LOG_HEADER)
+	_perf_log_file.flush()
+	_perf_log_active = true
+	_perf_log_finalized = false
+	_perf_log_last_usec = Time.get_ticks_usec()
+	_enable_perf_log_render_time_measurement()
+	print("perf: logging frames CSV to " + _perf_log_absolute_path)
+
+
+func _resolve_perf_log_absolute_path(requested_path: String) -> String:
+	if requested_path.is_empty():
+		return _default_perf_log_absolute_path()
+	if _is_absolute_perf_log_path(requested_path):
+		return requested_path
+	if requested_path.begins_with("user://") or requested_path.begins_with("res://"):
+		return ProjectSettings.globalize_path(requested_path)
+	return ProjectSettings.globalize_path(PERF_LOG_DEFAULT_DIR.path_join(requested_path))
+
+
+func _default_perf_log_absolute_path() -> String:
+	var base_dir: String = ProjectSettings.globalize_path(PERF_LOG_DEFAULT_DIR)
+	var session_index: int = int(Time.get_unix_time_from_system())
+	var path: String = base_dir.path_join("session-" + str(session_index) + ".csv")
+	while FileAccess.file_exists(path):
+		session_index += 1
+		path = base_dir.path_join("session-" + str(session_index) + ".csv")
+	return path
+
+
+func _is_absolute_perf_log_path(path: String) -> bool:
+	if path.is_absolute_path():
+		return true
+	if path.begins_with("\\\\"):
+		return true
+	if path.length() >= 3 and path.substr(1, 1) == ":":
+		var separator: String = path.substr(2, 1)
+		return separator == "/" or separator == "\\"
+	return false
+
+
+func _ensure_perf_log_directory(absolute_path: String) -> bool:
+	var directory: String = absolute_path.get_base_dir()
+	if directory.is_empty():
+		return true
+	var error: Error = DirAccess.make_dir_recursive_absolute(directory)
+	if error != OK:
+		push_error("perf: failed to create CSV directory: " + directory + " error=" + error_string(error))
+		return false
+	return true
+
+
+func _enable_perf_log_render_time_measurement() -> void:
+	var viewport: Viewport = get_viewport()
+	if viewport == null:
+		return
+	RenderingServer.viewport_set_measure_render_time(viewport.get_viewport_rid(), true)
+
+
+func _sample_perf_log_frame() -> void:
+	if not _perf_log_active or _perf_log_file == null:
+		return
+	var now_usec: int = Time.get_ticks_usec()
+	if _perf_log_last_usec <= 0:
+		_perf_log_last_usec = now_usec
+		return
+	var dt: float = maxf(float(now_usec - _perf_log_last_usec) / 1000000.0, 0.0)
+	_perf_log_last_usec = now_usec
+	var viewport: Viewport = get_viewport()
+	if viewport == null:
+		return
+
+	_perf_log_frame_index += 1
+	var streamer: Node = _perf_log_tile_streamer()
+	var current_cell: Vector2i = _perf_log_current_cell(streamer)
+	var crossing_flag: bool = false
+	if _perf_log_has_last_cell and current_cell != _perf_log_last_cell:
+		crossing_flag = true
+		_perf_log_last_crossing_frame = _perf_log_frame_index
+	_perf_log_last_cell = current_cell
+	_perf_log_has_last_cell = true
+
+	var dt_ms: float = dt * 1000.0
+	var fps: float = float(Engine.get_frames_per_second())
+	var draw_calls: int = int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME))
+	var primitives: int = int(Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME))
+	var objects: int = int(Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME))
+	var process_ms: float = float(Performance.get_monitor(Performance.TIME_PROCESS)) * 1000.0
+	var physics_ms: float = float(Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS)) * 1000.0
+	var viewport_rid: RID = viewport.get_viewport_rid()
+	var viewport_cpu_ms: float = maxf(float(RenderingServer.viewport_get_measured_render_time_cpu(viewport_rid)), 0.0)
+	var viewport_gpu_ms: float = maxf(float(RenderingServer.viewport_get_measured_render_time_gpu(viewport_rid)), 0.0)
+	var scaling_3d_scale: float = viewport.scaling_3d_scale
+	var scaling_3d_scale_changed: bool = _perf_log_scaling_3d_scale_changed(scaling_3d_scale)
+	var dynamic_res_target_ms: float = _perf_log_dynamic_resolution_target_frame_ms()
+	var video_mem_mb: float = float(Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED)) / PERF_LOG_MB_DIVISOR
+	var static_mem_mb: float = float(Performance.get_monitor(Performance.MEMORY_STATIC)) / PERF_LOG_MB_DIVISOR
+	var active_count: int = _perf_log_active_cell_count(streamer)
+	var ready_count: int = _perf_log_ready_cell_count(streamer)
+	var stream_tick: int = _perf_log_stream_tick(streamer)
+	var hitch_at_crossing: bool = _perf_log_frame_index - _perf_log_last_crossing_frame <= PERF_LOG_CROSSING_WINDOW_FRAMES
+	var hitch_flag: bool = _perf_log_is_hitch(dt_ms)
+	var window_focused: bool = DisplayServer.window_is_focused()
+	_perf_log_dt_samples_ms.append(dt_ms)
+
+	_perf_log_rows.append("%d,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.4f,%d,%.3f,%d,%d,%d,%.3f,%.3f,%s,%d,%d,%d,%d,%d,%d,%d" % [
+		_perf_log_frame_index,
+		dt_ms,
+		fps,
+		process_ms,
+		physics_ms,
+		viewport_cpu_ms,
+		viewport_gpu_ms,
+		scaling_3d_scale,
+		1 if scaling_3d_scale_changed else 0,
+		dynamic_res_target_ms,
+		draw_calls,
+		primitives,
+		objects,
+		video_mem_mb,
+		static_mem_mb,
+		_perf_log_cell_to_text(current_cell),
+		active_count,
+		ready_count,
+		stream_tick,
+		1 if crossing_flag else 0,
+		1 if hitch_flag else 0,
+		1 if hitch_at_crossing else 0,
+		1 if window_focused else 0,
+	])
+	if _perf_log_rows.size() >= PERF_LOG_FLUSH_ROW_COUNT:
+		_flush_perf_log_rows()
+
+
+func _flush_perf_log_rows() -> void:
+	if _perf_log_file == null or _perf_log_rows.is_empty():
+		return
+	for row in _perf_log_rows:
+		_perf_log_file.store_line(row)
+	_perf_log_rows.clear()
+	_perf_log_file.flush()
+
+
+func _finalize_perf_log() -> void:
+	if _perf_log_finalized:
+		return
+	if not _perf_log_active and _perf_log_file == null:
+		return
+	_flush_perf_log_rows()
+	if _perf_log_file != null:
+		_perf_log_file.close()
+		_perf_log_file = null
+	_perf_log_active = false
+	_perf_log_finalized = true
+	if not _perf_log_absolute_path.is_empty():
+		print("perf: frames CSV finalized at " + _perf_log_absolute_path)
+
+
+func _perf_log_tile_streamer() -> Node:
+	return get_node_or_null("/root/TileStreamer")
+
+
+func _perf_log_current_cell(streamer: Node) -> Vector2i:
+	if streamer != null and streamer.has_method("current_cell"):
+		return streamer.call("current_cell")
+	return Vector2i.ZERO
+
+
+func _perf_log_active_cell_count(streamer: Node) -> int:
+	if streamer != null and streamer.has_method("active_cells"):
+		var cells: Array = streamer.call("active_cells")
+		return cells.size()
+	return 0
+
+
+func _perf_log_ready_cell_count(streamer: Node) -> int:
+	if streamer != null and streamer.has_method("ready_cells"):
+		var cells: Array = streamer.call("ready_cells")
+		return cells.size()
+	return 0
+
+
+func _perf_log_stream_tick(streamer: Node) -> int:
+	if streamer != null and streamer.has_method("current_stream_tick"):
+		return int(streamer.call("current_stream_tick"))
+	return 0
+
+
+func _perf_log_scaling_3d_scale_changed(scaling_3d_scale: float) -> bool:
+	var changed: bool = false
+	if _perf_log_has_last_scaling_3d_scale:
+		changed = absf(scaling_3d_scale - _perf_log_last_scaling_3d_scale) > PERF_LOG_SCALE_CHANGE_EPSILON
+	_perf_log_last_scaling_3d_scale = scaling_3d_scale
+	_perf_log_has_last_scaling_3d_scale = true
+	return changed
+
+
+func _perf_log_dynamic_resolution_target_frame_ms() -> float:
+	var controller: Node = get_node_or_null(NodePath(PERF_LOG_DYNAMIC_RESOLUTION_CONTROLLER_NAME))
+	if controller != null and controller.has_meta(PERF_LOG_DYNAMIC_RESOLUTION_TARGET_FRAME_MS_META):
+		return float(controller.get_meta(PERF_LOG_DYNAMIC_RESOLUTION_TARGET_FRAME_MS_META))
+	if Engine.max_fps > 0:
+		return 1000.0 / float(Engine.max_fps)
+	return 0.0
+
+
+func _perf_log_is_hitch(dt_ms: float) -> bool:
+	if dt_ms <= PERF_LOG_HITCH_THRESHOLD_MS:
+		return false
+	var recent: Array[float] = []
+	var start_index: int = maxi(_perf_log_dt_samples_ms.size() - PERF_LOG_MEDIAN_WINDOW_SIZE, 0)
+	for i in range(start_index, _perf_log_dt_samples_ms.size()):
+		recent.append(_perf_log_dt_samples_ms[i])
+	if recent.size() < 3:
+		return false
+	return dt_ms > _perf_log_percentile(recent, 0.5) * PERF_LOG_HITCH_MEDIAN_MULTIPLIER
+
+
+func _perf_log_percentile(values: Array[float], percentile: float) -> float:
+	if values.is_empty():
+		return 0.0
+	var sorted: Array[float] = values.duplicate()
+	sorted.sort()
+	var index: int = clampi(int(floorf(percentile * float(sorted.size() - 1))), 0, sorted.size() - 1)
+	return sorted[index]
+
+
+func _perf_log_cell_to_text(cell: Vector2i) -> String:
+	return str(cell.x) + ":" + str(cell.y)
 
 
 func _setup_surface_map() -> void:
