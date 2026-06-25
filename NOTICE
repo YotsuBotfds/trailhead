@@ -1,0 +1,32 @@
+Trailhead — Third-Party Asset & Data Notices
+=============================================
+
+The Trailhead source code is licensed under the MIT License (see LICENSE).
+The bundled assets and terrain source data are third-party works under the
+terms below. All are either Creative Commons CC0 1.0 or U.S. public domain;
+none require attribution. Credits are provided here as good practice.
+
+Terrain source data — U.S. public domain
+----------------------------------------
+- Elevation: USGS 3DEP 1-meter LiDAR (Zion National Park, QL2 2016).
+- Imagery:   USDA NAIP 2021 aerial imagery (RGBN).
+- Land cover: USGS NLCD 2021.
+Source: The National Map — https://apps.nationalmap.gov/downloader/
+The terrain committed under data/ is derived (baked) from these public-domain
+sources. Raw source rasters are not redistributed in this repository.
+
+Textures — Creative Commons CC0 1.0
+-----------------------------------
+PBR ground, rock, bark, and foliage textures are sourced from CC0 texture
+libraries: ambientCG (https://ambientcg.com/), Poly Haven
+(https://polyhaven.com/), TextureCan (https://www.texturecan.com/), and
+CGBookcase (https://www.cgbookcase.com/). Per-set source URLs and content
+hashes are recorded in the SOURCES.md files under assets/textures/.
+
+Models — CC0 1.0 / project-generated
+------------------------------------
+Foliage, vehicle, and terrain-feature models are project-generated (Blender /
+TRELLIS, MIT) or derived from CC0 model libraries (Quaternius
+https://quaternius.com/, Kenney https://kenney.nl/, Poly Haven).
+
+If you believe any asset is misattributed here, please open an issue.

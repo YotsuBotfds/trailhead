@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """Analyze a Trailhead --perf-log frames CSV: classify hitches + health-check.
 
-The windowed debug build (tools/windows-debug/run-logged.bat, or any
-`<godot> ... -- --perf-log` run) writes a per-frame CSV. The owner round-trips
-these via send-debug; this tool turns one into an actionable hitch report so
-each perf iteration is data-driven instead of guesswork.
+Any `<godot> ... -- --perf-log` run writes a per-frame CSV. This tool turns one
+into an actionable hitch report so each perf iteration is data-driven instead
+of guesswork.
 
 Usage:  python3 tools/analyze_perf_csv.py <frames.csv> [hitch_threshold_ms=100]
         [--fail-p99-ms=N] [--fail-leak-mb=N] [--fail-other-hitch-count=N]
