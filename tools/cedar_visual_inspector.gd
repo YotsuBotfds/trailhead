@@ -1869,7 +1869,7 @@ func _require_lighting_bar_sun(sun: DirectionalLight3D, context: String) -> void
 	_require_float_close(context + " GoldenHourSun angular distance", sun.light_angular_distance, GameConfig.atmosphere_pcss_sun_angular_distance, LIGHTING_BAR_TOLERANCE)
 	_require_float_close(context + " GoldenHourSun shadow blur", sun.shadow_blur, GameConfig.atmosphere_pcss_shadow_blur, LIGHTING_BAR_TOLERANCE)
 	_require_float_close(context + " GoldenHourSun shadow opacity", sun.shadow_opacity, GameConfig.atmosphere_pcss_shadow_opacity, LIGHTING_BAR_TOLERANCE)
-	_require_float_close(context + " GoldenHourSun shadow max distance", sun.directional_shadow_max_distance, GameConfig.atmosphere_pcss_shadow_max_distance, LIGHTING_BAR_TOLERANCE)
+	_require_float_close(context + " GoldenHourSun shadow max distance", sun.directional_shadow_max_distance, GameConfig.resolved_atmosphere_pcss_shadow_max_distance(), LIGHTING_BAR_TOLERANCE)
 	_require_float_close(context + " GoldenHourSun volumetric fog energy", sun.light_volumetric_fog_energy, GameConfig.resolved_atmosphere_sun_volumetric_fog_energy(), LIGHTING_BAR_TOLERANCE)
 
 

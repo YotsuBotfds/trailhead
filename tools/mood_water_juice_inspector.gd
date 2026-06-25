@@ -152,7 +152,7 @@ func _inspect_atmosphere(world_environment: WorldEnvironment, sun: DirectionalLi
 	_require_color_close("GoldenHourSun dusk color", sun.light_color, AtmosphereVisualBuilderScript.DUSK_HERO_SUN_COLOR, COLOR_TOLERANCE)
 	if absf(sun.light_angular_distance - maxf(GameConfig.atmosphere_pcss_sun_angular_distance, 0.0)) > FLOAT_EPSILON:
 		_errors.append("GoldenHourSun angular distance should follow GameConfig")
-	if absf(sun.directional_shadow_max_distance - maxf(GameConfig.atmosphere_pcss_shadow_max_distance, 0.1)) > FLOAT_EPSILON:
+	if absf(sun.directional_shadow_max_distance - GameConfig.resolved_atmosphere_pcss_shadow_max_distance()) > FLOAT_EPSILON:
 		_errors.append("GoldenHourSun shadow distance should follow GameConfig")
 	if absf(sun.shadow_blur - maxf(GameConfig.atmosphere_pcss_shadow_blur, 0.0)) > FLOAT_EPSILON:
 		_errors.append("GoldenHourSun shadow blur should follow GameConfig")
@@ -181,6 +181,8 @@ func _inspect_screen_space_gi_tier_guard(world_environment: WorldEnvironment, su
 		_errors.append("low screen-space GI tier should disable volumetric fog")
 	if sun != null and sun.light_volumetric_fog_energy > FLOAT_EPSILON:
 		_errors.append("low screen-space GI tier should remove sun volumetric fog energy")
+	if sun != null and absf(sun.directional_shadow_max_distance - GameConfig.resolved_atmosphere_pcss_shadow_max_distance()) > FLOAT_EPSILON:
+		_errors.append("low screen-space GI tier should use the short shadow distance")
 	if absf(environment.ssao_radius - maxf(GameConfig.atmosphere_ssao_low_tier_radius, 0.0)) > FLOAT_EPSILON:
 		_errors.append("low screen-space GI tier should restore the small SSAO radius")
 	GameConfig.render_screen_space_gi_tier = GameConfig.RENDER_SCREEN_SPACE_GI_TIER_HIGH
@@ -191,6 +193,8 @@ func _inspect_screen_space_gi_tier_guard(world_environment: WorldEnvironment, su
 		_errors.append("high screen-space GI tier should honor GameConfig.atmosphere_volumetric_fog_enabled")
 	if sun != null and absf(sun.light_volumetric_fog_energy - GameConfig.atmosphere_sun_volumetric_fog_energy) > FLOAT_EPSILON:
 		_errors.append("high screen-space GI tier should restore sun volumetric fog energy")
+	if sun != null and absf(sun.directional_shadow_max_distance - GameConfig.resolved_atmosphere_pcss_shadow_max_distance()) > FLOAT_EPSILON:
+		_errors.append("high screen-space GI tier should use the long shadow distance")
 	if absf(environment.ssao_radius - maxf(GameConfig.atmosphere_ssao_radius, 0.0)) > FLOAT_EPSILON:
 		_errors.append("high screen-space GI tier should use the canyon-scale SSAO radius")
 	GameConfig.render_screen_space_gi_tier = previous_tier

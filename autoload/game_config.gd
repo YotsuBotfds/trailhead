@@ -453,12 +453,14 @@ var atmosphere_glow_blend_mode: int = 2  # Environment.GLOW_BLEND_MODE_SOFTLIGHT
 var atmosphere_pcss_sun_angular_distance: float = 0.53
 var atmosphere_pcss_shadow_blur: float = 0.20
 var atmosphere_pcss_shadow_opacity: float = 0.78
-var atmosphere_pcss_shadow_max_distance: float = 200.0
+var atmosphere_pcss_shadow_max_distance: float = 400.0
+var atmosphere_pcss_shadow_low_tier_scale: float = 0.70
+var atmosphere_pcss_shadow_high_tier_scale: float = 1.70
 var atmosphere_directional_shadow_mode: int = DIRECTIONAL_SHADOW_PARALLEL_4_SPLITS
 var atmosphere_directional_shadow_blend_splits: bool = false
-var atmosphere_directional_shadow_split_1: float = 0.05
-var atmosphere_directional_shadow_split_2: float = 0.16
-var atmosphere_directional_shadow_split_3: float = 0.40
+var atmosphere_directional_shadow_split_1: float = 0.025
+var atmosphere_directional_shadow_split_2: float = 0.12
+var atmosphere_directional_shadow_split_3: float = 0.34
 var atmosphere_directional_shadow_pancake_size: float = 60.0
 var atmosphere_shadow_normal_bias: float = 1.2
 var atmosphere_shadow_bias: float = 0.04
@@ -972,6 +974,13 @@ func resolved_atmosphere_sun_volumetric_fog_energy() -> float:
 	if render_screen_space_gi_high_tier_enabled():
 		return maxf(atmosphere_sun_volumetric_fog_energy, 0.0)
 	return maxf(atmosphere_sun_volumetric_fog_energy, 0.0) * clampf(atmosphere_sun_volumetric_fog_low_tier_scale, 0.0, 1.0)
+
+
+func resolved_atmosphere_pcss_shadow_max_distance() -> float:
+	var base_distance: float = maxf(atmosphere_pcss_shadow_max_distance, 0.1)
+	if render_screen_space_gi_high_tier_enabled():
+		return maxf(base_distance * maxf(atmosphere_pcss_shadow_high_tier_scale, 0.0), 0.1)
+	return maxf(base_distance * clampf(atmosphere_pcss_shadow_low_tier_scale, 0.0, 1.0), 0.1)
 
 
 func get_fov_for_speed(speed: float) -> float:

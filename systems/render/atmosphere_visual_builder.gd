@@ -89,7 +89,7 @@ static func _apply_mood_sun(sun: DirectionalLight3D, mood: int) -> void:
 static func _apply_sun_atmosphere(sun: DirectionalLight3D) -> void:
 	sun.shadow_enabled = true
 	sun.light_angular_distance = maxf(GameConfig.atmosphere_pcss_sun_angular_distance, 0.0)
-	sun.directional_shadow_max_distance = maxf(GameConfig.atmosphere_pcss_shadow_max_distance, 0.1)
+	sun.directional_shadow_max_distance = GameConfig.resolved_atmosphere_pcss_shadow_max_distance()
 	sun.directional_shadow_fade_start = SHADOW_FADE_START
 	sun.directional_shadow_mode = _directional_shadow_mode(GameConfig.atmosphere_directional_shadow_mode)
 	sun.directional_shadow_blend_splits = GameConfig.atmosphere_directional_shadow_blend_splits
@@ -100,7 +100,7 @@ static func _apply_sun_atmosphere(sun: DirectionalLight3D) -> void:
 	sun.directional_shadow_split_3 = clampf(GameConfig.atmosphere_directional_shadow_split_3, 0.0, 1.0)
 	sun.directional_shadow_pancake_size = maxf(GameConfig.atmosphere_directional_shadow_pancake_size, 0.0)
 	# Normal bias offsets the shadow-test position along the surface normal: enough to kill
-	# acne on the rocky terrain at the extended 130 m range, low enough to avoid peter-panning
+	# acne on the rocky terrain at the extended far cascade, low enough to avoid peter-panning
 	# the crisp near contact. Paired with a small constant bias.
 	sun.shadow_normal_bias = maxf(GameConfig.atmosphere_shadow_normal_bias, 0.0)
 	sun.shadow_bias = maxf(GameConfig.atmosphere_shadow_bias, 0.0)
