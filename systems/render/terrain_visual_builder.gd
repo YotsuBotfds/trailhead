@@ -237,7 +237,7 @@ const REGION_VERTEX_KEY_CELL_OFFSET: int = 32768
 const REGION_VERTEX_KEY_CELL_STRIDE: int = 65536
 const REGION_FOLIAGE_CELL_SIZE_M: float = 32.0
 const REGION_FOLIAGE_LOD0_BASE_COUNT: int = 56
-const REGION_FOLIAGE_LOD1_BASE_COUNT: int = 4
+const REGION_FOLIAGE_LOD1_BASE_COUNT: int = 18
 # Foliage commit batching: build per-cell/per-tile MultiMeshInstance3D children while their
 # parent root is detached, then attach/restore that root once. false restores the legacy
 # live-tree per-species add_child path for quick rollback.
@@ -269,6 +269,8 @@ const REGION_FOLIAGE_LOD1_SCALE: Vector3 = Vector3(0.42, 0.58, 0.42)
 const REGION_FOLIAGE_HEIGHT_SCALE_MAX: float = 1.32
 # Matches source-material tree placement: width_scale = 0.84 + unit * 0.34.
 const REGION_FOLIAGE_TREE_WIDTH_SCALE_MAX: float = 1.18
+const FOLIAGE_COTTONWOOD_HEIGHT_MUL: float = 1.45
+const FOLIAGE_WILLOW_HEIGHT_MUL: float = 1.35
 const REGION_FOLIAGE_LOD0_COLOR: Color = Color(0.24, 0.38, 0.14, 0.92)
 const REGION_FOLIAGE_LOD1_COLOR: Color = Color(0.28, 0.34, 0.16, 0.86)
 const FOLIAGE_SPECIES_GRASS: StringName = &"grass"
@@ -388,7 +390,7 @@ const FOLIAGE_DENSITY_MUD: float = 0.30
 # sit between. Bases are the LOD0 range before adding the cell radius; margins are the fade width.
 const FOLIAGE_VIS_RANGE_BASE_TREE: float = 70.0
 const FOLIAGE_VIS_RANGE_BASE_BOULDER: float = 60.0
-const FOLIAGE_VIS_RANGE_BASE_GRASS_LOD1_END: float = 60.0
+const FOLIAGE_VIS_RANGE_BASE_GRASS_LOD1_END: float = 120.0
 const FOLIAGE_VIS_RANGE_TREE_LOD1_END: float = 650.0
 const FOLIAGE_FADE_MARGIN_GRASS: float = 28.0
 const FOLIAGE_FADE_MARGIN_TREE: float = 55.0
@@ -937,7 +939,7 @@ static func _build_region_foliage_tile_data(region_id: String, cell: Vector2i, a
 				_prepare_streamed_foliage_cell_data(lod0_data, tile_origin_xz)
 				_build_foliage_cell_multimeshes(lod0_data)
 				lod0_cell_data_list.append(lod0_data)
-			var lod1_base_count: int = _riparian_gallery_base_count(cell_rect, 1, REGION_FOLIAGE_LOD1_BASE_COUNT)
+			var lod1_base_count: int = _riparian_gallery_base_count(cell_rect, 1, _region_foliage_lod1_base_count())
 			var lod1_data: FoliageCellData = _build_region_foliage_cell_data_with_audit(tile_data_by_cell, cell_rect, foliage_cell, 1, lod1_base_count, audit)
 			if lod1_data != null:
 				_prepare_streamed_foliage_cell_data(lod1_data, tile_origin_xz)
@@ -1117,6 +1119,12 @@ static func _foliage_vis_range_base_for_species(species_id: StringName) -> float
 	return GameConfig.vis_range_grass
 
 
+static func _foliage_grass_lod1_range_base() -> float:
+	if GameConfig.render_foliage_grass_lod1_range > 0.0:
+		return GameConfig.render_foliage_grass_lod1_range
+	return FOLIAGE_VIS_RANGE_BASE_GRASS_LOD1_END
+
+
 static func foliage_lod0_visibility_range_end_for_species(cell_radius: float, species_id: StringName) -> float:
 	return maxf(_foliage_vis_range_base_for_species(species_id) + cell_radius, 0.0)
 
@@ -1132,7 +1140,7 @@ static func foliage_lod1_visibility_range_end_for_species(cell_radius: float, sp
 	if _foliage_species_uses_source_material(species_id):
 		return maxf(FOLIAGE_VIS_RANGE_TREE_LOD1_END + cell_radius, foliage_lod1_visibility_range_begin_for_species(cell_radius, species_id))
 	if species_id != FOLIAGE_SPECIES_BOULDER:
-		return maxf(FOLIAGE_VIS_RANGE_BASE_GRASS_LOD1_END + cell_radius, foliage_lod1_visibility_range_begin_for_species(cell_radius, species_id))
+		return maxf(_foliage_grass_lod1_range_base() + cell_radius, foliage_lod1_visibility_range_begin_for_species(cell_radius, species_id))
 	# Boulders still run out to the far clip: they are cheap procedural geometry and help steep
 	# talus slopes read until the terrain/HLOD takes over in fog.
 	return maxf(GameConfig.cam_far + cell_radius, foliage_lod1_visibility_range_begin_for_species(cell_radius, species_id))
@@ -2541,7 +2549,7 @@ static func _add_region_foliage(parent: Node3D, manifest: Dictionary, tile_data_
 			)
 			var foliage_cell: Vector2i = Vector2i(cell_x, cell_z)
 			_add_region_foliage_cell(root, tile_data_by_cell, cell_rect, foliage_cell, 0, REGION_FOLIAGE_LOD0_BASE_COUNT)
-			_add_region_foliage_cell(root, tile_data_by_cell, cell_rect, foliage_cell, 1, REGION_FOLIAGE_LOD1_BASE_COUNT)
+			_add_region_foliage_cell(root, tile_data_by_cell, cell_rect, foliage_cell, 1, _region_foliage_lod1_base_count())
 	if attach_after_build:
 		parent.add_child(root)
 	return root
@@ -2626,6 +2634,7 @@ static func _build_region_foliage_cell_data_with_audit(tile_data_by_cell: Dictio
 		if _foliage_species_uses_source_material(species_id):
 			width_scale = 0.84 + _region_foliage_unit(foliage_cell, lod_index, attempt, 5) * 0.34
 			height_scale = 0.82 + _region_foliage_unit(foliage_cell, lod_index, attempt, 6) * 0.42
+			height_scale *= _foliage_tree_height_multiplier(species_id)
 		elif species_id == FOLIAGE_SPECIES_BOULDER:
 			width_scale = lerpf(FOLIAGE_BOULDER_WIDTH_MIN, FOLIAGE_BOULDER_WIDTH_MAX, _region_foliage_unit(foliage_cell, lod_index, attempt, 5))
 			height_scale = lerpf(FOLIAGE_BOULDER_HEIGHT_MIN, FOLIAGE_BOULDER_HEIGHT_MAX, _region_foliage_unit(foliage_cell, lod_index, attempt, 6))
@@ -3363,9 +3372,15 @@ static func _region_foliage_material(material_name: String, color: Color, blade_
 		)
 	)
 	material.set_shader_parameter("blade_height_reference", blade_height_reference)
-	material.set_shader_parameter("wind_strength", 0.035)
+	var wind_strength: float = 0.0
+	var wind_time_factor: float = 0.0
+	if GameConfig.grass_wind_enabled:
+		wind_strength = maxf(GameConfig.grass_wind_strength, 0.0)
+		if not GameConfig.grass_wind_freeze_for_capture:
+			wind_time_factor = maxf(GameConfig.grass_wind_time_factor, 0.0)
+	material.set_shader_parameter("wind_strength", wind_strength)
 	material.set_shader_parameter("wind_speed", 0.75)
-	material.set_shader_parameter("wind_time_factor", 0.018)
+	material.set_shader_parameter("wind_time_factor", wind_time_factor)
 	# Travelling-wave wind desyncs neighbouring clumps (ripple) and brings wind in moving
 	# gusts; per-instance tint jitter breaks the single-color plastic read. See the shader.
 	material.set_shader_parameter("wind_world_wavelength_primary", FOLIAGE_WIND_WORLD_WAVELENGTH_PRIMARY)
@@ -3815,6 +3830,12 @@ static func _riparian_gallery_base_count(cell_rect: Rect2, lod_index: int, base_
 	return RIPARIAN_GALLERY_LOD1_CORE_BASE_COUNT
 
 
+static func _region_foliage_lod1_base_count() -> int:
+	if GameConfig.render_foliage_lod1_count > 0:
+		return GameConfig.render_foliage_lod1_count
+	return REGION_FOLIAGE_LOD1_BASE_COUNT
+
+
 static func _distance_to_zion_river_xz(point: Vector2) -> float:
 	if ZION_RIVER_THALWEG_XZ.size() < 2:
 		return INF
@@ -4005,6 +4026,14 @@ static func _foliage_base_scale_for_lod_species(lod_index: int, species_id: Stri
 	return GameConfig.foliage_grass_scrub_lod0_scale
 
 
+static func _foliage_tree_height_multiplier(species_id: StringName) -> float:
+	if species_id == FOLIAGE_SPECIES_COTTONWOOD:
+		return FOLIAGE_COTTONWOOD_HEIGHT_MUL
+	if species_id == FOLIAGE_SPECIES_WILLOW:
+		return FOLIAGE_WILLOW_HEIGHT_MUL
+	return 1.0
+
+
 static func _foliage_max_lod0_height() -> float:
 	var max_height: float = 0.0
 	for species_id in FOLIAGE_SPECIES_LIST:
@@ -4031,7 +4060,7 @@ static func _foliage_lod0_height_for_species(species_id: StringName) -> float:
 	var mesh_height: float = 1.0
 	if mesh != null:
 		mesh_height = maxf(mesh.get_aabb().size.y, 0.0)
-	return mesh_height * _foliage_base_scale_for_lod_species(0, species_id).y
+	return mesh_height * _foliage_base_scale_for_lod_species(0, species_id).y * _foliage_tree_height_multiplier(species_id)
 
 
 static func _region_foliage_unit(cell: Vector2i, lod_index: int, instance_index: int, salt: int) -> float:

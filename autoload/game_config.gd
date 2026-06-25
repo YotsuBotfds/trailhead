@@ -65,6 +65,10 @@ var render_visual_fullres_radius_cells: int = 2
 # nodes and render through MidLOD/HLOD terrain only.
 var render_visual_foliage_radius_cells: int = 2
 var render_visual_foliage_subcommits_per_frame: int = 6
+# High-tier foliage defaults for the 4090/review lane. Lower these together on weaker
+# GPUs instead of editing terrain builder constants; placement remains deterministic.
+var render_foliage_lod1_count: int = 18
+var render_foliage_grass_lod1_range: float = 120.0
 # How many fully-built foliage TILES may attach to the live _foliage_root per frame.
 # Each foliage tile is assembled DETACHED (its MultiMeshInstance3D children are added to
 # an off-tree Node3D during the budgeted subcommit drain, costing nothing on the
@@ -536,8 +540,9 @@ var grass_backlight_color: Color = Color(1.0, 0.62, 0.30)
 var grass_backlight_energy: float = 0.32
 var grass_wind_enabled: bool = true
 var grass_wind_freeze_for_capture: bool = false
-var grass_wind_strength: float = 0.010
+var grass_wind_strength: float = 0.030
 var grass_wind_speed: float = 0.65
+var grass_wind_time_factor: float = 0.48
 var grass_crush_radius: float = 0.45
 var grass_crush_strength: float = 0.75
 var buggy_clearcoat_enabled: bool = true
@@ -676,7 +681,7 @@ var water_alpha: float = 0.82
 var water_roughness: float = 0.22
 var vis_range_terrain: float = 140.0
 var vis_range_ground_detail: float = 14.0
-var vis_range_grass: float = 35.0
+var vis_range_grass: float = 52.0
 var vis_range_scatter: float = 18.0
 var vis_range_props: float = 22.0
 var vis_range_vehicle: float = 24.0
