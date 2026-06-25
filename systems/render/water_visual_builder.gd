@@ -134,6 +134,12 @@ static func water_ssr_effective_max_steps() -> int:
 	return maxi(GameConfig.water_ssr_max_steps, 0)
 
 
+static func water_refraction_effective_strength() -> float:
+	if not water_ssr_uses_high_quality():
+		return 0.0
+	return maxf(GameConfig.water_refraction_strength, 0.0)
+
+
 # East water reach: the centerline truncated at the terminus where the canyon
 # floor begins its steep climb (see ZION_RIVER_EAST_TERMINUS_INDEX). The water
 # ribbon and the wet shoreline use this; dry-bed debris (gravel bars, cobbles)
@@ -669,6 +675,10 @@ static func _water_material(resource_name: String, use_vertex_water_traits: bool
 	material.set_shader_parameter("ssr_step_size", GameConfig.water_ssr_step_size)
 	material.set_shader_parameter("ssr_thickness", GameConfig.water_ssr_thickness)
 	material.set_shader_parameter("water_roughness", GameConfig.water_roughness)
+	var caustics_strength: float = maxf(GameConfig.water_caustics_strength, 0.0)
+	material.set_shader_parameter("water_caustics_enabled", caustics_strength > 0.0)
+	material.set_shader_parameter("water_caustics_strength", caustics_strength)
+	material.set_shader_parameter("water_refraction_strength", water_refraction_effective_strength())
 	material.set_shader_parameter("bed_tint_color", BED_TINT_COLOR)
 	material.set_shader_parameter("bed_tint_strength", BED_TINT_STRENGTH)
 	material.set_shader_parameter("shallow_alpha", SHALLOW_ALPHA)

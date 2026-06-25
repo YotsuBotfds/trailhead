@@ -19,6 +19,9 @@ uniform int ssr_max_steps : hint_range(0, 32) = 12;
 uniform float ssr_step_size : hint_range(0.005, 0.2) = 0.035;
 uniform float ssr_thickness : hint_range(0.005, 0.3) = 0.08;
 uniform float water_roughness : hint_range(0.0, 1.0) = 0.22;
+uniform bool water_caustics_enabled = false;
+uniform float water_caustics_strength : hint_range(0.0, 1.0) = 0.0;
+uniform float water_refraction_strength : hint_range(0.0, 1.0) = 0.0;
 uniform vec4 bed_tint_color : source_color = vec4(0.36, 0.42, 0.30, 1.0);
 uniform float bed_tint_strength : hint_range(0.0, 1.0) = 0.42;
 uniform float shallow_alpha : hint_range(0.0, 1.0) = 0.50;
@@ -40,6 +43,12 @@ uniform bool use_vertex_water_traits = false;
 const int SSR_STEP_LIMIT = 32;
 const float SSR_EDGE_FADE = 0.065;
 const float FOAM_NORMAL_SAMPLE_RADIUS = 0.08;
+const float CAUSTIC_SCALE_A = 3.7;
+const float CAUSTIC_SCALE_B = 5.4;
+const vec3 CAUSTIC_TINT = vec3(0.82, 0.94, 0.72);
+const float REFRACTION_SCREEN_SCALE = 0.014;
+const float REFRACTION_DISTANCE_FADE_START = 18.0;
+const float REFRACTION_DISTANCE_FADE_END = 120.0;
 
 varying vec2 world_xz;
 varying vec2 downstream_dir;
@@ -94,6 +103,23 @@ vec2 flow_ripple_gradient(vec2 position, vec2 flow_dir, float flow_time) {
 	float wave_d = sin(anti_pos * 5.0 + diag_pos * 1.4 - flow_time * 7.0);
 	vec2 cross_grad = diag_dir * (wave_c * 0.38) + anti_dir * (wave_d * 0.28);
 	return primary_grad * 0.72 + cross_grad * 0.28;
+}
+
+float caustic_layer(vec2 uv) {
+	float folded = 1.0 - abs(value_noise(uv) * 2.0 - 1.0);
+	return smoothstep(0.52, 0.96, folded);
+}
+
+float caustic_pattern(vec2 position, vec2 flow_dir, float flow_time) {
+	vec2 side_dir = vec2(-flow_dir.y, flow_dir.x);
+	vec2 flow_space = vec2(dot(position, flow_dir), dot(position, side_dir));
+	vec2 uv_a = flow_space * CAUSTIC_SCALE_A + vec2(flow_time * 0.70, -flow_time * 0.22);
+	vec2 uv_b = flow_space.yx * CAUSTIC_SCALE_B + vec2(-flow_time * 0.31, flow_time * 0.58);
+	float layer_a = caustic_layer(uv_a);
+	float layer_b = caustic_layer(uv_b + vec2(7.1, 3.4));
+	float lattice = clamp(layer_a * 0.68 + layer_b * 0.42, 0.0, 1.0);
+	float breakup = mix(0.72, 1.08, value_noise(flow_space * 1.17 + vec2(flow_time * 0.15, -flow_time * 0.11)));
+	return clamp(pow(lattice, 2.1) * breakup, 0.0, 1.0);
 }
 
 vec3 view_from_depth(vec2 uv, float raw_depth, mat4 inv_projection) {
@@ -205,6 +231,11 @@ void fragment() {
 	vec3 water_color = mix(shallow_color.rgb, deep_color.rgb, depth_mix);
 	float bed_visibility = pow(1.0 - depth_mix, 1.35);
 	water_color = mix(water_color, bed_tint_color.rgb, bed_visibility * bed_tint_strength);
+	if (water_caustics_enabled && water_caustics_strength > 0.0) {
+		float caustic_gate = bed_visibility * (1.0 - clamp(foam * 0.62, 0.0, 0.85));
+		float caustic_web = caustic_pattern(world_xz, downstream_dir, TIME * downstream_flow_speed);
+		water_color += CAUSTIC_TINT * caustic_web * caustic_gate * water_caustics_strength;
+	}
 	water_color = mix(water_color, foam_color.rgb, shoreline * foam_intensity * (0.55 + ripple * 0.22));
 	water_color = mix(water_color, foam_color.rgb, foam * foam_intensity * (0.32 + ripple * 0.18));
 	float wetline_inside = smoothstep(foam_edge_width, shoreline_softness, depth_delta);
@@ -214,6 +245,23 @@ void fragment() {
 	float view_fresnel = pow(1.0 - clamp(dot(-view_direction, normal_view), 0.0, 1.0), 5.0);
 	float glint_weight = view_fresnel * smoothstep(0.35, 1.0, ripple) * mix(0.55, 1.0, depth_mix) * fresnel_glint_strength;
 	water_color = mix(water_color, fresnel_glint_color.rgb, glint_weight);
+	if (water_refraction_strength > 0.0) {
+		float refraction_power = clamp(water_refraction_strength, 0.0, 1.0);
+		float shallow_refraction = pow(1.0 - depth_mix, 1.20);
+		float distance_refraction = 1.0 - smoothstep(REFRACTION_DISTANCE_FADE_START, REFRACTION_DISTANCE_FADE_END, fragment_depth);
+		float fresnel_refraction = 1.0 - smoothstep(0.12, 0.88, view_fresnel);
+		float refraction_visibility = refraction_power * shallow_refraction * distance_refraction * fresnel_refraction;
+		if (refraction_visibility > 0.001) {
+			vec2 refraction_vector = (normal_view.xy - normalize(NORMAL).xy);
+			vec2 refraction_offset = refraction_vector * REFRACTION_SCREEN_SCALE * refraction_power * shallow_refraction * distance_refraction;
+			vec2 refraction_uv = clamp(
+					SCREEN_UV + refraction_offset,
+					vec2(SSR_EDGE_FADE, SSR_EDGE_FADE),
+					vec2(1.0 - SSR_EDGE_FADE, 1.0 - SSR_EDGE_FADE));
+			vec3 refracted_color = texture(screen_texture, refraction_uv).rgb;
+			water_color = mix(water_color, refracted_color, refraction_visibility * 0.55);
+		}
+	}
 	if (ssr_enabled && ssr_intensity > 0.0 && ssr_max_steps > 0) {
 		float reflection_weight = 0.0;
 		vec3 reflection_color = screen_space_reflection(
