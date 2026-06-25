@@ -51,6 +51,7 @@ const SOFT_DUST_MATERIAL_META: StringName = &"vehicle_juice_soft_radial_alpha"
 const SOFT_DUST_TEXTURE_SIZE: int = 32
 const SOFT_DUST_INNER_RADIUS: float = 0.18
 const SOFT_DUST_OUTER_RADIUS: float = 0.96
+const WHEEL_DUST_ALPHA_RAMP_WIDTH: int = 64
 
 var _vehicle: Node = null
 var _camera: Camera3D = null
@@ -442,7 +443,8 @@ func _soft_dust_billboard_material(material_name: String, color: Color) -> Stand
 	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	material.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
 	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	material.albedo_color = color
+	material.vertex_color_use_as_albedo = true
+	material.albedo_color = Color.WHITE
 	material.albedo_texture = _soft_dust_alpha_texture()
 	material.set_meta(SOFT_DUST_MATERIAL_META, true)
 	return material
@@ -490,7 +492,7 @@ func _update_wheel_dust(delta: float) -> void:
 	_hard_drive_ratio = maxf(0.0, _hard_drive_ratio - decay_rate * delta)
 	if _wheel_dust.is_empty():
 		return
-	if not GameConfig.wheel_dust_enabled or _vehicle == null:
+	if not GameConfig.wheel_dust_enabled or GameConfig.resolved_wheel_dust_particles_per_wheel() <= 0 or _vehicle == null:
 		_disable_all_wheel_dust()
 		_disable_all_rooster_debris()
 		return
@@ -674,14 +676,15 @@ func _wheel_dust_color(surface_id: StringName) -> Color:
 func _make_wheel_dust_emitter(node_name: String, seed: int) -> GPUParticles3D:
 	var particles: GPUParticles3D = GPUParticles3D.new()
 	particles.name = node_name
-	particles.amount = maxi(GameConfig.wheel_dust_particles_per_wheel, 1)
-	particles.lifetime = maxf(GameConfig.wheel_dust_lifetime, 0.05)
+	particles.amount = maxi(GameConfig.resolved_wheel_dust_particles_per_wheel(), 1)
+	particles.lifetime = GameConfig.resolved_wheel_dust_lifetime()
 	particles.one_shot = false
 	particles.emitting = false
 	particles.use_fixed_seed = true
 	particles.seed = seed
 	particles.randomness = 0.0
 	particles.fixed_fps = 30
+	particles.local_coords = false
 	particles.amount_ratio = 0.0
 	particles.visibility_range_end = GameConfig.vis_range_dust
 	particles.draw_pass_1 = _wheel_dust_mesh()
@@ -694,7 +697,7 @@ func _make_wheel_dust_emitter(node_name: String, seed: int) -> GPUParticles3D:
 func _wheel_dust_process_material() -> ParticleProcessMaterial:
 	var material: ParticleProcessMaterial = ParticleProcessMaterial.new()
 	material.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
-	material.emission_sphere_radius = maxf(GameConfig.wheel_dust_emission_radius, 0.001)
+	material.emission_sphere_radius = GameConfig.resolved_wheel_dust_emission_radius()
 	material.direction = Vector3(0.0, 1.0, 0.0)
 	material.spread = WHEEL_DUST_SPREAD_DEG
 	material.gravity = Vector3(0.0, WHEEL_DUST_GRAVITY, 0.0)
@@ -705,7 +708,24 @@ func _wheel_dust_process_material() -> ParticleProcessMaterial:
 	material.scale_min = WHEEL_DUST_BILLBOARD_SCALE * 0.5
 	material.scale_max = WHEEL_DUST_BILLBOARD_SCALE
 	material.color = Color.WHITE
+	material.color_ramp = _wheel_dust_alpha_ramp()
 	return material
+
+
+func _wheel_dust_alpha_ramp() -> GradientTexture1D:
+	var fade_start: float = clampf(GameConfig.wheel_dust_alpha_fade_start, 0.0, 0.95)
+	var fade_end: float = clampf(GameConfig.wheel_dust_alpha_fade_end, fade_start + 0.01, 1.0)
+	var gradient: Gradient = Gradient.new()
+	gradient.set_color(0, Color.WHITE)
+	gradient.set_color(1, Color(1.0, 1.0, 1.0, 0.0))
+	gradient.set_offset(0, 0.0)
+	gradient.set_offset(1, 1.0)
+	gradient.add_point(fade_start, Color.WHITE)
+	gradient.add_point(fade_end, Color(1.0, 1.0, 1.0, 0.0))
+	var texture: GradientTexture1D = GradientTexture1D.new()
+	texture.width = WHEEL_DUST_ALPHA_RAMP_WIDTH
+	texture.gradient = gradient
+	return texture
 
 
 func _wheel_dust_mesh() -> QuadMesh:
@@ -1025,6 +1045,8 @@ func _apply_particle_tint(particles: GPUParticles3D, tint: Color) -> void:
 		if material != null:
 			if bool(material.get_meta(PEBBLE_MATERIAL_META, false)):
 				material.albedo_color = _pebble_material_color(tint)
+			elif bool(material.get_meta(SOFT_DUST_MATERIAL_META, false)):
+				material.albedo_color = Color.WHITE
 			else:
 				material.albedo_color = tint
 

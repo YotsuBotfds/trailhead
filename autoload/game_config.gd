@@ -39,6 +39,10 @@ const DUST_MOTE_TIER_OFF: int = 0
 const DUST_MOTE_TIER_LOW: int = 1
 const DUST_MOTE_TIER_MEDIUM: int = 2
 const DUST_MOTE_TIER_HIGH: int = 3
+const WHEEL_DUST_TIER_OFF: int = 0
+const WHEEL_DUST_TIER_LOW: int = 1
+const WHEEL_DUST_TIER_MEDIUM: int = 2
+const WHEEL_DUST_TIER_HIGH: int = 3
 
 var render_screen_space_gi_tier: int = RENDER_SCREEN_SPACE_GI_TIER_HIGH
 var render_frame_cap_enabled: bool = true
@@ -505,27 +509,35 @@ var landing_squash_recover_speed: float = 8.0
 # --- W3-DUST: continuous wheel dust + spray feel polish (render-only).
 # Per-wheel continuous GPUParticles3D emitter driven off sim state (no wall-clock).
 # amount_ratio is computed each tick from SPEED (between threshold..full) times a
-# per-surface INTENSITY (sand strong, pavement faint, water=spray), then tinted by
+# per-surface INTENSITY (sand/loose strong, pavement off, water=spray), then tinted by
 # a per-surface COLOR. Hard-accel / slide / landing add a decaying KICK boost that
 # also re-fires the existing surface burst for a bigger pop. All values live-tunable.
-var wheel_dust_enabled: bool = true  # subtle: count+life cut to a faint puff (old continuous dust read as a haze)
+var wheel_dust_enabled: bool = true
+var wheel_dust_quality_tier: int = WHEEL_DUST_TIER_HIGH
+# Low/medium preserve the old faint puff for weak hardware; HIGH is the 4090
+# capture plume with a longer life but tight alpha fade in VehicleJuiceRig.
 var wheel_dust_particles_per_wheel: int = 4
+var wheel_dust_particles_per_wheel_high_tier: int = 12
 var wheel_dust_speed_threshold: float = 0.6
 var wheel_dust_speed_full: float = 4.5
 var wheel_dust_lifetime: float = 0.18
+var wheel_dust_lifetime_high_tier: float = 0.48
 var wheel_dust_emission_radius: float = 0.045
+var wheel_dust_emission_radius_high_tier: float = 0.065
+var wheel_dust_alpha_fade_start: float = 0.34
+var wheel_dust_alpha_fade_end: float = 0.70
 var wheel_dust_kick_boost: float = 1.6
 var wheel_dust_kick_decay: float = 6.0
 var wheel_dust_accel_delta_threshold: float = 0.18
 var wheel_dust_slide_lateral_threshold: float = 1.2
 var wheel_dust_intensity_sand_wash: float = 1.0
-var wheel_dust_intensity_loose_rock: float = 0.85
+var wheel_dust_intensity_loose_rock: float = 1.0
 var wheel_dust_intensity_packed_dirt: float = 0.70
 var wheel_dust_intensity_packed_gravel: float = 0.55
 var wheel_dust_intensity_tall_grass: float = 0.30
-var wheel_dust_intensity_slickrock_dry: float = 0.15
+var wheel_dust_intensity_slickrock_dry: float = 0.04
 var wheel_dust_intensity_wood_plank: float = 0.10
-var wheel_dust_intensity_paved_road: float = 0.08
+var wheel_dust_intensity_paved_road: float = 0.0
 var wheel_dust_intensity_wet_stone: float = 0.70
 var wheel_dust_intensity_mud: float = 0.65
 var wheel_dust_color_sand_wash: Color = Color(0.82, 0.68, 0.46, 0.15)
@@ -890,6 +902,34 @@ var default_landmark_radius: float = 0.4
 
 func render_screen_space_gi_high_tier_enabled() -> bool:
 	return render_screen_space_gi_tier >= RENDER_SCREEN_SPACE_GI_TIER_HIGH
+
+
+func wheel_dust_effective_tier() -> int:
+	return mini(maxi(wheel_dust_quality_tier, WHEEL_DUST_TIER_OFF), WHEEL_DUST_TIER_HIGH)
+
+
+func wheel_dust_high_tier_enabled() -> bool:
+	return wheel_dust_effective_tier() >= WHEEL_DUST_TIER_HIGH
+
+
+func resolved_wheel_dust_particles_per_wheel() -> int:
+	if wheel_dust_effective_tier() <= WHEEL_DUST_TIER_OFF:
+		return 0
+	if wheel_dust_high_tier_enabled():
+		return maxi(wheel_dust_particles_per_wheel_high_tier, 0)
+	return maxi(wheel_dust_particles_per_wheel, 0)
+
+
+func resolved_wheel_dust_lifetime() -> float:
+	if wheel_dust_high_tier_enabled():
+		return maxf(wheel_dust_lifetime_high_tier, 0.05)
+	return maxf(wheel_dust_lifetime, 0.05)
+
+
+func resolved_wheel_dust_emission_radius() -> float:
+	if wheel_dust_high_tier_enabled():
+		return maxf(wheel_dust_emission_radius_high_tier, 0.001)
+	return maxf(wheel_dust_emission_radius, 0.001)
 
 
 func resolved_atmosphere_ssao_radius() -> float:

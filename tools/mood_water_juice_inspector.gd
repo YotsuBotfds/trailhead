@@ -506,6 +506,7 @@ func _require_surface_burst(parent: Node, path: String) -> void:
 
 func _inspect_vehicle_debris_particles(juice_rig: Node) -> void:
 	_inspect_wheel_dust_particles(juice_rig)
+	_inspect_wheel_dust_quality_tiers()
 	for rear_slot in range(REAR_ROOSTER_COUNT):
 		var rooster_name: String = "RearRoosterDebris" + str(rear_slot)
 		var rooster: GPUParticles3D = _require_node(juice_rig, rooster_name) as GPUParticles3D
@@ -534,8 +535,12 @@ func _inspect_wheel_dust_particles(juice_rig: Node) -> void:
 		var dust: GPUParticles3D = _require_node(juice_rig, dust_name) as GPUParticles3D
 		if dust == null:
 			continue
-		if dust.amount < GameConfig.wheel_dust_particles_per_wheel:
-			_errors.append(dust_name + " should use GameConfig wheel dust particle count")
+		if dust.amount != GameConfig.resolved_wheel_dust_particles_per_wheel():
+			_errors.append(dust_name + " should use resolved GameConfig wheel dust particle count")
+		if absf(dust.lifetime - GameConfig.resolved_wheel_dust_lifetime()) > FLOAT_EPSILON:
+			_errors.append(dust_name + " should use resolved GameConfig wheel dust lifetime")
+		if dust.local_coords:
+			_errors.append(dust_name + " should leave particles in world space for a trailing plume")
 		if not dust.use_fixed_seed:
 			_errors.append(dust_name + " should use a fixed seed")
 		if dust.randomness > FLOAT_EPSILON:
@@ -544,10 +549,70 @@ func _inspect_wheel_dust_particles(juice_rig: Node) -> void:
 			_errors.append(dust_name + " visibility range should follow GameConfig")
 		if dust.get_meta("visual_contract", "") != "deterministic_wheel_dust":
 			_errors.append(dust_name + " should declare deterministic wheel dust contract")
+		var process_material: ParticleProcessMaterial = dust.process_material as ParticleProcessMaterial
+		if process_material == null:
+			_errors.append(dust_name + " should use ParticleProcessMaterial")
+		else:
+			if absf(process_material.emission_sphere_radius - GameConfig.resolved_wheel_dust_emission_radius()) > FLOAT_EPSILON:
+				_errors.append(dust_name + " should use resolved GameConfig wheel dust emission radius")
+			if process_material.color_ramp == null:
+				_errors.append(dust_name + " should use a lifetime color ramp for tight alpha fade")
 		var mesh: Mesh = dust.get_draw_pass_mesh(0) as Mesh
 		if _particle_draw_material(mesh) == null:
 			_errors.append(dust_name + " should have a materialized dust draw pass")
 		_require_soft_dust_draw_material(dust, 0, dust_name + " draw_pass_1")
+
+
+func _inspect_wheel_dust_quality_tiers() -> void:
+	var original_tier: int = GameConfig.wheel_dust_quality_tier
+	var fake_vehicle: FakeJuiceVehicle = FakeJuiceVehicle.new()
+	fake_vehicle.name = "WheelDustTierFakeVehicle"
+	add_child(fake_vehicle)
+	GameConfig.wheel_dust_quality_tier = GameConfig.WHEEL_DUST_TIER_LOW
+	var low_rig: VehicleJuiceRig = VehicleJuiceRig.new()
+	low_rig.name = "LowTierWheelDustRig"
+	add_child(low_rig)
+	low_rig.configure(fake_vehicle, null, null)
+	_require_wheel_dust_preset(
+		low_rig,
+		GameConfig.wheel_dust_particles_per_wheel,
+		GameConfig.wheel_dust_lifetime,
+		GameConfig.wheel_dust_emission_radius,
+		"low-tier"
+	)
+	low_rig.queue_free()
+	GameConfig.wheel_dust_quality_tier = GameConfig.WHEEL_DUST_TIER_HIGH
+	var high_rig: VehicleJuiceRig = VehicleJuiceRig.new()
+	high_rig.name = "HighTierWheelDustRig"
+	add_child(high_rig)
+	high_rig.configure(fake_vehicle, null, null)
+	_require_wheel_dust_preset(
+		high_rig,
+		GameConfig.wheel_dust_particles_per_wheel_high_tier,
+		GameConfig.wheel_dust_lifetime_high_tier,
+		GameConfig.wheel_dust_emission_radius_high_tier,
+		"high-tier"
+	)
+	high_rig.queue_free()
+	fake_vehicle.queue_free()
+	GameConfig.wheel_dust_quality_tier = original_tier
+
+
+func _require_wheel_dust_preset(rig: Node, expected_amount: int, expected_lifetime: float, expected_radius: float, context: String) -> void:
+	var dust: GPUParticles3D = rig.get_node_or_null("WheelDust0") as GPUParticles3D
+	if dust == null:
+		_errors.append(context + " wheel dust should create an emitter")
+		return
+	if dust.amount != expected_amount:
+		_errors.append(context + " wheel dust amount expected " + str(expected_amount) + ", got " + str(dust.amount))
+	if absf(dust.lifetime - expected_lifetime) > FLOAT_EPSILON:
+		_errors.append(context + " wheel dust lifetime expected " + str(expected_lifetime) + ", got " + str(dust.lifetime))
+	var process_material: ParticleProcessMaterial = dust.process_material as ParticleProcessMaterial
+	if process_material == null:
+		_errors.append(context + " wheel dust should use ParticleProcessMaterial")
+		return
+	if absf(process_material.emission_sphere_radius - expected_radius) > FLOAT_EPSILON:
+		_errors.append(context + " wheel dust emission radius expected " + str(expected_radius) + ", got " + str(process_material.emission_sphere_radius))
 
 
 func _inspect_driven_vehicle_juice_emitters() -> void:
@@ -630,6 +695,8 @@ func _require_soft_dust_draw_material(particles: GPUParticles3D, pass_index: int
 		_errors.append(context + " should use the tagged soft radial dust material")
 	if material.albedo_texture == null:
 		_errors.append(context + " should use a soft alpha texture instead of a hard-edged quad")
+	if not material.vertex_color_use_as_albedo:
+		_errors.append(context + " should use particle vertex color for lifetime fade/tint")
 	if material.transparency != BaseMaterial3D.TRANSPARENCY_ALPHA:
 		_errors.append(context + " should render as alpha-blended dust")
 	if material.billboard_mode != BaseMaterial3D.BILLBOARD_ENABLED:
