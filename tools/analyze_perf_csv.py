@@ -12,6 +12,7 @@ Hitch classes:
   BOOT            frames 1-4, the initial world materialization
   collision       collision_cooks>0 on new CSVs
   visual-commit   visual_commits is high or visual_commit_ms dominates the frame
+  render-*        a new render-streamer *_ms column dominates the frame
   other           everything else
 
 Old CSVs without subsystem columns keep the earlier object-delta/crossing
@@ -22,9 +23,22 @@ import sys
 
 
 ATTRIBUTION_COLUMNS = {"collision_cooks", "visual_commits", "visual_commit_ms"}
+STREAMER_MS_COLUMNS = [
+    ("detail_refresh_ms", "render-detail-refresh", "detail"),
+    ("evict_ms", "render-evict", "evict"),
+    ("hlod_queue_ms", "render-hlod-queue", "hlodq"),
+    ("midlod_refresh_ms", "render-midlod-refresh", "midref"),
+    ("worker_result_ms", "render-worker-result", "result"),
+    ("visual_build_ms", "render-visual-build", "vbuild"),
+    ("midlod_build_ms", "render-midlod-build", "mbuild"),
+    ("hlod_build_ms", "render-hlod-build", "hbuild"),
+    ("foliage_build_ms", "render-foliage-build", "fbuild"),
+]
 VISUAL_COMMIT_COUNT_HIGH = 4
 VISUAL_COMMIT_DOMINANCE_RATIO = 0.50
 VISUAL_COMMIT_DOMINANCE_MIN_MS = 10.0
+STREAMER_DOMINANCE_RATIO = 0.50
+STREAMER_DOMINANCE_MIN_MS = 10.0
 
 
 def fnum(row, key, default=0.0):
@@ -42,7 +56,33 @@ def flag(row, key):
     return (row.get(key, "0") or "0").strip() in ("1", "1.0", "True", "true")
 
 
-def classify_hitch(row, frame, dt_ms, at_crossing, object_delta, has_attribution):
+def available_streamer_columns(fieldnames):
+    return [item for item in STREAMER_MS_COLUMNS if item[0] in fieldnames]
+
+
+def dominant_streamer_column(row, streamer_columns):
+    label = ""
+    value = 0.0
+    for column, candidate_label, _short_name in streamer_columns:
+        candidate_value = fnum(row, column)
+        if candidate_value > value:
+            label = candidate_label
+            value = candidate_value
+    return label, value
+
+
+def format_streamer_columns(row, streamer_columns):
+    if not streamer_columns:
+        return ""
+    parts = []
+    for column, _label, short_name in streamer_columns:
+        value = fnum(row, column)
+        if value > 0.0:
+            parts.append(f"{short_name}={value:.1f}")
+    return " ".join(parts) if parts else "-"
+
+
+def classify_hitch(row, frame, dt_ms, at_crossing, object_delta, has_attribution, streamer_columns):
     if frame <= 4:
         return "BOOT"
     if has_attribution:
@@ -55,6 +95,9 @@ def classify_hitch(row, frame, dt_ms, at_crossing, object_delta, has_attribution
             return "visual-commit"
         if visual_commit_ms >= max(VISUAL_COMMIT_DOMINANCE_MIN_MS, dt_ms * VISUAL_COMMIT_DOMINANCE_RATIO):
             return "visual-commit"
+        streamer_label, streamer_ms = dominant_streamer_column(row, streamer_columns)
+        if streamer_label and streamer_ms >= max(STREAMER_DOMINANCE_MIN_MS, dt_ms * STREAMER_DOMINANCE_RATIO):
+            return streamer_label
         return "other"
     if object_delta >= 150:
         return "visual-commit"
@@ -85,6 +128,7 @@ def main() -> int:
         print(f"{path}: no data rows (capture may have been killed before a flush)")
         return 1
     has_attribution = ATTRIBUTION_COLUMNS.issubset(fieldnames)
+    streamer_columns = available_streamer_columns(fieldnames)
 
     n = len(rows)
     dts = [fnum(r, "dt_ms") for r in rows]
@@ -101,12 +145,17 @@ def main() -> int:
           f"(post-boot growth {vm[-1]-post:+.0f} MB){'  <-- possible leak' if vm[-1]-post > 200 else ''}")
 
     # hitches
-    labels = ["BOOT", "collision", "visual-commit", "other"] if has_attribution else ["BOOT", "crossing-collision", "visual-commit", "other"]
+    labels = ["BOOT", "collision", "visual-commit"] if has_attribution else ["BOOT", "crossing-collision", "visual-commit"]
+    labels.extend(label for _column, label, _short_name in streamer_columns)
+    labels.append("other")
     stats = {label: {"count": 0, "total_ms": 0.0, "max_ms": 0.0} for label in labels}
     print(f"\n--- hitches > {thr:.0f}ms ---")
     base_header = f"{'frame':>7} {'dt_ms':>8} {'cell':>7} {'atc':>4} {'dobj':>6} {'ddraw':>6}"
     if has_attribution:
-        print(f"{base_header} {'cooks':>5} {'vcom':>5} {'vc_ms':>8}  class")
+        if streamer_columns:
+            print(f"{base_header} {'cooks':>5} {'vcom':>5} {'vc_ms':>8}  streamer_ms  class")
+        else:
+            print(f"{base_header} {'cooks':>5} {'vcom':>5} {'vc_ms':>8}  class")
     else:
         print(f"{base_header}  class")
     for i in range(n):
@@ -118,13 +167,17 @@ def main() -> int:
         ddraw = int(fnum(r, "draw_calls") - fnum(p, "draw_calls"))
         atc = flag(r, "hitch_at_crossing")
         fr = inum(r, "frame")
-        cls = classify_hitch(r, fr, dts[i], atc, dobj, has_attribution)
+        cls = classify_hitch(r, fr, dts[i], atc, dobj, has_attribution, streamer_columns)
         update_stats(stats, cls, dts[i])
         if has_attribution:
-            print(f"{fr:>7} {dts[i]:>8.0f} {r.get('current_cell','?'):>7} "
-                  f"{'Y' if atc else 'n':>4} {dobj:>6} {ddraw:>6} "
-                  f"{inum(r, 'collision_cooks'):>5} {inum(r, 'visual_commits'):>5} "
-                  f"{fnum(r, 'visual_commit_ms'):>8.1f}  {cls}")
+            base = (f"{fr:>7} {dts[i]:>8.0f} {r.get('current_cell','?'):>7} "
+                    f"{'Y' if atc else 'n':>4} {dobj:>6} {ddraw:>6} "
+                    f"{inum(r, 'collision_cooks'):>5} {inum(r, 'visual_commits'):>5} "
+                    f"{fnum(r, 'visual_commit_ms'):>8.1f}")
+            if streamer_columns:
+                print(f"{base}  {format_streamer_columns(r, streamer_columns):<88}  {cls}")
+            else:
+                print(f"{base}  {cls}")
         else:
             print(f"{fr:>7} {dts[i]:>8.0f} {r.get('current_cell','?'):>7} "
                   f"{'Y' if atc else 'n':>4} {dobj:>6} {ddraw:>6}  {cls}")
@@ -137,6 +190,10 @@ def main() -> int:
     if has_attribution:
         print(f"collision → collision_cooks>0; visual-commit → visual_commits>={VISUAL_COMMIT_COUNT_HIGH} "
               f"or visual_commit_ms>={VISUAL_COMMIT_DOMINANCE_RATIO:.0%} of dt.")
+        if streamer_columns:
+            names = ", ".join(column for column, _label, _short_name in streamer_columns)
+            print(f"render-streamer → dominant new *_ms column >= {STREAMER_DOMINANCE_RATIO:.0%} of dt "
+                  f"(columns present: {names}).")
     else:
         print("legacy CSV: visual-commit uses object delta; crossing-collision uses hitch_at_crossing.")
     print("New 'other' hitches = next target.")

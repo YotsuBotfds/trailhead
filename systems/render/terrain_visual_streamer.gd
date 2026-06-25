@@ -125,6 +125,20 @@ var _result_queue: Array[Variant] = []
 var _result_drains_remaining_this_frame: int = 0
 var _visual_commits_last_frame: int = 0
 var _visual_commit_usec_last_frame: int = 0
+# Perf-log-only render attribution. These accumulate main-thread streamer work:
+# detail_refresh=active detail-ring diff/queueing; evict=eviction callback + queued
+# frees; hlod_queue=HLOD priority/dispatch queue work; midlod_refresh=MidLOD active-ring
+# diff/queueing; worker_result=main-thread staging of finished worker jobs;
+# *_build=synchronous no-worker fallback builds or foliage materialization.
+var _detail_refresh_usec_last_frame: int = 0
+var _evict_usec_last_frame: int = 0
+var _hlod_queue_usec_last_frame: int = 0
+var _midlod_refresh_usec_last_frame: int = 0
+var _worker_result_usec_last_frame: int = 0
+var _visual_build_usec_last_frame: int = 0
+var _midlod_build_usec_last_frame: int = 0
+var _hlod_build_usec_last_frame: int = 0
+var _foliage_build_usec_last_frame: int = 0
 var _perf_attribution_enabled: bool = false
 
 
@@ -234,8 +248,7 @@ func reset_stream() -> void:
 	_clear_worker_queues()
 	_next_visual_build_id = 0
 	_result_drains_remaining_this_frame = 0
-	_visual_commits_last_frame = 0
-	_visual_commit_usec_last_frame = 0
+	_reset_perf_attribution_frame()
 	_configured = false
 	_region_id = ""
 	_detail_root = null
@@ -249,8 +262,7 @@ func reset_stream() -> void:
 
 
 func _process(_delta: float) -> void:
-	_visual_commits_last_frame = 0
-	_visual_commit_usec_last_frame = 0
+	_reset_perf_attribution_frame()
 	if not _configured:
 		return
 	# Stamp the streamer's per-frame work-phase budget window HERE, at the very top, so
@@ -263,14 +275,29 @@ func _process(_delta: float) -> void:
 	if _hlod_dirty:
 		_update_hlod_visibility()
 		_hlod_dirty = false
+	var hlod_queue_start_usec: int = 0
+	if _perf_attribution_enabled:
+		hlod_queue_start_usec = Time.get_ticks_usec()
 	_drain_stream_hlod_queue()
 	_drain_stream_hlod_densify_queue()
+	if _perf_attribution_enabled:
+		_hlod_queue_usec_last_frame += maxi(Time.get_ticks_usec() - hlod_queue_start_usec, 0)
 	if _midlod_refresh_requested:
 		_midlod_refresh_requested = false
+		var midlod_refresh_start_usec: int = 0
+		if _perf_attribution_enabled:
+			midlod_refresh_start_usec = Time.get_ticks_usec()
 		_refresh_midlod_streaming()
+		if _perf_attribution_enabled:
+			_midlod_refresh_usec_last_frame += maxi(Time.get_ticks_usec() - midlod_refresh_start_usec, 0)
 	if _workers.is_empty():
 		_process_build_queue_synchronously()
+	var worker_result_start_usec: int = 0
+	if _perf_attribution_enabled:
+		worker_result_start_usec = Time.get_ticks_usec()
 	_drain_worker_results()
+	if _perf_attribution_enabled:
+		_worker_result_usec_last_frame += maxi(Time.get_ticks_usec() - worker_result_start_usec, 0)
 	var visual_commit_start_usec: int = 0
 	if _perf_attribution_enabled:
 		visual_commit_start_usec = Time.get_ticks_usec()
@@ -284,14 +311,29 @@ func _process(_delta: float) -> void:
 	# The commit/subcommit/mid-LOD drains share the soft wall-clock budget stamped above
 	# (COMMIT_FRAME_BUDGET_USEC), so a burst spreads across frames instead of stalling one.
 	_drain_commit_queue()
+	var foliage_build_start_usec: int = 0
+	if _perf_attribution_enabled:
+		foliage_build_start_usec = Time.get_ticks_usec()
 	_drain_foliage_subcommit_queue()
+	if _perf_attribution_enabled:
+		_foliage_build_usec_last_frame += maxi(Time.get_ticks_usec() - foliage_build_start_usec, 0)
 	# Attach fully-built (detached) foliage tiles to the live root at most N per frame.
 	# Runs after the subcommit drain so tiles that finished THIS frame are eligible, and
 	# shares the COMMIT_FRAME_BUDGET_USEC window so the materialization burst spreads
 	# instead of stalling one frame. This is the cell-crossing-freeze fix.
+	foliage_build_start_usec = 0
+	if _perf_attribution_enabled:
+		foliage_build_start_usec = Time.get_ticks_usec()
 	_drain_foliage_finish_queue()
+	if _perf_attribution_enabled:
+		_foliage_build_usec_last_frame += maxi(Time.get_ticks_usec() - foliage_build_start_usec, 0)
 	_drain_midlod_commit_queue()
+	var evict_start_usec: int = 0
+	if _perf_attribution_enabled:
+		evict_start_usec = Time.get_ticks_usec()
 	_drain_pending_frees()
+	if _perf_attribution_enabled:
+		_evict_usec_last_frame += maxi(Time.get_ticks_usec() - evict_start_usec, 0)
 	if _perf_attribution_enabled:
 		_visual_commit_usec_last_frame = maxi(Time.get_ticks_usec() - visual_commit_start_usec, 0)
 
@@ -305,6 +347,20 @@ func _commit_frame_budget_exceeded() -> bool:
 	if DisplayServer.get_name() == "headless":
 		return false
 	return Time.get_ticks_usec() - _commit_phase_start_usec >= COMMIT_FRAME_BUDGET_USEC
+
+
+func _reset_perf_attribution_frame() -> void:
+	_visual_commits_last_frame = 0
+	_visual_commit_usec_last_frame = 0
+	_detail_refresh_usec_last_frame = 0
+	_evict_usec_last_frame = 0
+	_hlod_queue_usec_last_frame = 0
+	_midlod_refresh_usec_last_frame = 0
+	_worker_result_usec_last_frame = 0
+	_visual_build_usec_last_frame = 0
+	_midlod_build_usec_last_frame = 0
+	_hlod_build_usec_last_frame = 0
+	_foliage_build_usec_last_frame = 0
 
 
 func active_visual_cells() -> Array[Vector2i]:
@@ -383,10 +439,46 @@ func visual_commit_ms_last_frame() -> float:
 	return float(_visual_commit_usec_last_frame) / 1000.0
 
 
+func detail_refresh_ms_last_frame() -> float:
+	return float(_detail_refresh_usec_last_frame) / 1000.0
+
+
+func evict_ms_last_frame() -> float:
+	return float(_evict_usec_last_frame) / 1000.0
+
+
+func hlod_queue_ms_last_frame() -> float:
+	return float(_hlod_queue_usec_last_frame) / 1000.0
+
+
+func midlod_refresh_ms_last_frame() -> float:
+	return float(_midlod_refresh_usec_last_frame) / 1000.0
+
+
+func worker_result_ms_last_frame() -> float:
+	return float(_worker_result_usec_last_frame) / 1000.0
+
+
+func visual_build_ms_last_frame() -> float:
+	return float(_visual_build_usec_last_frame) / 1000.0
+
+
+func midlod_build_ms_last_frame() -> float:
+	return float(_midlod_build_usec_last_frame) / 1000.0
+
+
+func hlod_build_ms_last_frame() -> float:
+	return float(_hlod_build_usec_last_frame) / 1000.0
+
+
+func foliage_build_ms_last_frame() -> float:
+	return float(_foliage_build_usec_last_frame) / 1000.0
+
+
 func set_perf_attribution_enabled(enabled: bool) -> void:
 	_perf_attribution_enabled = enabled
 	if not _perf_attribution_enabled:
-		_visual_commit_usec_last_frame = 0
+		_reset_perf_attribution_frame()
 
 
 func has_ready_visual_cell(cell: Vector2i) -> bool:
@@ -494,15 +586,25 @@ func _on_world_tile_activated(cell: Vector2i) -> void:
 	# Any cell activation can shift the active center and pull a previously LOD1-only foliage
 	# tile into the dense foliage ring. Sweep the deferred set after the detail-radius refresh
 	# so cells downgraded to MidLOD/HLOD cannot receive a foliage upgrade.
+	var foliage_build_start_usec: int = 0
+	if _perf_attribution_enabled:
+		foliage_build_start_usec = Time.get_ticks_usec()
 	_promote_near_deferred_foliage_lod0()
+	if _perf_attribution_enabled:
+		_foliage_build_usec_last_frame += maxi(Time.get_ticks_usec() - foliage_build_start_usec, 0)
 
 
 func _refresh_visual_detail_streaming() -> void:
+	var detail_refresh_start_usec: int = 0
+	if _perf_attribution_enabled:
+		detail_refresh_start_usec = Time.get_ticks_usec()
 	for active_cell in _sorted_cells(_active_cells.keys()):
 		if _is_cell_in_visual_detail_radius(active_cell):
 			_ensure_visual_detail_cell(active_cell)
 		else:
 			_downgrade_visual_detail_cell(active_cell)
+	if _perf_attribution_enabled:
+		_detail_refresh_usec_last_frame += maxi(Time.get_ticks_usec() - detail_refresh_start_usec, 0)
 
 
 func _ensure_visual_detail_cell(cell: Vector2i) -> void:
@@ -572,6 +674,9 @@ func _downgrade_visual_detail_cell(cell: Vector2i) -> void:
 func _on_world_tile_evicted(cell: Vector2i) -> void:
 	if not _configured:
 		return
+	var evict_start_usec: int = 0
+	if _perf_attribution_enabled:
+		evict_start_usec = Time.get_ticks_usec()
 	_active_cells.erase(cell)
 	_update_stream_priority_from_active_cells()
 	_hlod_dirty = true
@@ -587,6 +692,8 @@ func _on_world_tile_evicted(cell: Vector2i) -> void:
 	if not _pending_free_cells.has(cell):
 		_pending_free_cells.append(cell)
 	_load_failures_by_cell.erase(cell)
+	if _perf_attribution_enabled:
+		_evict_usec_last_frame += maxi(Time.get_ticks_usec() - evict_start_usec, 0)
 
 
 func _on_world_tile_prefetched(cell: Vector2i) -> void:
@@ -1043,7 +1150,12 @@ func _commit_ready_cell(cell: Vector2i) -> void:
 		var sample_step: int = int(_ready_tile_step_by_cell.get(cell, TerrainVisualBuilderScript.REGION_DETAIL_SAMPLE_STEP))
 		_commit_visual_tile(cell, _ready_tile_data_by_cell[cell], sample_step)
 	if _ready_foliage_data_by_cell.has(cell) and _visual_tiles_by_cell.has(cell):
+		var foliage_build_start_usec: int = 0
+		if _perf_attribution_enabled:
+			foliage_build_start_usec = Time.get_ticks_usec()
 		_begin_foliage_tile_commit(cell, _ready_foliage_data_by_cell[cell])
+		if _perf_attribution_enabled:
+			_foliage_build_usec_last_frame += maxi(Time.get_ticks_usec() - foliage_build_start_usec, 0)
 
 
 func _drain_foliage_subcommit_queue() -> void:
@@ -1157,9 +1269,16 @@ func _queue_stream_hlod_region() -> void:
 
 
 func _resort_stream_hlod_queue() -> void:
+	var hlod_queue_start_usec: int = 0
+	if _perf_attribution_enabled:
+		hlod_queue_start_usec = Time.get_ticks_usec()
 	if _stream_hlod_queue.size() <= 1:
+		if _perf_attribution_enabled:
+			_hlod_queue_usec_last_frame += maxi(Time.get_ticks_usec() - hlod_queue_start_usec, 0)
 		return
 	_stream_hlod_queue.sort_custom(Callable(self, "_stream_hlod_cell_less"))
+	if _perf_attribution_enabled:
+		_hlod_queue_usec_last_frame += maxi(Time.get_ticks_usec() - hlod_queue_start_usec, 0)
 
 
 func _stream_hlod_cell_less(left: Vector2i, right: Vector2i) -> bool:
@@ -1338,10 +1457,17 @@ func _apply_stream_hlod_densification() -> void:
 
 
 func _queue_near_stream_hlod_densification() -> void:
+	var hlod_queue_start_usec: int = 0
+	if _perf_attribution_enabled:
+		hlod_queue_start_usec = Time.get_ticks_usec()
 	if _region_id != STREAM_HLOD_DENSIFY_REGION_ID:
+		if _perf_attribution_enabled:
+			_hlod_queue_usec_last_frame += maxi(Time.get_ticks_usec() - hlod_queue_start_usec, 0)
 		return
 	for cell in _sorted_cells(_stream_hlod_chunks_by_cell.keys()):
 		_queue_stream_hlod_densification(cell)
+	if _perf_attribution_enabled:
+		_hlod_queue_usec_last_frame += maxi(Time.get_ticks_usec() - hlod_queue_start_usec, 0)
 
 
 func _queue_stream_hlod_densification(cell: Vector2i) -> void:
@@ -1755,6 +1881,8 @@ func _process_build_queue_synchronously() -> void:
 		if job.is_empty():
 			return
 
+		if _perf_attribution_enabled:
+			job["sync_perf"] = true
 		var result: Dictionary = _build_worker_result(job)
 		_work_mutex.lock()
 		if not _worker_should_stop:
@@ -1864,8 +1992,21 @@ func _build_visual_tile_result(job: Dictionary) -> Dictionary:
 		}
 
 	var sample_step: int = int(job.get("sample_step", TerrainVisualBuilderScript.REGION_DETAIL_SAMPLE_STEP))
-	var visual_tile_data: Variant = TerrainVisualBuilderScript.build_region_visual_tile_data(region_id, cell, sample_step)
-	var foliage_tile_data: Variant = TerrainVisualBuilderScript.build_region_foliage_tile_data(region_id, cell)
+	var sync_perf_enabled: bool = bool(job.get("sync_perf", false)) and _perf_attribution_enabled
+	var visual_tile_data: Variant = null
+	if sync_perf_enabled:
+		var visual_build_start_usec: int = Time.get_ticks_usec()
+		visual_tile_data = TerrainVisualBuilderScript.build_region_visual_tile_data(region_id, cell, sample_step)
+		_visual_build_usec_last_frame += maxi(Time.get_ticks_usec() - visual_build_start_usec, 0)
+	else:
+		visual_tile_data = TerrainVisualBuilderScript.build_region_visual_tile_data(region_id, cell, sample_step)
+	var foliage_tile_data: Variant = null
+	if sync_perf_enabled:
+		var foliage_build_start_usec: int = Time.get_ticks_usec()
+		foliage_tile_data = TerrainVisualBuilderScript.build_region_foliage_tile_data(region_id, cell)
+		_foliage_build_usec_last_frame += maxi(Time.get_ticks_usec() - foliage_build_start_usec, 0)
+	else:
+		foliage_tile_data = TerrainVisualBuilderScript.build_region_foliage_tile_data(region_id, cell)
 	var ok: bool = visual_tile_data != null and bool(visual_tile_data.ok)
 	var message: String = ""
 	if not ok and visual_tile_data != null:
@@ -1905,7 +2046,14 @@ func _build_midlod_tile_result(job: Dictionary) -> Dictionary:
 			"midlod_tile_data": null,
 		}
 
-	var midlod_tile_data: Variant = TerrainVisualBuilderScript.build_region_stream_midlod_tile_data(region_id, cell)
+	var sync_perf_enabled: bool = bool(job.get("sync_perf", false)) and _perf_attribution_enabled
+	var midlod_tile_data: Variant = null
+	if sync_perf_enabled:
+		var midlod_build_start_usec: int = Time.get_ticks_usec()
+		midlod_tile_data = TerrainVisualBuilderScript.build_region_stream_midlod_tile_data(region_id, cell)
+		_midlod_build_usec_last_frame += maxi(Time.get_ticks_usec() - midlod_build_start_usec, 0)
+	else:
+		midlod_tile_data = TerrainVisualBuilderScript.build_region_stream_midlod_tile_data(region_id, cell)
 	var ok: bool = midlod_tile_data != null and bool(midlod_tile_data.ok)
 	var message: String = ""
 	if not ok and midlod_tile_data != null:
@@ -1940,7 +2088,14 @@ func _build_stream_hlod_tile_result(job: Dictionary) -> Dictionary:
 			"stream_hlod_tile_data": null,
 		}
 
-	var stream_hlod_tile_data: Variant = _build_stream_hlod_tile_data(region_id, cell)
+	var sync_perf_enabled: bool = bool(job.get("sync_perf", false)) and _perf_attribution_enabled
+	var stream_hlod_tile_data: Variant = null
+	if sync_perf_enabled:
+		var hlod_build_start_usec: int = Time.get_ticks_usec()
+		stream_hlod_tile_data = _build_stream_hlod_tile_data(region_id, cell)
+		_hlod_build_usec_last_frame += maxi(Time.get_ticks_usec() - hlod_build_start_usec, 0)
+	else:
+		stream_hlod_tile_data = _build_stream_hlod_tile_data(region_id, cell)
 	var ok: bool = stream_hlod_tile_data != null and bool(stream_hlod_tile_data.ok)
 	var message: String = ""
 	if not ok and stream_hlod_tile_data != null:
@@ -1997,11 +2152,17 @@ func _build_stream_hlod_densify_result(job: Dictionary) -> Dictionary:
 	var cell: Vector2i = job["cell"] as Vector2i
 	var generation: int = int(job["generation"])
 	var region_id: String = String(job["region_id"])
+	var sync_perf_enabled: bool = bool(job.get("sync_perf", false)) and _perf_attribution_enabled
+	var hlod_build_start_usec: int = 0
+	if sync_perf_enabled:
+		hlod_build_start_usec = Time.get_ticks_usec()
 
 	_work_mutex.lock()
 	var should_skip: bool = _worker_should_stop or generation != _stream_generation
 	_work_mutex.unlock()
 	if should_skip:
+		if sync_perf_enabled:
+			_hlod_build_usec_last_frame += maxi(Time.get_ticks_usec() - hlod_build_start_usec, 0)
 		return {
 			"ok": false,
 			"cell": cell,
@@ -2015,6 +2176,8 @@ func _build_stream_hlod_densify_result(job: Dictionary) -> Dictionary:
 
 	var tile_data: Variant = TerrainVisualBuilderScript._load_region_tile(region_id, cell)
 	if tile_data == null:
+		if sync_perf_enabled:
+			_hlod_build_usec_last_frame += maxi(Time.get_ticks_usec() - hlod_build_start_usec, 0)
 		return {
 			"ok": false,
 			"cell": cell,
@@ -2028,6 +2191,8 @@ func _build_stream_hlod_densify_result(job: Dictionary) -> Dictionary:
 
 	var height_variance_m: float = _stream_hlod_tile_height_variance_from_data(tile_data)
 	if height_variance_m < STREAM_HLOD_DENSIFY_MIN_HEIGHT_VARIANCE_M:
+		if sync_perf_enabled:
+			_hlod_build_usec_last_frame += maxi(Time.get_ticks_usec() - hlod_build_start_usec, 0)
 		return {
 			"ok": true,
 			"cell": cell,
@@ -2048,6 +2213,8 @@ func _build_stream_hlod_densify_result(job: Dictionary) -> Dictionary:
 		tile_origin_xz
 	)
 	if mesh_data == null or mesh_data.surfaces.size() <= 0:
+		if sync_perf_enabled:
+			_hlod_build_usec_last_frame += maxi(Time.get_ticks_usec() - hlod_build_start_usec, 0)
 		return {
 			"ok": false,
 			"cell": cell,
@@ -2060,6 +2227,8 @@ func _build_stream_hlod_densify_result(job: Dictionary) -> Dictionary:
 		}
 	var mesh: ArrayMesh = TerrainVisualBuilderScript.region_mesh_from_data(mesh_data, false)
 	if mesh == null or mesh.get_surface_count() <= 0:
+		if sync_perf_enabled:
+			_hlod_build_usec_last_frame += maxi(Time.get_ticks_usec() - hlod_build_start_usec, 0)
 		return {
 			"ok": false,
 			"cell": cell,
@@ -2070,6 +2239,8 @@ func _build_stream_hlod_densify_result(job: Dictionary) -> Dictionary:
 			"mesh_data": mesh_data,
 			"skipped": false,
 		}
+	if sync_perf_enabled:
+		_hlod_build_usec_last_frame += maxi(Time.get_ticks_usec() - hlod_build_start_usec, 0)
 	return {
 		"ok": true,
 		"cell": cell,
