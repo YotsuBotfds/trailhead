@@ -74,7 +74,7 @@ var render_visual_foliage_radius_cells: int = 2
 var render_visual_foliage_subcommits_per_frame: int = 6
 # High-tier foliage defaults for the 4090/review lane. Lower these together on weaker
 # GPUs instead of editing terrain builder constants; placement remains deterministic.
-var render_foliage_lod1_count: int = 18
+var render_foliage_lod1_count: int = 15
 var render_foliage_grass_lod1_range: float = 120.0
 # How many fully-built foliage TILES may attach to the live _foliage_root per frame.
 # Each foliage tile is assembled DETACHED (its MultiMeshInstance3D children are added to
