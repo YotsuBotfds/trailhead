@@ -7,7 +7,7 @@ const MOOD_NIGHT: int = 2
 const DUSK_HERO_SUN_ROTATION_DEGREES: Vector3 = Vector3(-16.0, -62.0, 0.0)
 const DUSK_HERO_SUN_COLOR: Color = Color(1.0, 0.74, 0.50)
 const DUSK_HERO_AMBIENT_COLOR: Color = Color(0.45, 0.49, 0.56)
-const DUSK_HERO_AMBIENT_ENERGY: float = 0.31
+const DUSK_HERO_AMBIENT_ENERGY: float = 0.34
 const DUSK_HERO_FOG_LIGHT_COLOR: Color = Color(0.55, 0.58, 0.62)  # cool desaturated blue-gray (bible §4.3); was warm-amber (0.74,0.63,0.52) — the primary distance "wash"
 const DUSK_HERO_VOLUMETRIC_FOG_ALBEDO: Color = Color(0.60, 0.62, 0.64)  # cooled from warm tan (0.72,0.60,0.48)
 const DUSK_HERO_VOLUMETRIC_FOG_EMISSION: Color = Color(0.34, 0.18, 0.07)
@@ -93,6 +93,17 @@ static func _apply_sun_atmosphere(sun: DirectionalLight3D) -> void:
 	sun.directional_shadow_fade_start = SHADOW_FADE_START
 	sun.directional_shadow_mode = _directional_shadow_mode(GameConfig.atmosphere_directional_shadow_mode)
 	sun.directional_shadow_blend_splits = GameConfig.atmosphere_directional_shadow_blend_splits
+	# Explicit split fractions: keep the near split tight (crisp contact at the car) and
+	# stretch the last split over the canyon walls so the deep raking shadows still resolve.
+	sun.directional_shadow_split_1 = clampf(GameConfig.atmosphere_directional_shadow_split_1, 0.0, 1.0)
+	sun.directional_shadow_split_2 = clampf(GameConfig.atmosphere_directional_shadow_split_2, 0.0, 1.0)
+	sun.directional_shadow_split_3 = clampf(GameConfig.atmosphere_directional_shadow_split_3, 0.0, 1.0)
+	sun.directional_shadow_pancake_size = maxf(GameConfig.atmosphere_directional_shadow_pancake_size, 0.0)
+	# Normal bias offsets the shadow-test position along the surface normal: enough to kill
+	# acne on the rocky terrain at the extended 130 m range, low enough to avoid peter-panning
+	# the crisp near contact. Paired with a small constant bias.
+	sun.shadow_normal_bias = maxf(GameConfig.atmosphere_shadow_normal_bias, 0.0)
+	sun.shadow_bias = maxf(GameConfig.atmosphere_shadow_bias, 0.0)
 	sun.shadow_blur = maxf(GameConfig.atmosphere_pcss_shadow_blur, 0.0)
 	sun.shadow_opacity = clampf(GameConfig.atmosphere_pcss_shadow_opacity, 0.0, 1.0)
 	sun.light_volumetric_fog_energy = GameConfig.atmosphere_sun_volumetric_fog_energy
