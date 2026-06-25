@@ -11,6 +11,8 @@ const TILT_SHIFT_SHADER_PATH: String = "res://systems/render/tilt_shift.gdshader
 const TILT_SHIFT_LAYER_NAME: String = "TiltShiftLayer"
 const TILT_SHIFT_RECT_NAME: String = "TiltShiftOverlay"
 const TILT_SHIFT_LAYER_INDEX: int = 2
+const VIGNETTE_LAYER_NAME: String = "VignetteLayer"
+const VIGNETTE_LAYER_INDEX: int = 3
 const EXPECTED_FOV_MIN: float = 68.0
 const EXPECTED_FOV_MAX: float = 80.0
 const RESIDUE_SHADER_PATH: String = "res://systems/render/vehicle_contamination_visual.gdshader"
@@ -554,6 +556,7 @@ func _require_camera_pitch(camera: Camera3D, context: String) -> void:
 
 func _inspect_render_camera_contract(host: Node, chase_camera: Camera3D, orbit_camera: Camera3D, fpv_camera: Camera3D, context: String) -> void:
 	_inspect_tilt_shift_layer(host, context)
+	_inspect_vignette_layer(host, context)
 	_inspect_viewport_antialiasing(host, context)
 	_inspect_project_scaling_settings(context)
 	_inspect_fov_range(context)
@@ -588,6 +591,18 @@ func _inspect_tilt_shift_layer(host: Node, context: String) -> void:
 	_require_shader_float(material, "center", GameConfig.tilt_shift_band_center, context + " TiltShiftOverlay")
 	_require_shader_float(material, "band", GameConfig.tilt_shift_focus_band, context + " TiltShiftOverlay")
 	_require_shader_float(material, "blur", GameConfig.tilt_shift_blur_amount, context + " TiltShiftOverlay")
+
+
+func _inspect_vignette_layer(host: Node, context: String) -> void:
+	if host == null:
+		return
+	var layer: CanvasLayer = _require_node(host, VIGNETTE_LAYER_NAME) as CanvasLayer
+	if layer == null:
+		return
+	if layer.layer != VIGNETTE_LAYER_INDEX:
+		_errors.append(context + " VignetteLayer layer expected " + str(VIGNETTE_LAYER_INDEX) + ", got " + str(layer.layer))
+	if layer.visible != GameConfig.vignette_enabled:
+		_errors.append(context + " VignetteLayer visible state should follow GameConfig")
 
 
 func _inspect_viewport_antialiasing(host: Node, context: String) -> void:

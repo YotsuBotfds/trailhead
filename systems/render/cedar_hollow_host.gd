@@ -14,6 +14,7 @@ const WaterVisualBuilderScript: GDScript = preload("res://systems/render/water_v
 const ScatterVisualBuilderScript: GDScript = preload("res://systems/render/scatter_visual_builder.gd")
 const AtmosphereVisualBuilderScript: GDScript = preload("res://systems/render/atmosphere_visual_builder.gd")
 const DustTiltShiftVisualBuilderScript: GDScript = preload("res://systems/render/dust_tilt_shift_visual_builder.gd")
+const VignetteVisualBuilderScript: GDScript = preload("res://systems/render/vignette_visual_builder.gd")
 const AmbientLifeBuilderScript: GDScript = preload("res://systems/render/ambient_life_builder.gd")
 const ProceduralBuggyVisualScript: GDScript = preload("res://systems/render/procedural_buggy_visual.gd")
 const RenderRuntimeConfigScript: GDScript = preload("res://systems/render/render_runtime_config.gd")
@@ -1363,6 +1364,7 @@ func _setup_camera() -> void:
 	_cinematic_camera.far = GameConfig.cinematic_tour_far
 	add_child(_cinematic_camera)
 	DustTiltShiftVisualBuilderScript.build(self, _camera, _orbit_camera, _fpv_camera)
+	VignetteVisualBuilderScript.build(self)
 	_orbit_yaw_degrees = GameConfig.orbit_cam_start_yaw_deg
 	_update_camera(GameConfig.FIXED_DT)
 
