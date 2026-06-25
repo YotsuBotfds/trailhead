@@ -170,6 +170,9 @@ var _visual_last_velocity_valid: bool = false
 var _grass_crush_materials: Array[ShaderMaterial] = []
 var _grass_crush_collect_tick: int = 0
 const GRASS_CRUSH_RECOLLECT_INTERVAL: int = 12
+const GRASS_CRUSH_POSITION_EPSILON_SQUARED: float = 0.0001
+var _grass_crush_last_vehicle_position: Vector3 = Vector3.ZERO
+var _grass_crush_last_vehicle_position_valid: bool = false
 var _camera_mode: int = CAMERA_MODE_CHASE
 var _photo_mode_active: bool = false
 var _photo_mode_previous_camera_mode: int = CAMERA_MODE_CHASE
@@ -2249,20 +2252,45 @@ func _spring_scalar(current: float, target: float, delta: float, spring: float, 
 func _update_grass_crush(state: RefCounted) -> void:
 	# Re-collect grass materials only periodically, scoped to the foliage streamer
 	# subtree (NOT the whole host tree — that pulled in the track painter's stamp
-	# nodes and grew unbounded, scanning more nodes every physics tick).
+	# nodes and grew unbounded, scanning more nodes on the hot update path).
+	var materials_recollected: bool = _refresh_grass_crush_materials_if_needed()
+	var vehicle_position: Vector3 = state.get("position")
+	if not materials_recollected \
+			and _grass_crush_last_vehicle_position_valid \
+			and _grass_crush_last_vehicle_position.distance_squared_to(vehicle_position) <= GRASS_CRUSH_POSITION_EPSILON_SQUARED:
+		return
+	_grass_crush_last_vehicle_position = vehicle_position
+	_grass_crush_last_vehicle_position_valid = true
+	_apply_grass_crush_vehicle_position(vehicle_position)
+
+
+func _refresh_grass_crush_materials_if_needed() -> bool:
 	_grass_crush_collect_tick += 1
 	if _grass_crush_materials.is_empty() or _grass_crush_collect_tick >= GRASS_CRUSH_RECOLLECT_INTERVAL:
 		_grass_crush_collect_tick = 0
 		_grass_crush_materials.clear()
 		if _terrain_visual_streamer != null:
 			_collect_grass_crush_materials(_terrain_visual_streamer)
-	var vehicle_position: Vector3 = state.get("position")
+		_apply_grass_crush_static_parameters()
+		return true
+	return false
+
+
+func _apply_grass_crush_static_parameters() -> void:
+	var crush_radius: float = maxf(GameConfig.grass_crush_radius, 0.0)
+	var crush_strength: float = maxf(GameConfig.grass_crush_strength, 0.0)
+	for material in _grass_crush_materials:
+		if material == null:
+			continue
+		material.set_shader_parameter(&"crush_radius", crush_radius)
+		material.set_shader_parameter(&"crush_strength", crush_strength)
+
+
+func _apply_grass_crush_vehicle_position(vehicle_position: Vector3) -> void:
 	for material in _grass_crush_materials:
 		if material == null:
 			continue
 		material.set_shader_parameter(&"vehicle_world_pos", vehicle_position)
-		material.set_shader_parameter(&"crush_radius", maxf(GameConfig.grass_crush_radius, 0.0))
-		material.set_shader_parameter(&"crush_strength", maxf(GameConfig.grass_crush_strength, 0.0))
 
 
 func _collect_grass_crush_materials(root: Node) -> void:
