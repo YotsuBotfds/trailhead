@@ -59,9 +59,10 @@ const ZION_SAMPLE_POINTS: Array[Vector3] = [
 ]
 
 var _out_path: String = "user://export_parity_smoke.json"
+var _classes: Dictionary[String, Variant] = {}
 var _result: Dictionary[String, Variant] = {
 	"ok": false,
-	"classes": {},
+	"classes": _classes,
 }
 
 
@@ -198,7 +199,10 @@ func _check_foliage_assets() -> Dictionary[String, Variant]:
 		var instance_count: int = _foliage_instance_count(foliage_tile_data)
 		if instance_count <= 0:
 			errors.append("foliage tile has no accepted instances: " + str(FOLIAGE_TILE_CELL))
-		var tile_root: Node3D = TerrainVisualBuilderScript.region_foliage_tile_root_from_data(self, foliage_tile_data, false) as Node3D
+		var foliage_parent: Node3D = Node3D.new()
+		foliage_parent.name = "ExportParityFoliageRoot"
+		add_child(foliage_parent)
+		var tile_root: Node3D = TerrainVisualBuilderScript.region_foliage_tile_from_data(foliage_parent, foliage_tile_data) as Node3D
 		if tile_root == null:
 			errors.append("foliage tile root failed to materialize: " + str(FOLIAGE_TILE_CELL))
 		else:
@@ -206,7 +210,8 @@ func _check_foliage_assets() -> Dictionary[String, Variant]:
 			if multimesh_count <= 0:
 				errors.append("foliage tile root has no MultiMeshInstance3D nodes: " + str(FOLIAGE_TILE_CELL))
 			details.append("foliage tile " + str(FOLIAGE_TILE_CELL) + " instances=" + str(instance_count) + " multimeshes=" + str(multimesh_count))
-			tile_root.free()
+		remove_child(foliage_parent)
+		foliage_parent.free()
 	return _class_result(errors, details)
 
 
@@ -324,9 +329,8 @@ func _class_result(errors: Array[String], details: Array[String]) -> Dictionary[
 
 
 func _record_class(asset_class: String, class_result: Dictionary[String, Variant]) -> void:
-	var classes: Dictionary[String, Variant] = _result["classes"] as Dictionary[String, Variant]
-	classes[asset_class] = class_result
-	_result["classes"] = classes
+	_classes[asset_class] = class_result
+	_result["classes"] = _classes
 	if bool(class_result["ok"]):
 		var details: Array[String] = class_result["details"] as Array[String]
 		print("export_parity_smoke: PASS " + asset_class + " checks=" + str(details.size()))
@@ -338,9 +342,8 @@ func _record_class(asset_class: String, class_result: Dictionary[String, Variant
 
 
 func _all_classes_ok() -> bool:
-	var classes: Dictionary[String, Variant] = _result["classes"] as Dictionary[String, Variant]
-	for asset_class in classes.keys():
-		var class_result: Dictionary[String, Variant] = classes[asset_class] as Dictionary[String, Variant]
+	for asset_class in _classes.keys():
+		var class_result: Dictionary[String, Variant] = _classes[asset_class] as Dictionary[String, Variant]
 		if not bool(class_result["ok"]):
 			return false
 	return true
