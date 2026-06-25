@@ -10,6 +10,9 @@ const SOURCE_TAGGED: String = "tagged"
 const SOURCE_TERRAIN: String = "terrain"
 const SOURCE_FALLBACK: String = "fallback"
 const SURFACE_DEF_DIR_PATH: String = "res://data/surfaces"
+const SURFACE_GROUP_PREFIX: String = "surf_"
+const SURFACE_NAME_MARKER: String = "__surf_"
+const TERRAIN_ID_VALUE_COUNT: int = 256
 # Hard resource refs keep SurfaceDef discovery export-safe when packed builds cannot enumerate res://.
 const LooseRockSurfaceDef: Resource = preload("res://data/surfaces/loose_rock.tres")
 const MudSurfaceDef: Resource = preload("res://data/surfaces/mud.tres")
@@ -36,7 +39,11 @@ const SURFACE_DEF_MANIFEST: Array[Resource] = [
 
 var _defs: Dictionary[StringName, Resource] = {}
 var _fallback: Resource = null
-var _source_counts: Dictionary[String, int] = {}
+var _surface_group_ids: Array[StringName] = []
+var _surface_group_names: Array[StringName] = []
+var _source_tagged_count: int = 0
+var _source_terrain_count: int = 0
+var _source_fallback_count: int = 0
 var _terrain_palette: Resource = null
 var _terrain_def: Resource = null
 var _terrain_surface_samples: PackedByteArray = PackedByteArray()
@@ -45,7 +52,10 @@ var _terrain_surface_height: int = 0
 var _terrain_bounds_min: Vector2 = Vector2.ZERO
 var _terrain_bounds_max: Vector2 = Vector2.ZERO
 var _terrain_sampler_ready: bool = false
-var _terrain_id_counts: Dictionary[String, int] = {}
+var _terrain_surface_ids_by_value: Array[StringName] = []
+var _terrain_id_count_values: PackedInt32Array = PackedInt32Array()
+var _terrain_id_count_active_ids: PackedInt32Array = PackedInt32Array()
+var _terrain_id_count_keys: Array[String] = []
 
 
 func _ready() -> void:
@@ -57,6 +67,8 @@ func _ready() -> void:
 
 func load_defs(dir_path: String) -> void:
 	_defs.clear()
+	_surface_group_ids.clear()
+	_surface_group_names.clear()
 	if _is_surface_def_manifest_dir(dir_path):
 		_load_surface_def_manifest()
 		return
@@ -91,6 +103,14 @@ func _register_surface_def(surface_def: Resource, resource_path: String) -> void
 	var surface_id: StringName = surface_def.get("id")
 	if surface_id != &"":
 		_defs[surface_id] = surface_def
+		_register_surface_group(surface_id)
+
+
+func _register_surface_group(surface_id: StringName) -> void:
+	if _surface_group_ids.has(surface_id):
+		return
+	_surface_group_ids.append(surface_id)
+	_surface_group_names.append(StringName(SURFACE_GROUP_PREFIX + String(surface_id)))
 
 
 func _is_surface_def_manifest_dir(dir_path: String) -> bool:
@@ -161,7 +181,7 @@ func surface_id_at_world_position(world_position: Vector3, fallback: StringName 
 		return fallback
 	var id_value: int = _terrain_surface_samples[sample_index]
 	_increment_terrain_id_count(id_value)
-	return StringName(_terrain_palette.call("surface_id_for", id_value, fallback))
+	return _terrain_surface_id_for_value(id_value, fallback)
 
 
 func configure_terrain_palette(palette_path: String, bounds_min: Vector2, bounds_max: Vector2) -> bool:
@@ -199,6 +219,7 @@ func _reset_terrain_sampler() -> void:
 	_terrain_sampler_ready = false
 	_terrain_bounds_min = Vector2.ZERO
 	_terrain_bounds_max = Vector2.ZERO
+	_reset_terrain_surface_id_lookup()
 
 
 func _load_terrain_palette(palette_path: String) -> bool:
@@ -218,6 +239,7 @@ func _load_terrain_palette(palette_path: String) -> bool:
 	if not _load_terrain_surface_id_png(image_path):
 		push_error("SurfaceMap failed to load terrain surface-ID image: " + image_path)
 		return false
+	_build_terrain_surface_id_lookup(palette)
 	_terrain_palette = palette
 	_terrain_sampler_ready = true
 	return true
@@ -241,20 +263,27 @@ func is_terrain_sampler_ready() -> bool:
 
 
 func reset_source_counts() -> void:
-	_source_counts = {
-		SOURCE_TAGGED: 0,
-		SOURCE_TERRAIN: 0,
-		SOURCE_FALLBACK: 0
-	}
-	_terrain_id_counts.clear()
+	_source_tagged_count = 0
+	_source_terrain_count = 0
+	_source_fallback_count = 0
+	_reset_terrain_id_counts()
 
 
 func source_counts() -> Dictionary[String, int]:
-	return _source_counts.duplicate()
+	var counts: Dictionary[String, int] = {}
+	counts[SOURCE_TAGGED] = _source_tagged_count
+	counts[SOURCE_TERRAIN] = _source_terrain_count
+	counts[SOURCE_FALLBACK] = _source_fallback_count
+	return counts
 
 
 func terrain_id_counts() -> Dictionary[String, int]:
-	return _terrain_id_counts.duplicate()
+	var counts: Dictionary[String, int] = {}
+	_ensure_terrain_id_count_storage()
+	for index in range(_terrain_id_count_active_ids.size()):
+		var id_value: int = _terrain_id_count_active_ids[index]
+		counts[_terrain_id_count_keys[id_value]] = _terrain_id_count_values[id_value]
+	return counts
 
 
 func _terrain_position_for_collider(node: Node, world_position: Vector3) -> Vector3:
@@ -277,14 +306,13 @@ func _tagged_surface_id_from_collider(collider: Object) -> StringName:
 	var node: Node = collider as Node
 	if node == null:
 		return &""
-	for group_name in node.get_groups():
-		var group_string: String = String(group_name)
-		if group_string.begins_with("surf_"):
-			return StringName(group_string.substr(5))
+	for i in range(_surface_group_names.size()):
+		if node.is_in_group(_surface_group_names[i]):
+			return _surface_group_ids[i]
 	var node_name: String = node.name
-	var marker_index: int = node_name.find("__surf_")
+	var marker_index: int = node_name.find(SURFACE_NAME_MARKER)
 	if marker_index != -1:
-		return StringName(node_name.substr(marker_index + 7))
+		return StringName(node_name.substr(marker_index + SURFACE_NAME_MARKER.length()))
 	return &""
 
 
@@ -342,12 +370,68 @@ func _missing_surface_defs_for_palette(palette: Resource) -> PackedStringArray:
 
 
 func _increment_source_count(source_id: String) -> void:
-	_source_counts[source_id] = int(_source_counts.get(source_id, 0)) + 1
+	if source_id == SOURCE_TAGGED:
+		_source_tagged_count += 1
+	elif source_id == SOURCE_TERRAIN:
+		_source_terrain_count += 1
+	elif source_id == SOURCE_FALLBACK:
+		_source_fallback_count += 1
 
 
 func _increment_terrain_id_count(id_value: int) -> void:
-	var key: String = str(id_value)
-	_terrain_id_counts[key] = int(_terrain_id_counts.get(key, 0)) + 1
+	_ensure_terrain_id_count_storage()
+	if id_value < 0 or id_value >= TERRAIN_ID_VALUE_COUNT:
+		return
+	var next_count: int = _terrain_id_count_values[id_value] + 1
+	_terrain_id_count_values[id_value] = next_count
+	if next_count == 1:
+		_terrain_id_count_active_ids.append(id_value)
+
+
+func _reset_terrain_id_counts() -> void:
+	_ensure_terrain_id_count_storage()
+	for index in range(_terrain_id_count_active_ids.size()):
+		var id_value: int = _terrain_id_count_active_ids[index]
+		_terrain_id_count_values[id_value] = 0
+	_terrain_id_count_active_ids.clear()
+
+
+func _ensure_terrain_id_count_storage() -> void:
+	if _terrain_id_count_values.size() == TERRAIN_ID_VALUE_COUNT and _terrain_id_count_keys.size() == TERRAIN_ID_VALUE_COUNT:
+		return
+	_terrain_id_count_values.resize(TERRAIN_ID_VALUE_COUNT)
+	_terrain_id_count_keys.clear()
+	_terrain_id_count_keys.resize(TERRAIN_ID_VALUE_COUNT)
+	for id_value in range(TERRAIN_ID_VALUE_COUNT):
+		_terrain_id_count_values[id_value] = 0
+		_terrain_id_count_keys[id_value] = str(id_value)
+
+
+func _build_terrain_surface_id_lookup(palette: Resource) -> void:
+	_reset_terrain_surface_id_lookup()
+	var id_values: Array[int] = palette.get("id_values")
+	var surface_ids: Array[StringName] = palette.get("surface_ids")
+	var count: int = mini(id_values.size(), surface_ids.size())
+	for i in range(count):
+		var id_value: int = id_values[i]
+		if id_value >= 0 and id_value < TERRAIN_ID_VALUE_COUNT:
+			_terrain_surface_ids_by_value[id_value] = surface_ids[i]
+
+
+func _reset_terrain_surface_id_lookup() -> void:
+	_terrain_surface_ids_by_value.clear()
+	_terrain_surface_ids_by_value.resize(TERRAIN_ID_VALUE_COUNT)
+	for id_value in range(TERRAIN_ID_VALUE_COUNT):
+		_terrain_surface_ids_by_value[id_value] = &""
+
+
+func _terrain_surface_id_for_value(id_value: int, fallback: StringName) -> StringName:
+	if id_value < 0 or id_value >= _terrain_surface_ids_by_value.size():
+		return fallback
+	var surface_id: StringName = _terrain_surface_ids_by_value[id_value]
+	if surface_id == &"":
+		return fallback
+	return surface_id
 
 
 func _load_terrain_surface_id_png(path: String) -> bool:
