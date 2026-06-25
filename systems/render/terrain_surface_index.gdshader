@@ -1,8 +1,6 @@
 shader_type spatial;
 render_mode diffuse_lambert, specular_schlick_ggx;
 
-#define CLOUD_SHADOW_CLOCK TI##ME
-
 uniform sampler2D surface_id_texture : hint_default_black, filter_nearest, repeat_disable;
 uniform sampler2DArray albedo_array : source_color, filter_linear_mipmap, repeat_enable;
 uniform sampler2DArray normal_array : filter_linear_mipmap, repeat_enable;
@@ -326,7 +324,7 @@ float cloud_shadow_factor_at(vec2 world_xz_pos) {
 	} else {
 		dir /= dir_len;
 	}
-	vec2 cloud_uv = world_xz_pos * scale + dir * (CLOUD_SHADOW_CLOCK * max(cloud_shadow_speed, 0.0));
+	vec2 cloud_uv = world_xz_pos * scale + dir * (TIME * max(cloud_shadow_speed, 0.0));
 	float cloud_noise = cloud_shadow_fbm(cloud_uv);
 	return smoothstep(0.48, 0.82, cloud_noise);
 }

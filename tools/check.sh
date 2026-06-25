@@ -35,7 +35,10 @@ check "sim/render determinism boundary" sh -c '
 	time_findings="$(rg -n "\\bTIME\\b" systems scenes data --glob "*.gdshader" --glob "*.shader" --glob "*.gd" || true)" &&
 	time_filtered="" &&
 	if [ -n "$time_findings" ]; then
-		time_filtered="$(printf "%s\n" "$time_findings" | rg -v "^systems/render/water_visual\\.gdshader:|^systems/render/grass_billboard\\.gdshader:" || true)"
+		# Allowlist: render-only animated visual shaders whose TIME use is a pure
+		# fragment/vertex visual effect, deterministic under headless --fixed-fps
+		# (water flow/foam/caustics, grass wind, terrain drifting cloud shadows).
+		time_filtered="$(printf "%s\n" "$time_findings" | rg -v "^systems/render/water_visual\\.gdshader:|^systems/render/grass_billboard\\.gdshader:|^systems/render/terrain_surface_index\\.gdshader:" || true)"
 	fi &&
 	if [ -n "$time_filtered" ]; then
 		printf "%s\n" "$time_filtered" >&2
