@@ -81,6 +81,10 @@ const TRACK_APPLY_CELLS_PER_FRAME: int = 1
 const AUTODRIVE_USER_ARG: String = "--autodrive"
 const AUTODRIVE_STEER_PERIOD_SECONDS: float = 9.5
 const AUTODRIVE_STEER_STRENGTH: float = 0.18
+const SCREENSHOT_USER_ARG: String = "--screenshot-secs"
+const SCREENSHOT_DEFAULT_DIR: String = "user://trailhead/shots"
+const SCREENSHOT_CAPTURE_COUNT: int = 3
+const SCREENSHOT_CAPTURE_INTERVAL_SECONDS: float = 0.5
 const PERF_LOG_USER_ARG: String = "--perf-log"
 const PERF_LOG_DEFAULT_DIR: String = "user://trailhead/perf"
 const PERF_LOG_FLUSH_ROW_COUNT: int = 120
@@ -188,6 +192,13 @@ var _audio_rig: Node = null
 var _fps_cap_enabled: bool = true
 var _autodrive_enabled: bool = false
 var _autodrive_elapsed_since_release: float = 0.0
+var _screenshot_capture_active: bool = false
+var _screenshot_capture_in_flight: bool = false
+var _screenshot_delay_seconds: float = 0.0
+var _screenshot_elapsed_since_release: float = 0.0
+var _screenshot_next_capture_elapsed: float = 0.0
+var _screenshot_capture_index: int = 0
+var _screenshot_directory_absolute_path: String = ""
 var _perf_log_active: bool = false
 var _perf_log_finalized: bool = false
 var _perf_log_absolute_path: String = ""
@@ -208,6 +219,7 @@ func _ready() -> void:
 	_sync_fps_cap_state_from_runtime()
 	_apply_render_quality()
 	_setup_autodrive()
+	_setup_screenshot_capture()
 	_setup_perf_logging()
 	_ensure_default_input_map()
 	_setup_surface_map()
@@ -296,6 +308,7 @@ func _physics_process(delta: float) -> void:
 func _process(delta: float) -> void:
 	_update_cold_start_streaming_gate(delta)
 	_sample_perf_log_frame()
+	_update_screenshot_capture(delta)
 	if _terrain_track_painter == null:
 		return
 	_apply_terrain_tracks_to_streamed_tiles()
@@ -360,6 +373,98 @@ func _setup_autodrive() -> void:
 		if String(arg) == AUTODRIVE_USER_ARG:
 			_autodrive_enabled = true
 			return
+
+
+func _setup_screenshot_capture() -> void:
+	var requested: bool = false
+	var requested_seconds: float = 0.0
+	for arg in OS.get_cmdline_user_args():
+		var text: String = String(arg)
+		if text == SCREENSHOT_USER_ARG:
+			push_error("screenshot: " + SCREENSHOT_USER_ARG + " requires a float value")
+			return
+		elif text.begins_with(SCREENSHOT_USER_ARG + "="):
+			requested = true
+			var seconds_text: String = text.trim_prefix(SCREENSHOT_USER_ARG + "=")
+			if seconds_text.is_empty() or not seconds_text.is_valid_float():
+				push_error("screenshot: " + SCREENSHOT_USER_ARG + " requires a float value")
+				return
+			requested_seconds = maxf(seconds_text.to_float(), 0.0)
+	if not requested:
+		return
+	if not _windowed_rendering_enabled():
+		print("screenshot: " + SCREENSHOT_USER_ARG + " ignored under headless DisplayServer")
+		return
+	_screenshot_directory_absolute_path = ProjectSettings.globalize_path(SCREENSHOT_DEFAULT_DIR)
+	var error: Error = DirAccess.make_dir_recursive_absolute(_screenshot_directory_absolute_path)
+	if error != OK:
+		push_error("screenshot: failed to create PNG directory: " + _screenshot_directory_absolute_path + " error=" + error_string(error))
+		return
+	_screenshot_delay_seconds = requested_seconds
+	_screenshot_next_capture_elapsed = requested_seconds
+	_screenshot_elapsed_since_release = 0.0
+	_screenshot_capture_index = 0
+	_screenshot_capture_active = true
+	print("screenshot: will capture PNGs to " + _screenshot_directory_absolute_path + " after " + str(requested_seconds) + "s")
+
+
+func _update_screenshot_capture(delta: float) -> void:
+	if not _screenshot_capture_active:
+		return
+	if not _cold_start_streaming_released:
+		_screenshot_elapsed_since_release = 0.0
+		return
+	if _screenshot_capture_index >= SCREENSHOT_CAPTURE_COUNT:
+		_screenshot_capture_active = false
+		return
+	_screenshot_elapsed_since_release += maxf(delta, 0.0)
+	if _screenshot_capture_in_flight:
+		return
+	if _screenshot_elapsed_since_release < _screenshot_next_capture_elapsed:
+		return
+	_screenshot_capture_in_flight = true
+	call_deferred("_capture_screenshot_after_draw", _screenshot_capture_index)
+
+
+func _capture_screenshot_after_draw(capture_index: int) -> void:
+	await RenderingServer.frame_post_draw
+	var viewport: Viewport = get_viewport()
+	if viewport == null:
+		_complete_screenshot_capture(capture_index)
+		push_error("screenshot: capture skipped; no viewport")
+		return
+	var viewport_texture: ViewportTexture = viewport.get_texture()
+	if viewport_texture == null:
+		_complete_screenshot_capture(capture_index)
+		push_error("screenshot: capture skipped; no viewport texture")
+		return
+	var image: Image = viewport_texture.get_image()
+	if image == null or image.is_empty():
+		_complete_screenshot_capture(capture_index)
+		push_error("screenshot: capture skipped; empty image")
+		return
+	var path: String = _screenshot_capture_path(capture_index)
+	var absolute_path: String = ProjectSettings.globalize_path(path)
+	var error: Error = image.save_png(path)
+	if error != OK:
+		push_error("screenshot: failed to save PNG: " + absolute_path + " error=" + error_string(error))
+	else:
+		print("screenshot: saved PNG to " + absolute_path)
+	_complete_screenshot_capture(capture_index)
+
+
+func _complete_screenshot_capture(capture_index: int) -> void:
+	if capture_index == _screenshot_capture_index:
+		_screenshot_capture_index += 1
+	if _screenshot_capture_index >= SCREENSHOT_CAPTURE_COUNT:
+		_screenshot_capture_active = false
+	else:
+		_screenshot_next_capture_elapsed = _screenshot_delay_seconds + (float(_screenshot_capture_index) * SCREENSHOT_CAPTURE_INTERVAL_SECONDS)
+	_screenshot_capture_in_flight = false
+
+
+func _screenshot_capture_path(capture_index: int) -> String:
+	return SCREENSHOT_DEFAULT_DIR.path_join("shot_" + str(capture_index) + ".png")
 
 
 func _ensure_default_input_map() -> void:
