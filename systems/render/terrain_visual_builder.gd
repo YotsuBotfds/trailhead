@@ -34,12 +34,17 @@ const GENERATED_SURFACE_TEXTURE_DIR: String = "res://assets/textures/surface_vis
 const FOLIAGE_BARK_ALBEDO_TEXTURE_PATH: String = "res://assets/textures/foliage/bark_willow_albedo.jpg"
 const FOLIAGE_BARK_NORMAL_TEXTURE_PATH: String = "res://assets/textures/foliage/bark_willow_normal.jpg"
 const FOLIAGE_BARK_ARM_TEXTURE_PATH: String = "res://assets/textures/foliage/bark_willow_arm.jpg"
+# Hard resource refs keep these material-only foliage textures in exported packs.
+const FoliageBarkAlbedoTexture: Texture2D = preload("res://assets/textures/foliage/bark_willow_albedo.jpg")
+const FoliageBarkNormalTexture: Texture2D = preload("res://assets/textures/foliage/bark_willow_normal.jpg")
+const FoliageBarkArmTexture: Texture2D = preload("res://assets/textures/foliage/bark_willow_arm.jpg")
 # CC0 leaf atlas (C1 Approach B): RGBA sheet (RGB=color, A=opacity) of 6 upright leaves on a 3x2 grid.
 # The willow/cottonwood leaf surfaces are now crossed leaf cards with per-card planar atlas-cell UVs
 # (gen_foliage_species_glb.py), so this albedo texture maps one whole leaf per card instead of smearing.
 # Wired albedo-only; the per-species albedo_color stays as a MULTIPLY tint over it (kept muted to avoid
 # the chartreuse neon blowout that commit a02214fb1 fought). Render-only; geometry change is in the GLB.
 const FOLIAGE_LEAF_ATLAS_TEXTURE_PATH: String = "res://assets/textures/foliage/leafset004_atlas_rgba.png"
+const FoliageLeafAtlasTexture: Texture2D = preload("res://assets/textures/foliage/leafset004_atlas_rgba.png")
 # Lighten each surface's imported bark baseColorFactor toward this so the texture reads (it is
 # multiplied by the albedo tint), without fully dropping the per-species hue — lerp strength below.
 const FOLIAGE_BARK_ALBEDO_LIGHTEN_TARGET: Color = Color(0.85, 0.82, 0.78, 1.0)
@@ -3054,19 +3059,16 @@ static func _ensure_foliage_bark_textures_loaded() -> void:
 	if _foliage_bark_textures_loaded:
 		return
 	_foliage_bark_textures_loaded = true
-	if ResourceLoader.exists(FOLIAGE_BARK_ALBEDO_TEXTURE_PATH):
-		_foliage_bark_albedo_texture = load(FOLIAGE_BARK_ALBEDO_TEXTURE_PATH) as Texture2D
-	if ResourceLoader.exists(FOLIAGE_BARK_NORMAL_TEXTURE_PATH):
-		_foliage_bark_normal_texture = load(FOLIAGE_BARK_NORMAL_TEXTURE_PATH) as Texture2D
-	if ResourceLoader.exists(FOLIAGE_BARK_ARM_TEXTURE_PATH):
-		_foliage_bark_arm_texture = load(FOLIAGE_BARK_ARM_TEXTURE_PATH) as Texture2D
+	_foliage_bark_albedo_texture = FoliageBarkAlbedoTexture
+	_foliage_bark_normal_texture = FoliageBarkNormalTexture
+	_foliage_bark_arm_texture = FoliageBarkArmTexture
 
 
 static func _apply_foliage_bark_pbr(material: StandardMaterial3D) -> void:
 	_ensure_foliage_bark_textures_loaded()
 	if _foliage_bark_albedo_texture == null:
-		# Texture not on disk (or import not built yet): leave the imported flat bark colour
-		# untouched so the build still renders rather than going pure-white.
+		# Defensive fallback: leave the imported flat bark colour untouched so the build
+		# still renders rather than going pure-white.
 		return
 	var tint: Color = material.albedo_color
 	material.albedo_color = Color(
@@ -3095,15 +3097,14 @@ static func _ensure_foliage_leaf_atlas_loaded() -> void:
 	if _foliage_leaf_atlas_loaded:
 		return
 	_foliage_leaf_atlas_loaded = true
-	if ResourceLoader.exists(FOLIAGE_LEAF_ATLAS_TEXTURE_PATH):
-		_foliage_leaf_atlas_texture = load(FOLIAGE_LEAF_ATLAS_TEXTURE_PATH) as Texture2D
+	_foliage_leaf_atlas_texture = FoliageLeafAtlasTexture
 
 
 static func _apply_foliage_leaf_atlas(material: StandardMaterial3D) -> void:
 	_ensure_foliage_leaf_atlas_loaded()
 	if _foliage_leaf_atlas_texture == null:
-		# Atlas not on disk (or import not built yet): leave the imported flat leaf colour so the
-		# build still renders rather than going untextured-but-retinted in a way that hides the issue.
+		# Defensive fallback: leave the imported flat leaf colour so the build still renders
+		# rather than going untextured-but-retinted in a way that hides the issue.
 		return
 	# Lighten the per-species leaf tint toward near-white so the atlas multiplies through and reads as
 	# the atlas's own green, while a fraction of the species hue (willow cool / cottonwood yellow-green)
