@@ -674,6 +674,7 @@ static func _water_material(resource_name: String, use_vertex_water_traits: bool
 	material.set_shader_parameter("ssr_max_steps", water_ssr_effective_max_steps())
 	material.set_shader_parameter("ssr_step_size", GameConfig.water_ssr_step_size)
 	material.set_shader_parameter("ssr_thickness", GameConfig.water_ssr_thickness)
+	material.set_shader_parameter("ssr_max_distance", maxf(GameConfig.water_ssr_max_distance, 0.0))
 	material.set_shader_parameter("water_roughness", GameConfig.water_roughness)
 	var caustics_strength: float = maxf(GameConfig.water_caustics_strength, 0.0)
 	material.set_shader_parameter("water_caustics_enabled", caustics_strength > 0.0)

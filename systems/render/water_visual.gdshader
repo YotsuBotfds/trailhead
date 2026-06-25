@@ -18,6 +18,7 @@ uniform float ssr_intensity : hint_range(0.0, 1.0) = 0.30;
 uniform int ssr_max_steps : hint_range(0, 32) = 12;
 uniform float ssr_step_size : hint_range(0.005, 0.2) = 0.035;
 uniform float ssr_thickness : hint_range(0.005, 0.3) = 0.08;
+uniform float ssr_max_distance : hint_range(0.0, 300.0) = 60.0;
 uniform float water_roughness : hint_range(0.0, 1.0) = 0.22;
 uniform bool water_caustics_enabled = false;
 uniform float water_caustics_strength : hint_range(0.0, 1.0) = 0.0;
@@ -49,6 +50,7 @@ const vec3 CAUSTIC_TINT = vec3(0.82, 0.94, 0.72);
 const float REFRACTION_SCREEN_SCALE = 0.014;
 const float REFRACTION_DISTANCE_FADE_START = 18.0;
 const float REFRACTION_DISTANCE_FADE_END = 120.0;
+const float SSR_DISTANCE_FADE_START_FRACTION = 0.82;
 
 varying vec2 world_xz;
 varying vec2 downstream_dir;
@@ -133,6 +135,14 @@ float edge_visibility(vec2 uv) {
 	float edge_x = smoothstep(0.0, SSR_EDGE_FADE, uv.x) * smoothstep(0.0, SSR_EDGE_FADE, 1.0 - uv.x);
 	float edge_y = smoothstep(0.0, SSR_EDGE_FADE, uv.y) * smoothstep(0.0, SSR_EDGE_FADE, 1.0 - uv.y);
 	return edge_x * edge_y;
+}
+
+float ssr_distance_visibility(float camera_distance) {
+	if (ssr_max_distance <= 0.0) {
+		return 0.0;
+	}
+	float fade_start = ssr_max_distance * SSR_DISTANCE_FADE_START_FRACTION;
+	return 1.0 - smoothstep(fade_start, ssr_max_distance, camera_distance);
 }
 
 vec3 screen_space_reflection(
@@ -241,6 +251,7 @@ void fragment() {
 	float wetline_inside = smoothstep(foam_edge_width, shoreline_softness, depth_delta);
 	float wetline_deep = 1.0 - smoothstep(shoreline_softness, shoreline_softness * 2.8, depth_delta);
 	water_color *= mix(1.0, 0.82, wetline_inside * wetline_deep * wetline_strength);
+	float camera_distance = length(VERTEX);
 	vec3 view_direction = normalize(VERTEX);
 	float view_fresnel = pow(1.0 - clamp(dot(-view_direction, normal_view), 0.0, 1.0), 5.0);
 	float glint_weight = view_fresnel * smoothstep(0.35, 1.0, ripple) * mix(0.55, 1.0, depth_mix) * fresnel_glint_strength;
@@ -262,7 +273,8 @@ void fragment() {
 			water_color = mix(water_color, refracted_color, refraction_visibility * 0.55);
 		}
 	}
-	if (ssr_enabled && ssr_intensity > 0.0 && ssr_max_steps > 0) {
+	float ssr_visibility = ssr_distance_visibility(camera_distance);
+	if (ssr_enabled && ssr_intensity > 0.0 && ssr_max_steps > 0 && ssr_visibility > 0.001) {
 		float reflection_weight = 0.0;
 		vec3 reflection_color = screen_space_reflection(
 				VERTEX,
@@ -274,8 +286,9 @@ void fragment() {
 		// On SSR hit: blend in the screen reflection.
 		// On SSR miss: fade toward sky/fog color at grazing angles (Fresnel) to avoid a
 		// dark-water artifact where no geometry is behind the reflected ray.
-		float miss_weight = (1.0 - reflection_weight) * view_fresnel * ssr_sky_fallback_strength * ssr_intensity;
-		vec3 blended = mix(water_color, reflection_color, reflection_weight * ssr_intensity);
+		float gated_intensity = ssr_intensity * ssr_visibility;
+		float miss_weight = (1.0 - reflection_weight) * view_fresnel * ssr_sky_fallback_strength * gated_intensity;
+		vec3 blended = mix(water_color, reflection_color, reflection_weight * gated_intensity);
 		water_color = mix(blended, ssr_sky_fallback_color.rgb, miss_weight);
 	}
 	ALBEDO = water_color;

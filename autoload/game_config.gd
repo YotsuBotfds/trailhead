@@ -775,6 +775,7 @@ var water_ssr_high_quality_intensity: float = 0.30
 var water_ssr_high_quality_max_steps: int = 12
 var water_ssr_step_size: float = 0.035
 var water_ssr_thickness: float = 0.08
+var water_ssr_max_distance: float = 60.0
 # Palette stays GameConfig-tunable so muddy/clear water variants remain data edits.
 var water_shallow_color: Color = Color(0.20, 0.32, 0.24)
 var water_deep_color: Color = Color(0.04, 0.16, 0.14)
