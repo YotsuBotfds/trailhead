@@ -101,11 +101,15 @@ func _inspect_atmosphere(world_environment: WorldEnvironment, sun: DirectionalLi
 		_errors.append("atmosphere should configure aerial perspective")
 	_require_color_close("dusk ambient color", environment.ambient_light_color, AtmosphereVisualBuilderScript.DUSK_HERO_AMBIENT_COLOR, COLOR_TOLERANCE)
 	_require_float_close("dusk ambient energy", environment.ambient_light_energy, AtmosphereVisualBuilderScript.DUSK_HERO_AMBIENT_ENERGY, FLOAT_EPSILON)
+	if environment.ambient_light_source != Environment.AMBIENT_SOURCE_COLOR:
+		_errors.append("dusk mood should use color ambient source")
 	_require_color_close("dusk fog light color", environment.fog_light_color, AtmosphereVisualBuilderScript.DUSK_HERO_FOG_LIGHT_COLOR, COLOR_TOLERANCE)
-	if not environment.volumetric_fog_enabled:
-		_errors.append("atmosphere should enable volumetric fog")
+	if environment.volumetric_fog_enabled != GameConfig.resolved_atmosphere_volumetric_fog_enabled():
+		_errors.append("atmosphere volumetric fog should follow the render quality tier")
 	if environment.volumetric_fog_density <= 0.0:
 		_errors.append("atmosphere should configure volumetric fog density")
+	if absf(environment.volumetric_fog_anisotropy - GameConfig.resolved_atmosphere_volumetric_fog_anisotropy()) > FLOAT_EPSILON:
+		_errors.append("atmosphere volumetric fog anisotropy should follow GameConfig")
 	if not environment.glow_enabled:
 		_errors.append("atmosphere should enable subtle golden-hour glow")
 	if environment.tonemap_mode != Environment.TONE_MAPPER_FILMIC:
@@ -156,6 +160,8 @@ func _inspect_atmosphere(world_environment: WorldEnvironment, sun: DirectionalLi
 		_errors.append("GoldenHourSun shadow opacity should follow GameConfig")
 	if sun.light_volumetric_fog_energy <= 0.0:
 		_errors.append("GoldenHourSun should contribute to volumetric fog")
+	if absf(sun.light_volumetric_fog_energy - GameConfig.resolved_atmosphere_sun_volumetric_fog_energy()) > FLOAT_EPSILON:
+		_errors.append("GoldenHourSun volumetric fog energy should follow GameConfig")
 	if sun.directional_shadow_mode != _expected_directional_shadow_mode():
 		_errors.append("GoldenHourSun directional shadow mode should follow GameConfig")
 	if sun.directional_shadow_blend_splits:
@@ -171,12 +177,20 @@ func _inspect_screen_space_gi_tier_guard(world_environment: WorldEnvironment, su
 	AtmosphereVisualBuilderScript.apply_mood(world_environment, sun, AtmosphereVisualBuilderScript.MOOD_DUSK)
 	if environment.ssil_enabled:
 		_errors.append("low screen-space GI tier should disable SSIL")
+	if environment.volumetric_fog_enabled:
+		_errors.append("low screen-space GI tier should disable volumetric fog")
+	if sun != null and sun.light_volumetric_fog_energy > FLOAT_EPSILON:
+		_errors.append("low screen-space GI tier should remove sun volumetric fog energy")
 	if absf(environment.ssao_radius - maxf(GameConfig.atmosphere_ssao_low_tier_radius, 0.0)) > FLOAT_EPSILON:
 		_errors.append("low screen-space GI tier should restore the small SSAO radius")
 	GameConfig.render_screen_space_gi_tier = GameConfig.RENDER_SCREEN_SPACE_GI_TIER_HIGH
 	AtmosphereVisualBuilderScript.apply_mood(world_environment, sun, AtmosphereVisualBuilderScript.MOOD_DUSK)
 	if environment.ssil_enabled != GameConfig.atmosphere_ssil_enabled:
 		_errors.append("high screen-space GI tier should honor GameConfig.atmosphere_ssil_enabled")
+	if environment.volumetric_fog_enabled != GameConfig.atmosphere_volumetric_fog_enabled:
+		_errors.append("high screen-space GI tier should honor GameConfig.atmosphere_volumetric_fog_enabled")
+	if sun != null and absf(sun.light_volumetric_fog_energy - GameConfig.atmosphere_sun_volumetric_fog_energy) > FLOAT_EPSILON:
+		_errors.append("high screen-space GI tier should restore sun volumetric fog energy")
 	if absf(environment.ssao_radius - maxf(GameConfig.atmosphere_ssao_radius, 0.0)) > FLOAT_EPSILON:
 		_errors.append("high screen-space GI tier should use the canyon-scale SSAO radius")
 	GameConfig.render_screen_space_gi_tier = previous_tier
@@ -281,8 +295,8 @@ func _require_dusk_golden_sky_environment(environment: Environment, sun: Directi
 	# way the host derives it (light basis.z), so a mismatch proves a wiring bug.
 	if environment.background_mode != Environment.BG_SKY:
 		_errors.append(label + " mood should use sky background mode")
-	if environment.ambient_light_source != Environment.AMBIENT_SOURCE_BG:
-		_errors.append(label + " mood should use sky ambient source")
+	if environment.ambient_light_source != Environment.AMBIENT_SOURCE_COLOR:
+		_errors.append(label + " mood should use color ambient source")
 	if environment.sky == null:
 		_errors.append(label + " mood should assign a Sky resource")
 		return

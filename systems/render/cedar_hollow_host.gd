@@ -45,7 +45,7 @@ const MOOD_NIGHT: int = 2
 const ZION_DUSK_FOG_DENSITY: float = 0.0009
 const ZION_DAWN_FOG_DENSITY: float = 0.0014
 const ZION_NIGHT_FOG_DENSITY: float = 0.0016
-const ZION_FOG_AERIAL_PERSPECTIVE: float = 0.05
+const ZION_FOG_AERIAL_PERSPECTIVE: float = 0.08
 const ZION_FOG_SKY_AFFECT: float = 0.10  # was 0.28 — high sky-affect dissolved distant mesas into the bright sky (bible: mesas read as silhouettes)
 const ZION_VOLUMETRIC_FOG_SKY_AFFECT: float = 0.11
 const ZION_NIGHT_FOG_SKY_AFFECT: float = 0.18
@@ -53,8 +53,8 @@ const ZION_NIGHT_FOG_SKY_AFFECT: float = 0.18
 # two-stop gradient; this ShaderMaterial sky adds a soft cyan mid band, a sun
 # disk + aureole at the real GoldenHourSun direction, and subtle cirrus streaks.
 # Zenith/horizon/ground reuse the existing GameConfig dusk_sky_* values so the
-# blue zenith + de-orange direction are preserved (sky drives ambient via
-# AMBIENT_SOURCE_BG, so the warm color stays confined to a thin horizon band).
+# blue zenith + de-orange direction are preserved. Dusk shadow fill is a
+# separate cool AMBIENT_SOURCE_COLOR pass in AtmosphereVisualBuilder.
 const DUSK_GOLDEN_MID_COLOR: Color = Color(0.32, 0.55, 0.72)
 const DUSK_GOLDEN_SUN_COLOR: Color = Color(1.00, 0.80, 0.52)
 const DUSK_GOLDEN_CIRRUS_COLOR: Color = Color(0.82, 0.78, 0.72)
@@ -1904,7 +1904,6 @@ func _apply_mood() -> void:
 	var environment: Environment = _world_environment.environment
 	var sky_material: Material = _ensure_mood_sky(environment)
 	environment.background_mode = Environment.BG_SKY
-	environment.ambient_light_source = Environment.AMBIENT_SOURCE_BG
 	environment.fog_enabled = true
 	if _mood == MOOD_DAWN:
 		environment.ambient_light_energy = GameConfig.dawn_ambient_energy

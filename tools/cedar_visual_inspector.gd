@@ -95,9 +95,6 @@ const GRADE_SATURATION_MAX: float = 1.35
 const GRADE_CONTRAST_MIN: float = 1.08
 const GRADE_CONTRAST_MAX: float = 1.20
 const DUSK_GLOW_INTENSITY: float = AtmosphereVisualBuilderScript.DUSK_GLOW_INTENSITY
-const DUSK_GLOW_STRENGTH: float = AtmosphereVisualBuilderScript.DUSK_GLOW_STRENGTH
-const DUSK_GLOW_BLOOM: float = AtmosphereVisualBuilderScript.GLOW_BLOOM
-const DUSK_SUN_VOLUMETRIC_FOG_ENERGY: float = 0.82
 const VOLUMETRIC_FOG_DENSITY_FLOOR: float = 0.006
 const LABEL_MIN_CONTRAST_RATIO: float = 7.0
 const ACCENT_MIN_CONTRAST_RATIO: float = 4.5
@@ -1873,7 +1870,7 @@ func _require_lighting_bar_sun(sun: DirectionalLight3D, context: String) -> void
 	_require_float_close(context + " GoldenHourSun shadow blur", sun.shadow_blur, GameConfig.atmosphere_pcss_shadow_blur, LIGHTING_BAR_TOLERANCE)
 	_require_float_close(context + " GoldenHourSun shadow opacity", sun.shadow_opacity, GameConfig.atmosphere_pcss_shadow_opacity, LIGHTING_BAR_TOLERANCE)
 	_require_float_close(context + " GoldenHourSun shadow max distance", sun.directional_shadow_max_distance, GameConfig.atmosphere_pcss_shadow_max_distance, LIGHTING_BAR_TOLERANCE)
-	_require_float_close(context + " GoldenHourSun volumetric fog energy", sun.light_volumetric_fog_energy, DUSK_SUN_VOLUMETRIC_FOG_ENERGY, LIGHTING_BAR_TOLERANCE)
+	_require_float_close(context + " GoldenHourSun volumetric fog energy", sun.light_volumetric_fog_energy, GameConfig.resolved_atmosphere_sun_volumetric_fog_energy(), LIGHTING_BAR_TOLERANCE)
 
 
 func _require_lighting_bar_environment(world_environment: WorldEnvironment, context: String) -> void:
@@ -1883,16 +1880,20 @@ func _require_lighting_bar_environment(world_environment: WorldEnvironment, cont
 		return
 	if not environment.fog_enabled:
 		_errors.append(context + " GoldenHourEnvironment should enable fog")
-	if environment.volumetric_fog_enabled != GameConfig.atmosphere_volumetric_fog_enabled:
+	if environment.volumetric_fog_enabled != GameConfig.resolved_atmosphere_volumetric_fog_enabled():
 		_errors.append(context + " GoldenHourEnvironment volumetric fog should follow GameConfig")
-	_require_float_close(context + " GoldenHourEnvironment volumetric fog density", environment.volumetric_fog_density, maxf(GameConfig.atmosphere_volumetric_fog_density, VOLUMETRIC_FOG_DENSITY_FLOOR), LIGHTING_BAR_TOLERANCE)
+	var expected_volumetric_density: float = GameConfig.resolved_atmosphere_volumetric_fog_density()
+	if expected_volumetric_density <= 0.0:
+		expected_volumetric_density = VOLUMETRIC_FOG_DENSITY_FLOOR
+	_require_float_close(context + " GoldenHourEnvironment volumetric fog density", environment.volumetric_fog_density, expected_volumetric_density, LIGHTING_BAR_TOLERANCE)
+	_require_float_close(context + " GoldenHourEnvironment volumetric fog anisotropy", environment.volumetric_fog_anisotropy, GameConfig.resolved_atmosphere_volumetric_fog_anisotropy(), LIGHTING_BAR_TOLERANCE)
 	if not environment.glow_enabled:
 		_errors.append(context + " GoldenHourEnvironment should enable glow")
 	if not environment.glow_normalized:
 		_errors.append(context + " GoldenHourEnvironment glow should be normalized")
 	_require_float_close(context + " GoldenHourEnvironment dusk glow intensity", environment.glow_intensity, DUSK_GLOW_INTENSITY, LIGHTING_BAR_TOLERANCE)
-	_require_float_close(context + " GoldenHourEnvironment dusk glow strength", environment.glow_strength, DUSK_GLOW_STRENGTH, LIGHTING_BAR_TOLERANCE)
-	_require_float_close(context + " GoldenHourEnvironment glow bloom", environment.glow_bloom, DUSK_GLOW_BLOOM, LIGHTING_BAR_TOLERANCE)
+	_require_float_close(context + " GoldenHourEnvironment dusk glow strength", environment.glow_strength, GameConfig.atmosphere_glow_strength_dusk, LIGHTING_BAR_TOLERANCE)
+	_require_float_close(context + " GoldenHourEnvironment glow bloom", environment.glow_bloom, GameConfig.atmosphere_glow_bloom_dusk, LIGHTING_BAR_TOLERANCE)
 	if environment.tonemap_mode != Environment.TONE_MAPPER_FILMIC:
 		_errors.append(context + " GoldenHourEnvironment tonemap_mode expected FILMIC, got " + str(environment.tonemap_mode))
 	if environment.adjustment_enabled != GameConfig.atmosphere_grade_enabled:
@@ -2440,8 +2441,9 @@ func _require_night_mood(world_environment: WorldEnvironment, sun: DirectionalLi
 func _require_environment_mood(environment: Environment, mood_name: String, background_color: Color, ambient_color: Color, ambient_energy: float, fog_density: float, fog_light_color: Color) -> void:
 	if environment.background_mode != Environment.BG_SKY:
 		_errors.append("GoldenHourEnvironment " + mood_name + " should use sky background mode")
-	if environment.ambient_light_source != Environment.AMBIENT_SOURCE_BG:
-		_errors.append("GoldenHourEnvironment " + mood_name + " should use sky ambient source")
+	var expected_ambient_source: int = Environment.AMBIENT_SOURCE_COLOR if mood_name == "dusk" else Environment.AMBIENT_SOURCE_BG
+	if environment.ambient_light_source != expected_ambient_source:
+		_errors.append("GoldenHourEnvironment " + mood_name + " ambient source expected " + str(expected_ambient_source) + ", got " + str(environment.ambient_light_source))
 	if environment.sky == null:
 		_errors.append("GoldenHourEnvironment " + mood_name + " should assign Sky")
 	elif mood_name == "dawn" and not (environment.sky.sky_material is PhysicalSkyMaterial):

@@ -415,8 +415,11 @@ var dawn_ambient_energy: float = 0.30
 var dawn_fog_density: float = 0.0040
 var dawn_fog_light_color: Color = Color(0.55, 0.58, 0.62)
 var atmosphere_volumetric_fog_enabled: bool = true
+var atmosphere_volumetric_fog_low_tier_enabled: bool = false
 var atmosphere_volumetric_fog_density: float = 0.0010
-var atmosphere_volumetric_fog_anisotropy: float = 0.64  # was 0.40; target 0.72-0.80 (visual-fidelity-wave §1.1); conservative ~75% to low end
+var atmosphere_volumetric_fog_low_tier_density_scale: float = 0.55
+var atmosphere_volumetric_fog_anisotropy: float = 0.70  # was 0.64; modest forward-scatter lift for low-sun shafts without thickening the fog volume
+var atmosphere_volumetric_fog_low_tier_anisotropy: float = 0.54
 var atmosphere_height_fog_density: float = 0.0024
 var atmosphere_height_fog_falloff: float = 2.8
 var atmosphere_tonemap_exposure: float = 0.90
@@ -438,10 +441,10 @@ var atmosphere_ssil_enabled: bool = true
 var atmosphere_ssil_radius: float = 8.0
 var atmosphere_ssil_intensity: float = 1.7
 var atmosphere_ssil_sharpness: float = 0.98
-var atmosphere_glow_strength_dusk: float = 0.22
-var atmosphere_glow_hdr_threshold: float = 1.15
+var atmosphere_glow_strength_dusk: float = 0.25
+var atmosphere_glow_hdr_threshold: float = 1.22
 var atmosphere_glow_hdr_scale: float = 1.4
-var atmosphere_glow_bloom_dusk: float = 0.06
+var atmosphere_glow_bloom_dusk: float = 0.07
 var atmosphere_glow_blend_mode: int = 2  # Environment.GLOW_BLEND_MODE_SOFTLIGHT — filmic bloom
 var atmosphere_pcss_sun_angular_distance: float = 0.53
 var atmosphere_pcss_shadow_blur: float = 0.20
@@ -455,7 +458,8 @@ var atmosphere_directional_shadow_split_3: float = 0.40
 var atmosphere_directional_shadow_pancake_size: float = 60.0
 var atmosphere_shadow_normal_bias: float = 1.2
 var atmosphere_shadow_bias: float = 0.04
-var atmosphere_sun_volumetric_fog_energy: float = 0.91  # was 0.35; target 1.1-1.2 (visual-fidelity-wave §1.1); conservative ~75% to low end
+var atmosphere_sun_volumetric_fog_energy: float = 1.02  # was 0.91; modest shaft boost for 4090/high tier, below the 1.1-1.2 aggressive target
+var atmosphere_sun_volumetric_fog_low_tier_scale: float = 0.0
 var contact_fill_light_enabled: bool = true
 # FIDELITY (vehicle grounding): this fill lamp sits ~0.09 m BELOW the chassis
 # origin -- i.e. just under the ground plane at rest (resting min_y ~0.047 m) -- and
@@ -613,7 +617,7 @@ var brake_light_energy: float = 1.8
 # ON; the L-key toggle is deferred (needs the host).
 var headlight_emission_color: Color = Color(1.0, 0.949, 0.847)
 # FIDELITY (daylight glare): emission peak was 1.6 -> above the glow HDR threshold
-# (atmosphere_glow_hdr_threshold 1.15), so in full dusk/daylight the lens bloomed
+# (atmosphere_glow_hdr_threshold 1.22), so in full dusk/daylight the lens bloomed
 # into a hard glowing white blob that reads as a glare artifact rather than a lit
 # lamp. Dropped to 0.45 so the brightest emission channel (color peak 1.0 * 0.45)
 # stays under the glow threshold -- the lens still reads warm/self-lit but no longer
@@ -904,6 +908,30 @@ func resolved_atmosphere_ssil_radius() -> float:
 
 func resolved_atmosphere_ssil_intensity() -> float:
 	return atmosphere_ssil_intensity
+
+
+func resolved_atmosphere_volumetric_fog_enabled() -> bool:
+	if render_screen_space_gi_high_tier_enabled():
+		return atmosphere_volumetric_fog_enabled
+	return atmosphere_volumetric_fog_enabled and atmosphere_volumetric_fog_low_tier_enabled
+
+
+func resolved_atmosphere_volumetric_fog_density() -> float:
+	if render_screen_space_gi_high_tier_enabled():
+		return atmosphere_volumetric_fog_density
+	return atmosphere_volumetric_fog_density * clampf(atmosphere_volumetric_fog_low_tier_density_scale, 0.0, 1.0)
+
+
+func resolved_atmosphere_volumetric_fog_anisotropy() -> float:
+	if render_screen_space_gi_high_tier_enabled():
+		return clampf(atmosphere_volumetric_fog_anisotropy, -1.0, 1.0)
+	return clampf(minf(atmosphere_volumetric_fog_anisotropy, atmosphere_volumetric_fog_low_tier_anisotropy), -1.0, 1.0)
+
+
+func resolved_atmosphere_sun_volumetric_fog_energy() -> float:
+	if render_screen_space_gi_high_tier_enabled():
+		return maxf(atmosphere_sun_volumetric_fog_energy, 0.0)
+	return maxf(atmosphere_sun_volumetric_fog_energy, 0.0) * clampf(atmosphere_sun_volumetric_fog_low_tier_scale, 0.0, 1.0)
 
 
 func get_fov_for_speed(speed: float) -> float:
