@@ -38,6 +38,9 @@ var _last_stable_forward: Vector3 = Vector3.FORWARD
 var _last_recovery_transform: Transform3D = Transform3D.IDENTITY
 var _recovery_position_history: Array[Vector3] = []
 var _recovery_transform_history: Array[Transform3D] = []
+var _recovery_history_start: int = 0
+var _recovery_history_count: int = 0
+var _recovery_history_capacity: int = 0
 var _recovery_stuck: bool = false
 var _tile_streamer: Node = null
 var _surface_map: SurfaceMap = null
@@ -67,6 +70,7 @@ func _ready() -> void:
 	_surface_map = GameManager.active_surface_map as SurfaceMap
 	_prime_surface_snap_cache()
 	_reset_surface_cache()
+	_reset_recovery_history()
 	_build_physics_body()
 	GameManager.register_vehicle(self)
 
@@ -142,8 +146,7 @@ func reset_to(spawn: Transform3D) -> void:
 	_current_surface_id = &""
 	_last_stable_forward = _horizontal_forward(spawn.basis)
 	_last_recovery_transform = _upright_transform(spawn.origin, _last_stable_forward)
-	_recovery_position_history.clear()
-	_recovery_transform_history.clear()
+	_reset_recovery_history()
 	_recovery_stuck = false
 	_vehicle_contamination().call("reset")
 	_update_state()
@@ -175,8 +178,7 @@ func recover_to_trail() -> void:
 	_body.angular_velocity = Vector3.ZERO
 	_last_stable_forward = forward
 	_last_recovery_transform = _upright_transform(anchor.origin, forward)
-	_recovery_position_history.clear()
-	_recovery_transform_history.clear()
+	_reset_recovery_history()
 	_recovery_stuck = false
 	EventBus.vehicle_recovered_to_trail.emit(from_position, t.origin)
 	_update_state()
@@ -564,8 +566,7 @@ func _expire_streaming_collision_freeze() -> void:
 	_streaming_collision_freeze_expired_count += 1
 	_release_streaming_collision_freeze()
 	_last_stable_forward = forward
-	_recovery_position_history.clear()
-	_recovery_transform_history.clear()
+	_reset_recovery_history()
 	_recovery_stuck = false
 	EventBus.vehicle_streaming_freeze_expired.emit(from_position, fallback.origin, frozen_ticks)
 	_update_state()
@@ -805,29 +806,81 @@ func _update_recovery_tracking() -> void:
 		_recovery_stuck = false
 		return
 	var current_transform: Transform3D = _body.global_transform
-	_recovery_position_history.append(current_transform.origin)
-	_recovery_transform_history.append(current_transform)
 	var window_ticks: int = maxi(GameConfig.recover_stuck_window_ticks, 1)
-	while _recovery_position_history.size() > window_ticks + 1:
-		_recovery_position_history.pop_front()
-	while _recovery_transform_history.size() > window_ticks + 1:
-		_recovery_transform_history.pop_front()
+	_append_recovery_history(current_transform, window_ticks)
 	_recovery_stuck = false
-	if _recovery_position_history.size() <= window_ticks:
+	if _recovery_history_count <= window_ticks:
 		return
-	var previous_position: Vector3 = _recovery_position_history[0]
+	var previous_position: Vector3 = _recovery_position_history[_recovery_history_index(0)]
 	var current_position: Vector3 = current_transform.origin
 	var current_flat: Vector3 = Vector3(current_position.x, 0.0, current_position.z)
 	var previous_flat: Vector3 = Vector3(previous_position.x, 0.0, previous_position.z)
 	var progress: float = current_flat.distance_to(previous_flat)
 	var stable: bool = _stable_wheel_contact_count() >= GameConfig.self_right_stable_contact_count and current_transform.basis.y.dot(Vector3.UP) >= GameConfig.self_right_stable_upright_dot
 	if stable and progress >= GameConfig.recover_min_progress:
-		var anchor_transform: Transform3D = _recovery_transform_history[0]
+		var anchor_transform: Transform3D = _recovery_transform_history[_recovery_history_index(0)]
 		var forward: Vector3 = _horizontal_forward(anchor_transform.basis)
 		_last_recovery_transform = _upright_transform(anchor_transform.origin, forward)
 	var throttle: float = absf(_pending_input.throttle)
 	if _state.on_ground and throttle >= GameConfig.recover_min_throttle and progress < GameConfig.recover_min_progress:
 		_recovery_stuck = true
+
+
+func _reset_recovery_history() -> void:
+	var window_ticks: int = maxi(GameConfig.recover_stuck_window_ticks, 1)
+	_ensure_recovery_history_capacity(window_ticks)
+	_recovery_history_start = 0
+	_recovery_history_count = 0
+
+
+func _ensure_recovery_history_capacity(window_ticks: int) -> void:
+	var required_capacity: int = window_ticks + 1
+	if _recovery_history_capacity == required_capacity and _recovery_position_history.size() == required_capacity and _recovery_transform_history.size() == required_capacity:
+		return
+	var old_capacity: int = _recovery_history_capacity
+	var retained_count: int = mini(_recovery_history_count, required_capacity)
+	var retained_start_offset: int = _recovery_history_count - retained_count
+	var retained_positions: Array[Vector3] = []
+	var retained_transforms: Array[Transform3D] = []
+	retained_positions.resize(retained_count)
+	retained_transforms.resize(retained_count)
+	if old_capacity > 0:
+		for offset in range(retained_count):
+			var old_index: int = (_recovery_history_start + retained_start_offset + offset) % old_capacity
+			retained_positions[offset] = _recovery_position_history[old_index]
+			retained_transforms[offset] = _recovery_transform_history[old_index]
+	_recovery_position_history.clear()
+	_recovery_transform_history.clear()
+	_recovery_position_history.resize(required_capacity)
+	_recovery_transform_history.resize(required_capacity)
+	for index in range(required_capacity):
+		_recovery_position_history[index] = Vector3.ZERO
+		_recovery_transform_history[index] = Transform3D.IDENTITY
+	for offset in range(retained_count):
+		_recovery_position_history[offset] = retained_positions[offset]
+		_recovery_transform_history[offset] = retained_transforms[offset]
+	_recovery_history_start = 0
+	_recovery_history_count = retained_count
+	_recovery_history_capacity = required_capacity
+
+
+func _append_recovery_history(current_transform: Transform3D, window_ticks: int) -> void:
+	_ensure_recovery_history_capacity(window_ticks)
+	if _recovery_history_capacity <= 0:
+		return
+	var write_index: int = 0
+	if _recovery_history_count < _recovery_history_capacity:
+		write_index = _recovery_history_index(_recovery_history_count)
+		_recovery_history_count += 1
+	else:
+		write_index = _recovery_history_start
+		_recovery_history_start = (_recovery_history_start + 1) % _recovery_history_capacity
+	_recovery_position_history[write_index] = current_transform.origin
+	_recovery_transform_history[write_index] = current_transform
+
+
+func _recovery_history_index(offset: int) -> int:
+	return (_recovery_history_start + offset) % _recovery_history_capacity
 
 
 func _dominant_contact_surface() -> StringName:
