@@ -146,6 +146,8 @@ var _vehicle_input: RefCounted = VehicleInputScript.new()
 var _dynamic_resolution_controller: Node = null
 var _frame_vehicle_state_cache_active: bool = false
 var _frame_vehicle_state: RefCounted = null
+var _frame_vehicle_state_process_frame: int = -1
+var _frame_vehicle_state_physics_frame: int = -1
 var _camera: Camera3D = null
 var _orbit_camera: Camera3D = null
 var _fpv_camera: Camera3D = null
@@ -351,10 +353,10 @@ func _notification(what: int) -> void:
 func _physics_process(delta: float) -> void:
 	if _vehicle == null:
 		_frame_vehicle_state_cache_active = false
-		_frame_vehicle_state = null
+		_clear_vehicle_state_frame_cache()
 		return
 	_frame_vehicle_state_cache_active = false
-	_frame_vehicle_state = null
+	_clear_vehicle_state_frame_cache()
 	_update_vehicle_input()
 	_update_cinematic_tour_input()
 	_update_photo_mode_input()
@@ -365,15 +367,15 @@ func _physics_process(delta: float) -> void:
 	_update_mood_input()
 	_vehicle.call("apply_input", _vehicle_input)
 	_frame_vehicle_state_cache_active = true
-	_frame_vehicle_state = null
+	# Keep the post-input snapshot available to child presentation readers; the
+	# frame counters below refresh it on the next render or physics frame.
+	_clear_vehicle_state_frame_cache()
 	_sample_golden_line()
 	_update_ambient_life_phase()
 	_update_visual_wheels(delta)
 	_update_terrain_tracks()
 	if _runtime_camera_updates_enabled():
 		_update_camera(delta)
-	_frame_vehicle_state_cache_active = false
-	_frame_vehicle_state = null
 
 
 func _process(delta: float) -> void:
@@ -1375,7 +1377,7 @@ func _setup_vehicle_juice() -> void:
 		return
 	_vehicle_juice_rig.name = "VehicleJuiceRig"
 	add_child(_vehicle_juice_rig)
-	_vehicle_juice_rig.call("configure", _vehicle, _camera, _vehicle_visual_root as Node3D)
+	_vehicle_juice_rig.call("configure", _vehicle, _camera, _vehicle_visual_root as Node3D, self)
 
 
 func _setup_photograph_system() -> void:
@@ -1384,7 +1386,7 @@ func _setup_photograph_system() -> void:
 		return
 	_photograph_system.name = "PhotographSystem"
 	add_child(_photograph_system)
-	_photograph_system.call("configure", CedarRoute, _vehicle)
+	_photograph_system.call("configure", CedarRoute, _vehicle, self)
 
 
 func _setup_hud() -> void:
@@ -1392,13 +1394,13 @@ func _setup_hud() -> void:
 	_landmark_hint_hud.name = "LandmarkHintHud"
 	_landmark_hint_hud.visible = GameConfig.minimap_enabled_by_default
 	add_child(_landmark_hint_hud)
-	_landmark_hint_hud.call("configure", CedarRoute, _vehicle)
+	_landmark_hint_hud.call("configure", CedarRoute, _vehicle, self)
 	_minimap_view = _landmark_hint_hud.get_node_or_null(NodePath("MinimapView")) as Control
 	_speed_hud = SpeedHudScript.new() as CanvasLayer
 	_speed_hud.name = "SpeedHud"
 	_speed_hud.visible = GameConfig.speed_hud_enabled
 	add_child(_speed_hud)
-	_speed_hud.call("configure", _vehicle)
+	_speed_hud.call("configure", _vehicle, self)
 	_setup_title_card_hud()
 	_controls_hint_hud = ControlsHintHudScript.new() as CanvasLayer
 	_controls_hint_hud.name = "ControlsHintHud"
@@ -2500,14 +2502,30 @@ func _update_camera(delta: float) -> void:
 	_update_fpv_camera(delta, state)
 
 
+func vehicle_state_for_frame() -> RefCounted:
+	return _vehicle_state_for_current_pass()
+
+
 func _vehicle_state_for_current_pass() -> RefCounted:
-	if _frame_vehicle_state_cache_active:
-		if _frame_vehicle_state == null and _vehicle != null:
-			_frame_vehicle_state = _vehicle.call("get_state")
-		return _frame_vehicle_state
 	if _vehicle == null:
 		return null
-	return _vehicle.call("get_state")
+	if not _frame_vehicle_state_cache_active:
+		return _vehicle.call("get_state") as RefCounted
+	var process_frame: int = Engine.get_process_frames()
+	var physics_frame: int = Engine.get_physics_frames()
+	if _frame_vehicle_state == null \
+			or _frame_vehicle_state_process_frame != process_frame \
+			or _frame_vehicle_state_physics_frame != physics_frame:
+		_frame_vehicle_state = _vehicle.call("get_state") as RefCounted
+		_frame_vehicle_state_process_frame = process_frame
+		_frame_vehicle_state_physics_frame = physics_frame
+	return _frame_vehicle_state
+
+
+func _clear_vehicle_state_frame_cache() -> void:
+	_frame_vehicle_state = null
+	_frame_vehicle_state_process_frame = -1
+	_frame_vehicle_state_physics_frame = -1
 
 
 func _update_cinematic_camera(delta: float) -> void:

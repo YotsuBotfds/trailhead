@@ -54,6 +54,7 @@ const SOFT_DUST_OUTER_RADIUS: float = 0.96
 const WHEEL_DUST_ALPHA_RAMP_WIDTH: int = 64
 
 var _vehicle: Node = null
+var _state_provider: Node = null
 var _camera: Camera3D = null
 var _visual_root: Node3D = null
 var _base_visual_scale: Vector3 = Vector3.ONE
@@ -92,8 +93,9 @@ func _exit_tree() -> void:
 		_visual_root.scale = _base_visual_scale
 
 
-func configure(vehicle: Node, chase_camera: Camera3D, visual_root: Node3D) -> void:
+func configure(vehicle: Node, chase_camera: Camera3D, visual_root: Node3D, state_provider: Node = null) -> void:
 	_vehicle = vehicle
+	_state_provider = state_provider
 	_camera = chase_camera
 	_visual_root = visual_root
 	if _visual_root != null:
@@ -111,6 +113,16 @@ func _process(delta: float) -> void:
 
 func process_usec_last_frame() -> int:
 	return _process_usec_last_frame
+
+
+func _vehicle_state_for_frame() -> RefCounted:
+	if _state_provider != null \
+			and is_instance_valid(_state_provider) \
+			and _state_provider.has_method("vehicle_state_for_frame"):
+		return _state_provider.call("vehicle_state_for_frame") as RefCounted
+	if _vehicle == null or not is_instance_valid(_vehicle):
+		return null
+	return _vehicle.call("get_state") as RefCounted
 
 
 func _process_body(delta: float) -> void:
@@ -138,9 +150,7 @@ func debug_wheel_dust_count() -> int:
 
 
 func _update_from_vehicle_state() -> void:
-	if _vehicle == null:
-		return
-	var state: RefCounted = _vehicle.call("get_state") as RefCounted
+	var state: RefCounted = _vehicle_state_for_frame()
 	if state == null:
 		return
 	var on_ground: bool = bool(state.get("on_ground"))
@@ -297,9 +307,7 @@ func _update_squash(delta: float) -> void:
 
 func _on_vehicle_changed_surface(surface_id: StringName) -> void:
 	_surface_id = surface_id
-	if _vehicle == null:
-		return
-	var state: RefCounted = _vehicle.call("get_state") as RefCounted
+	var state: RefCounted = _vehicle_state_for_frame()
 	if state == null:
 		return
 	_emit_surface_burst(surface_id, state.get("position"))
@@ -320,9 +328,7 @@ func _emit_surface_burst(surface_id: StringName, position: Vector3) -> void:
 
 
 func _surface_burst_position_for(surface_id: StringName, fallback_position: Vector3) -> Vector3:
-	if _vehicle == null:
-		return fallback_position
-	var state: RefCounted = _vehicle.call("get_state") as RefCounted
+	var state: RefCounted = _vehicle_state_for_frame()
 	if state == null:
 		return fallback_position
 	var wheel_contact: Array[bool] = state.get("wheel_contact")
@@ -496,7 +502,7 @@ func _update_wheel_dust(delta: float) -> void:
 		_disable_all_wheel_dust()
 		_disable_all_rooster_debris()
 		return
-	var state: RefCounted = _vehicle.call("get_state") as RefCounted
+	var state: RefCounted = _vehicle_state_for_frame()
 	if state == null:
 		_disable_all_wheel_dust()
 		_disable_all_rooster_debris()
@@ -980,7 +986,7 @@ func _landing_ring_mesh() -> QuadMesh:
 func _emit_pebble_scatter_at_rear_wheels() -> void:
 	if _vehicle == null or _pebble_bursts.size() < WHEEL_COUNT:
 		return
-	var state: RefCounted = _vehicle.call("get_state") as RefCounted
+	var state: RefCounted = _vehicle_state_for_frame()
 	if state == null:
 		return
 	var wheel_contact: Array[bool] = state.get("wheel_contact")
@@ -994,7 +1000,7 @@ func _emit_pebble_scatter_at_rear_wheels() -> void:
 func _emit_landing_feedback_at_wheels(impact_speed: float) -> void:
 	if _vehicle == null:
 		return
-	var state: RefCounted = _vehicle.call("get_state") as RefCounted
+	var state: RefCounted = _vehicle_state_for_frame()
 	if state == null:
 		return
 	var wheel_contact: Array[bool] = state.get("wheel_contact")

@@ -11,6 +11,7 @@ const HEADING_COLOR: Color = Color(0.86, 0.96, 1.0, 0.88)
 
 var _route: Resource = null
 var _vehicle: Node = null
+var _state_provider: Node = null
 var _process_usec_last_frame: int = 0
 
 
@@ -20,9 +21,10 @@ func _ready() -> void:
 	custom_minimum_size = Vector2(GameConfig.minimap_size, GameConfig.minimap_size)
 
 
-func configure(route: Resource, vehicle: Node) -> void:
+func configure(route: Resource, vehicle: Node, state_provider: Node = null) -> void:
 	_route = route
 	_vehicle = vehicle
+	_state_provider = state_provider
 	queue_redraw()
 
 
@@ -90,9 +92,9 @@ func _draw_landmarks() -> void:
 
 
 func _draw_vehicle() -> void:
-	if _vehicle == null:
+	var state: RefCounted = _vehicle_state_for_frame()
+	if state == null:
 		return
-	var state: RefCounted = _vehicle.call("get_state")
 	var vehicle_position: Vector3 = state.get("position")
 	var vehicle_basis: Basis = state.get("basis")
 	var map_position: Vector2 = _world_to_map(vehicle_position)
@@ -105,9 +107,9 @@ func _draw_vehicle() -> void:
 
 
 func _nearest_landmark_index() -> int:
-	if _vehicle == null:
+	var state: RefCounted = _vehicle_state_for_frame()
+	if state == null:
 		return -1
-	var state: RefCounted = _vehicle.call("get_state")
 	var vehicle_position: Vector3 = state.get("position")
 	var landmark_positions: Array = _route.get("landmark_positions")
 	var best_index: int = -1
@@ -121,6 +123,16 @@ func _nearest_landmark_index() -> int:
 			best_distance_sq = distance_sq
 			best_index = i
 	return best_index
+
+
+func _vehicle_state_for_frame() -> RefCounted:
+	if _state_provider != null \
+			and is_instance_valid(_state_provider) \
+			and _state_provider.has_method("vehicle_state_for_frame"):
+		return _state_provider.call("vehicle_state_for_frame") as RefCounted
+	if _vehicle == null or not is_instance_valid(_vehicle):
+		return null
+	return _vehicle.call("get_state") as RefCounted
 
 
 func _world_to_map(world_position: Vector3) -> Vector2:

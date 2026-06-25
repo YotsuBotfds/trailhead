@@ -4,6 +4,7 @@ extends CanvasLayer
 const LAYER: int = 8
 
 var _vehicle: Node = null
+var _state_provider: Node = null
 var _panel: Control = null
 
 
@@ -14,13 +15,14 @@ func _ready() -> void:
 	_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_panel.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(_panel)
-	_panel.configure(_vehicle)
+	_panel.configure(_vehicle, _state_provider)
 
 
-func configure(vehicle: Node) -> void:
+func configure(vehicle: Node, state_provider: Node = null) -> void:
 	_vehicle = vehicle
+	_state_provider = state_provider
 	if _panel != null:
-		_panel.configure(_vehicle)
+		_panel.configure(_vehicle, _state_provider)
 
 
 func set_drive_active(active: bool) -> void:
@@ -56,13 +58,15 @@ class _SpeedHudPanel:
 	const BAR_FILL_COLOR: Color = Color(0.93, 0.75, 0.38, 0.88)
 
 	var _vehicle: Node = null
+	var _state_provider: Node = null
 	var _drive_active: bool = false
 	var _fade_alpha: float = 0.0
 	var _process_usec_last_frame: int = 0
 
 
-	func configure(vehicle: Node) -> void:
+	func configure(vehicle: Node, state_provider: Node = null) -> void:
 		_vehicle = vehicle
+		_state_provider = state_provider
 		queue_redraw()
 
 
@@ -129,9 +133,17 @@ class _SpeedHudPanel:
 
 
 	func _current_speed_mps() -> float:
-		if _vehicle == null or not is_instance_valid(_vehicle):
-			return 0.0
-		var state: RefCounted = _vehicle.call("get_state")
+		var state: RefCounted = _vehicle_state_for_frame()
 		if state == null:
 			return 0.0
 		return clampf(float(state.call("speed")), 0.0, GameConfig.max_speed)
+
+
+	func _vehicle_state_for_frame() -> RefCounted:
+		if _state_provider != null \
+				and is_instance_valid(_state_provider) \
+				and _state_provider.has_method("vehicle_state_for_frame"):
+			return _state_provider.call("vehicle_state_for_frame") as RefCounted
+		if _vehicle == null or not is_instance_valid(_vehicle):
+			return null
+		return _vehicle.call("get_state") as RefCounted

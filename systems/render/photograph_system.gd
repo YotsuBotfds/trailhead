@@ -8,6 +8,7 @@ const SHUTTER_VOLUME: float = 0.045
 const SHUTTER_DECAY_PER_FRAME: float = 0.92
 
 var _vehicle: Node = null
+var _state_provider: Node = null
 var _route: Resource = null
 var _hold_ticks: int = 0
 var _sim_tick: int = 0
@@ -23,9 +24,10 @@ var _shutter_envelope: float = 0.0
 var _process_usec_last_frame: int = 0
 
 
-func configure(route: Resource, vehicle: Node) -> void:
+func configure(route: Resource, vehicle: Node, state_provider: Node = null) -> void:
 	_route = route
 	_vehicle = vehicle
+	_state_provider = state_provider
 
 
 func _ready() -> void:
@@ -45,7 +47,9 @@ func _physics_process(_delta: float) -> void:
 	if _vehicle == null:
 		return
 	_sim_tick += 1
-	var state: RefCounted = _vehicle.call("get_state")
+	var state: RefCounted = _vehicle_state_for_frame()
+	if state == null:
+		return
 	var speed: float = float(state.call("speed"))
 	if not Input.is_action_pressed(String(INPUT_ACTION)) or speed > GameConfig.photo_max_speed_mps:
 		_hold_ticks = 0
@@ -73,6 +77,16 @@ func _process(_delta: float) -> void:
 
 func process_usec_last_frame() -> int:
 	return _process_usec_last_frame
+
+
+func _vehicle_state_for_frame() -> RefCounted:
+	if _state_provider != null \
+			and is_instance_valid(_state_provider) \
+			and _state_provider.has_method("vehicle_state_for_frame"):
+		return _state_provider.call("vehicle_state_for_frame") as RefCounted
+	if _vehicle == null or not is_instance_valid(_vehicle):
+		return null
+	return _vehicle.call("get_state") as RefCounted
 
 
 func _process_body() -> void:
