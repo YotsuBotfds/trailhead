@@ -52,6 +52,9 @@ const SOFT_DUST_TEXTURE_SIZE: int = 32
 const SOFT_DUST_INNER_RADIUS: float = 0.18
 const SOFT_DUST_OUTER_RADIUS: float = 0.96
 const WHEEL_DUST_ALPHA_RAMP_WIDTH: int = 64
+const PARTICLE_AMOUNT_RATIO_EPSILON: float = 0.0001
+const CAMERA_OFFSET_EPSILON: float = 0.00001
+const CAMERA_STRENGTH_EPSILON: float = 0.001
 
 var _vehicle: Node = null
 var _state_provider: Node = null
@@ -67,6 +70,19 @@ var _squash_strength: float = 0.0
 var _surface_id: StringName = &""
 var _wheel_dust: Array[GPUParticles3D] = []
 var _rooster_debris: Array[GPUParticles3D] = []
+var _wheel_dust_process_materials: Array[ParticleProcessMaterial] = []
+var _wheel_dust_draw_materials: Array[StandardMaterial3D] = []
+var _wheel_dust_tint_cache_valid: Array[bool] = []
+var _wheel_dust_tint_surface_ids: Array[StringName] = []
+var _wheel_dust_tint_hard_smoke: Array[bool] = []
+var _wheel_dust_tint_colors: Array[Color] = []
+var _rooster_process_materials: Array[ParticleProcessMaterial] = []
+var _rooster_dust_draw_materials: Array[StandardMaterial3D] = []
+var _rooster_pebble_draw_materials: Array[StandardMaterial3D] = []
+var _rooster_tint_cache_valid: Array[bool] = []
+var _rooster_tint_surface_ids: Array[StringName] = []
+var _rooster_tint_hard_smoke: Array[bool] = []
+var _rooster_tint_colors: Array[Color] = []
 var _pebble_bursts: Array[GPUParticles3D] = []
 var _landing_rings: Array[GPUParticles3D] = []
 var _dust_kick_boost: float = 0.0
@@ -216,9 +232,10 @@ func _update_dust_kick_events(state: RefCounted, linear_velocity: Vector3) -> vo
 func _update_camera_shake(delta: float) -> void:
 	if _camera == null:
 		return
+	var landing_active: bool = _shake_strength > CAMERA_STRENGTH_EPSILON
 	var landing_h_offset: float = 0.0
 	var landing_v_offset: float = 0.0
-	if _shake_strength > 0.001:
+	if landing_active:
 		var max_offset: float = maxf(GameConfig.cam_shake_max_offset, 0.0)
 		var phase: float = _shake_strength * 11.0
 		landing_h_offset = sin(phase * 1.7) * max_offset * _shake_strength
@@ -227,9 +244,12 @@ func _update_camera_shake(delta: float) -> void:
 	else:
 		_shake_strength = 0.0
 	var chatter_strength: float = _drive_chatter_strength()
+	if not landing_active and chatter_strength <= CAMERA_STRENGTH_EPSILON:
+		_set_camera_offsets_if_changed(0.0, 0.0)
+		return
 	var chatter_h_offset: float = 0.0
 	var chatter_v_offset: float = 0.0
-	if chatter_strength > 0.001:
+	if chatter_strength > CAMERA_STRENGTH_EPSILON:
 		_drive_chatter_phase = fposmod(
 			_drive_chatter_phase + maxf(GameConfig.cam_drive_chatter_frequency_hz, 0.1) * delta * TAU,
 			TAU
@@ -237,8 +257,16 @@ func _update_camera_shake(delta: float) -> void:
 		var chatter_max_offset: float = maxf(GameConfig.cam_drive_chatter_max_offset, 0.0)
 		chatter_h_offset = sin(_drive_chatter_phase * 1.13) * chatter_max_offset * chatter_strength
 		chatter_v_offset = cos(_drive_chatter_phase * 1.71) * chatter_max_offset * 0.65 * chatter_strength
-	_camera.h_offset = landing_h_offset + chatter_h_offset
-	_camera.v_offset = landing_v_offset + chatter_v_offset
+	_set_camera_offsets_if_changed(landing_h_offset + chatter_h_offset, landing_v_offset + chatter_v_offset)
+
+
+func _set_camera_offsets_if_changed(h_offset: float, v_offset: float) -> void:
+	if _camera == null:
+		return
+	if absf(_camera.h_offset - h_offset) > CAMERA_OFFSET_EPSILON:
+		_camera.h_offset = h_offset
+	if absf(_camera.v_offset - v_offset) > CAMERA_OFFSET_EPSILON:
+		_camera.v_offset = v_offset
 
 
 func _contact_surface_from_state(state: RefCounted, fallback: StringName) -> StringName:
@@ -481,6 +509,12 @@ func _soft_dust_alpha_texture() -> Texture2D:
 
 func _ensure_wheel_dust() -> void:
 	_wheel_dust.clear()
+	_wheel_dust_process_materials.clear()
+	_wheel_dust_draw_materials.clear()
+	_wheel_dust_tint_cache_valid.clear()
+	_wheel_dust_tint_surface_ids.clear()
+	_wheel_dust_tint_hard_smoke.clear()
+	_wheel_dust_tint_colors.clear()
 	for wheel_index in range(WHEEL_COUNT):
 		var node_name: String = WHEEL_DUST_NAME_PREFIX + str(wheel_index)
 		var emitter: GPUParticles3D = get_node_or_null(node_name) as GPUParticles3D
@@ -490,6 +524,12 @@ func _ensure_wheel_dust() -> void:
 		if emitter.emitting:
 			emitter.emitting = false
 		_wheel_dust.append(emitter)
+		_wheel_dust_process_materials.append(emitter.process_material as ParticleProcessMaterial)
+		_wheel_dust_draw_materials.append(_particle_draw_material_for_pass(emitter, 0))
+		_wheel_dust_tint_cache_valid.append(false)
+		_wheel_dust_tint_surface_ids.append(&"")
+		_wheel_dust_tint_hard_smoke.append(false)
+		_wheel_dust_tint_colors.append(Color(0.0, 0.0, 0.0, 0.0))
 
 
 func _update_wheel_dust(delta: float) -> void:
@@ -540,23 +580,26 @@ func _update_single_wheel_dust(
 	var emitter: GPUParticles3D = _wheel_dust[wheel_index]
 	var active: bool = false
 	var target_ratio: float = 0.0
+	var surface_id: StringName = &""
+	var hard_smoke: bool = false
 	var tint: Color = Color.WHITE
 	if wheel_index < wheel_contact.size() \
 			and bool(wheel_contact[wheel_index]) \
 			and _last_speed >= speed_floor \
 			and wheel_index < wheel_surfaces.size():
-		var surface_id: StringName = wheel_surfaces[wheel_index]
+		surface_id = wheel_surfaces[wheel_index]
 		var intensity: float = _wheel_dust_intensity(surface_id)
 		if intensity > 0.0:
 			active = true
 			tint = _wheel_dust_color(surface_id)
-			if _is_hard_smoke_surface(surface_id) and _hard_drive_ratio > 0.0:
+			hard_smoke = _is_hard_smoke_surface(surface_id) and _hard_drive_ratio > 0.0
+			if hard_smoke:
 				tint = tint.lerp(GameConfig.wheel_rooster_smoke_color, HARD_SURFACE_SMOKE_BLEND)
 				intensity *= maxf(GameConfig.wheel_rooster_smoke_surface_boost, 0.0)
 			target_ratio = clampf(speed_ratio * intensity * boost, 0.0, 1.0)
 	if active:
-		_apply_particle_tint(emitter, tint)
-		emitter.amount_ratio = target_ratio
+		_apply_wheel_dust_tint(wheel_index, emitter, surface_id, hard_smoke, tint)
+		_set_particle_amount_ratio_if_changed(emitter, target_ratio)
 		if wheel_index < wheel_hit_points.size():
 			emitter.global_position = wheel_hit_points[wheel_index] + Vector3.UP * WHEEL_DUST_HEIGHT_OFFSET
 		if not emitter.emitting:
@@ -601,26 +644,29 @@ func _update_rooster_debris(
 		var emitter: GPUParticles3D = _rooster_debris[rear_slot]
 		var active: bool = false
 		var target_ratio: float = 0.0
+		var surface_id: StringName = &""
+		var hard_smoke: bool = false
 		var tint: Color = Color.WHITE
 		if wheel_index < wheel_contact.size() \
 				and bool(wheel_contact[wheel_index]) \
 				and wheel_index < wheel_surfaces.size() \
 				and wheel_index < wheel_hit_points.size() \
 				and _last_speed >= speed_floor:
-			var surface_id: StringName = wheel_surfaces[wheel_index]
+			surface_id = wheel_surfaces[wheel_index]
 			var intensity: float = _wheel_dust_intensity(surface_id)
 			if intensity > 0.0 and drive_ratio > 0.0:
 				active = true
 				tint = _wheel_dust_color(surface_id)
-				if _is_hard_smoke_surface(surface_id):
+				hard_smoke = _is_hard_smoke_surface(surface_id)
+				if hard_smoke:
 					tint = tint.lerp(GameConfig.wheel_rooster_smoke_color, HARD_SURFACE_SMOKE_BLEND)
 					intensity *= maxf(GameConfig.wheel_rooster_smoke_surface_boost, 0.0)
 				target_ratio = clampf(speed_ratio * drive_ratio * intensity, 0.0, 1.0)
 				emitter.global_position = wheel_hit_points[wheel_index] + Vector3.UP * ROOSTER_HEIGHT_OFFSET
 				emitter.global_basis = basis
 		if active:
-			_apply_particle_tint(emitter, tint)
-			emitter.amount_ratio = target_ratio
+			_apply_rooster_tint(rear_slot, emitter, surface_id, hard_smoke, tint)
+			_set_particle_amount_ratio_if_changed(emitter, target_ratio)
 			if not emitter.emitting:
 				emitter.emitting = true
 		elif emitter.emitting:
@@ -745,6 +791,13 @@ func _wheel_dust_mesh() -> QuadMesh:
 
 func _ensure_debris_juice() -> void:
 	_rooster_debris.clear()
+	_rooster_process_materials.clear()
+	_rooster_dust_draw_materials.clear()
+	_rooster_pebble_draw_materials.clear()
+	_rooster_tint_cache_valid.clear()
+	_rooster_tint_surface_ids.clear()
+	_rooster_tint_hard_smoke.clear()
+	_rooster_tint_colors.clear()
 	_pebble_bursts.clear()
 	_landing_rings.clear()
 	for rear_slot in range(2):
@@ -755,6 +808,13 @@ func _ensure_debris_juice() -> void:
 			add_child(rooster)
 		rooster.emitting = false
 		_rooster_debris.append(rooster)
+		_rooster_process_materials.append(rooster.process_material as ParticleProcessMaterial)
+		_rooster_dust_draw_materials.append(_particle_draw_material_for_pass(rooster, 0))
+		_rooster_pebble_draw_materials.append(_particle_draw_material_for_pass(rooster, 1))
+		_rooster_tint_cache_valid.append(false)
+		_rooster_tint_surface_ids.append(&"")
+		_rooster_tint_hard_smoke.append(false)
+		_rooster_tint_colors.append(Color(0.0, 0.0, 0.0, 0.0))
 	for wheel_index in range(WHEEL_COUNT):
 		var pebble_name: String = PEBBLE_BURST_NAME_PREFIX + str(wheel_index)
 		var pebble_burst: GPUParticles3D = get_node_or_null(pebble_name) as GPUParticles3D
@@ -897,7 +957,7 @@ func _faceted_pebble_mesh(mesh_name: String, size: Vector3) -> ArrayMesh:
 	var indices: PackedInt32Array = PackedInt32Array()
 	for face in faces:
 		_append_pebble_triangle(vertices, normals, uvs, indices, points[face[0]], points[face[1]], points[face[2]])
-	var arrays: Array = []
+	var arrays: Array[Variant] = []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = vertices
 	arrays[Mesh.ARRAY_NORMAL] = normals
@@ -1039,6 +1099,144 @@ func _surface_color_for_wheel(wheel_index: int, wheel_surfaces: Array[StringName
 	if wheel_index < wheel_surfaces.size():
 		return _wheel_dust_color(wheel_surfaces[wheel_index])
 	return _wheel_dust_color(_surface_id)
+
+
+func _apply_wheel_dust_tint(
+		wheel_index: int,
+		particles: GPUParticles3D,
+		surface_id: StringName,
+		hard_smoke: bool,
+		tint: Color) -> void:
+	if _particle_tint_cache_matches(
+			_wheel_dust_tint_cache_valid,
+			_wheel_dust_tint_surface_ids,
+			_wheel_dust_tint_hard_smoke,
+			_wheel_dust_tint_colors,
+			wheel_index,
+			surface_id,
+			hard_smoke,
+			tint):
+		return
+	var process_material: ParticleProcessMaterial = _cached_process_material(_wheel_dust_process_materials, wheel_index)
+	var dust_material: StandardMaterial3D = _cached_draw_material(_wheel_dust_draw_materials, wheel_index)
+	if process_material == null or dust_material == null:
+		_apply_particle_tint(particles, tint)
+	else:
+		process_material.color = tint
+		dust_material.albedo_color = Color.WHITE
+	_store_particle_tint_cache(
+		_wheel_dust_tint_cache_valid,
+		_wheel_dust_tint_surface_ids,
+		_wheel_dust_tint_hard_smoke,
+		_wheel_dust_tint_colors,
+		wheel_index,
+		surface_id,
+		hard_smoke,
+		tint
+	)
+
+
+func _apply_rooster_tint(
+		rear_slot: int,
+		particles: GPUParticles3D,
+		surface_id: StringName,
+		hard_smoke: bool,
+		tint: Color) -> void:
+	if _particle_tint_cache_matches(
+			_rooster_tint_cache_valid,
+			_rooster_tint_surface_ids,
+			_rooster_tint_hard_smoke,
+			_rooster_tint_colors,
+			rear_slot,
+			surface_id,
+			hard_smoke,
+			tint):
+		return
+	var process_material: ParticleProcessMaterial = _cached_process_material(_rooster_process_materials, rear_slot)
+	var dust_material: StandardMaterial3D = _cached_draw_material(_rooster_dust_draw_materials, rear_slot)
+	var pebble_material: StandardMaterial3D = _cached_draw_material(_rooster_pebble_draw_materials, rear_slot)
+	if process_material == null or dust_material == null or pebble_material == null:
+		_apply_particle_tint(particles, tint)
+	else:
+		process_material.color = tint
+		dust_material.albedo_color = Color.WHITE
+		pebble_material.albedo_color = _pebble_material_color(tint)
+	_store_particle_tint_cache(
+		_rooster_tint_cache_valid,
+		_rooster_tint_surface_ids,
+		_rooster_tint_hard_smoke,
+		_rooster_tint_colors,
+		rear_slot,
+		surface_id,
+		hard_smoke,
+		tint
+	)
+
+
+func _set_particle_amount_ratio_if_changed(particles: GPUParticles3D, target_ratio: float) -> void:
+	if absf(particles.amount_ratio - target_ratio) > PARTICLE_AMOUNT_RATIO_EPSILON:
+		particles.amount_ratio = target_ratio
+
+
+func _particle_tint_cache_matches(
+		cache_valid: Array[bool],
+		cache_surface_ids: Array[StringName],
+		cache_hard_smoke: Array[bool],
+		cache_tints: Array[Color],
+		index: int,
+		surface_id: StringName,
+		hard_smoke: bool,
+		tint: Color) -> bool:
+	if index < 0 \
+			or index >= cache_valid.size() \
+			or index >= cache_surface_ids.size() \
+			or index >= cache_hard_smoke.size() \
+			or index >= cache_tints.size():
+		return false
+	return bool(cache_valid[index]) \
+			and cache_surface_ids[index] == surface_id \
+			and bool(cache_hard_smoke[index]) == hard_smoke \
+			and cache_tints[index] == tint
+
+
+func _store_particle_tint_cache(
+		cache_valid: Array[bool],
+		cache_surface_ids: Array[StringName],
+		cache_hard_smoke: Array[bool],
+		cache_tints: Array[Color],
+		index: int,
+		surface_id: StringName,
+		hard_smoke: bool,
+		tint: Color) -> void:
+	if index < 0 \
+			or index >= cache_valid.size() \
+			or index >= cache_surface_ids.size() \
+			or index >= cache_hard_smoke.size() \
+			or index >= cache_tints.size():
+		return
+	cache_valid[index] = true
+	cache_surface_ids[index] = surface_id
+	cache_hard_smoke[index] = hard_smoke
+	cache_tints[index] = tint
+
+
+func _cached_process_material(materials: Array[ParticleProcessMaterial], index: int) -> ParticleProcessMaterial:
+	if index < 0 or index >= materials.size():
+		return null
+	return materials[index]
+
+
+func _cached_draw_material(materials: Array[StandardMaterial3D], index: int) -> StandardMaterial3D:
+	if index < 0 or index >= materials.size():
+		return null
+	return materials[index]
+
+
+func _particle_draw_material_for_pass(particles: GPUParticles3D, pass_index: int) -> StandardMaterial3D:
+	if pass_index < 0 or pass_index >= particles.draw_passes:
+		return null
+	var mesh: Mesh = particles.get_draw_pass_mesh(pass_index) as Mesh
+	return _particle_draw_material(mesh)
 
 
 func _apply_particle_tint(particles: GPUParticles3D, tint: Color) -> void:
