@@ -91,6 +91,8 @@ const SurfaceIndexTallGrassAlbedoTexture: Texture2D = preload("res://assets/text
 const SurfaceIndexTallGrassNormalTexture: Texture2D = preload("res://assets/textures/surface_visuals/zion/tall_grass_default_normal.png")
 const SurfaceIndexWetStoneAlbedoTexture: Texture2D = preload("res://assets/textures/surface_visuals/zion/wet_stone_default_albedo.png")
 const SurfaceIndexWetStoneNormalTexture: Texture2D = preload("res://assets/textures/surface_visuals/zion/wet_stone_default_normal.png")
+const CliffPbrAlbedoTexture: Texture2D = preload("res://assets/textures/surface_visuals/ground_pbr/Ground080/Ground080_1K-JPG_Color.jpg")
+const CliffPbrRoughnessTexture: Texture2D = preload("res://assets/textures/surface_visuals/ground_pbr/Ground080/Ground080_1K-JPG_Roughness.jpg")
 # CC0 bark PBR (C1): one shared furrowed riparian bark wired onto every trunk/stem/stalk surface of
 # the foliage GLBs (which ship with zero textures). Per-species bark albedo_color tints differentiate
 # trunk hue. ARM is a packed Poly Haven map (AO=R, Roughness=G, Metallic=B). Render-only, golden-safe.
@@ -492,6 +494,10 @@ const NORMAL_ARRAY_STRENGTH_UNIFORM: StringName = &"normal_array_strength"
 # flat no-op, and terrain_detail_normal_strength = 0 is an exact no-op too.
 const TERRAIN_DETAIL_NORMAL_TEXTURE_UNIFORM: StringName = &"terrain_detail_normal_texture"
 const TERRAIN_DETAIL_NORMAL_TEXTURE_PATH: String = "res://assets/textures/surface_visuals/ground_pbr/Ground079L/Ground079L_1K-JPG_NormalGL.jpg"
+const CLIFF_PBR_ALBEDO_TEXTURE_UNIFORM: StringName = &"cliff_pbr_albedo_texture"
+const CLIFF_PBR_ROUGHNESS_TEXTURE_UNIFORM: StringName = &"cliff_pbr_roughness_texture"
+const CLIFF_PBR_ALBEDO_TEXTURE_PATH: String = "res://assets/textures/surface_visuals/ground_pbr/Ground080/Ground080_1K-JPG_Color.jpg"
+const CLIFF_PBR_ROUGHNESS_TEXTURE_PATH: String = "res://assets/textures/surface_visuals/ground_pbr/Ground080/Ground080_1K-JPG_Roughness.jpg"
 const MACRO_ALBEDO_TEXTURE_PATH: String = "res://data/terrain/cedar_hollow_zion_macro_albedo.png"
 const MacroAlbedoTexture: Texture2D = preload("res://data/terrain/cedar_hollow_zion_macro_albedo.png")
 const MACRO_ALBEDO_TEXTURE_UNIFORM: StringName = &"macro_albedo_texture"
@@ -571,6 +577,16 @@ const FLOOR_PBR_SLOPE_STEEP_NY: float = 0.55
 const FLOOR_PBR_HEIGHT_START_OFFSET: float = 6.0
 const FLOOR_PBR_HEIGHT_END_OFFSET: float = 22.0
 const FLOOR_PBR_SINGLE_PLANE_THRESHOLD: float = 0.90
+const USE_CLIFF_PBR_UNIFORM: StringName = &"use_cliff_pbr"
+const CLIFF_PBR_BLEND_UNIFORM: StringName = &"cliff_pbr_blend"
+const CLIFF_PBR_ROUGHNESS_STRENGTH_UNIFORM: StringName = &"cliff_pbr_roughness_strength"
+const CLIFF_PBR_UV_SCALE_UNIFORM: StringName = &"cliff_pbr_uv_scale"
+const CLIFF_GRAIN_STRENGTH_UNIFORM: StringName = &"cliff_grain_strength"
+const CLIFF_PBR_ENABLED: bool = true
+const CLIFF_PBR_BLEND: float = 0.46
+const CLIFF_PBR_ROUGHNESS_STRENGTH: float = 0.16
+const CLIFF_PBR_UV_SCALE: Vector2 = Vector2(0.58, 0.58)
+const CLIFF_GRAIN_STRENGTH: float = 0.36
 
 
 class RegionTileData:
@@ -1725,6 +1741,7 @@ static func _surface_index_material_locked(surface_data: MeshSurfaceData) -> Sha
 	var detail_normal_texture: Texture2D = _load_texture(TERRAIN_DETAIL_NORMAL_TEXTURE_PATH)
 	if detail_normal_texture != null:
 		material.set_shader_parameter(TERRAIN_DETAIL_NORMAL_TEXTURE_UNIFORM, detail_normal_texture)
+	var cliff_pbr_ready: bool = _bind_cliff_pbr_textures(material)
 	var macro_albedo_texture: Texture2D = _surface_index_macro_albedo_texture_locked()
 	if macro_albedo_texture != null:
 		material.set_shader_parameter(MACRO_ALBEDO_TEXTURE_UNIFORM, macro_albedo_texture)
@@ -1732,6 +1749,8 @@ static func _surface_index_material_locked(surface_data: MeshSurfaceData) -> Sha
 	material.set_shader_parameter(TERRAIN_ROUGHNESS_UNIFORM, _average_default_surface_roughness())
 	material.set_shader_parameter(TERRAIN_SPECULAR_UNIFORM, 0.18)
 	_apply_zion_surface_index_tuning(material)
+	if cliff_pbr_ready:
+		material.set_shader_parameter(USE_CLIFF_PBR_UNIFORM, CLIFF_PBR_ENABLED)
 	_apply_surface_index_palette(material)
 	_surface_index_material_cache[cache_key] = material
 	return material
@@ -1881,6 +1900,22 @@ static func _apply_zion_surface_index_tuning(material: ShaderMaterial) -> void:
 	material.set_shader_parameter(FLOOR_PBR_HEIGHT_START_OFFSET_UNIFORM, FLOOR_PBR_HEIGHT_START_OFFSET)
 	material.set_shader_parameter(FLOOR_PBR_HEIGHT_END_OFFSET_UNIFORM, FLOOR_PBR_HEIGHT_END_OFFSET)
 	material.set_shader_parameter(FLOOR_PBR_SINGLE_PLANE_THRESHOLD_UNIFORM, FLOOR_PBR_SINGLE_PLANE_THRESHOLD)
+	# CLIFF-PBR: shader defaults keep this off; the material binder flips use_cliff_pbr
+	# only after both Ground080 maps are resident, preserving export-safe fallback behavior.
+	material.set_shader_parameter(CLIFF_PBR_BLEND_UNIFORM, CLIFF_PBR_BLEND)
+	material.set_shader_parameter(CLIFF_PBR_ROUGHNESS_STRENGTH_UNIFORM, CLIFF_PBR_ROUGHNESS_STRENGTH)
+	material.set_shader_parameter(CLIFF_PBR_UV_SCALE_UNIFORM, CLIFF_PBR_UV_SCALE)
+	material.set_shader_parameter(CLIFF_GRAIN_STRENGTH_UNIFORM, CLIFF_GRAIN_STRENGTH)
+
+
+static func _bind_cliff_pbr_textures(material: ShaderMaterial) -> bool:
+	var albedo_texture: Texture2D = _load_texture(CLIFF_PBR_ALBEDO_TEXTURE_PATH)
+	var roughness_texture: Texture2D = _load_texture(CLIFF_PBR_ROUGHNESS_TEXTURE_PATH)
+	if albedo_texture == null or roughness_texture == null:
+		return false
+	material.set_shader_parameter(CLIFF_PBR_ALBEDO_TEXTURE_UNIFORM, albedo_texture)
+	material.set_shader_parameter(CLIFF_PBR_ROUGHNESS_TEXTURE_UNIFORM, roughness_texture)
+	return true
 
 
 static func _surface_index_macro_albedo_texture() -> Texture2D:

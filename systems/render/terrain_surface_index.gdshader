@@ -235,6 +235,19 @@ uniform float floor_pbr_height_end_offset = 22.0;   // m above zion_sand_height_
 // there and are not worth 4 extra texture fetches. Real slopes (slickrock bumps), where the
 // side planes are needed for slope-safety, fall below the threshold and pay for full triplanar.
 uniform float floor_pbr_single_plane_threshold = 0.90;
+// CLIFF-PBR: close-wall sandstone scan detail, OFF by default for golden-neutral shader
+// fallback. The render builder binds Ground080 color+roughness and flips use_cliff_pbr on.
+// Color authority stays with the Navajo/Kayenta palette: the sampled color is reduced to
+// luminance detail only, then used as value mottle; the roughness map perturbs ROUGHNESS.
+// PERF: this uses one dominant projection plane (not full 3-tap triplanar) and multiplies
+// by the same camera-distance detail fade as terrain_detail_normal.
+uniform sampler2D cliff_pbr_albedo_texture : source_color, filter_linear_mipmap, repeat_enable;
+uniform sampler2D cliff_pbr_roughness_texture : filter_linear_mipmap, repeat_enable;
+uniform bool use_cliff_pbr = false;
+uniform float cliff_pbr_blend = 0.0;                // 0 = exact no-op; builder enables
+uniform float cliff_pbr_roughness_strength = 0.0;   // 0 = roughness unchanged
+uniform vec2 cliff_pbr_uv_scale = vec2(0.58, 0.58);
+uniform float cliff_grain_strength = 0.0;           // hash-only iron grain below cliff PBR; 0 = exact no-op
 
 // TILED-DETAIL-NORMAL micro-relief. The canyon slickrock/sand surface is the dominant pixel
 // in every frame and previously read smooth/procedural away from the floor-PBR band -- the
@@ -649,6 +662,34 @@ void sample_floor_pbr_triplanar(
 	out_bump = clamp(1.0 - max(dot(blended, geo_world_normal), 0.0), 0.0, 1.0);
 }
 
+vec2 cliff_dominant_plane_uv(vec3 geo_world_normal, vec2 world_xz_pos, float world_y_pos) {
+	vec3 an = abs(geo_world_normal);
+	if (an.x >= an.y && an.x >= an.z) {
+		return vec2(world_y_pos, world_xz_pos.y);       // X-dominant wall: yz
+	}
+	if (an.z >= an.y && an.z >= an.x) {
+		return vec2(world_xz_pos.x, world_y_pos);       // Z-dominant wall: xy
+	}
+	return world_xz_pos;                                // ledge/top fallback: xz
+}
+
+// CLIFF-PBR single-plane triplanar sample. This mirrors the floor PBR world-plane
+// projection but intentionally chooses only the dominant axis for cliff pixels, so a
+// near-vertical wall pays one albedo + one roughness fetch instead of a full 3-plane
+// blend. The caller uses only albedo luminance, preserving the Navajo palette hue.
+void sample_cliff_pbr_triplanar(
+		vec3 geo_world_normal,
+		vec2 world_xz_pos,
+		float world_y_pos,
+		out vec3 out_albedo,
+		out float out_roughness
+	) {
+	vec2 scale = max(cliff_pbr_uv_scale, vec2(0.0001));
+	vec2 uv = cliff_dominant_plane_uv(geo_world_normal, world_xz_pos, world_y_pos) * scale;
+	out_albedo = texture(cliff_pbr_albedo_texture, uv).rgb;
+	out_roughness = texture(cliff_pbr_roughness_texture, uv).r;
+}
+
 void vertex() {
 	vec4 world_position = MODEL_MATRIX * vec4(VERTEX, 1.0);
 	world_xz = world_position.xz;
@@ -660,6 +701,9 @@ void fragment() {
 	vec2 control_uv = clamp((world_xz - control_origin_xz) / control_size_xz, vec2(0.0), vec2(1.0));
 	float surface_id_value = floor(texture(surface_id_texture, control_uv).r * 255.0 + 0.5);
 	vec3 world_geo_normal_now = normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
+	vec3 detail_camera_pos = INV_VIEW_MATRIX[3].xyz;
+	float detail_camera_dist = length(vec3(world_xz.x, world_y, world_xz.y) - detail_camera_pos);
+	float detail_fade = 1.0 - smoothstep(terrain_detail_normal_fade_start_m, max(terrain_detail_normal_fade_end_m, terrain_detail_normal_fade_start_m + 1.0), detail_camera_dist);
 	vec4 surface_color = surface_color_for_id(surface_id_value);
 	// FLOOR-PBR eligibility, computed early so the planar array fetch below can be skipped on
 	// floor pixels: there the triplanar inject later supplies the real texture, so the planar
@@ -673,6 +717,7 @@ void fragment() {
 	vec3 floor_pbr_normal_w = world_geo_normal_now;
 	float floor_pbr_bump = 0.0;
 	float floor_pbr_uv = floor_pbr_uv_scale.x * mix(1.0, floor_pbr_slickrock_scale_mul, 1.0 - floor_pbr_slope_gate);
+	float cliff_pbr_roughness_shift = 0.0;
 	if (use_albedo_array && !floor_pbr_active) {
 		float albedo_layer = clamp(surface_id_value, 0.0, 7.0);
 		vec2 albedo_uv = world_xz * surface_uv_scale_for_id(surface_id_value);
@@ -838,6 +883,22 @@ void fragment() {
 	zion_albedo = mix(zion_albedo, strata_tint, strata_cliff_mask * zion_strata_strength);
 	zion_albedo = mix(zion_albedo, kayenta_base, kayenta_mask * cliff_face_mask * min(zion_kayenta_strength + 0.15, 1.0) * 0.45);
 	zion_albedo = mix(zion_albedo, zion_kayenta_ledge_shadow_color.rgb, kayenta_contact_line * 0.42);
+	// CLIFF-GRAIN: hash-only high-frequency sandstone breakup under the scanned PBR layer.
+	// Dominant wall-plane UVs avoid XZ smearing on vertical faces; scales are ~1.4 m and
+	// ~0.3 m cells. The tint pulls only sparse dark specks toward the existing iron varnish
+	// color, and the whole block uses the same distance fade as the texture detail path.
+	if (cliff_grain_strength > 0.0 && cliff_mask > 0.0 && detail_fade > 0.0) {
+		vec2 cliff_grain_uv = cliff_dominant_plane_uv(world_geo_normal_now, world_xz, world_y);
+		float cliff_grain_broad = hash21_smooth(cliff_grain_uv * 0.72 + vec2(13.0, 4.0));
+		float cliff_grain_fine = hash21_smooth(cliff_grain_uv * 3.30 + vec2(2.0, 17.0));
+		float cliff_grain_mix = clamp(cliff_grain_broad * 0.42 + cliff_grain_fine * 0.58, 0.0, 1.0);
+		float cliff_grain_signed = cliff_grain_mix * 2.0 - 1.0;
+		float cliff_grain_gate = clamp(cliff_mask * detail_fade * cliff_grain_strength, 0.0, 1.0);
+		vec3 cliff_grain_value = clamp(zion_albedo * (1.0 + cliff_grain_signed * 0.075), vec3(0.0), vec3(1.0));
+		float cliff_iron_stain = smoothstep(0.60, 0.94, cliff_grain_mix) * (0.45 + cliff_face_mask * 0.55);
+		vec3 cliff_grain_tint = mix(cliff_grain_value, zion_varnish_fe_color.rgb, cliff_iron_stain * 0.20);
+		zion_albedo = mix(zion_albedo, cliff_grain_tint, cliff_grain_gate);
+	}
 	zion_albedo *= 1.0 + detile * zion_detile_strength * max(cliff_mask, low_flat_mask * 0.5);
 	// FAR-WALL WARM GRADIENT: height-driven warm Navajo-red tint + mild contrast boost.
 	// Gated to cliff_mask (walls only) so the drivable floor is fully unaffected.
@@ -857,6 +918,22 @@ void fragment() {
 		}
 	}
 	ALBEDO = clamp(zion_albedo, vec3(0.0), vec3(1.0));
+	// CLIFF-PBR inject: close-up Ground080 scan detail on wall pixels only. The scan's
+	// hue is discarded; luminance becomes a value-detail multiplier over the palette
+	// result, so the Navajo/Kayenta stack remains the color authority. Roughness is
+	// retained separately for material response. Single dominant-plane projection and
+	// detail_fade keep distant walls from paying texture fetches or shimmering.
+	float cliff_pbr_gate = clamp(cliff_mask * detail_fade, 0.0, 1.0);
+	if (use_cliff_pbr && cliff_pbr_gate > 0.001 && (cliff_pbr_blend > 0.0 || cliff_pbr_roughness_strength > 0.0)) {
+		vec3 cliff_pbr_albedo = vec3(0.5);
+		float cliff_pbr_roughness = 0.5;
+		sample_cliff_pbr_triplanar(world_geo_normal_now, world_xz, world_y, cliff_pbr_albedo, cliff_pbr_roughness);
+		float cliff_pbr_luma = luminance(cliff_pbr_albedo);
+		float cliff_pbr_value_detail = clamp((cliff_pbr_luma - 0.5) * 1.65, -0.42, 0.42);
+		vec3 cliff_pbr_value_albedo = clamp(ALBEDO * (1.0 + cliff_pbr_value_detail), vec3(0.0), vec3(1.0));
+		ALBEDO = mix(ALBEDO, cliff_pbr_value_albedo, clamp(cliff_pbr_blend * cliff_pbr_gate, 0.0, 1.0));
+		cliff_pbr_roughness_shift = (cliff_pbr_roughness - 0.5) * cliff_pbr_roughness_strength * cliff_pbr_gate;
+	}
 	// FLOOR-PBR inject: detail-blend the real CC0 PBR triplanar albedo into the floor. The
 	// procedural tints above (de-orange, wash/slickrock/sand patches) keep supplying the Zion
 	// COLOR; this adds the real close-up grain/structure the flat floor was missing. Gate is
@@ -969,9 +1046,6 @@ void fragment() {
 	// strength * fade into amp; amp == 0 (strength 0 or beyond the fade end) is an exact no-op.
 	// Applied on top of the strata/floor-pbr relief, before the procedural micro/fine octaves, so
 	// the cavity-AO below naturally reads the added grain. Writes only NORMAL.
-	vec3 detail_camera_pos = INV_VIEW_MATRIX[3].xyz;
-	float detail_camera_dist = length(vec3(world_xz.x, world_y, world_xz.y) - detail_camera_pos);
-	float detail_fade = 1.0 - smoothstep(terrain_detail_normal_fade_start_m, max(terrain_detail_normal_fade_end_m, terrain_detail_normal_fade_start_m + 1.0), detail_camera_dist);
 	world_detail_normal = apply_detail_normal(world_detail_normal, world_xz, terrain_detail_normal_strength * detail_fade);
 	vec3 world_micro_normal = apply_micro_normal(world_detail_normal, world_xz, micro_strength);
 	world_micro_normal = apply_floor_fine_normal(world_micro_normal, world_xz, micro_strength, low_flat_mask);
@@ -993,6 +1067,6 @@ void fragment() {
 	// glossier and loose sand/scree matte. All the existing floor/relief/wet wobbles still
 	// layer on top, and the wet-bank override is unchanged.
 	float surface_base_roughness = surface_roughness_for_id(surface_id_value);
-	ROUGHNESS = clamp(mix(surface_base_roughness + roughness_wobble + floor_roughness_shift + floor_roughness_wobble + floor_pbr_bump * floor_pbr_roughness_strength * floor_pbr_gate, zion_bank_wet_roughness, bank_wet_mask), 0.05, 1.0);
+	ROUGHNESS = clamp(mix(surface_base_roughness + roughness_wobble + floor_roughness_shift + floor_roughness_wobble + floor_pbr_bump * floor_pbr_roughness_strength * floor_pbr_gate + cliff_pbr_roughness_shift, zion_bank_wet_roughness, bank_wet_mask), 0.05, 1.0);
 	SPECULAR = terrain_specular;
 }
