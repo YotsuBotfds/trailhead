@@ -11,6 +11,8 @@ const EXPECTED_WET_GLINTS: int = 6
 const DECAL_Y: float = 0.012
 const LOW_DETAIL_Y: float = 0.018
 
+static var _ground_detail_material_cache: Dictionary[String, StandardMaterial3D] = {}
+
 
 static func build_cedar_hollow(parent: Node3D) -> Node3D:
 	var root: Node3D = Node3D.new()
@@ -163,7 +165,7 @@ static func _add_wet_glints(parent: Node3D) -> void:
 static func _add_plane(parent: Node3D, node_name: String, position: Vector3, size: Vector2, yaw_degrees: float, color: Color, roughness: float) -> MeshInstance3D:
 	var mesh: PlaneMesh = PlaneMesh.new()
 	mesh.size = size
-	return _add_mesh_instance(parent, node_name, mesh, position, yaw_degrees, color, roughness)
+	return _add_mesh_instance(parent, node_name, mesh, position, yaw_degrees, color, roughness, _material_geometry_key_2d("plane", size))
 
 
 static func _add_blob(parent: Node3D, node_name: String, position: Vector3, size: Vector2, yaw_degrees: float, color: Color, roughness: float) -> MeshInstance3D:
@@ -201,34 +203,56 @@ static func _add_blob(parent: Node3D, node_name: String, position: Vector3, size
 	arrays[Mesh.ARRAY_INDEX] = indices
 	var mesh: ArrayMesh = ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-	return _add_mesh_instance(parent, node_name, mesh, position, yaw_degrees, color, roughness)
+	return _add_mesh_instance(parent, node_name, mesh, position, yaw_degrees, color, roughness, _material_geometry_key_2d("blob", size))
 
 
 static func _add_box(parent: Node3D, node_name: String, position: Vector3, size: Vector3, yaw_degrees: float, color: Color, roughness: float) -> MeshInstance3D:
 	var mesh: BoxMesh = BoxMesh.new()
 	mesh.size = size
-	return _add_mesh_instance(parent, node_name, mesh, position, yaw_degrees, color, roughness)
+	return _add_mesh_instance(parent, node_name, mesh, position, yaw_degrees, color, roughness, _material_geometry_key_3d("box", size))
 
 
-static func _add_mesh_instance(parent: Node3D, node_name: String, mesh: Mesh, position: Vector3, yaw_degrees: float, color: Color, roughness: float) -> MeshInstance3D:
+static func _add_mesh_instance(parent: Node3D, node_name: String, mesh: Mesh, position: Vector3, yaw_degrees: float, color: Color, roughness: float, geometry_key: String) -> MeshInstance3D:
 	var instance: MeshInstance3D = MeshInstance3D.new()
 	instance.name = node_name
 	instance.mesh = mesh
 	instance.position = position
 	instance.rotation_degrees = Vector3(0.0, yaw_degrees, 0.0)
-	instance.material_override = _material(node_name, color, roughness)
+	instance.material_override = _material(color, roughness, geometry_key)
 	instance.visibility_range_end = GameConfig.vis_range_ground_detail
 	parent.add_child(instance)
 	return instance
 
 
-static func _material(node_name: String, color: Color, roughness: float) -> StandardMaterial3D:
+static func _material(color: Color, roughness: float, geometry_key: String) -> StandardMaterial3D:
+	var cache_key: String = _material_cache_key(color, roughness, geometry_key)
+	if _ground_detail_material_cache.has(cache_key):
+		return _ground_detail_material_cache[cache_key]
 	var material: StandardMaterial3D = StandardMaterial3D.new()
-	material.resource_name = node_name + "_mat"
+	material.resource_name = "ground_detail_material"
 	material.albedo_color = color
 	material.roughness = roughness
 	material.metallic = 0.0
 	material.cull_mode = BaseMaterial3D.CULL_DISABLED
 	if color.a < 1.0:
 		material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_ground_detail_material_cache[cache_key] = material
 	return material
+
+
+static func _material_cache_key(color: Color, roughness: float, geometry_key: String) -> String:
+	var transparency_key: String = "opaque"
+	if color.a < 1.0:
+		transparency_key = "alpha"
+	return "standard|" + geometry_key \
+		+ "|color=" + var_to_str(color) \
+		+ "|roughness=" + var_to_str(roughness) \
+		+ "|metallic=0.0|cull=disabled|transparency=" + transparency_key
+
+
+static func _material_geometry_key_2d(kind: String, scale: Vector2) -> String:
+	return "kind=" + kind + "|scale=" + var_to_str(scale)
+
+
+static func _material_geometry_key_3d(kind: String, scale: Vector3) -> String:
+	return "kind=" + kind + "|scale=" + var_to_str(scale)
