@@ -48,9 +48,9 @@ check "Python tool syntax" sh -c 'python3 -m py_compile tools/*.py'
 check "shell tool syntax" sh -c 'for path in tools/*.sh; do sh -n "$path" || exit 1; done'
 check "export-safe raw loads" bash tools/check_export_safe_loads.sh
 check "headless suite aggregates failures" sh tools/test_run_headless_suite_aggregation.sh
-check "every inspector/fixture is suite-wired or allowlisted" sh -c '
+check "every inspector/fixture/capture/probe/preview is suite-wired or allowlisted" sh -c '
 	missing="" &&
-	for file in tools/*_inspector.gd tools/*_fixture.gd tools/*_fixture.py; do
+	for file in tools/*_inspector.gd tools/*_fixture.gd tools/*_fixture.py tools/*_capture.gd tools/*_probe.gd tools/*_preview.gd tools/diagnosis_*.gd; do
 		[ -e "$file" ] || continue
 		base="${file##*/}"
 		stem="${base%.*}"

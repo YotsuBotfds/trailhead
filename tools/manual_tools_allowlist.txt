@@ -1,7 +1,22 @@
-# Inspector/fixture stems intentionally kept out of tools/suites/*.sh.
-# Each non-comment line is the basename without extension for tools/*_inspector.gd or tools/*_fixture.{gd,py}.
+# Inspector/fixture/capture/probe/preview stems intentionally kept out of tools/suites/*.sh.
+# Each non-comment line is the basename without extension for a guarded manual tool:
+# tools/*_inspector.gd, tools/*_fixture.{gd,py}, tools/*_capture.gd, tools/*_probe.gd,
+# tools/*_preview.gd, tools/diagnosis_*.gd. The guard (tools/check.sh) forces every such
+# tool to be either suite-wired (and thus actually launched/verified) or listed here as a
+# consciously manual/windowed tool — so a newly-added one can never silently go unwired.
 cedar_visual_inspector
 desert_prop_inspector
 render_frame_budget_fixture
 render_non_feedback_fixture
 render_runtime_config_fixture
+# Manual windowed capture/probe/preview tools (run by hand, not headless-suitable):
+diagnosis_capture
+drive_capture
+foliage_closeup_capture
+windowed_visual_capture
+zion_demo_spawn_capture
+zion_flythrough_capture
+zion_windowed_visual_capture
+render_frame_budget_probe
+ground_pbr_preview
+zion_spawn_preview
