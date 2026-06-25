@@ -7,6 +7,7 @@ these via send-debug; this tool turns one into an actionable hitch report so
 each perf iteration is data-driven instead of guesswork.
 
 Usage:  python3 tools/analyze_perf_csv.py <frames.csv> [hitch_threshold_ms=100]
+        [--fail-p99-ms=N] [--fail-leak-mb=N] [--fail-other-hitch-count=N]
 
 Hitch classes:
   BOOT            frames 1-4, the initial world materialization
@@ -18,6 +19,7 @@ Hitch classes:
 Old CSVs without subsystem columns keep the earlier object-delta/crossing
 fallback so historical captures still produce a useful report.
 """
+import argparse
 import csv
 import sys
 
@@ -176,12 +178,47 @@ def update_stats(stats, label, dt_ms):
     stats[label]["max_ms"] = max(stats[label]["max_ms"], dt_ms)
 
 
+def parse_args(argv):
+    parser = argparse.ArgumentParser(
+        description="Analyze a Trailhead --perf-log frames CSV.",
+        allow_abbrev=False,
+    )
+    parser.add_argument("path", help="frames CSV written by --perf-log")
+    parser.add_argument(
+        "hitch_threshold_ms",
+        nargs="?",
+        type=float,
+        default=100.0,
+        help="frame-time threshold for hitch rows (default: 100)",
+    )
+    parser.add_argument(
+        "--fail-p99-ms",
+        type=float,
+        default=None,
+        help="exit non-zero when analyzed p99 frame time exceeds this many ms",
+    )
+    parser.add_argument(
+        "--fail-leak-mb",
+        type=float,
+        default=None,
+        help="exit non-zero when post-boot video memory growth exceeds this many MB",
+    )
+    parser.add_argument(
+        "--fail-other-hitch-count",
+        type=int,
+        default=None,
+        help="exit non-zero when classified 'other' hitch count exceeds this value",
+    )
+    return parser.parse_args(argv)
+
+
 def main() -> int:
     if len(sys.argv) < 2:
         print(__doc__)
         return 2
-    path = sys.argv[1]
-    thr = float(sys.argv[2]) if len(sys.argv) > 2 else 100.0
+    args = parse_args(sys.argv[1:])
+    path = args.path
+    thr = args.hitch_threshold_ms
     with open(path, newline="") as handle:
         reader = csv.DictReader(handle)
         rows = list(reader)
@@ -197,16 +234,20 @@ def main() -> int:
     n = len(rows)
     dts = [fnum(r, "dt_ms") for r in rows]
     sdt = sorted(dts)
+    median_ms = sdt[n//2]
+    p99_ms = sdt[int(n*0.99)]
+    p999_ms = sdt[int(n*0.999)]
     print(f"=== {path}")
     print(f"frames={n}  duration~{sum(dts)/1000:.1f}s  "
-          f"median={sdt[n//2]:.1f}ms (~{1000/(sdt[n//2] or 1):.0f}fps)  "
-          f"p99={sdt[int(n*0.99)]:.1f}ms  p99.9={sdt[int(n*0.999)]:.1f}ms")
+          f"median={median_ms:.1f}ms (~{1000/(median_ms or 1):.0f}fps)  "
+          f"p99={p99_ms:.1f}ms  p99.9={p999_ms:.1f}ms")
 
     # health
     vm = [fnum(r, "video_mem_mb") for r in rows]
     post = vm[min(20, n - 1)]
+    leak_mb = vm[-1] - post
     print(f"video_mem_mb: boot={max(vm[:5] or [0]):.0f} end={vm[-1]:.0f} "
-          f"(post-boot growth {vm[-1]-post:+.0f} MB){'  <-- possible leak' if vm[-1]-post > 200 else ''}")
+          f"(post-boot growth {leak_mb:+.0f} MB){'  <-- possible leak' if leak_mb > 200 else ''}")
 
     # hitches
     labels = ["BOOT", "collision", "visual-commit"] if has_attribution else ["BOOT", "crossing-collision", "visual-commit"]
@@ -274,6 +315,21 @@ def main() -> int:
     else:
         print("legacy CSV: visual-commit uses object delta; crossing-collision uses hitch_at_crossing.")
     print("New 'other' hitches = next target.")
+    failures = []
+    if args.fail_p99_ms is not None and p99_ms > args.fail_p99_ms:
+        failures.append(f"p99 {p99_ms:.1f}ms > --fail-p99-ms {args.fail_p99_ms:.1f}ms")
+    if args.fail_leak_mb is not None and leak_mb > args.fail_leak_mb:
+        failures.append(f"post-boot video_mem growth {leak_mb:.0f} MB > --fail-leak-mb {args.fail_leak_mb:.0f} MB")
+    other_hitches = stats.get("other", {}).get("count", 0)
+    if args.fail_other_hitch_count is not None and other_hitches > args.fail_other_hitch_count:
+        failures.append(
+            f"other hitch count {other_hitches} > --fail-other-hitch-count {args.fail_other_hitch_count}"
+        )
+    if failures:
+        print("THRESHOLD FAILURES:")
+        for failure in failures:
+            print(f"  {failure}")
+        return 1
     return 0
 
 
