@@ -9,6 +9,7 @@ const RenderRuntimeConfigScript: GDScript = preload("res://systems/render/render
 const VehicleResidueVisualScript: GDScript = preload("res://systems/render/vehicle_residue_visual.gd")
 const AtmosphereVisualBuilderScript: GDScript = preload("res://systems/render/atmosphere_visual_builder.gd")
 const DustTiltShiftVisualBuilderScript: GDScript = preload("res://systems/render/dust_tilt_shift_visual_builder.gd")
+const VignetteVisualBuilderScript: GDScript = preload("res://systems/render/vignette_visual_builder.gd")
 const FlatWorldBuilderScript: GDScript = preload("res://systems/world/flat_world_builder.gd")
 const SurfaceMapScript: GDScript = preload("res://systems/world/surface_map.gd")
 
@@ -116,6 +117,7 @@ func _setup_camera() -> void:
 
 func _setup_render_support() -> void:
 	DustTiltShiftVisualBuilderScript.build(self, _camera, null, null)
+	VignetteVisualBuilderScript.build(self)
 	AtmosphereVisualBuilderScript.configure_render_support(self, _vehicle, _camera, null, null)
 
 
