@@ -80,8 +80,29 @@ const WORLD_REGION_ID_META: StringName = &"trailhead_world_region_id"
 const GAMEPAD_DEVICE_ANY: int = -1
 const TRACK_APPLY_CELLS_PER_FRAME: int = 1
 const AUTODRIVE_USER_ARG: String = "--autodrive"
-const AUTODRIVE_STEER_PERIOD_SECONDS: float = 9.5
-const AUTODRIVE_STEER_STRENGTH: float = 0.18
+# Southwest open-floor route from zion_wall_vista; sampled as loose_rock/packed_dirt
+# and diagonal enough to cross many 100 m streaming cells in a 90 s perf run.
+const AUTODRIVE_WAYPOINTS_XZ: Array[Vector2] = [
+	Vector2(1680.0, 1450.0),
+	Vector2(1480.0, 1280.0),
+	Vector2(1300.0, 1150.0),
+	Vector2(1120.0, 1000.0),
+	Vector2(920.0, 900.0),
+]
+const AUTODRIVE_WAYPOINT_ARRIVAL_RADIUS_M: float = 65.0
+const AUTODRIVE_FINAL_LOOKAHEAD_M: float = 300.0
+const AUTODRIVE_FORWARD_EPSILON: float = 0.001
+const AUTODRIVE_STEER_GAIN: float = 1.35
+const AUTODRIVE_CRUISE_THROTTLE: float = 1.0
+const AUTODRIVE_TURN_THROTTLE: float = 0.22
+const AUTODRIVE_SHARP_TURN_ANGLE_RAD: float = 2.0
+const AUTODRIVE_BRAKE_ANGLE_RAD: float = 2.6
+const AUTODRIVE_SHARP_TURN_BRAKE: float = 0.12
+const AUTODRIVE_STUCK_SPEED_MPS: float = 0.35
+const AUTODRIVE_STUCK_SECONDS: float = 1.2
+const AUTODRIVE_RECOVERY_SECONDS: float = 1.0
+const AUTODRIVE_RECOVERY_THROTTLE: float = -0.55
+const AUTODRIVE_RECOVERY_STEER: float = 1.0
 const SCREENSHOT_USER_ARG: String = "--screenshot-secs"
 const SCREENSHOT_DEFAULT_DIR: String = "user://trailhead/shots"
 const SCREENSHOT_CAPTURE_COUNT: int = 3
@@ -227,6 +248,11 @@ var _fps_cap_enabled: bool = true
 var _autodrive_enabled: bool = false
 var _autodrive_elapsed_since_release: float = 0.0
 var _autodrive_uncapped: bool = false
+var _autodrive_waypoint_index: int = 0
+var _autodrive_stuck_seconds: float = 0.0
+var _autodrive_recovery_seconds_remaining: float = 0.0
+var _autodrive_recovery_steer_sign: float = 1.0
+var _autodrive_recovery_self_right_pending: bool = false
 var _screenshot_capture_active: bool = false
 var _screenshot_capture_in_flight: bool = false
 var _screenshot_delay_seconds: float = 0.0
@@ -1533,21 +1559,34 @@ func _update_vehicle_input() -> void:
 
 func _update_autodrive_vehicle_input() -> void:
 	if not _cold_start_streaming_released:
-		_autodrive_elapsed_since_release = 0.0
+		_reset_autodrive_drive_state()
 		_vehicle_input.set("throttle", 0.0)
 		_vehicle_input.set("brake", 0.0)
 		_vehicle_input.set("steer", 0.0)
 		_vehicle_input.set("ebrake", false)
 		_vehicle_input.set("self_right", false)
 		return
-	var elapsed_since_release: float = _autodrive_elapsed_since_release
-	var steer: float = sin(elapsed_since_release * TAU / AUTODRIVE_STEER_PERIOD_SECONDS) * AUTODRIVE_STEER_STRENGTH
 	_autodrive_elapsed_since_release += GameConfig.FIXED_DT
-	_vehicle_input.set("throttle", 1.0)
-	_vehicle_input.set("brake", 0.0)
-	_vehicle_input.set("steer", clampf(steer, -1.0, 1.0))
-	_vehicle_input.set("ebrake", false)
-	_vehicle_input.set("self_right", false)
+	var state: RefCounted = _vehicle_state_for_current_pass()
+	if state == null:
+		_vehicle_input.set("throttle", 0.0)
+		_vehicle_input.set("brake", 0.0)
+		_vehicle_input.set("steer", 0.0)
+		_vehicle_input.set("ebrake", false)
+		_vehicle_input.set("self_right", false)
+		return
+	_update_autodrive_stuck_state(state)
+	if _autodrive_recovery_seconds_remaining > 0.0:
+		_autodrive_recovery_seconds_remaining = maxf(_autodrive_recovery_seconds_remaining - GameConfig.FIXED_DT, 0.0)
+		var self_right: bool = _autodrive_recovery_self_right_pending or bool(state.get("is_flipped"))
+		_vehicle_input.set("throttle", AUTODRIVE_RECOVERY_THROTTLE)
+		_vehicle_input.set("brake", 0.0)
+		_vehicle_input.set("steer", clampf(_autodrive_recovery_steer_sign * AUTODRIVE_RECOVERY_STEER, -1.0, 1.0))
+		_vehicle_input.set("ebrake", false)
+		_vehicle_input.set("self_right", self_right)
+		_autodrive_recovery_self_right_pending = false
+	else:
+		_apply_autodrive_waypoint_input(state)
 	_drive_started = true
 	if not _autodrive_uncapped:
 		# Headroom capture: autodrive runs are perf tests — uncap fps (mirror F2) once
@@ -1558,6 +1597,86 @@ func _update_autodrive_vehicle_input() -> void:
 		print("perf: autodrive uncapped fps for headroom capture")
 	if _cinematic_tour_active:
 		_exit_cinematic_tour()
+
+
+func _reset_autodrive_drive_state() -> void:
+	_autodrive_elapsed_since_release = 0.0
+	_autodrive_waypoint_index = 0
+	_autodrive_stuck_seconds = 0.0
+	_autodrive_recovery_seconds_remaining = 0.0
+	_autodrive_recovery_steer_sign = 1.0
+	_autodrive_recovery_self_right_pending = false
+
+
+func _apply_autodrive_waypoint_input(state: RefCounted) -> void:
+	var position: Vector3 = state.get("position")
+	var position_xz: Vector2 = Vector2(position.x, position.z)
+	var target_xz: Vector2 = _autodrive_target_xz(position_xz)
+	var to_target_xz: Vector2 = target_xz - position_xz
+	if to_target_xz.length() <= AUTODRIVE_FORWARD_EPSILON:
+		to_target_xz = _autodrive_final_heading_xz()
+	var desired: Vector3 = Vector3(to_target_xz.x, 0.0, to_target_xz.y).normalized()
+	var forward: Vector3 = _autodrive_forward(state)
+	var heading_error: float = signf(forward.cross(desired).y) * forward.angle_to(desired)
+	var steer: float = clampf(heading_error * AUTODRIVE_STEER_GAIN, -1.0, 1.0)
+	var turn_ratio: float = clampf(absf(heading_error) / AUTODRIVE_SHARP_TURN_ANGLE_RAD, 0.0, 1.0)
+	var throttle: float = lerpf(AUTODRIVE_CRUISE_THROTTLE, AUTODRIVE_TURN_THROTTLE, turn_ratio)
+	var brake: float = AUTODRIVE_SHARP_TURN_BRAKE if absf(heading_error) >= AUTODRIVE_BRAKE_ANGLE_RAD else 0.0
+	_vehicle_input.set("throttle", clampf(throttle, -1.0, 1.0))
+	_vehicle_input.set("brake", brake)
+	_vehicle_input.set("steer", steer)
+	_vehicle_input.set("ebrake", false)
+	_vehicle_input.set("self_right", bool(state.get("is_flipped")))
+
+
+func _autodrive_target_xz(position_xz: Vector2) -> Vector2:
+	if AUTODRIVE_WAYPOINTS_XZ.is_empty():
+		return position_xz + _autodrive_final_heading_xz() * AUTODRIVE_FINAL_LOOKAHEAD_M
+	var last_index: int = AUTODRIVE_WAYPOINTS_XZ.size() - 1
+	while _autodrive_waypoint_index < last_index:
+		var waypoint: Vector2 = AUTODRIVE_WAYPOINTS_XZ[_autodrive_waypoint_index]
+		if position_xz.distance_to(waypoint) > AUTODRIVE_WAYPOINT_ARRIVAL_RADIUS_M:
+			break
+		_autodrive_waypoint_index += 1
+	var target_xz: Vector2 = AUTODRIVE_WAYPOINTS_XZ[_autodrive_waypoint_index]
+	if _autodrive_waypoint_index >= last_index and position_xz.distance_to(target_xz) <= AUTODRIVE_WAYPOINT_ARRIVAL_RADIUS_M:
+		return position_xz + _autodrive_final_heading_xz() * AUTODRIVE_FINAL_LOOKAHEAD_M
+	return target_xz
+
+
+func _autodrive_final_heading_xz() -> Vector2:
+	if AUTODRIVE_WAYPOINTS_XZ.size() >= 2:
+		var last_index: int = AUTODRIVE_WAYPOINTS_XZ.size() - 1
+		var final_delta: Vector2 = AUTODRIVE_WAYPOINTS_XZ[last_index] - AUTODRIVE_WAYPOINTS_XZ[last_index - 1]
+		if final_delta.length() > AUTODRIVE_FORWARD_EPSILON:
+			return final_delta.normalized()
+	return Vector2(-1.0, -1.0).normalized()
+
+
+func _autodrive_forward(state: RefCounted) -> Vector3:
+	var basis: Basis = state.get("basis")
+	var forward: Vector3 = -basis.z
+	forward.y = 0.0
+	if forward.length() <= AUTODRIVE_FORWARD_EPSILON:
+		return Vector3.FORWARD
+	return forward.normalized()
+
+
+func _update_autodrive_stuck_state(state: RefCounted) -> void:
+	if _autodrive_recovery_seconds_remaining > 0.0:
+		_autodrive_stuck_seconds = 0.0
+		return
+	var velocity: Vector3 = state.get("linear_velocity")
+	var horizontal_speed: float = Vector3(velocity.x, 0.0, velocity.z).length()
+	if horizontal_speed < AUTODRIVE_STUCK_SPEED_MPS:
+		_autodrive_stuck_seconds += GameConfig.FIXED_DT
+	else:
+		_autodrive_stuck_seconds = 0.0
+	if _autodrive_stuck_seconds >= AUTODRIVE_STUCK_SECONDS:
+		_autodrive_stuck_seconds = 0.0
+		_autodrive_recovery_seconds_remaining = AUTODRIVE_RECOVERY_SECONDS
+		_autodrive_recovery_steer_sign *= -1.0
+		_autodrive_recovery_self_right_pending = true
 
 
 func _update_cinematic_tour_input() -> void:
