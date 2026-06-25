@@ -2236,7 +2236,7 @@ static func _load_region_tile_uncached(region_id: String, cell: Vector2i) -> Reg
 		push_error("TerrainVisualBuilder heightmap float count mismatch: " + tile_data.heightmap_path)
 		return null
 
-	tile_data.surface_image = _load_source_image(tile_data.surface_id_path)
+	tile_data.surface_image = _load_source_image(tile_data.surface_id_path, true)
 	if tile_data.surface_image == null or tile_data.surface_image.is_empty():
 		push_error("TerrainVisualBuilder surface_id image failed to load: " + tile_data.surface_id_path)
 		return null
@@ -4216,18 +4216,30 @@ static func _load_source_image_texture(path: String) -> Texture2D:
 	return image_texture
 
 
-static func _load_source_image(path: String) -> Image:
+static func _load_source_image(path: String, prefer_imported: bool = false) -> Image:
 	if path.is_empty():
 		return null
+	# Image.load() of a res:// path that Godot imports as a texture emits an
+	# engine warning ("this will not work on export") on EVERY call and outright
+	# fails in exported builds (the raw source PNG is stripped from the PCK).
+	# For assets that always carry an imported texture and import lossless
+	# (surface-id maps: compress/mode=0, no mipmaps), read pixels straight from
+	# the imported texture instead -- pixel-exact and silent, in editor and
+	# export alike.
+	if prefer_imported:
+		var imported_first: Image = _image_from_imported_texture(path)
+		if imported_first != null:
+			return imported_first
 	var image: Image = Image.new()
 	var load_error: Error = image.load(path)
 	if load_error == OK and not image.is_empty():
 		return image
-	# Exported builds strip an imported texture's raw source file from the PCK,
-	# so Image.load("res://....png") fails there even though the texture ships.
-	# Read pixels back from the imported texture instead. Surface-id maps import
-	# lossless with no mipmaps (compress/mode=0), so get_image() is pixel-exact;
-	# decompress() guards any VRAM-compressed source images routed through here.
+	# Fallback for assets loaded raw-first: recover from the imported texture
+	# when the raw source file is unavailable (exported build).
+	return _image_from_imported_texture(path)
+
+
+static func _image_from_imported_texture(path: String) -> Image:
 	var imported_texture: Texture2D = load(path) as Texture2D
 	if imported_texture == null:
 		return null
