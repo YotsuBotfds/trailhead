@@ -28,6 +28,12 @@ func set_drive_active(active: bool) -> void:
 		_panel.set_drive_active(active)
 
 
+func process_usec_last_frame() -> int:
+	if _panel != null and _panel.has_method("process_usec_last_frame"):
+		return int(_panel.call("process_usec_last_frame"))
+	return 0
+
+
 class _SpeedHudPanel:
 	extends Control
 
@@ -52,6 +58,7 @@ class _SpeedHudPanel:
 	var _vehicle: Node = null
 	var _drive_active: bool = false
 	var _fade_alpha: float = 0.0
+	var _process_usec_last_frame: int = 0
 
 
 	func configure(vehicle: Node) -> void:
@@ -66,6 +73,16 @@ class _SpeedHudPanel:
 
 
 	func _process(delta: float) -> void:
+		var process_start_usec: int = Time.get_ticks_usec()
+		_process_body(delta)
+		_process_usec_last_frame = maxi(Time.get_ticks_usec() - process_start_usec, 0)
+
+
+	func process_usec_last_frame() -> int:
+		return _process_usec_last_frame
+
+
+	func _process_body(delta: float) -> void:
 		var target_alpha: float = 1.0 if _drive_active else 0.0
 		var step: float = delta / maxf(FADE_IN_SECONDS, 0.001)
 		if _fade_alpha < target_alpha:

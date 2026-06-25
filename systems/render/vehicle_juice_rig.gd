@@ -73,6 +73,7 @@ var _was_sliding: bool = false
 var _hard_drive_ratio: float = 0.0
 var _drive_chatter_phase: float = 0.0
 var _soft_dust_texture: Texture2D = null
+var _process_usec_last_frame: int = 0
 
 
 func _ready() -> void:
@@ -102,6 +103,16 @@ func configure(vehicle: Node, chase_camera: Camera3D, visual_root: Node3D) -> vo
 
 
 func _process(delta: float) -> void:
+	var process_start_usec: int = Time.get_ticks_usec()
+	_process_body(delta)
+	_process_usec_last_frame = maxi(Time.get_ticks_usec() - process_start_usec, 0)
+
+
+func process_usec_last_frame() -> int:
+	return _process_usec_last_frame
+
+
+func _process_body(delta: float) -> void:
 	_update_from_vehicle_state()
 	_update_camera_shake(delta)
 	_update_squash(delta)

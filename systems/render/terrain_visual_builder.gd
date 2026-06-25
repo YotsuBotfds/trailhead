@@ -9,6 +9,7 @@ class PipelineWarmupRoot:
 	var reveal_children_per_frame: int = 1
 	var _pending_reveal_children: Array[Node3D] = []
 	var _frames_after_reveal_complete: int = 0
+	var _process_usec_last_frame: int = 0
 
 	func _ready() -> void:
 		if incremental_reveal_enabled:
@@ -17,6 +18,16 @@ class PipelineWarmupRoot:
 		call_deferred("_release_after_render_warmup")
 
 	func _process(_delta: float) -> void:
+		var process_start_usec: int = Time.get_ticks_usec()
+		_process_body()
+		_process_usec_last_frame = maxi(Time.get_ticks_usec() - process_start_usec, 0)
+
+
+	func process_usec_last_frame() -> int:
+		return _process_usec_last_frame
+
+
+	func _process_body() -> void:
 		if not incremental_reveal_enabled:
 			return
 		var revealed_count: int = 0

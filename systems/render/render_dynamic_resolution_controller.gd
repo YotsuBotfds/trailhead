@@ -11,6 +11,7 @@ var _over_budget_frames: int = 0
 var _under_budget_frames: int = 0
 var _manual_test_mode: bool = false
 var _measure_render_time_enabled: bool = false
+var _process_usec_last_frame: int = 0
 
 
 func _ready() -> void:
@@ -29,6 +30,16 @@ func _exit_tree() -> void:
 
 
 func _process(_delta: float) -> void:
+	var process_start_usec: int = Time.get_ticks_usec()
+	_process_body()
+	_process_usec_last_frame = maxi(Time.get_ticks_usec() - process_start_usec, 0)
+
+
+func process_usec_last_frame() -> int:
+	return _process_usec_last_frame
+
+
+func _process_body() -> void:
 	var gpu_frame_ms: float = _measured_gpu_frame_ms()
 	if gpu_frame_ms <= 0.0:
 		_publish_state()

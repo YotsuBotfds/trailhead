@@ -94,7 +94,7 @@ const ZION_DESERT_SCATTER_BUILD_STEP_FINALIZE: int = 3
 const PERF_LOG_USER_ARG: String = "--perf-log"
 const PERF_LOG_DEFAULT_DIR: String = "user://trailhead/perf"
 const PERF_LOG_FLUSH_ROW_COUNT: int = 120
-const PERF_LOG_HEADER: String = "frame,dt_ms,fps,process_ms,physics_process_ms,viewport_cpu_ms,viewport_gpu_ms,scaling_3d_scale,scaling_3d_scale_changed,dynamic_res_target_ms,draw_calls,primitives,objects,video_mem_mb,static_mem_mb,current_cell,active_cells,ready_cells,stream_tick,crossing_flag,hitch_flag,hitch_at_crossing,window_is_focused,collision_cooks,visual_commits,visual_commit_ms,detail_refresh_ms,detail_sort_ms,detail_ensure_ms,detail_downgrade_ms,detail_sync_build_ms,detail_refresh_sweeps,evict_ms,hlod_queue_ms,hlod_dispatch_ms,hlod_densify_ms,hlod_sync_ms,worker_count,midlod_refresh_ms,worker_result_ms,visual_build_ms,midlod_build_ms,hlod_build_ms,foliage_build_ms"
+const PERF_LOG_HEADER: String = "frame,dt_ms,fps,process_ms,top_other_process_ms,top_other_process_id,physics_process_ms,viewport_cpu_ms,viewport_gpu_ms,scaling_3d_scale,scaling_3d_scale_changed,dynamic_res_target_ms,draw_calls,primitives,objects,video_mem_mb,static_mem_mb,current_cell,active_cells,ready_cells,stream_tick,crossing_flag,hitch_flag,hitch_at_crossing,window_is_focused,collision_cooks,visual_commits,visual_commit_ms,detail_refresh_ms,detail_sort_ms,detail_ensure_ms,detail_downgrade_ms,detail_sync_build_ms,detail_refresh_sweeps,evict_ms,hlod_queue_ms,hlod_dispatch_ms,hlod_densify_ms,hlod_sync_ms,worker_count,midlod_refresh_ms,worker_result_ms,visual_build_ms,midlod_build_ms,hlod_build_ms,foliage_build_ms"
 const PERF_LOG_CROSSING_WINDOW_FRAMES: int = 5
 const PERF_LOG_MEDIAN_WINDOW_SIZE: int = 121
 const PERF_LOG_HITCH_MEDIAN_MULTIPLIER: float = 2.0
@@ -103,10 +103,24 @@ const PERF_LOG_DYNAMIC_RESOLUTION_CONTROLLER_NAME: String = "RenderDynamicResolu
 const PERF_LOG_DYNAMIC_RESOLUTION_TARGET_FRAME_MS_META: StringName = &"trailhead_dynamic_resolution_target_frame_ms"
 const PERF_LOG_SCALE_CHANGE_EPSILON: float = 0.0001
 const PERF_LOG_MB_DIVISOR: float = 1024.0 * 1024.0
+const OTHER_PROCESS_ID_NONE: int = 0
+const OTHER_PROCESS_ID_HOST: int = 1
+const OTHER_PROCESS_ID_MINIMAP: int = 2
+const OTHER_PROCESS_ID_VEHICLE_JUICE: int = 3
+const OTHER_PROCESS_ID_PHOTOGRAPH: int = 4
+const OTHER_PROCESS_ID_DYNAMIC_RESOLUTION: int = 5
+const OTHER_PROCESS_ID_RECOVERABLE: int = 6
+const OTHER_PROCESS_ID_DEBUG_HUD: int = 7
+const OTHER_PROCESS_ID_CONTROLS_HUD: int = 8
+const OTHER_PROCESS_ID_SPEED_HUD: int = 9
+const OTHER_PROCESS_ID_TERRAIN_BUILDER: int = 10
+const OTHER_PROCESS_ID_TITLE_CARD: int = 11
+const OTHER_PROCESS_TERRAIN_BUILDER_PATH: String = "TerrainVisuals/PipelineWarmup"
 
 var _world: Node3D = null
 var _vehicle: Node = null
 var _vehicle_input: RefCounted = VehicleInputScript.new()
+var _dynamic_resolution_controller: Node = null
 var _frame_vehicle_state_cache_active: bool = false
 var _frame_vehicle_state: RefCounted = null
 var _camera: Camera3D = null
@@ -162,6 +176,7 @@ var _fpv_vehicle_y_current: float = 0.0
 var _fpv_back_current: Vector3 = Vector3.ZERO
 var _fpv_up_current: Vector3 = Vector3.UP
 var _landmark_hint_hud: CanvasLayer = null
+var _minimap_view: Control = null
 var _speed_hud: CanvasLayer = null
 var _controls_hint_hud: CanvasLayer = null
 var _debug_overlay_hud: CanvasLayer = null
@@ -171,6 +186,8 @@ var _sun: DirectionalLight3D = null
 var _mood: int = MOOD_DUSK
 var _terrain_track_painter: Node = null
 var _terrain_visual_streamer: Node3D = null
+var _terrain_builder_process_node: Node = null
+var _vehicle_juice_rig: Node = null
 var _photograph_system: Node = null
 var _recoverable_object_render: Node = null
 var _golden_line_tracker: Node = null
@@ -230,10 +247,14 @@ var _perf_log_last_crossing_frame: int = -1000000
 var _perf_log_last_scaling_3d_scale: float = 1.0
 var _perf_log_has_last_scaling_3d_scale: bool = false
 var _perf_log_dt_samples_ms: Array[float] = []
+var _process_usec_last_frame: int = 0
+var _perf_log_top_other_process_id: int = OTHER_PROCESS_ID_NONE
+var _perf_log_top_other_process_usec: int = 0
 
 
 func _ready() -> void:
 	RenderRuntimeConfigScript.apply_to(self)
+	_dynamic_resolution_controller = get_node_or_null(NodePath(PERF_LOG_DYNAMIC_RESOLUTION_CONTROLLER_NAME))
 	_sync_fps_cap_state_from_runtime()
 	_apply_render_quality()
 	_setup_autodrive()
@@ -324,6 +345,16 @@ func _physics_process(delta: float) -> void:
 
 
 func _process(delta: float) -> void:
+	var process_start_usec: int = Time.get_ticks_usec()
+	_process_body(delta)
+	_process_usec_last_frame = maxi(Time.get_ticks_usec() - process_start_usec, 0)
+
+
+func process_usec_last_frame() -> int:
+	return _process_usec_last_frame
+
+
+func _process_body(delta: float) -> void:
 	_update_cold_start_streaming_gate(delta)
 	# Cosmetic spawn scatter waits until after reveal, then drains one load/build step per frame.
 	_drain_zion_desert_scatter_build_queue()
@@ -700,6 +731,9 @@ func _sample_perf_log_frame() -> void:
 	var primitives: int = int(Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME))
 	var objects: int = int(Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME))
 	var process_ms: float = float(Performance.get_monitor(Performance.TIME_PROCESS)) * 1000.0
+	_perf_log_sample_top_other_process()
+	var top_other_process_ms: float = float(_perf_log_top_other_process_usec) / 1000.0
+	var top_other_process_id: int = _perf_log_top_other_process_id
 	var physics_ms: float = float(Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS)) * 1000.0
 	var viewport_rid: RID = viewport.get_viewport_rid()
 	var viewport_cpu_ms: float = maxf(float(RenderingServer.viewport_get_measured_render_time_cpu(viewport_rid)), 0.0)
@@ -738,11 +772,13 @@ func _sample_perf_log_frame() -> void:
 	var window_focused: bool = DisplayServer.window_is_focused()
 	_record_perf_log_dt_sample(dt_ms)
 
-	_perf_log_rows.append("%d,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.4f,%d,%.3f,%d,%d,%d,%.3f,%.3f,%s,%d,%d,%d,%d,%d,%d,%d,%d,%d,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%d,%.3f,%.3f,%.3f,%.3f,%.3f,%d,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f" % [
+	_perf_log_rows.append("%d,%.3f,%.3f,%.3f,%.3f,%d,%.3f,%.3f,%.3f,%.4f,%d,%.3f,%d,%d,%d,%.3f,%.3f,%s,%d,%d,%d,%d,%d,%d,%d,%d,%d,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%d,%.3f,%.3f,%.3f,%.3f,%.3f,%d,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f" % [
 		_perf_log_frame_index,
 		dt_ms,
 		fps,
 		process_ms,
+		top_other_process_ms,
+		top_other_process_id,
 		physics_ms,
 		viewport_cpu_ms,
 		viewport_gpu_ms,
@@ -884,6 +920,53 @@ func _perf_log_visual_worker_count() -> int:
 	return 0
 
 
+func _perf_log_sample_top_other_process() -> void:
+	_perf_log_top_other_process_id = OTHER_PROCESS_ID_NONE
+	_perf_log_top_other_process_usec = 0
+	_perf_log_consider_other_process(self, OTHER_PROCESS_ID_HOST)
+	_perf_log_consider_other_process(_minimap_view, OTHER_PROCESS_ID_MINIMAP)
+	_perf_log_consider_other_process(_vehicle_juice_rig, OTHER_PROCESS_ID_VEHICLE_JUICE)
+	_perf_log_consider_other_process(_photograph_system, OTHER_PROCESS_ID_PHOTOGRAPH)
+	_perf_log_consider_other_process(_perf_log_dynamic_resolution_controller(), OTHER_PROCESS_ID_DYNAMIC_RESOLUTION)
+	_perf_log_consider_other_process(_recoverable_object_render, OTHER_PROCESS_ID_RECOVERABLE)
+	_perf_log_consider_other_process(_debug_overlay_hud, OTHER_PROCESS_ID_DEBUG_HUD)
+	_perf_log_consider_other_process(_controls_hint_hud, OTHER_PROCESS_ID_CONTROLS_HUD)
+	_perf_log_consider_other_process(_speed_hud, OTHER_PROCESS_ID_SPEED_HUD)
+	_perf_log_consider_other_process(_perf_log_terrain_builder_process_node(), OTHER_PROCESS_ID_TERRAIN_BUILDER)
+	_perf_log_consider_other_process(_title_card_hud, OTHER_PROCESS_ID_TITLE_CARD)
+
+
+func _perf_log_consider_other_process(node: Node, process_id: int) -> void:
+	var process_usec: int = _perf_log_process_usec(node)
+	if process_usec > _perf_log_top_other_process_usec:
+		_perf_log_top_other_process_usec = process_usec
+		_perf_log_top_other_process_id = process_id
+
+
+func _perf_log_process_usec(node: Node) -> int:
+	if node == null or not is_instance_valid(node):
+		return 0
+	if not node.has_method("process_usec_last_frame"):
+		return 0
+	return maxi(int(node.call("process_usec_last_frame")), 0)
+
+
+func _perf_log_dynamic_resolution_controller() -> Node:
+	if _dynamic_resolution_controller == null or not is_instance_valid(_dynamic_resolution_controller):
+		_dynamic_resolution_controller = get_node_or_null(NodePath(PERF_LOG_DYNAMIC_RESOLUTION_CONTROLLER_NAME))
+	return _dynamic_resolution_controller
+
+
+func _perf_log_terrain_builder_process_node() -> Node:
+	if _terrain_builder_process_node != null and is_instance_valid(_terrain_builder_process_node):
+		return _terrain_builder_process_node
+	if _terrain_visual_streamer == null or not is_instance_valid(_terrain_visual_streamer):
+		_terrain_builder_process_node = null
+		return null
+	_terrain_builder_process_node = _terrain_visual_streamer.get_node_or_null(NodePath(OTHER_PROCESS_TERRAIN_BUILDER_PATH))
+	return _terrain_builder_process_node
+
+
 func _perf_log_scaling_3d_scale_changed(scaling_3d_scale: float) -> bool:
 	var changed: bool = false
 	if _perf_log_has_last_scaling_3d_scale:
@@ -894,7 +977,7 @@ func _perf_log_scaling_3d_scale_changed(scaling_3d_scale: float) -> bool:
 
 
 func _perf_log_dynamic_resolution_target_frame_ms() -> float:
-	var controller: Node = get_node_or_null(NodePath(PERF_LOG_DYNAMIC_RESOLUTION_CONTROLLER_NAME))
+	var controller: Node = _perf_log_dynamic_resolution_controller()
 	if controller != null and controller.has_meta(PERF_LOG_DYNAMIC_RESOLUTION_TARGET_FRAME_MS_META):
 		return float(controller.get_meta(PERF_LOG_DYNAMIC_RESOLUTION_TARGET_FRAME_MS_META))
 	if Engine.max_fps > 0:
@@ -956,6 +1039,7 @@ func _setup_world() -> void:
 	# warm before the first tile activation enqueues a build.)
 	TerrainVisualBuilderScript.prewarm_surface_index_pipeline()
 	_terrain_visual_streamer.call("configure_region", ZION_REGION_ID)
+	_terrain_builder_process_node = _terrain_visual_streamer.get_node_or_null(NodePath(OTHER_PROCESS_TERRAIN_BUILDER_PATH))
 	_setup_terrain_tracks(_terrain_visual_streamer)
 	WaterVisualBuilderScript.build_zion_virgin_river(_world)
 
@@ -1235,10 +1319,12 @@ func _setup_camera() -> void:
 
 
 func _setup_vehicle_juice() -> void:
-	var juice_rig: Node = VehicleJuiceRigScript.new()
-	juice_rig.name = "VehicleJuiceRig"
-	add_child(juice_rig)
-	juice_rig.call("configure", _vehicle, _camera, _vehicle_visual_root as Node3D)
+	_vehicle_juice_rig = VehicleJuiceRigScript.new() as Node
+	if _vehicle_juice_rig == null:
+		return
+	_vehicle_juice_rig.name = "VehicleJuiceRig"
+	add_child(_vehicle_juice_rig)
+	_vehicle_juice_rig.call("configure", _vehicle, _camera, _vehicle_visual_root as Node3D)
 
 
 func _setup_photograph_system() -> void:
@@ -1256,6 +1342,7 @@ func _setup_hud() -> void:
 	_landmark_hint_hud.visible = GameConfig.minimap_enabled_by_default
 	add_child(_landmark_hint_hud)
 	_landmark_hint_hud.call("configure", CedarRoute, _vehicle)
+	_minimap_view = _landmark_hint_hud.get_node_or_null(NodePath("MinimapView")) as Control
 	_speed_hud = SpeedHudScript.new() as CanvasLayer
 	_speed_hud.name = "SpeedHud"
 	_speed_hud.visible = GameConfig.speed_hud_enabled
@@ -2455,6 +2542,12 @@ class TitleCardHud:
 			_panel.notify_world_ready()
 
 
+	func process_usec_last_frame() -> int:
+		if _panel != null and _panel.has_method("process_usec_last_frame"):
+			return int(_panel.call("process_usec_last_frame"))
+		return 0
+
+
 	class _TitleCardPanel:
 		extends Control
 
@@ -2477,6 +2570,7 @@ class TitleCardHud:
 		var _alpha: float = 1.0
 		var _fading: bool = false
 		var _world_ready: bool = false
+		var _process_usec_last_frame: int = 0
 
 
 		func dismiss() -> void:
@@ -2492,6 +2586,16 @@ class TitleCardHud:
 
 
 		func _process(delta: float) -> void:
+			var process_start_usec: int = Time.get_ticks_usec()
+			_process_body(delta)
+			_process_usec_last_frame = maxi(Time.get_ticks_usec() - process_start_usec, 0)
+
+
+		func process_usec_last_frame() -> int:
+			return _process_usec_last_frame
+
+
+		func _process_body(delta: float) -> void:
 			if _alpha <= 0.0:
 				visible = false
 				return

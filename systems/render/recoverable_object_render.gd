@@ -28,6 +28,7 @@ var _cue_player: AudioStreamPlayer = null
 var _cue_playback: AudioStreamGeneratorPlayback = null
 var _cue_phase: float = 0.0
 var _cue_envelope: float = 0.0
+var _process_usec_last_frame: int = 0
 
 
 func configure(world_root: Node) -> void:
@@ -56,6 +57,16 @@ func _exit_tree() -> void:
 
 
 func _process(_delta: float) -> void:
+	var process_start_usec: int = Time.get_ticks_usec()
+	_process_body()
+	_process_usec_last_frame = maxi(Time.get_ticks_usec() - process_start_usec, 0)
+
+
+func process_usec_last_frame() -> int:
+	return _process_usec_last_frame
+
+
+func _process_body() -> void:
 	_fill_tag_cue()
 
 

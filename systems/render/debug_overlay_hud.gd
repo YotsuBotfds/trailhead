@@ -23,6 +23,12 @@ func configure(host: Node) -> void:
 		_panel.configure(_host)
 
 
+func process_usec_last_frame() -> int:
+	if _panel != null and _panel.has_method("process_usec_last_frame"):
+		return int(_panel.call("process_usec_last_frame"))
+	return 0
+
+
 class _DebugOverlayPanel:
 	extends Control
 
@@ -56,6 +62,7 @@ class _DebugOverlayPanel:
 	# multiply the BASE constants by this so the panel reads at a consistent
 	# size on 1080p/1440p/4K instead of the old hard pixels (tiny at 4K).
 	var _scale: float = 1.0
+	var _process_usec_last_frame: int = 0
 
 
 	func configure(host: Node) -> void:
@@ -64,6 +71,16 @@ class _DebugOverlayPanel:
 
 
 	func _process(delta: float) -> void:
+		var process_start_usec: int = Time.get_ticks_usec()
+		_process_body(delta)
+		_process_usec_last_frame = maxi(Time.get_ticks_usec() - process_start_usec, 0)
+
+
+	func process_usec_last_frame() -> int:
+		return _process_usec_last_frame
+
+
+	func _process_body(delta: float) -> void:
 		if not visible:
 			return
 		_update_scale()

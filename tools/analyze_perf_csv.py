@@ -51,6 +51,20 @@ VISUAL_COMMIT_DOMINANCE_RATIO = 0.50
 VISUAL_COMMIT_DOMINANCE_MIN_MS = 10.0
 STREAMER_DOMINANCE_RATIO = 0.50
 STREAMER_DOMINANCE_MIN_MS = 10.0
+OTHER_PROCESS_ID_NAMES = {
+    0: "none",
+    1: "cedar_hollow_host",
+    2: "minimap_view",
+    3: "vehicle_juice_rig",
+    4: "photograph_system",
+    5: "render_dynamic_resolution_controller",
+    6: "recoverable_object_render",
+    7: "debug_overlay_hud",
+    8: "controls_hint_hud",
+    9: "speed_hud",
+    10: "terrain_visual_builder",
+    11: "title_card_hud",
+}
 
 
 def fnum(row, key, default=0.0):
@@ -123,6 +137,13 @@ def format_streamer_columns(row, streamer_columns, streamer_count_columns):
     return " ".join(parts) if parts else "-"
 
 
+def format_other_process(row):
+    process_id = inum(row, "top_other_process_id")
+    process_ms = fnum(row, "top_other_process_ms")
+    name = OTHER_PROCESS_ID_NAMES.get(process_id, f"id{process_id}")
+    return f"{name}:{process_ms:.1f}"
+
+
 def classify_hitch(row, frame, dt_ms, at_crossing, object_delta, has_attribution, streamer_columns):
     if frame <= 4:
         return "BOOT"
@@ -169,6 +190,7 @@ def main() -> int:
         print(f"{path}: no data rows (capture may have been killed before a flush)")
         return 1
     has_attribution = ATTRIBUTION_COLUMNS.issubset(fieldnames)
+    has_other_process = {"top_other_process_ms", "top_other_process_id"}.issubset(fieldnames)
     streamer_columns = available_streamer_columns(fieldnames)
     streamer_count_columns = available_streamer_count_columns(fieldnames)
 
@@ -194,10 +216,11 @@ def main() -> int:
     print(f"\n--- hitches > {thr:.0f}ms ---")
     base_header = f"{'frame':>7} {'dt_ms':>8} {'cell':>7} {'atc':>4} {'dobj':>6} {'ddraw':>6}"
     if has_attribution:
+        other_header = f" {'top_other':>42}" if has_other_process else ""
         if streamer_columns or streamer_count_columns:
-            print(f"{base_header} {'cooks':>5} {'vcom':>5} {'vc_ms':>8} {'wrk':>4}  streamer_attr  class")
+            print(f"{base_header} {'cooks':>5} {'vcom':>5} {'vc_ms':>8} {'wrk':>4}{other_header}  streamer_attr  class")
         else:
-            print(f"{base_header} {'cooks':>5} {'vcom':>5} {'vc_ms':>8} {'wrk':>4}  class")
+            print(f"{base_header} {'cooks':>5} {'vcom':>5} {'vc_ms':>8} {'wrk':>4}{other_header}  class")
     else:
         print(f"{base_header}  class")
     for i in range(n):
@@ -216,6 +239,8 @@ def main() -> int:
                     f"{'Y' if atc else 'n':>4} {dobj:>6} {ddraw:>6} "
                     f"{inum(r, 'collision_cooks'):>5} {inum(r, 'visual_commits'):>5} "
                     f"{fnum(r, 'visual_commit_ms'):>8.1f} {inum(r, 'worker_count'):>4}")
+            if has_other_process:
+                base = f"{base} {format_other_process(r):>42}"
             if streamer_columns or streamer_count_columns:
                 print(f"{base}  {format_streamer_columns(r, streamer_columns, streamer_count_columns):<112}  {cls}")
             else:
@@ -241,6 +266,11 @@ def main() -> int:
             names.extend(column for column, _short_name in streamer_count_columns)
             print(f"render-streamer → dominant new *_ms column >= {STREAMER_DOMINANCE_RATIO:.0%} of dt "
                   f"(columns present: {', '.join(names)}).")
+        if has_other_process:
+            legend = ", ".join(f"{key}={value}" for key, value in OTHER_PROCESS_ID_NAMES.items())
+            print("other → top_other_process_id/top_other_process_ms name the largest instrumented "
+                  "non-streamer _process from the elapsed frame; compare top_other_process_ms to dt_ms.")
+            print(f"top_other_process_id legend: {legend}.")
     else:
         print("legacy CSV: visual-commit uses object delta; crossing-collision uses hitch_at_crossing.")
     print("New 'other' hitches = next target.")

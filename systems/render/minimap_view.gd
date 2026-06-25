@@ -11,6 +11,7 @@ const HEADING_COLOR: Color = Color(0.86, 0.96, 1.0, 0.88)
 
 var _route: Resource = null
 var _vehicle: Node = null
+var _process_usec_last_frame: int = 0
 
 
 func _ready() -> void:
@@ -26,6 +27,16 @@ func configure(route: Resource, vehicle: Node) -> void:
 
 
 func _process(_delta: float) -> void:
+	var process_start_usec: int = Time.get_ticks_usec()
+	_process_body()
+	_process_usec_last_frame = maxi(Time.get_ticks_usec() - process_start_usec, 0)
+
+
+func process_usec_last_frame() -> int:
+	return _process_usec_last_frame
+
+
+func _process_body() -> void:
 	if _route != null and _vehicle != null:
 		queue_redraw()
 

@@ -15,6 +15,12 @@ func _ready() -> void:
 	add_child(_panel)
 
 
+func process_usec_last_frame() -> int:
+	if _panel != null and _panel.has_method("process_usec_last_frame"):
+		return int(_panel.call("process_usec_last_frame"))
+	return 0
+
+
 class _ControlsHintPanel:
 	extends Control
 
@@ -30,9 +36,20 @@ class _ControlsHintPanel:
 	var _elapsed: float = 0.0
 	var _fading: bool = false
 	var _alpha: float = 1.0
+	var _process_usec_last_frame: int = 0
 
 
 	func _process(delta: float) -> void:
+		var process_start_usec: int = Time.get_ticks_usec()
+		_process_body(delta)
+		_process_usec_last_frame = maxi(Time.get_ticks_usec() - process_start_usec, 0)
+
+
+	func process_usec_last_frame() -> int:
+		return _process_usec_last_frame
+
+
+	func _process_body(delta: float) -> void:
 		if _alpha > 0.0:
 			_elapsed += delta
 			if not _fading and (_drive_input_pressed() or _elapsed >= GameConfig.controls_hint_hud_auto_dismiss_seconds):
