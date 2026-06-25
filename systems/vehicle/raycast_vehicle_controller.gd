@@ -9,6 +9,7 @@ const STREAMING_COLLISION_RELEASE_RAY_DOWN_LENGTH_M: float = 512.0
 const STREAMING_COLLISION_RELEASE_SETTLE_TICKS: int = 2
 const STREAMING_COLLISION_RELEASE_STABILIZE_TICKS: int = 36
 const STREAMING_COLLISION_RELEASE_MIN_UP_DOT: float = 0.85
+const WHEEL_COUNT: int = 4
 
 class SurfaceSnap:
 	var id: StringName = &"packed_dirt"
@@ -23,6 +24,9 @@ class SurfaceSnap:
 
 var _body: RigidBody3D = null
 var _wheel_rays: Array[RayCast3D] = []
+var _wheel_compressions: Array[float] = []
+var _wheel_force_positions: Array[Vector3] = []
+var _wheel_contacts: Array[bool] = []
 var _pending_input: RefCounted = RaycastVehicleInputScript.new()
 var _state: RefCounted = RaycastVehicleStateScript.new()
 var _was_flipped: bool = false
@@ -72,6 +76,7 @@ func _ready() -> void:
 	_reset_surface_cache()
 	_reset_recovery_history()
 	_build_physics_body()
+	_reset_wheel_force_scratch()
 	GameManager.register_vehicle(self)
 
 
@@ -233,6 +238,19 @@ func _add_wheel_ray(wheel_name: StringName, local_position: Vector3) -> void:
 	_wheel_rays.append(ray)
 
 
+func _reset_wheel_force_scratch() -> void:
+	_wheel_compressions.clear()
+	_wheel_force_positions.clear()
+	_wheel_contacts.clear()
+	_wheel_compressions.resize(WHEEL_COUNT)
+	_wheel_force_positions.resize(WHEEL_COUNT)
+	_wheel_contacts.resize(WHEEL_COUNT)
+	for i in range(WHEEL_COUNT):
+		_wheel_compressions[i] = 0.0
+		_wheel_force_positions[i] = Vector3.ZERO
+		_wheel_contacts[i] = false
+
+
 func _apply_wheel_forces() -> void:
 	var up: Vector3 = _body.global_transform.basis.y.normalized()
 	var ray_length: float = GameConfig.susp_rest_length + GameConfig.susp_travel + GameConfig.wheel_radius
@@ -247,9 +265,9 @@ func _apply_wheel_forces() -> void:
 	var dust_residue_sum: float = 0.0
 	var wetness_residue_sum: float = 0.0
 	var bog_enabled: bool = false
-	var wheel_compressions: Array[float] = [0.0, 0.0, 0.0, 0.0]
-	var wheel_force_positions: Array[Vector3] = [Vector3.ZERO, Vector3.ZERO, Vector3.ZERO, Vector3.ZERO]
-	var wheel_contacts: Array[bool] = [false, false, false, false]
+	var wheel_compressions: Array[float] = _wheel_compressions
+	var wheel_force_positions: Array[Vector3] = _wheel_force_positions
+	var wheel_contacts: Array[bool] = _wheel_contacts
 	var wheel_contact: Array[bool] = _state.wheel_contact
 	var wheel_surface: Array[StringName] = _state.wheel_surface
 	var wheel_hit_points: Array[Vector3] = _state.wheel_hit_point
@@ -257,6 +275,8 @@ func _apply_wheel_forces() -> void:
 		var ray: RayCast3D = _wheel_rays[i]
 		ray.force_raycast_update()
 		var has_contact: bool = ray.is_colliding()
+		wheel_compressions[i] = 0.0
+		wheel_force_positions[i] = Vector3.ZERO
 		wheel_contacts[i] = has_contact
 		wheel_contact[i] = has_contact
 		if not has_contact:
