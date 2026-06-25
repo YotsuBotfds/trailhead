@@ -499,9 +499,11 @@ const MACRO_ALBEDO_ORIGIN_XZ_UNIFORM: StringName = &"macro_albedo_origin_xz"
 const MACRO_ALBEDO_SIZE_XZ_UNIFORM: StringName = &"macro_albedo_size_xz"
 const USE_MACRO_ALBEDO_UNIFORM: StringName = &"use_macro_albedo"
 const MACRO_ALBEDO_STRENGTH_UNIFORM: StringName = &"macro_albedo_strength"
+const MACRO_ALBEDO_CHROMA_STRENGTH_UNIFORM: StringName = &"macro_albedo_chroma_strength"
 const MACRO_ALBEDO_REGION_ORIGIN_XZ: Vector2 = Vector2.ZERO
 const MACRO_ALBEDO_REGION_SIZE_XZ: Vector2 = Vector2(5500.0, 5700.0)
 const MACRO_ALBEDO_STRENGTH: float = 0.35
+const MACRO_ALBEDO_CHROMA_STRENGTH: float = 0.08
 const ZION_SANDSTONE_COLOR_UNIFORM: StringName = &"zion_sandstone_color"
 const ZION_SAND_COLOR_UNIFORM: StringName = &"zion_sand_color"
 const ZION_STRATA_DARK_COLOR_UNIFORM: StringName = &"zion_strata_dark_color"
@@ -1836,12 +1838,12 @@ static func _apply_zion_surface_index_tuning(material: ShaderMaterial) -> void:
 	material.set_shader_parameter(ZION_FLOOR_SEDIMENT_COLOR_UNIFORM, Color(0.55, 0.34, 0.24, 1.0))
 	material.set_shader_parameter(ZION_FLOOR_SCATTER_STRENGTH_UNIFORM, 0.80)
 	material.set_shader_parameter(ZION_FLOOR_DETILE_STRENGTH_UNIFORM, 0.24)
-	material.set_shader_parameter(ZION_RIPARIAN_TINT_COLOR_UNIFORM, Color(0.31, 0.44, 0.24, 1.0))
-	material.set_shader_parameter(ZION_RIPARIAN_TINT_STRENGTH_UNIFORM, 0.24)
-	material.set_shader_parameter(ZION_RIPARIAN_OUTER_M_UNIFORM, 130.0)
-	material.set_shader_parameter(ZION_BANK_WET_WIDTH_UNIFORM, 14.0)
-	material.set_shader_parameter(ZION_BANK_WET_DARKNESS_UNIFORM, 0.16)
-	material.set_shader_parameter(ZION_BANK_WET_ROUGHNESS_UNIFORM, 0.36)
+	material.set_shader_parameter(ZION_RIPARIAN_TINT_COLOR_UNIFORM, Color(0.26, 0.49, 0.18, 1.0))
+	material.set_shader_parameter(ZION_RIPARIAN_TINT_STRENGTH_UNIFORM, 0.30)
+	material.set_shader_parameter(ZION_RIPARIAN_OUTER_M_UNIFORM, 96.0)
+	material.set_shader_parameter(ZION_BANK_WET_WIDTH_UNIFORM, 16.0)
+	material.set_shader_parameter(ZION_BANK_WET_DARKNESS_UNIFORM, 0.32)
+	material.set_shader_parameter(ZION_BANK_WET_ROUGHNESS_UNIFORM, 0.18)
 	material.set_shader_parameter(ZION_VARNISH_COLOR_UNIFORM, Color(0.13, 0.08, 0.06, 1.0))
 	material.set_shader_parameter(ZION_VARNISH_STRENGTH_UNIFORM, 0.5)
 	material.set_shader_parameter(ZION_VARNISH_WALL_THRESHOLD_UNIFORM, 0.30)
@@ -1861,6 +1863,7 @@ static func _apply_zion_surface_index_tuning(material: ShaderMaterial) -> void:
 	material.set_shader_parameter(MACRO_ALBEDO_ORIGIN_XZ_UNIFORM, MACRO_ALBEDO_REGION_ORIGIN_XZ)
 	material.set_shader_parameter(MACRO_ALBEDO_SIZE_XZ_UNIFORM, MACRO_ALBEDO_REGION_SIZE_XZ)
 	material.set_shader_parameter(MACRO_ALBEDO_STRENGTH_UNIFORM, MACRO_ALBEDO_STRENGTH)
+	material.set_shader_parameter(MACRO_ALBEDO_CHROMA_STRENGTH_UNIFORM, MACRO_ALBEDO_CHROMA_STRENGTH)
 	material.set_shader_parameter(NORMAL_ARRAY_STRENGTH_UNIFORM, 0.36)
 	# FLOOR-PBR: real CC0 ambientCG albedo+normal triplanar detail on the drivable floor.
 	# Defaults match the shader; bound explicitly so the values are inspectable. The floor

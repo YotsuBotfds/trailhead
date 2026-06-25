@@ -13,6 +13,7 @@ uniform bool use_albedo_array = false;
 uniform bool use_normal_array = false;
 uniform bool use_macro_albedo = false;
 uniform float macro_albedo_strength = 0.35;
+uniform float macro_albedo_chroma_strength = 0.0;
 uniform float normal_array_strength = 0.36;
 uniform vec4 surface_color_0 : source_color = vec4(0.50, 0.47, 0.38, 1.0);
 uniform vec4 surface_color_1 : source_color = vec4(0.86, 0.86, 0.82, 1.0);
@@ -103,13 +104,13 @@ uniform vec4 zion_floor_sand_patch_color : source_color = vec4(0.74, 0.66, 0.52,
 uniform float zion_floor_scatter_strength = 0.80;
 uniform float zion_floor_detile_strength = 0.24;
 uniform float zion_floor_patch_strength = 0.34;
-uniform vec4 zion_riparian_tint_color : source_color = vec4(0.31, 0.44, 0.24, 1.0);
-uniform float zion_riparian_tint_strength = 0.24;
-uniform float zion_riparian_inner_m = 12.0;
-uniform float zion_riparian_outer_m = 130.0;
-uniform float zion_bank_wet_width_m = 14.0;
-uniform float zion_bank_wet_darkness = 0.16;
-uniform float zion_bank_wet_roughness = 0.36;
+uniform vec4 zion_riparian_tint_color : source_color = vec4(0.26, 0.49, 0.18, 1.0);
+uniform float zion_riparian_tint_strength = 0.30;
+uniform float zion_riparian_inner_m = 10.0;
+uniform float zion_riparian_outer_m = 96.0;
+uniform float zion_bank_wet_width_m = 16.0;
+uniform float zion_bank_wet_darkness = 0.32;
+uniform float zion_bank_wet_roughness = 0.18;
 uniform vec4 zion_river_segment_0 = vec4(910.0, 500.0, 900.0, 700.0);
 uniform vec4 zion_river_segment_1 = vec4(900.0, 700.0, 920.0, 900.0);
 uniform vec4 zion_river_segment_2 = vec4(920.0, 900.0, 1000.0, 1000.0);
@@ -778,7 +779,7 @@ void fragment() {
 	float river_corridor_mask = 1.0 - smoothstep(zion_riparian_inner_m, zion_riparian_outer_m, river_distance_m);
 	float low_river_floor_mask = (1.0 - sandstone_mask) * (1.0 - smoothstep(zion_sand_height_end - 1.0, zion_sand_height_end + 7.0, world_y));
 	float riparian_tint_mask = river_corridor_mask * max(low_flat_mask, low_river_floor_mask * river_corridor_mask);
-	float bank_wet_mask = smoothstep(3.5, 7.0, river_distance_m) * (1.0 - smoothstep(7.0, zion_bank_wet_width_m, river_distance_m)) * low_river_floor_mask;
+	float bank_wet_mask = smoothstep(6.0, 9.0, river_distance_m) * (1.0 - smoothstep(9.0, zion_bank_wet_width_m, river_distance_m)) * low_river_floor_mask;
 	zion_albedo = mix(zion_albedo, zion_sand_color.rgb, low_flat_mask * 0.30);
 	zion_albedo = mix(zion_albedo, zion_floor_cool_sand_color.rgb, low_flat_mask * zion_floor_deorange_strength);
 	float floor_macro = hash21_smooth(world_xz * 0.010 + vec2(8.0, 2.0));
@@ -928,13 +929,20 @@ void fragment() {
 		float base_luma = max(luminance(ALBEDO), 0.035);
 		float macro_luma_ratio = clamp(macro_luma / base_luma, 0.55, 1.45);
 		ALBEDO = clamp(mix(ALBEDO, ALBEDO * macro_luma_ratio, macro_albedo_strength), vec3(0.0), vec3(1.0));
+		vec3 macro_chroma_ratio = clamp(macro_albedo / vec3(max(macro_luma, 0.035)), vec3(0.72), vec3(1.28));
+		vec3 macro_chroma_albedo = clamp(ALBEDO * macro_chroma_ratio, vec3(0.0), vec3(1.0));
+		float chroma_luma = max(luminance(macro_chroma_albedo), 0.035);
+		float post_luma = max(luminance(ALBEDO), 0.035);
+		macro_chroma_albedo = clamp(macro_chroma_albedo * (post_luma / chroma_luma), vec3(0.0), vec3(1.0));
+		ALBEDO = clamp(mix(ALBEDO, macro_chroma_albedo, clamp(macro_albedo_chroma_strength, 0.0, 1.0)), vec3(0.0), vec3(1.0));
 	}
 	float bleach_noise = hash21_smooth(world_xz * 0.018 + vec2(6.0, 14.0)) * 0.58
 	                   + hash21_smooth(world_xz * 0.047 + vec2(1.0, 5.0)) * 0.42;
 	float bleach_blob = smoothstep(0.50, 0.84, bleach_noise);
 	float bleach_mask = smoothstep(zion_bleach_height_start, zion_bleach_height_start + 210.0, world_y) * cliff_mask * (0.42 + bleach_blob * 0.58);
 	ALBEDO = mix(ALBEDO, zion_bleach_color.rgb, bleach_mask * zion_bleach_strength);
-	ALBEDO = mix(ALBEDO, ALBEDO * (1.0 - zion_bank_wet_darkness), bank_wet_mask);
+	vec3 bank_wet_albedo = clamp(ALBEDO * (1.0 - zion_bank_wet_darkness) + zion_wetrock_moss_color.rgb * 0.08, vec3(0.0), vec3(1.0));
+	ALBEDO = mix(ALBEDO, bank_wet_albedo, bank_wet_mask);
 	// W6-SURFACE-DETAIL: surface micro-relief so raking golden-hour light catches
 	// real texture. A procedural micro-normal (hash only, no extra texture fetches)
 	// perturbs the world-space geometric normal in the surface tangent plane, and a
