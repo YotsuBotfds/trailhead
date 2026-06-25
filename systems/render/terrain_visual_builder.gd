@@ -200,7 +200,7 @@ const REGION_MANIFEST_FILE: String = "collision_tiles_manifest.json"
 const REGION_TILE_SIDE_CAR_FILE: String = "tile.json"
 const REGION_TILE_HEIGHTMAP_FILE: String = "heightmap.bin"
 const REGION_TILE_SURFACE_ID_FILE: String = "surface_id.png"
-const REGION_TILE_DATA_CACHE_CAPACITY: int = 24
+const REGION_TILE_DATA_CACHE_CAPACITY: int = 100
 const SURFACE_INDEX_TILE_MATERIAL_CACHE_CAPACITY: int = 48
 const PIPELINE_WARMUP_TERRAIN_MATERIAL_COUNT_META: StringName = &"trailhead_pipeline_warmup_terrain_material_count"
 const PIPELINE_WARMUP_FOLIAGE_LOD_COUNT_META: StringName = &"trailhead_pipeline_warmup_foliage_lod_count"
@@ -2599,8 +2599,9 @@ static func _clone_region_tile_data(source_tile_data: RegionTileData) -> RegionT
 	tile_data.heightmap_path = source_tile_data.heightmap_path
 	tile_data.surface_id_path = source_tile_data.surface_id_path
 	tile_data.heights = source_tile_data.heights
-	if source_tile_data.surface_image != null:
-		tile_data.surface_image = source_tile_data.surface_image.duplicate() as Image
+	# Surface readers only sample pixels or create textures; sharing avoids a deep Image copy
+	# per cache hit.
+	tile_data.surface_image = source_tile_data.surface_image
 	return tile_data
 
 
