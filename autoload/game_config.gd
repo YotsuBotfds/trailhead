@@ -84,7 +84,11 @@ var render_visual_fullres_radius_cells: int = 2
 # render_visual_detail_radius; cells outside the detail radius do not get foliage
 # nodes and render through MidLOD/HLOD terrain only.
 var render_visual_foliage_radius_cells: int = 2
-var terrain_lod_fade_enabled: bool = true
+# DISABLED 2026-06-25: FADE_SELF dither on opaque terrain risks a transparent void at the
+# detail/mid/HLOD handoff (owner saw "void between chunks" in motion), and it did NOT address
+# the owner's actual pop (which is tiles STREAMING in, not LOD-level transitions). Hard cuts
+# (known-good) restored. Revisit only with FADE_DEPENDENCIES + proven range overlap. See T-124.
+var terrain_lod_fade_enabled: bool = false
 var terrain_lod_fade_margin: float = 4.0
 var render_visual_foliage_subcommits_per_frame: int = 6
 # High-tier foliage defaults for the 4090/review lane. Lower these together on weaker
