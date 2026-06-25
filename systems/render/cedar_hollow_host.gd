@@ -78,6 +78,9 @@ const DEMO_PROP_VISTA_ANCHOR_XZ: Vector2 = Vector2(1900.0, 1650.0)
 const WORLD_REGION_ID_META: StringName = &"trailhead_world_region_id"
 const GAMEPAD_DEVICE_ANY: int = -1
 const TRACK_APPLY_CELLS_PER_FRAME: int = 1
+const AUTODRIVE_USER_ARG: String = "--autodrive"
+const AUTODRIVE_STEER_PERIOD_SECONDS: float = 9.5
+const AUTODRIVE_STEER_STRENGTH: float = 0.18
 const PERF_LOG_USER_ARG: String = "--perf-log"
 const PERF_LOG_DEFAULT_DIR: String = "user://trailhead/perf"
 const PERF_LOG_FLUSH_ROW_COUNT: int = 120
@@ -183,6 +186,8 @@ var _cold_start_streaming_released: bool = false
 var _cold_start_hold_elapsed: float = 0.0
 var _audio_rig: Node = null
 var _fps_cap_enabled: bool = true
+var _autodrive_enabled: bool = false
+var _autodrive_elapsed_since_release: float = 0.0
 var _perf_log_active: bool = false
 var _perf_log_finalized: bool = false
 var _perf_log_absolute_path: String = ""
@@ -202,6 +207,7 @@ func _ready() -> void:
 	RenderRuntimeConfigScript.apply_to(self)
 	_sync_fps_cap_state_from_runtime()
 	_apply_render_quality()
+	_setup_autodrive()
 	_setup_perf_logging()
 	_ensure_default_input_map()
 	_setup_surface_map()
@@ -347,6 +353,13 @@ func _apply_fps_cap_state() -> void:
 
 func _windowed_rendering_enabled() -> bool:
 	return DisplayServer.get_name() != &"headless"
+
+
+func _setup_autodrive() -> void:
+	for arg in OS.get_cmdline_user_args():
+		if String(arg) == AUTODRIVE_USER_ARG:
+			_autodrive_enabled = true
+			return
 
 
 func _ensure_default_input_map() -> void:
@@ -1116,6 +1129,9 @@ func _setup_frequency_input_panel() -> void:
 
 
 func _update_vehicle_input() -> void:
+	if _autodrive_enabled:
+		_update_autodrive_vehicle_input()
+		return
 	var forward_throttle: float = Input.get_action_strength("throttle")
 	var reverse_throttle: float = Input.get_action_strength("reverse")
 	var brake_action: float = Input.get_action_strength("brake")
@@ -1140,6 +1156,28 @@ func _update_vehicle_input() -> void:
 		_drive_started = true
 		if _cinematic_tour_active:
 			_exit_cinematic_tour()
+
+
+func _update_autodrive_vehicle_input() -> void:
+	if not _cold_start_streaming_released:
+		_autodrive_elapsed_since_release = 0.0
+		_vehicle_input.set("throttle", 0.0)
+		_vehicle_input.set("brake", 0.0)
+		_vehicle_input.set("steer", 0.0)
+		_vehicle_input.set("ebrake", false)
+		_vehicle_input.set("self_right", false)
+		return
+	var elapsed_since_release: float = _autodrive_elapsed_since_release
+	var steer: float = sin(elapsed_since_release * TAU / AUTODRIVE_STEER_PERIOD_SECONDS) * AUTODRIVE_STEER_STRENGTH
+	_autodrive_elapsed_since_release += GameConfig.FIXED_DT
+	_vehicle_input.set("throttle", 1.0)
+	_vehicle_input.set("brake", 0.0)
+	_vehicle_input.set("steer", clampf(steer, -1.0, 1.0))
+	_vehicle_input.set("ebrake", false)
+	_vehicle_input.set("self_right", false)
+	_drive_started = true
+	if _cinematic_tour_active:
+		_exit_cinematic_tour()
 
 
 func _update_cinematic_tour_input() -> void:
