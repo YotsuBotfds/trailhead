@@ -28,12 +28,15 @@ const streaming_collision_freeze_max_ticks: int = 600
 const DIRECTIONAL_SHADOW_ORTHOGONAL: int = 0
 const DIRECTIONAL_SHADOW_PARALLEL_2_SPLITS: int = 1
 const DIRECTIONAL_SHADOW_PARALLEL_4_SPLITS: int = 2
+const RENDER_SCREEN_SPACE_GI_TIER_LOW: int = 0
+const RENDER_SCREEN_SPACE_GI_TIER_HIGH: int = 1
 # 3D scaling modes mirror Viewport.Scaling3DMode exactly (Godot 4.6). Referenced
 # via the Viewport enum so a 4.x rename is a compile error, not a silent miss.
 const SCALING_3D_MODE_BILINEAR: int = Viewport.SCALING_3D_MODE_BILINEAR
 const SCALING_3D_MODE_FSR: int = Viewport.SCALING_3D_MODE_FSR
 const SCALING_3D_MODE_FSR2: int = Viewport.SCALING_3D_MODE_FSR2
 
+var render_screen_space_gi_tier: int = RENDER_SCREEN_SPACE_GI_TIER_HIGH
 var render_frame_cap_enabled: bool = true
 var render_max_fps: int = 60
 var render_visual_tile_commits_per_frame: int = 4
@@ -421,14 +424,15 @@ var atmosphere_grade_brightness: float = 1.00
 var atmosphere_grade_color_correction_path: String = ""
 var atmosphere_auto_exposure_enabled: bool = false
 var atmosphere_ssao_enabled: bool = true
-var atmosphere_ssao_radius: float = 0.10
+var atmosphere_ssao_radius: float = 0.75
+var atmosphere_ssao_low_tier_radius: float = 0.10
 var atmosphere_ssao_intensity: float = 1.70
 var atmosphere_ssao_power: float = 2.0
 var atmosphere_ssao_detail: float = 0.6
 var atmosphere_ssao_light_affect: float = 0.38
-var atmosphere_ssil_enabled: bool = false
-var atmosphere_ssil_radius: float = 1.0
-var atmosphere_ssil_intensity: float = 1.0
+var atmosphere_ssil_enabled: bool = true
+var atmosphere_ssil_radius: float = 8.0
+var atmosphere_ssil_intensity: float = 1.7
 var atmosphere_ssil_sharpness: float = 0.98
 var atmosphere_glow_strength_dusk: float = 0.22
 var atmosphere_glow_hdr_threshold: float = 1.15
@@ -859,6 +863,28 @@ var pd_waypoint_air_throttle: float = 0.05
 var pd_waypoint_intermediate_radius: float = 0.45
 
 var default_landmark_radius: float = 0.4
+
+
+func render_screen_space_gi_high_tier_enabled() -> bool:
+	return render_screen_space_gi_tier >= RENDER_SCREEN_SPACE_GI_TIER_HIGH
+
+
+func resolved_atmosphere_ssao_radius() -> float:
+	if render_screen_space_gi_high_tier_enabled():
+		return atmosphere_ssao_radius
+	return atmosphere_ssao_low_tier_radius
+
+
+func resolved_atmosphere_ssil_enabled() -> bool:
+	return atmosphere_ssil_enabled and render_screen_space_gi_high_tier_enabled()
+
+
+func resolved_atmosphere_ssil_radius() -> float:
+	return atmosphere_ssil_radius
+
+
+func resolved_atmosphere_ssil_intensity() -> float:
+	return atmosphere_ssil_intensity
 
 
 func get_fov_for_speed(speed: float) -> float:

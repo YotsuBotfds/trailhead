@@ -1892,15 +1892,13 @@ func _require_lighting_bar_environment(world_environment: WorldEnvironment, cont
 		_errors.append(context + " GoldenHourEnvironment should keep SSAO enabled in GameConfig")
 	if not environment.ssao_enabled:
 		_errors.append(context + " GoldenHourEnvironment should keep SSAO enabled on the environment")
-	_require_float_close(context + " GoldenHourEnvironment SSAO radius", environment.ssao_radius, GameConfig.atmosphere_ssao_radius, LIGHTING_BAR_TOLERANCE)
+	_require_float_close(context + " GoldenHourEnvironment SSAO radius", environment.ssao_radius, GameConfig.resolved_atmosphere_ssao_radius(), LIGHTING_BAR_TOLERANCE)
 	_require_float_close(context + " GoldenHourEnvironment SSAO intensity", environment.ssao_intensity, GameConfig.atmosphere_ssao_intensity, LIGHTING_BAR_TOLERANCE)
 	_require_float_close(context + " GoldenHourEnvironment SSAO light affect", environment.ssao_light_affect, GameConfig.atmosphere_ssao_light_affect, LIGHTING_BAR_TOLERANCE)
-	if GameConfig.atmosphere_ssil_enabled:
-		_errors.append(context + " GoldenHourEnvironment should keep SSIL disabled in GameConfig")
-	if environment.ssil_enabled:
-		_errors.append(context + " GoldenHourEnvironment should keep SSIL disabled on the environment")
-	_require_float_close(context + " GoldenHourEnvironment SSIL radius", environment.ssil_radius, GameConfig.atmosphere_ssil_radius, LIGHTING_BAR_TOLERANCE)
-	_require_float_close(context + " GoldenHourEnvironment SSIL intensity", environment.ssil_intensity, GameConfig.atmosphere_ssil_intensity, LIGHTING_BAR_TOLERANCE)
+	if environment.ssil_enabled != GameConfig.resolved_atmosphere_ssil_enabled():
+		_errors.append(context + " GoldenHourEnvironment SSIL enabled should follow the render screen-space GI tier")
+	_require_float_close(context + " GoldenHourEnvironment SSIL radius", environment.ssil_radius, GameConfig.resolved_atmosphere_ssil_radius(), LIGHTING_BAR_TOLERANCE)
+	_require_float_close(context + " GoldenHourEnvironment SSIL intensity", environment.ssil_intensity, GameConfig.resolved_atmosphere_ssil_intensity(), LIGHTING_BAR_TOLERANCE)
 	_require_float_close(context + " GoldenHourEnvironment SSIL sharpness", environment.ssil_sharpness, GameConfig.atmosphere_ssil_sharpness, LIGHTING_BAR_TOLERANCE)
 	if environment.sdfgi_enabled:
 		_errors.append(context + " GoldenHourEnvironment should keep SDFGI disabled")

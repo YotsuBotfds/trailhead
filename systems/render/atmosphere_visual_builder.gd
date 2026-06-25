@@ -226,14 +226,14 @@ static func _apply_color_grade(environment: Environment) -> void:
 static func _apply_screen_space_grounding(environment: Environment) -> void:
 	environment.sdfgi_enabled = false
 	environment.ssao_enabled = GameConfig.atmosphere_ssao_enabled
-	environment.ssao_radius = maxf(GameConfig.atmosphere_ssao_radius, 0.0)
+	environment.ssao_radius = maxf(GameConfig.resolved_atmosphere_ssao_radius(), 0.0)
 	environment.ssao_intensity = maxf(GameConfig.atmosphere_ssao_intensity, 0.0)
 	environment.ssao_power = maxf(GameConfig.atmosphere_ssao_power, 0.0)
 	environment.ssao_detail = maxf(GameConfig.atmosphere_ssao_detail, 0.0)
 	environment.ssao_light_affect = clampf(GameConfig.atmosphere_ssao_light_affect, 0.0, 1.0)
-	environment.ssil_enabled = GameConfig.atmosphere_ssil_enabled
-	environment.ssil_radius = maxf(GameConfig.atmosphere_ssil_radius, 0.0)
-	environment.ssil_intensity = maxf(GameConfig.atmosphere_ssil_intensity, 0.0)
+	environment.ssil_enabled = GameConfig.resolved_atmosphere_ssil_enabled()
+	environment.ssil_radius = maxf(GameConfig.resolved_atmosphere_ssil_radius(), 0.0)
+	environment.ssil_intensity = maxf(GameConfig.resolved_atmosphere_ssil_intensity(), 0.0)
 	environment.ssil_sharpness = clampf(GameConfig.atmosphere_ssil_sharpness, 0.0, 1.0)
 
 

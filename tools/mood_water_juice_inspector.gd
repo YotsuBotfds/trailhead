@@ -76,6 +76,7 @@ func _inspect() -> void:
 	var world_environment: WorldEnvironment = _require_node(_scene_root, "GoldenHourEnvironment") as WorldEnvironment
 	var sun: DirectionalLight3D = _require_node(_scene_root, "GoldenHourSun") as DirectionalLight3D
 	_inspect_atmosphere(world_environment, sun)
+	_inspect_screen_space_gi_tier_guard(world_environment, sun)
 	_inspect_viewport_antialiasing()
 	_inspect_mood_toggle(world_environment, sun)
 	_inspect_dust_and_tilt_shift()
@@ -121,19 +122,17 @@ func _inspect_atmosphere(world_environment: WorldEnvironment, sun: DirectionalLi
 		_errors.append("atmosphere should keep SSAO enabled in GameConfig")
 	if not environment.ssao_enabled:
 		_errors.append("atmosphere should keep SSAO enabled on the environment")
-	if absf(environment.ssao_radius - maxf(GameConfig.atmosphere_ssao_radius, 0.0)) > FLOAT_EPSILON:
+	if absf(environment.ssao_radius - maxf(GameConfig.resolved_atmosphere_ssao_radius(), 0.0)) > FLOAT_EPSILON:
 		_errors.append("atmosphere SSAO radius should follow GameConfig")
 	if absf(environment.ssao_intensity - maxf(GameConfig.atmosphere_ssao_intensity, 0.0)) > FLOAT_EPSILON:
 		_errors.append("atmosphere SSAO intensity should follow GameConfig")
 	if absf(environment.ssao_light_affect - clampf(GameConfig.atmosphere_ssao_light_affect, 0.0, 1.0)) > FLOAT_EPSILON:
 		_errors.append("atmosphere SSAO light affect should follow GameConfig")
-	if GameConfig.atmosphere_ssil_enabled:
-		_errors.append("atmosphere should keep SSIL disabled in GameConfig")
-	if environment.ssil_enabled:
-		_errors.append("atmosphere should keep SSIL disabled on the environment")
-	if absf(environment.ssil_radius - maxf(GameConfig.atmosphere_ssil_radius, 0.0)) > FLOAT_EPSILON:
+	if environment.ssil_enabled != GameConfig.resolved_atmosphere_ssil_enabled():
+		_errors.append("atmosphere SSIL enabled should follow the render screen-space GI tier")
+	if absf(environment.ssil_radius - maxf(GameConfig.resolved_atmosphere_ssil_radius(), 0.0)) > FLOAT_EPSILON:
 		_errors.append("atmosphere SSIL radius should follow GameConfig")
-	if absf(environment.ssil_intensity - maxf(GameConfig.atmosphere_ssil_intensity, 0.0)) > FLOAT_EPSILON:
+	if absf(environment.ssil_intensity - maxf(GameConfig.resolved_atmosphere_ssil_intensity(), 0.0)) > FLOAT_EPSILON:
 		_errors.append("atmosphere SSIL intensity should follow GameConfig")
 	if absf(environment.ssil_sharpness - clampf(GameConfig.atmosphere_ssil_sharpness, 0.0, 1.0)) > FLOAT_EPSILON:
 		_errors.append("atmosphere SSIL sharpness should follow GameConfig")
@@ -159,6 +158,27 @@ func _inspect_atmosphere(world_environment: WorldEnvironment, sun: DirectionalLi
 		_errors.append("GoldenHourSun directional shadow mode should follow GameConfig")
 	if sun.directional_shadow_blend_splits:
 		_errors.append("GoldenHourSun should not blend shadow splits")
+
+
+func _inspect_screen_space_gi_tier_guard(world_environment: WorldEnvironment, sun: DirectionalLight3D) -> void:
+	if world_environment == null or world_environment.environment == null:
+		return
+	var environment: Environment = world_environment.environment
+	var previous_tier: int = GameConfig.render_screen_space_gi_tier
+	GameConfig.render_screen_space_gi_tier = GameConfig.RENDER_SCREEN_SPACE_GI_TIER_LOW
+	AtmosphereVisualBuilderScript.apply_mood(world_environment, sun, AtmosphereVisualBuilderScript.MOOD_DUSK)
+	if environment.ssil_enabled:
+		_errors.append("low screen-space GI tier should disable SSIL")
+	if absf(environment.ssao_radius - maxf(GameConfig.atmosphere_ssao_low_tier_radius, 0.0)) > FLOAT_EPSILON:
+		_errors.append("low screen-space GI tier should restore the small SSAO radius")
+	GameConfig.render_screen_space_gi_tier = GameConfig.RENDER_SCREEN_SPACE_GI_TIER_HIGH
+	AtmosphereVisualBuilderScript.apply_mood(world_environment, sun, AtmosphereVisualBuilderScript.MOOD_DUSK)
+	if environment.ssil_enabled != GameConfig.atmosphere_ssil_enabled:
+		_errors.append("high screen-space GI tier should honor GameConfig.atmosphere_ssil_enabled")
+	if absf(environment.ssao_radius - maxf(GameConfig.atmosphere_ssao_radius, 0.0)) > FLOAT_EPSILON:
+		_errors.append("high screen-space GI tier should use the canyon-scale SSAO radius")
+	GameConfig.render_screen_space_gi_tier = previous_tier
+	AtmosphereVisualBuilderScript.apply_mood(world_environment, sun, AtmosphereVisualBuilderScript.MOOD_DUSK)
 
 
 func _require_float_close(label: String, actual: float, expected: float, tolerance: float) -> void:
