@@ -5,9 +5,46 @@ class PipelineWarmupRoot:
 	extends Node3D
 
 	var release_after_frames: int = 2
+	var incremental_reveal_enabled: bool = false
+	var reveal_children_per_frame: int = 1
+	var _pending_reveal_children: Array[Node3D] = []
+	var _frames_after_reveal_complete: int = 0
 
 	func _ready() -> void:
+		if incremental_reveal_enabled:
+			set_process(true)
+			return
 		call_deferred("_release_after_render_warmup")
+
+	func _process(_delta: float) -> void:
+		if not incremental_reveal_enabled:
+			return
+		var revealed_count: int = 0
+		while revealed_count < reveal_children_per_frame and not _pending_reveal_children.is_empty():
+			var child: Node3D = _pending_reveal_children.pop_front()
+			if child == null or not is_instance_valid(child):
+				continue
+			child.visible = true
+			revealed_count += 1
+		if not _pending_reveal_children.is_empty():
+			_frames_after_reveal_complete = 0
+			return
+		_frames_after_reveal_complete += 1
+		if _frames_after_reveal_complete >= maxi(release_after_frames, 0):
+			queue_free()
+
+	func configure_incremental_reveal(children_per_frame: int) -> void:
+		incremental_reveal_enabled = true
+		reveal_children_per_frame = maxi(children_per_frame, 1)
+		set_process(true)
+
+	func add_warmup_child(child: Node3D) -> void:
+		if child == null:
+			return
+		if incremental_reveal_enabled:
+			child.visible = false
+			_pending_reveal_children.append(child)
+		add_child(child)
 
 	func _release_after_render_warmup() -> void:
 		for _frame_index in range(maxi(release_after_frames, 0)):
@@ -140,6 +177,7 @@ const PIPELINE_WARMUP_FOLIAGE_LOD_COUNT_META: StringName = &"trailhead_pipeline_
 const PIPELINE_WARMUP_TRANSIENT_META: StringName = &"trailhead_pipeline_warmup_transient"
 const PIPELINE_WARMUP_RELEASE_FRAMES_META: StringName = &"trailhead_pipeline_warmup_release_frames"
 const PIPELINE_WARMUP_RELEASE_AFTER_FRAMES: int = 2
+const PIPELINE_WARMUP_REVEAL_CHILDREN_PER_FRAME: int = 2
 const HEIGHTMAP_FLOAT_BYTE_SIZE: int = 4
 # Detail (near-vehicle) terrain visual sample step. The visual mesh is built by
 # striding through the full-resolution collision heightmap; step=5 downsamples
@@ -1102,6 +1140,11 @@ static func _add_region_pipeline_warmup(parent: Node3D) -> Node3D:
 	root.name = REGION_PIPELINE_WARMUP_ROOT_NAME
 	root.visible = true
 	root.release_after_frames = PIPELINE_WARMUP_RELEASE_AFTER_FRAMES
+	if DisplayServer.get_name() != "headless":
+		# Windowed startup was exposing every warmup draw path in the first visible frame,
+		# forcing a single giant GPU/material realization burst. The resources are still
+		# built now for cache safety; only render visibility is staggered.
+		root.configure_incremental_reveal(PIPELINE_WARMUP_REVEAL_CHILDREN_PER_FRAME)
 	parent.add_child(root)
 
 	var terrain_material_count: int = _add_terrain_pipeline_warmup(root)
@@ -1111,6 +1154,14 @@ static func _add_region_pipeline_warmup(parent: Node3D) -> Node3D:
 	root.set_meta(PIPELINE_WARMUP_TRANSIENT_META, true)
 	root.set_meta(PIPELINE_WARMUP_RELEASE_FRAMES_META, PIPELINE_WARMUP_RELEASE_AFTER_FRAMES)
 	return root
+
+
+static func _add_pipeline_warmup_child(parent: Node3D, child: Node3D) -> void:
+	var warmup_root: PipelineWarmupRoot = parent as PipelineWarmupRoot
+	if warmup_root != null:
+		warmup_root.add_warmup_child(child)
+		return
+	parent.add_child(child)
 
 
 static func _add_terrain_pipeline_warmup(parent: Node3D) -> int:
@@ -1132,7 +1183,7 @@ static func _add_terrain_pipeline_warmup(parent: Node3D) -> int:
 	instance.name = REGION_PIPELINE_WARMUP_TERRAIN_NAME
 	instance.mesh = mesh
 	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	parent.add_child(instance)
+	_add_pipeline_warmup_child(parent, instance)
 	return material_count
 
 
@@ -1186,7 +1237,7 @@ static func _add_foliage_pipeline_warmup_instance(parent: Node3D, instance_name:
 	if material != null:
 		instance.material_override = material
 	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	parent.add_child(instance)
+	_add_pipeline_warmup_child(parent, instance)
 
 
 static func _append_pipeline_warmup_surface(mesh: ArrayMesh, material: Material, surface_index: int) -> void:

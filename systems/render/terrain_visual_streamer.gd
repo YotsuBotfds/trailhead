@@ -89,11 +89,9 @@ var _queued_commits: Dictionary[Vector2i, bool] = {}
 var _queued_midlod_commits: Dictionary[Vector2i, bool] = {}
 var _foliage_subcommit_queue: Array[FoliageSubcommit] = []
 var _pending_foliage_subcommit_counts_by_cell: Dictionary[Vector2i, int] = {}
-# Cells whose foliage subcommits have all completed (the tile subtree is fully built,
-# DETACHED in _partial_foliage_tiles_by_cell) and are waiting to attach to the live
-# _foliage_root. Drained at most render_visual_foliage_tile_finishes_per_frame per frame
-# so a cell crossing — where several tiles finish together — does not burst the
-# RenderingServer materialization into one multi-second dt spike. Render-only.
+# Cells whose foliage subcommits have all completed and are waiting to move from
+# partial to fully-live accounting. The render-object materialization happens earlier,
+# one MultiMeshInstance3D at a time, in _drain_foliage_subcommit_queue.
 var _foliage_finish_queue: Array[Vector2i] = []
 var _queued_foliage_finishes: Dictionary[Vector2i, bool] = {}
 var _pending_free_cells: Array[Vector2i] = []
@@ -125,6 +123,7 @@ var _stream_hlod_build_queue: Array[Variant] = []
 var _stream_hlod_densify_build_queue: Array[Variant] = []
 var _result_queue: Array[Variant] = []
 var _result_drains_remaining_this_frame: int = 0
+var _visual_commits_last_frame: int = 0
 
 
 func _ready() -> void:
@@ -246,6 +245,7 @@ func reset_stream() -> void:
 
 
 func _process(_delta: float) -> void:
+	_visual_commits_last_frame = 0
 	if not _configured:
 		return
 	# Stamp the streamer's per-frame work-phase budget window HERE, at the very top, so
@@ -363,6 +363,10 @@ func stream_hlod_manifest_chunk_count() -> int:
 
 func foliage_cell_count() -> int:
 	return _foliage_tiles_by_cell.size()
+
+
+func visual_commits_last_frame() -> int:
+	return _visual_commits_last_frame
 
 
 func has_ready_visual_cell(cell: Vector2i) -> bool:
@@ -1042,7 +1046,9 @@ func _drain_foliage_subcommit_queue() -> void:
 			tile_root = _foliage_tiles_by_cell[subcommit.cell]
 		if tile_root == null:
 			continue
-		TerrainVisualBuilderScript.add_region_foliage_species_cell_from_data(tile_root, subcommit.cell_data, subcommit.species_data)
+		var added_child: bool = bool(TerrainVisualBuilderScript.add_region_foliage_species_cell_from_data(tile_root, subcommit.cell_data, subcommit.species_data))
+		if added_child:
+			_visual_commits_last_frame += 1
 		_finish_foliage_subcommit(subcommit.cell)
 		committed_count += 1
 		if _commit_frame_budget_exceeded():
@@ -1082,6 +1088,7 @@ func _commit_visual_tile(cell: Vector2i, visual_tile_data: Variant, sample_step:
 		_load_failures_by_cell[cell] = "visual tile failed to load"
 		return
 	_visual_tiles_by_cell[cell] = visual_tile
+	_visual_commits_last_frame += 1
 	_committed_tile_step_by_cell[cell] = sample_step
 	_ready_tile_data_by_cell.erase(cell)
 	_ready_tile_step_by_cell.erase(cell)
@@ -1107,6 +1114,7 @@ func _commit_midlod_tile(cell: Vector2i, midlod_tile_data: Variant) -> void:
 		_midlod_load_failures_by_cell[cell] = "mid-LOD tile failed to load"
 		return
 	_midlod_tiles_by_cell[cell] = midlod_tile
+	_visual_commits_last_frame += 1
 	_ready_midlod_data_by_cell.erase(cell)
 	_midlod_load_failures_by_cell.erase(cell)
 
@@ -1293,6 +1301,7 @@ func _attach_stream_hlod_chunk(cell: Vector2i, chunk: MeshInstance3D) -> void:
 		chunk.position = Vector3(tile_origin_xz.x - _hlod_instance.position.x, 0.0, tile_origin_xz.y - _hlod_instance.position.z)
 		_hlod_instance.add_child(chunk)
 		_stream_hlod_chunks_by_cell[cell] = chunk
+	_visual_commits_last_frame += 1
 	_queue_stream_hlod_densification(cell)
 
 
@@ -1464,6 +1473,7 @@ func _commit_stream_hlod_densify_result(cell: Vector2i, result: Dictionary) -> v
 	TerrainVisualBuilderScript.apply_region_mesh_materials(mesh, mesh_data)
 	chunk.mesh = mesh
 	TerrainVisualBuilderScript.apply_region_mesh_instance_parameters(chunk, mesh_data)
+	_visual_commits_last_frame += 1
 
 
 func _collect_stream_hlod_chunks(parent: Node, chunks: Array[MeshInstance3D]) -> void:
@@ -1504,7 +1514,11 @@ func _begin_foliage_tile_commit(cell: Vector2i, foliage_tile_data: Variant) -> v
 	if foliage_tile_data == null or not bool(foliage_tile_data.ok):
 		_ready_foliage_data_by_cell.erase(cell)
 		return
-	var foliage_tile: Node3D = TerrainVisualBuilderScript.region_foliage_tile_root_from_data(_foliage_root, foliage_tile_data, false) as Node3D
+	# Attach an EMPTY tile root immediately, then add each MultiMeshInstance3D through the
+	# budgeted subcommit drain. The old path assembled hundreds of children off-tree and
+	# attached the whole subtree in _finish_foliage_tile_commit, which made one "tile
+	# finish" equal hundreds of RenderingServer objects on a single frame.
+	var foliage_tile: Node3D = TerrainVisualBuilderScript.region_foliage_tile_root_from_data(_foliage_root, foliage_tile_data, true) as Node3D
 	if foliage_tile == null:
 		_ready_foliage_data_by_cell.erase(cell)
 		return
@@ -1606,12 +1620,8 @@ func _finish_foliage_subcommit(cell: Vector2i) -> void:
 	_queue_foliage_tile_finish(cell)
 
 
-# Enqueue a fully-built (DETACHED) foliage tile for live attachment. The actual
-# add_child into _foliage_root — the step that makes the RenderingServer materialize
-# every MultiMesh in the tile — is deferred to _drain_foliage_finish_queue, which
-# attaches at most render_visual_foliage_tile_finishes_per_frame tiles per frame. This
-# spreads the per-crossing materialization burst (several tiles finishing together)
-# across frames instead of stalling one. Render-only, golden-neutral.
+# Enqueue a fully-subcommitted foliage tile for live accounting. The tile root is already
+# in the live tree; this queue no longer performs a bulk subtree attach.
 func _queue_foliage_tile_finish(cell: Vector2i) -> void:
 	if not _partial_foliage_tiles_by_cell.has(cell):
 		return

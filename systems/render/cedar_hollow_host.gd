@@ -1020,10 +1020,8 @@ func _visual_streaming_ready_for_reveal() -> bool:
 		return false
 	if not _spawn_visual_cells_committed_for_reveal(active_cells):
 		return false
-	if _terrain_visual_streamer.has_method("foliage_cell_count"):
-		var foliage_count: int = int(_terrain_visual_streamer.call("foliage_cell_count"))
-		if foliage_count < expected_count:
-			return false
+	# Coarse terrain is the no-void guarantee. Foliage is intentionally allowed to
+	# continue materializing after release through the render streamer's per-frame caps.
 	return true
 
 
