@@ -1020,10 +1020,7 @@ static func add_region_foliage_species_cell_from_data(parent: Node3D, cell_data:
 	if species_data.transforms.is_empty():
 		return false
 	var child_count: int = parent.get_child_count()
-	if FOLIAGE_BATCH_DETACHED_ATTACH_ENABLED:
-		_add_foliage_cell_from_data(parent, cell_data)
-	else:
-		_add_foliage_species_cell_from_data(parent, cell_data, species_data)
+	_add_foliage_species_cell_from_data(parent, cell_data, species_data)
 	return parent.get_child_count() > child_count
 
 
