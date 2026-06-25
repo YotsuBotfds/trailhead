@@ -8,6 +8,7 @@ const COLLISION_TILES_MANIFEST_PATH: String = "collision_tiles_manifest.json"
 const HEIGHTMAP_SIDE_CAR_PATH: String = "tile.json"
 const HEIGHTMAP_BIN_PATH: String = "heightmap.bin"
 const DEFAULT_WORKER_COUNT: int = 2
+const HEIGHTMAP_DATA_CACHE_CAPACITY: int = 128
 # Collision builds are the gate on the streaming-collision freeze: the vehicle
 # is pinned until the HeightMapShape3D for the cell it enters is built + drained.
 # More production workers ⇒ that build finishes sooner ⇒ a shorter freeze. The
@@ -48,6 +49,8 @@ var _sorted_ready_cells_dirty: bool = true
 
 var _ready_flags: Dictionary[Vector2i, bool] = {}
 var _heightmap_data_by_cell: Dictionary[Vector2i, Dictionary] = {}
+var _heightmap_lru_by_cell: Dictionary[Vector2i, Dictionary] = {}
+var _heightmap_lru_cells: Array[Vector2i] = []
 var _active_shapes_by_cell: Dictionary[Vector2i, HeightMapShape3D] = {}
 var _active_bodies_by_cell: Dictionary[Vector2i, RID] = {}
 var _prewarmed_bodies_by_cell: Dictionary[Vector2i, RID] = {}
@@ -63,6 +66,7 @@ var _last_to_load: Array[Vector2i] = []
 var _last_to_unload: Array[Vector2i] = []
 var _workers: Array[Thread] = []
 var _work_mutex: Mutex = Mutex.new()
+var _heightmap_cache_mutex: Mutex = Mutex.new()
 var _work_semaphore: Semaphore = Semaphore.new()
 var _result_semaphore: Semaphore = Semaphore.new()
 var _worker_should_stop: bool = false
@@ -181,6 +185,7 @@ func reset() -> void:
 	_clear_cell_caches()
 	_ready_flags.clear()
 	_heightmap_data_by_cell.clear()
+	_clear_heightmap_data_cache()
 	_active_shapes_by_cell.clear()
 	_activated_ticks_by_cell.clear()
 	_load_failures_by_cell.clear()
@@ -421,8 +426,8 @@ func _shape_from_heightmap_data(heightmap_data: Dictionary) -> HeightMapShape3D:
 	return shape
 
 
-func _load_heightmap_data(cell: Vector2i, sidecar_path: String, heightmap_path: String) -> Dictionary:
-	var result: Dictionary = {
+func _empty_heightmap_data_result(cell: Vector2i) -> Dictionary:
+	return {
 		"ok": false,
 		"cell": cell,
 		"message": "",
@@ -431,6 +436,58 @@ func _load_heightmap_data(cell: Vector2i, sidecar_path: String, heightmap_path: 
 		"map_data": PackedFloat32Array(),
 		"shape": null,
 	}
+
+
+func _heightmap_data_result_from_cache(cell: Vector2i) -> Dictionary:
+	var cached_entry: Dictionary = {}
+	_heightmap_cache_mutex.lock()
+	if _heightmap_lru_by_cell.has(cell):
+		cached_entry = _heightmap_lru_by_cell[cell]
+		_heightmap_lru_cells.erase(cell)
+		_heightmap_lru_cells.append(cell)
+	_heightmap_cache_mutex.unlock()
+	if cached_entry.is_empty():
+		return {}
+
+	var result: Dictionary = _empty_heightmap_data_result(cell)
+	result["ok"] = true
+	result["width"] = int(cached_entry["width"])
+	result["depth"] = int(cached_entry["depth"])
+	result["map_data"] = cached_entry["map_data"] as PackedFloat32Array
+	result["shape"] = _shape_from_heightmap_data(result)
+	return result
+
+
+func _cache_heightmap_data_result(result: Dictionary) -> void:
+	var cell: Vector2i = result["cell"] as Vector2i
+	var cache_entry: Dictionary = {
+		"width": int(result["width"]),
+		"depth": int(result["depth"]),
+		"map_data": result["map_data"] as PackedFloat32Array,
+	}
+	_heightmap_cache_mutex.lock()
+	_heightmap_lru_by_cell[cell] = cache_entry
+	_heightmap_lru_cells.erase(cell)
+	_heightmap_lru_cells.append(cell)
+	while _heightmap_lru_cells.size() > HEIGHTMAP_DATA_CACHE_CAPACITY:
+		var evicted_cell: Vector2i = _heightmap_lru_cells.pop_front()
+		_heightmap_lru_by_cell.erase(evicted_cell)
+	_heightmap_cache_mutex.unlock()
+
+
+func _clear_heightmap_data_cache() -> void:
+	_heightmap_cache_mutex.lock()
+	_heightmap_lru_by_cell.clear()
+	_heightmap_lru_cells.clear()
+	_heightmap_cache_mutex.unlock()
+
+
+func _load_heightmap_data(cell: Vector2i, sidecar_path: String, heightmap_path: String) -> Dictionary:
+	var cached_result: Dictionary = _heightmap_data_result_from_cache(cell)
+	if not cached_result.is_empty():
+		return cached_result
+
+	var result: Dictionary = _empty_heightmap_data_result(cell)
 	if not FileAccess.file_exists(sidecar_path):
 		result["message"] = "missing tile sidecar: " + sidecar_path
 		return result
@@ -491,6 +548,7 @@ func _load_heightmap_data(cell: Vector2i, sidecar_path: String, heightmap_path: 
 	result["depth"] = depth
 	result["map_data"] = map_data
 	result["shape"] = _shape_from_heightmap_data(result)
+	_cache_heightmap_data_result(result)
 	return result
 
 
@@ -790,9 +848,6 @@ func _evict_cell_now(cell: Vector2i) -> void:
 	_sorted_body_cells_dirty = true
 	_active_shapes_by_cell.erase(cell)
 	_activated_ticks_by_cell.erase(cell)
-	_ready_flags.erase(cell)
-	_sorted_ready_cells_dirty = true
-	_heightmap_data_by_cell.erase(cell)
 	_remove_prebuild_state(cell)
 	_cancel_build(cell)
 	EventBus.world_tile_evicted.emit(cell)
