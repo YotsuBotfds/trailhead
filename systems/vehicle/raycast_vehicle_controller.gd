@@ -885,13 +885,47 @@ func _recovery_history_index(offset: int) -> int:
 
 func _dominant_contact_surface() -> StringName:
 	var wheel_surface: Array[StringName] = _state.wheel_surface
-	var counts: Dictionary = {}
 	var best_surface_id: StringName = &""
 	var best_count: int = 0
+	var surface_id_0: StringName = &""
+	var surface_id_1: StringName = &""
+	var surface_id_2: StringName = &""
+	var surface_id_3: StringName = &""
+	var surface_count_0: int = 0
+	var surface_count_1: int = 0
+	var surface_count_2: int = 0
+	var surface_count_3: int = 0
 	for surface_id in wheel_surface:
 		if surface_id != &"":
-			var current_count: int = int(counts.get(surface_id, 0)) + 1
-			counts[surface_id] = current_count
+			var current_count: int = 0
+			if surface_id == surface_id_0:
+				surface_count_0 += 1
+				current_count = surface_count_0
+			elif surface_id == surface_id_1:
+				surface_count_1 += 1
+				current_count = surface_count_1
+			elif surface_id == surface_id_2:
+				surface_count_2 += 1
+				current_count = surface_count_2
+			elif surface_id == surface_id_3:
+				surface_count_3 += 1
+				current_count = surface_count_3
+			elif surface_id_0 == &"":
+				surface_id_0 = surface_id
+				surface_count_0 = 1
+				current_count = surface_count_0
+			elif surface_id_1 == &"":
+				surface_id_1 = surface_id
+				surface_count_1 = 1
+				current_count = surface_count_1
+			elif surface_id_2 == &"":
+				surface_id_2 = surface_id
+				surface_count_2 = 1
+				current_count = surface_count_2
+			elif surface_id_3 == &"":
+				surface_id_3 = surface_id
+				surface_count_3 = 1
+				current_count = surface_count_3
 			if current_count > best_count:
 				best_surface_id = surface_id
 				best_count = current_count
