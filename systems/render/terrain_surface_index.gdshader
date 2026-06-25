@@ -292,6 +292,7 @@ varying float local_normal_y;
 
 const float ZION_TAU = 6.28318530718;
 const float CLOUD_SHADOW_MAX_STRENGTH = 0.22;
+const float ZION_RIVER_DISTANCE_SENTINEL_M = 1000000.0;
 const int FLOOR_POM_MAX_LAYERS = 16;
 const float FLOOR_POM_MAX_DEPTH_M = 0.04;
 const float FLOOR_POM_MAX_UV_OFFSET = 0.035;
@@ -516,7 +517,48 @@ float distance_to_segment(vec2 point, vec2 a, vec2 b) {
 	return length(point - (a + ab * t));
 }
 
+float distance_to_aabb(vec2 point, vec2 aabb_min, vec2 aabb_max) {
+	vec2 outside = max(max(aabb_min - point, point - aabb_max), vec2(0.0));
+	return length(outside);
+}
+
+vec2 segment_aabb_min(vec4 segment) {
+	return min(segment.xy, segment.zw);
+}
+
+vec2 segment_aabb_max(vec4 segment) {
+	return max(segment.xy, segment.zw);
+}
+
+float zion_river_max_influence_radius() {
+	return max(max(max(zion_riparian_inner_m, zion_riparian_outer_m), zion_bank_wet_width_m), 9.0);
+}
+
 float zion_river_distance(vec2 point) {
+	vec2 river_min = segment_aabb_min(zion_river_segment_0);
+	vec2 river_max = segment_aabb_max(zion_river_segment_0);
+	river_min = min(river_min, segment_aabb_min(zion_river_segment_1));
+	river_max = max(river_max, segment_aabb_max(zion_river_segment_1));
+	river_min = min(river_min, segment_aabb_min(zion_river_segment_2));
+	river_max = max(river_max, segment_aabb_max(zion_river_segment_2));
+	river_min = min(river_min, segment_aabb_min(zion_river_segment_3));
+	river_max = max(river_max, segment_aabb_max(zion_river_segment_3));
+	river_min = min(river_min, segment_aabb_min(zion_river_segment_4));
+	river_max = max(river_max, segment_aabb_max(zion_river_segment_4));
+	river_min = min(river_min, segment_aabb_min(zion_river_segment_5));
+	river_max = max(river_max, segment_aabb_max(zion_river_segment_5));
+	river_min = min(river_min, segment_aabb_min(zion_river_segment_6));
+	river_max = max(river_max, segment_aabb_max(zion_river_segment_6));
+	river_min = min(river_min, segment_aabb_min(zion_river_segment_7));
+	river_max = max(river_max, segment_aabb_max(zion_river_segment_7));
+	river_min = min(river_min, segment_aabb_min(zion_river_segment_8));
+	river_max = max(river_max, segment_aabb_max(zion_river_segment_8));
+	river_min = min(river_min, segment_aabb_min(zion_river_segment_9));
+	river_max = max(river_max, segment_aabb_max(zion_river_segment_9));
+	if (distance_to_aabb(point, river_min, river_max) > zion_river_max_influence_radius()) {
+		return ZION_RIVER_DISTANCE_SENTINEL_M;
+	}
+
 	float distance_m = distance_to_segment(point, zion_river_segment_0.xy, zion_river_segment_0.zw);
 	distance_m = min(distance_m, distance_to_segment(point, zion_river_segment_1.xy, zion_river_segment_1.zw));
 	distance_m = min(distance_m, distance_to_segment(point, zion_river_segment_2.xy, zion_river_segment_2.zw));
