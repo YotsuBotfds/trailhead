@@ -167,6 +167,7 @@ static var _surface_index_albedo_array_cache: Texture2DArray = null
 static var _surface_index_normal_array_cache: Texture2DArray = null
 static var _surface_index_height_array_cache: Texture2DArray = null
 static var _surface_index_macro_albedo_cache: Texture2D = null
+static var _pipeline_warmup_surface_id_texture_cache: Texture2D = null
 static var _surface_cache_mutex: Mutex = Mutex.new()
 static var _region_tile_data_cache: Dictionary[String, Variant] = {}
 static var _region_tile_cache_order: PackedStringArray = PackedStringArray()
@@ -208,6 +209,7 @@ const PIPELINE_WARMUP_TRANSIENT_META: StringName = &"trailhead_pipeline_warmup_t
 const PIPELINE_WARMUP_RELEASE_FRAMES_META: StringName = &"trailhead_pipeline_warmup_release_frames"
 const PIPELINE_WARMUP_RELEASE_AFTER_FRAMES: int = 2
 const PIPELINE_WARMUP_REVEAL_CHILDREN_PER_FRAME: int = 2
+const PIPELINE_WARMUP_SURFACE_ID_TEXTURE_SIZE: int = 2
 const HEIGHTMAP_FLOAT_BYTE_SIZE: int = 4
 # Detail (near-vehicle) terrain visual sample step. The visual mesh is built by
 # striding through the full-resolution collision heightmap; step=5 downsamples
@@ -1214,9 +1216,25 @@ static func foliage_visibility_range_fade_margin_for_species(species_id: StringN
 static func foliage_pipeline_warmup_node_names() -> PackedStringArray:
 	var node_names: PackedStringArray = PackedStringArray()
 	for species_id in FOLIAGE_SPECIES_LIST:
-		node_names.append(REGION_PIPELINE_WARMUP_FOLIAGE_LOD0_NAME + "_" + String(species_id))
-		node_names.append(REGION_PIPELINE_WARMUP_FOLIAGE_LOD1_NAME + "_" + String(species_id))
+		_append_foliage_pipeline_warmup_node_names(node_names, 0, species_id)
+		_append_foliage_pipeline_warmup_node_names(node_names, 1, species_id)
 	return node_names
+
+
+static func _append_foliage_pipeline_warmup_node_names(node_names: PackedStringArray, lod_index: int, species_id: StringName) -> void:
+	var warmup_surface_count: int = _foliage_pipeline_warmup_surface_count_for_lod_species(lod_index, species_id)
+	for warmup_surface_index in range(warmup_surface_count):
+		node_names.append(_foliage_pipeline_warmup_node_name(lod_index, species_id, warmup_surface_index))
+
+
+static func _foliage_pipeline_warmup_node_name(lod_index: int, species_id: StringName, warmup_surface_index: int) -> String:
+	var node_name: String = REGION_PIPELINE_WARMUP_FOLIAGE_LOD1_NAME
+	if _region_foliage_lod_index(lod_index) == 0:
+		node_name = REGION_PIPELINE_WARMUP_FOLIAGE_LOD0_NAME
+	node_name += "_" + String(species_id)
+	if _foliage_species_uses_source_material(species_id) and warmup_surface_index > 0:
+		node_name += "_surface" + str(warmup_surface_index)
+	return node_name
 
 
 static func _add_region_pipeline_warmup(parent: Node3D) -> Node3D:
@@ -1261,6 +1279,8 @@ static func _add_terrain_pipeline_warmup(parent: Node3D) -> int:
 		material_count += 1
 	_append_pipeline_warmup_surface(mesh, _surface_index_warmup_material(), material_count)
 	material_count += 1
+	_append_pipeline_warmup_surface(mesh, _surface_index_tile_warmup_material(), material_count)
+	material_count += 1
 	if material_count <= 0:
 		return 0
 	var instance: MeshInstance3D = MeshInstance3D.new()
@@ -1274,32 +1294,48 @@ static func _add_terrain_pipeline_warmup(parent: Node3D) -> int:
 static func _add_foliage_pipeline_warmup(parent: Node3D) -> int:
 	var warmup_count: int = 0
 	for species_id in FOLIAGE_SPECIES_LIST:
-		var lod0_mesh: Mesh = _region_foliage_mesh_for_lod_species(0, species_id)
-		var lod0_material: Material = _region_foliage_warmup_material_for_lod_species(0, species_id)
-		_add_foliage_pipeline_warmup_instance(parent, REGION_PIPELINE_WARMUP_FOLIAGE_LOD0_NAME + "_" + String(species_id), lod0_mesh, lod0_material)
-		warmup_count += 1
-		var lod1_mesh: Mesh = _region_foliage_mesh_for_lod_species(1, species_id)
-		var lod1_material: Material = _region_foliage_warmup_material_for_lod_species(1, species_id)
-		_add_foliage_pipeline_warmup_instance(parent, REGION_PIPELINE_WARMUP_FOLIAGE_LOD1_NAME + "_" + String(species_id), lod1_mesh, lod1_material)
-		warmup_count += 1
+		warmup_count += _add_foliage_pipeline_warmup_lod_species(parent, 0, species_id)
+		warmup_count += _add_foliage_pipeline_warmup_lod_species(parent, 1, species_id)
 	return warmup_count
 
 
-# Pipeline-warmup material mirror. Runtime GLB foliage (cottonwood/willow/juniper/yucca)
-# renders with NO material_override: the StandardMaterial3D baked into the GLB mesh's first
-# surface is the material whose PSO actually compiles the first time a tree of that species
-# streams in. _region_foliage_material_for_lod_species returns null for these species (so
-# runtime leaves material_override empty), which would leave the warmup with nothing concrete
-# to compile or verify. Here we lift that same surface material out and hand it to the warmup
-# instance as material_override. It is the identical material instance (same RID) the runtime
-# resolves, so the PSO cache entry is shared and the first streamed tree pays no compile hitch.
-static func _region_foliage_warmup_material_for_lod_species(lod_index: int, species_id: StringName) -> Material:
+static func _add_foliage_pipeline_warmup_lod_species(parent: Node3D, lod_index: int, species_id: StringName) -> int:
+	var mesh: Mesh = _region_foliage_mesh_for_lod_species(lod_index, species_id)
+	var warmup_surface_count: int = _foliage_pipeline_warmup_surface_count_for_lod_species(lod_index, species_id)
+	for warmup_surface_index in range(warmup_surface_count):
+		var material: Material = _region_foliage_warmup_material_for_lod_species(
+			lod_index,
+			species_id,
+			warmup_surface_index
+		)
+		_add_foliage_pipeline_warmup_instance(
+			parent,
+			_foliage_pipeline_warmup_node_name(lod_index, species_id, warmup_surface_index),
+			mesh,
+			material
+		)
+	return warmup_surface_count
+
+
+static func _foliage_pipeline_warmup_surface_count_for_lod_species(lod_index: int, species_id: StringName) -> int:
 	if _foliage_species_uses_source_material(species_id):
 		var source_mesh: Mesh = _region_foliage_mesh_for_lod_species(lod_index, species_id)
-		if source_mesh != null and source_mesh.get_surface_count() > 0:
-			var source_material: Material = source_mesh.surface_get_material(0)
-			if source_material != null:
-				return source_material
+		if source_mesh != null:
+			return maxi(source_mesh.get_surface_count(), 1)
+	return 1
+
+
+# Pipeline-warmup material mirror. Runtime GLB foliage (cottonwood/willow/juniper/yucca)
+# renders with NO material_override: every StandardMaterial3D baked into the GLB mesh can
+# compile the first time that species streams in. _region_foliage_material_for_lod_species
+# returns null for these species, so the warmup lifts each source mesh surface material and
+# renders one override instance per material variant. The material instances are the same
+# RIDs the runtime mesh resolves, so the PSO cache entries are shared.
+static func _region_foliage_warmup_material_for_lod_species(lod_index: int, species_id: StringName, warmup_surface_index: int) -> Material:
+	if _foliage_species_uses_source_material(species_id):
+		var source_mesh: Mesh = _region_foliage_mesh_for_lod_species(lod_index, species_id)
+		if source_mesh != null and warmup_surface_index >= 0 and warmup_surface_index < source_mesh.get_surface_count():
+			return source_mesh.surface_get_material(warmup_surface_index)
 		return null
 	return _region_foliage_material_for_lod_species(lod_index, species_id)
 
@@ -1841,6 +1877,35 @@ static func _surface_index_warmup_material() -> ShaderMaterial:
 	surface_data.control_origin_xz = Vector2.ZERO
 	surface_data.control_size_xz = Vector2(GameConfig.STREAM_TILE_SIZE_M, GameConfig.STREAM_TILE_SIZE_M)
 	return _surface_index_material(surface_data)
+
+
+static func _surface_index_tile_warmup_material() -> ShaderMaterial:
+	var surface_data: MeshSurfaceData = MeshSurfaceData.new()
+	surface_data.control_origin_xz = Vector2.ZERO
+	surface_data.control_size_xz = Vector2(GameConfig.STREAM_TILE_SIZE_M, GameConfig.STREAM_TILE_SIZE_M)
+	var shared_material: ShaderMaterial = _surface_index_material(surface_data)
+	var material: ShaderMaterial = shared_material.duplicate(false) as ShaderMaterial
+	if material == null:
+		return shared_material
+	material.resource_name = TERRAIN_INDEX_MATERIAL_NAME
+	var surface_texture: Texture2D = _pipeline_warmup_surface_id_texture()
+	if surface_texture != null:
+		material.set_shader_parameter(SURFACE_ID_TEXTURE_UNIFORM, surface_texture)
+	return material
+
+
+static func _pipeline_warmup_surface_id_texture() -> Texture2D:
+	if _pipeline_warmup_surface_id_texture_cache != null:
+		return _pipeline_warmup_surface_id_texture_cache
+	var image: Image = Image.create(
+		PIPELINE_WARMUP_SURFACE_ID_TEXTURE_SIZE,
+		PIPELINE_WARMUP_SURFACE_ID_TEXTURE_SIZE,
+		false,
+		Image.FORMAT_RGBA8
+	)
+	image.fill(Color(0.0, 0.0, 0.0, 1.0))
+	_pipeline_warmup_surface_id_texture_cache = ImageTexture.create_from_image(image)
+	return _pipeline_warmup_surface_id_texture_cache
 
 
 # Cold-start pre-realization. Force the heavy surface-index Texture2DArrays
