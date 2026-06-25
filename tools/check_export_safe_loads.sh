@@ -120,7 +120,7 @@ classify_direct_res_path() {
 
 validate_allowlist
 
-direct_findings="$(rg -n -P '^[[:space:]]*[^#].*(?:Image\.load\s*\(\s*"res://|\b[[:lower:]_][A-Za-z0-9_]*\.load\s*\(\s*"res://|Image\.load_from_file\s*\(\s*"res://|FileAccess\.(?:open|get_file_as_bytes|get_file_as_string)\s*\(\s*"res://)' autoload data scenes systems tests tools --glob '*.gd' || true)"
+direct_findings="$(rg -n -P '^[[:space:]]*[^#].*(?:Image\.load\s*\(\s*"res://|\b[[:lower:]_][A-Za-z0-9_]*\.load\s*\(\s*"res://|Image\.load_from_file\s*\(\s*"res://|FileAccess\.(?:open|get_file_as_bytes|get_file_as_string)\s*\(\s*"res://)' autoload data scenes systems tests tools --glob '*.gd' --glob '!tests/out/**' || true)"
 if [ -n "$direct_findings" ]; then
 	direct_tmp="$(mktemp)"
 	tmp_files="$tmp_files $direct_tmp"
@@ -139,7 +139,7 @@ if [ -n "$direct_findings" ]; then
 	done < "$direct_tmp"
 fi
 
-dynamic_findings="$(rg -n -P '^[[:space:]]*[^#].*(?:Image\.load_from_file\s*\(|\b[[:lower:]_][A-Za-z0-9_]*\.load\s*\(|FileAccess\.(?:open|get_file_as_bytes|get_file_as_string)\s*\()' systems/render systems/world --glob '*.gd' || true)"
+dynamic_findings="$(rg -n -P '^[[:space:]]*[^#].*(?:Image\.load_from_file\s*\(|\b[[:lower:]_][A-Za-z0-9_]*\.load\s*\(|FileAccess\.(?:open|get_file_as_bytes|get_file_as_string)\s*\()' systems/render systems/world --glob '*.gd' --glob '!tests/out/**' || true)"
 if [ -n "$dynamic_findings" ]; then
 	dynamic_tmp="$(mktemp)"
 	tmp_files="$tmp_files $dynamic_tmp"
@@ -163,7 +163,7 @@ if [ -n "$dynamic_findings" ]; then
 	done < "$dynamic_tmp"
 fi
 
-globalize_findings="$(rg -n -P '^[[:space:]]*[^#].*(?:(?:load_from_file|FileAccess\.(?:open|get_file_as_bytes|get_file_as_string)).*ProjectSettings\.globalize_path|ProjectSettings\.globalize_path.*(?:load_from_file|FileAccess\.(?:open|get_file_as_bytes|get_file_as_string)))' autoload data scenes systems tests tools --glob '*.gd' || true)"
+globalize_findings="$(rg -n -P '^[[:space:]]*[^#].*(?:(?:load_from_file|FileAccess\.(?:open|get_file_as_bytes|get_file_as_string)).*ProjectSettings\.globalize_path|ProjectSettings\.globalize_path.*(?:load_from_file|FileAccess\.(?:open|get_file_as_bytes|get_file_as_string)))' autoload data scenes systems tests tools --glob '*.gd' --glob '!tests/out/**' || true)"
 if [ -n "$globalize_findings" ]; then
 	globalize_tmp="$(mktemp)"
 	tmp_files="$tmp_files $globalize_tmp"
