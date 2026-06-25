@@ -127,26 +127,20 @@ const FOLIAGE_BARK_ALBEDO_LIGHTEN_STRENGTH: float = 0.6
 # white so we never push back into the chartreuse neon blowout (commit a02214fb1).
 const FOLIAGE_LEAF_ALBEDO_LIGHTEN_TARGET: Color = Color(0.82, 0.86, 0.74, 1.0)
 const FOLIAGE_LEAF_ALBEDO_LIGHTEN_STRENGTH: float = 0.62
-# Riparian leaf light-transmission (fidelity/foliage-translucency): cottonwood/willow leaf cards
-# carry no transmittance, so the low dusk sun behind a canopy renders the leaves as flat near-black
-# silhouettes — real cottonwoods/willows GLOW with light passing through the leaf. BaseMaterial3D's
-# backlight adds a back-face emission that reads as that transmitted glow (the StandardMaterial3D
-# analogue of the grass shader's BACKLIGHT output). Warm-green so the lit-through leaf reads as
-# sunlit chlorophyll, not a tint shift. ENERGY 0.0 fully restores the prior opaque-silhouette look
-# (backlight_enabled is gated on energy > 0). Kept modest so a back-lit canopy lifts off black
-# without blowing past the muted-green target that commit a02214fb1 fought.
-const FOLIAGE_LEAF_BACKLIGHT_COLOR: Color = Color(0.34, 0.46, 0.16, 1.0)
-const FOLIAGE_LEAF_BACKLIGHT_ENERGY: float = 0.22
+# Leaf light-transmission (fidelity/foliage-translucency): cottonwood/willow leaf cards carry no
+# transmittance, so the low dusk sun behind a canopy renders the leaves as flat near-black
+# silhouettes. Backlight adds the material-side equivalent of the grass shader's BACKLIGHT output
+# so the leaves glow when the sun is behind them. Runtime color/energy come from GameConfig and
+# clamp to this ceiling to avoid the chartreuse/neon wash that commit a02214fb1 fought.
+const FOLIAGE_BACKLIGHT_ENERGY_CEILING: float = 0.32
 # Opaque juniper/yucca leaf grounding (fidelity/foliage-translucency): their GLB leaf surfaces have
 # no alpha, so they skip the alpha-scissor leaf branch and never enable vertex_color_use_as_albedo
 # — the per-instance COLOR the MultiMesh already writes (_foliage_tree_instance_color) stays inert
 # and a whole stand clones to one near-black cone. ENABLED activates that existing per-instance
 # value/warmth variation (deterministic, hash-derived) so the stand stops reading identical; the
-# backlight gives the scale/rosette leaves a touch of transmission. Smaller energy than the riparian
-# canopy (dense scale foliage, less card-thin). false / 0.0 each restore the prior flat-clone look.
+# backlight gives the scale/rosette leaves a touch of transmission via the subtler desert profile.
+# false / 0.0 each restore the prior flat-clone look.
 const FOLIAGE_OPAQUE_LEAF_PER_INSTANCE_COLOR_ENABLED: bool = true
-const FOLIAGE_OPAQUE_LEAF_BACKLIGHT_COLOR: Color = Color(0.30, 0.40, 0.20, 1.0)
-const FOLIAGE_OPAQUE_LEAF_BACKLIGHT_ENERGY: float = 0.12
 const TEXTURE_SOURCE_PATH_META: StringName = &"trailhead_source_path"
 const SURFACE_INDEX_LAYER_COUNT: int = 8
 const SURFACE_INDEX_ARRAY_CACHE_DIR: String = "user://trailhead/terrain_surface_index_arrays"
@@ -348,7 +342,6 @@ const FOLIAGE_TREE_INSTANCE_VALUE_MAX: float = 1.12
 const FOLIAGE_TREE_INSTANCE_WARM_DECORRELATE: float = 7.13
 # Lane-D demo triage: keep Zion foliage lush without the graded rim/tips reading neon.
 const FOLIAGE_NEON_TAME_TIP_BOOST: Vector3 = Vector3(1.12, 1.08, 1.02)
-const FOLIAGE_NEON_TAME_BACKLIGHT_ENERGY: float = 0.10
 # Foliage visual-fidelity (fidelity/foliage-shading): travelling-wave wind + per-instance
 # tint jitter live in grass_billboard.gdshader. These tune them for the Zion region
 # foliage material so the lushness survives without re-reading neon. Wavelengths are in
@@ -3317,11 +3310,13 @@ static func _source_foliage_mesh_with_species_materials(source_mesh: Mesh, mesh_
 				material.roughness = maxf(material.roughness, 0.9)
 				material.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
 				# Riparian leaf translucency: a back-lit cottonwood/willow canopy read as a flat
-				# near-black silhouette against the low dusk sun. backlight adds a warm-green back-face
-				# emission (StandardMaterial3D's transmitted-light analogue of the grass shader's
-				# BACKLIGHT) so the leaves GLOW when the sun is behind them. Inside the alpha-scissor
-				# (leaf-card) branch so bark and opaque juniper/yucca leaves are untouched here.
-				_apply_foliage_leaf_backlight(material, FOLIAGE_LEAF_BACKLIGHT_COLOR, FOLIAGE_LEAF_BACKLIGHT_ENERGY)
+				# near-black silhouette against the low dusk sun. Use the warm GameConfig profile here;
+				# bark and opaque juniper/yucca leaves are handled on their own branch.
+				_apply_foliage_leaf_backlight(
+					material,
+					_foliage_backlight_color_for_species(species_id),
+					_foliage_backlight_energy_for_species(species_id)
+				)
 			else:
 				# Opaque juniper/yucca leaf surface (no alpha → never enters the alpha-scissor branch
 				# above, but _foliage_source_material_is_leaf still classified it as a leaf). The
@@ -3334,7 +3329,11 @@ static func _source_foliage_mesh_with_species_materials(source_mesh: Mesh, mesh_
 				# effects revert cleanly via their tunables.
 				if FOLIAGE_OPAQUE_LEAF_PER_INSTANCE_COLOR_ENABLED:
 					material.vertex_color_use_as_albedo = true
-				_apply_foliage_leaf_backlight(material, FOLIAGE_OPAQUE_LEAF_BACKLIGHT_COLOR, FOLIAGE_OPAQUE_LEAF_BACKLIGHT_ENERGY)
+				_apply_foliage_leaf_backlight(
+					material,
+					_foliage_backlight_color_for_species(species_id),
+					_foliage_backlight_energy_for_species(species_id)
+				)
 		elif _foliage_source_material_is_bark(material):
 			# C1 Approach A: the foliage GLBs ship with zero textures, so trunks read as flat
 			# pale pillars. Bark/stem/stalk surfaces have clean cone-projected UVs, so a real
@@ -3414,13 +3413,36 @@ static func _apply_foliage_leaf_atlas(material: StandardMaterial3D) -> void:
 static func _apply_foliage_leaf_backlight(material: StandardMaterial3D, color: Color, energy: float) -> void:
 	# Leaf light-transmission: BaseMaterial3D.backlight is a back-face emission that reads as light
 	# passing THROUGH the leaf when the sun is behind the canopy (the StandardMaterial3D analogue of
-	# the grass shader's BACKLIGHT). Scale the warm-green colour by energy so a single tunable
-	# controls the glow strength; energy <= 0.0 leaves backlight disabled (exact prior look). No
-	# per-frame state, no RNG/clock — a pure material edit, identical every build.
+	# the grass shader's BACKLIGHT). Scale the warm colour by energy so a single tunable controls the
+	# glow strength; energy <= 0.0 leaves backlight disabled. No per-frame state or RNG.
 	if energy <= 0.0:
 		return
 	material.backlight_enabled = true
 	material.backlight = Color(color.r * energy, color.g * energy, color.b * energy, 1.0)
+
+
+static func _foliage_uses_riparian_backlight(species_id: StringName) -> bool:
+	if species_id == FOLIAGE_SPECIES_COTTONWOOD:
+		return true
+	if species_id == FOLIAGE_SPECIES_WILLOW:
+		return true
+	return species_id == FOLIAGE_SPECIES_RIPARIAN_GRASS
+
+
+static func _foliage_backlight_color_for_species(species_id: StringName) -> Color:
+	if _foliage_uses_riparian_backlight(species_id):
+		return GameConfig.foliage_backlight_riparian_color
+	return GameConfig.foliage_backlight_desert_color
+
+
+static func _foliage_backlight_energy_for_species(species_id: StringName) -> float:
+	if _foliage_uses_riparian_backlight(species_id):
+		return _bounded_foliage_backlight_energy(GameConfig.foliage_backlight_riparian_energy)
+	return _bounded_foliage_backlight_energy(GameConfig.foliage_backlight_desert_energy)
+
+
+static func _bounded_foliage_backlight_energy(energy: float) -> float:
+	return minf(maxf(energy, 0.0), FOLIAGE_BACKLIGHT_ENERGY_CEILING)
 
 
 static func _foliage_source_material_is_leaf(species_id: StringName, material: StandardMaterial3D, surface_index: int) -> bool:
@@ -3547,8 +3569,8 @@ static func _region_foliage_material(material_name: String, color: Color, blade_
 	material.set_shader_parameter("wind_world_wavelength_gust", FOLIAGE_WIND_WORLD_WAVELENGTH_GUST)
 	material.set_shader_parameter("per_instance_saturation_jitter", FOLIAGE_INSTANCE_SATURATION_JITTER)
 	material.set_shader_parameter("per_instance_value_jitter", FOLIAGE_INSTANCE_VALUE_JITTER)
-	material.set_shader_parameter("backlight_color", Color(0.95, 0.74, 0.42, 1.0))
-	material.set_shader_parameter("backlight_energy", FOLIAGE_NEON_TAME_BACKLIGHT_ENERGY)
+	material.set_shader_parameter("backlight_color", _foliage_backlight_color_for_species(species_id))
+	material.set_shader_parameter("backlight_energy", _foliage_backlight_energy_for_species(species_id))
 	var is_tree: bool = (species_id == FOLIAGE_SPECIES_WILLOW or species_id == FOLIAGE_SPECIES_COTTONWOOD)
 	material.set_shader_parameter("canopy_cutout", 1.0 if is_tree else 0.0)
 	return material

@@ -89,6 +89,10 @@ var render_visual_foliage_subcommits_per_frame: int = 6
 # GPUs instead of editing terrain builder constants; placement remains deterministic.
 var render_foliage_lod1_count: int = 15
 var render_foliage_grass_lod1_range: float = 120.0
+var foliage_backlight_riparian_color: Color = Color(0.98, 0.80, 0.46, 1.0)
+var foliage_backlight_riparian_energy: float = 0.30
+var foliage_backlight_desert_color: Color = Color(0.92, 0.78, 0.52, 1.0)
+var foliage_backlight_desert_energy: float = 0.16
 # How many fully-built foliage TILES may attach to the live _foliage_root per frame.
 # Each foliage tile is assembled DETACHED (its MultiMeshInstance3D children are added to
 # an off-tree Node3D during the budgeted subcommit drain, costing nothing on the
