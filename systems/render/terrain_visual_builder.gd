@@ -1380,8 +1380,11 @@ static func build_region_surface_index_mesh_data(tile_data: RegionTileData, samp
 	surface_data.indices = bucket.indices
 	surface_data.use_surface_index_material = true
 	surface_data.surface_id_path = tile_data.surface_id_path
-	surface_data.surface_id_texture = load(tile_data.surface_id_path) as Texture2D
-	if surface_data.surface_id_texture == null and tile_data.surface_image != null and not tile_data.surface_image.is_empty():
+	# surface_id maps ship as raw "keep" pngs because dynamic load() of an imported
+	# texture is unreliable in export template binaries (passes on the editor binary,
+	# fails on the Windows exe). Build the shader texture from the raw image we already
+	# loaded via _load_source_image instead of loading the (absent) imported texture.
+	if tile_data.surface_image != null and not tile_data.surface_image.is_empty():
 		surface_data.surface_id_texture = ImageTexture.create_from_image(tile_data.surface_image)
 	surface_data.control_origin_xz = Vector2(float(tile_data.cell.x) * tile_data.tile_size_m, float(tile_data.cell.y) * tile_data.tile_size_m)
 	surface_data.control_size_xz = Vector2(tile_data.tile_size_m, tile_data.tile_size_m)
@@ -2241,7 +2244,7 @@ static func _load_region_tile_uncached(region_id: String, cell: Vector2i) -> Reg
 		push_error("TerrainVisualBuilder heightmap float count mismatch: " + tile_data.heightmap_path)
 		return null
 
-	tile_data.surface_image = _load_source_image(tile_data.surface_id_path, true)
+	tile_data.surface_image = _load_source_image(tile_data.surface_id_path)
 	if tile_data.surface_image == null or tile_data.surface_image.is_empty():
 		push_error("TerrainVisualBuilder surface_id image failed to load: " + tile_data.surface_id_path)
 		return null
