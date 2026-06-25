@@ -19,14 +19,14 @@ const FRESNEL_GLINT_STRENGTH: float = 0.12
 const FLOW_DIRECTION: Vector2 = Vector2(0.0, 1.0)
 const FOAM_INTENSITY: float = 0.55
 const RIPPLE_TIGHTNESS: float = 3.5
-const ZION_RIVER_WIDTH_M: float = 9.5
 const ZION_RIVER_SURFACE_RISE_M: float = 0.30
-# Bank-detail river-width model — used only by the Virgin-River bank detail
-# meshes (wet shoreline / gravel bars / riffles / cobbles), not the water ribbon
-# itself, which keeps its fixed ZION_RIVER_WIDTH_M envelope on main.
+# Variable-width river-width model — drives both the water ribbon envelope and
+# the Virgin-River bank detail meshes (wet shoreline / gravel bars / riffles /
+# cobbles) so the ribbon and its banks share one width profile.
 const ZION_RIVER_MIN_WIDTH_M: float = 8.0
 const ZION_RIVER_MAX_WIDTH_M: float = 15.0
 const ZION_RIVER_BASE_WIDTH_M: float = 10.4
+const ZION_RIVER_LATERAL_VERTEX_COUNT: int = 5
 const ZION_BANK_DETAIL_ROOT_NAME: String = "VirginRiverBankDetails"
 const ZION_BANK_DETAIL_GROUP: String = "render_river_bank_detail"
 const ZION_BANK_WET_STRIP_WIDTH_M: float = 2.1
@@ -82,8 +82,8 @@ static func build_zion_virgin_river(parent: Node3D) -> Node3D:
 	var root: Node3D = Node3D.new()
 	root.name = ROOT_NAME
 	parent.add_child(root)
-	_add_water_ribbon(root, "virgin_river_west", ZION_RIVER_WEST_POINTS, ZION_RIVER_WIDTH_M)
-	_add_water_ribbon(root, "virgin_river_east", ZION_RIVER_EAST_POINTS, ZION_RIVER_WIDTH_M)
+	_add_water_ribbon(root, "virgin_river_west", ZION_RIVER_WEST_POINTS)
+	_add_water_ribbon(root, "virgin_river_east", ZION_RIVER_EAST_POINTS)
 	_add_zion_bank_details(root)
 	return root
 
@@ -104,7 +104,7 @@ static func _add_water_plane(parent: Node3D, node_name: String, position: Vector
 	return instance
 
 
-static func _add_water_ribbon(parent: Node3D, node_name: String, river_points_xz: Array[Vector2], width_m: float) -> MeshInstance3D:
+static func _add_water_ribbon(parent: Node3D, node_name: String, river_points_xz: Array[Vector2]) -> MeshInstance3D:
 	if river_points_xz.size() < 2:
 		return null
 	var terrain_def: Resource = TerrainBuilderScript.cedar_hollow_10m_terrain_def()
@@ -112,51 +112,60 @@ static func _add_water_ribbon(parent: Node3D, node_name: String, river_points_xz
 	var world_points: Array[Vector3] = _zion_river_surface_points(river_points_xz, terrain_def, horizontal_offset)
 	var transform: Transform3D = _water_ribbon_transform(world_points)
 	var inverse_basis: Basis = transform.basis.inverse()
+	var cumulative_distances: PackedFloat32Array = _water_cumulative_distances(world_points)
+	var total_distance_m: float = _water_total_distance(cumulative_distances)
 	var vertices: PackedVector3Array = PackedVector3Array()
 	var normals: PackedVector3Array = PackedVector3Array()
 	var uvs: PackedVector2Array = PackedVector2Array()
+	var colors: PackedColorArray = PackedColorArray()
 	var tangents: PackedFloat32Array = PackedFloat32Array()
 	var indices: PackedInt32Array = PackedInt32Array()
-	var half_width: float = width_m * 0.5
-	var distance_m: float = 0.0
 	for point_index in range(world_points.size()):
 		var point: Vector3 = world_points[point_index]
-		if point_index > 0:
-			distance_m += _water_xz_distance(world_points[point_index - 1], point)
+		var distance_m: float = cumulative_distances[point_index]
+		var distance_t: float = _water_distance_t(cumulative_distances, total_distance_m, point_index)
+		var width_m: float = _zion_river_width_m(world_points, point_index, distance_t)
+		var half_width: float = width_m * 0.5
+		var riffle_weight: float = _zion_river_riffle_weight(distance_t, width_m)
 		var tangent_xz: Vector2 = _water_point_tangent_xz(world_points, point_index)
 		var side_xz: Vector2 = Vector2(-tangent_xz.y, tangent_xz.x)
 		var local_tangent: Vector3 = (inverse_basis * Vector3(tangent_xz.x, 0.0, tangent_xz.y)).normalized()
-		var left_xz: Vector2 = Vector2(point.x + side_xz.x * half_width, point.z + side_xz.y * half_width)
-		var right_xz: Vector2 = Vector2(point.x - side_xz.x * half_width, point.z - side_xz.y * half_width)
-		var left_world: Vector3 = Vector3(left_xz.x, _zion_river_surface_y(left_xz, terrain_def, horizontal_offset), left_xz.y)
-		var right_world: Vector3 = Vector3(right_xz.x, _zion_river_surface_y(right_xz, terrain_def, horizontal_offset), right_xz.y)
-		var left_local: Vector3 = inverse_basis * (left_world - transform.origin)
-		var right_local: Vector3 = inverse_basis * (right_world - transform.origin)
-		vertices.append(left_local)
-		vertices.append(right_local)
-		normals.append(Vector3.UP)
-		normals.append(Vector3.UP)
 		var u: float = distance_m * 0.06
-		uvs.append(Vector2(u, 0.0))
-		uvs.append(Vector2(u, 1.0))
-		_append_tangent(tangents, local_tangent)
-		_append_tangent(tangents, local_tangent)
+		for lateral_index in range(ZION_RIVER_LATERAL_VERTEX_COUNT):
+			var lateral_t: float = float(lateral_index) / float(ZION_RIVER_LATERAL_VERTEX_COUNT - 1)
+			var side_fraction: float = 1.0 - lateral_t * 2.0
+			var lateral_offset: float = side_fraction * half_width
+			var world_xz: Vector2 = Vector2(
+				point.x + side_xz.x * lateral_offset,
+				point.z + side_xz.y * lateral_offset
+			)
+			var world_vertex: Vector3 = Vector3(world_xz.x, _zion_river_surface_y(world_xz, terrain_def, horizontal_offset), world_xz.y)
+			var local_vertex: Vector3 = inverse_basis * (world_vertex - transform.origin)
+			var bank_weight: float = pow(absf(side_fraction), 1.45)
+			var center_riffle: float = maxf(0.0, 1.0 - absf(side_fraction) * 1.45) * riffle_weight
+			vertices.append(local_vertex)
+			normals.append(Vector3.UP)
+			uvs.append(Vector2(u, lateral_t))
+			colors.append(Color(bank_weight, center_riffle, 0.0, 1.0))
+			_append_tangent(tangents, local_tangent)
 	for segment_index in range(world_points.size() - 1):
-		var left_0: int = segment_index * 2
-		var right_0: int = left_0 + 1
-		var left_1: int = left_0 + 2
-		var right_1: int = left_0 + 3
-		indices.append(left_0)
-		indices.append(left_1)
-		indices.append(right_0)
-		indices.append(right_0)
-		indices.append(left_1)
-		indices.append(right_1)
+		for lateral_index in range(ZION_RIVER_LATERAL_VERTEX_COUNT - 1):
+			var near_left: int = segment_index * ZION_RIVER_LATERAL_VERTEX_COUNT + lateral_index
+			var near_right: int = near_left + 1
+			var far_left: int = near_left + ZION_RIVER_LATERAL_VERTEX_COUNT
+			var far_right: int = far_left + 1
+			indices.append(near_left)
+			indices.append(far_left)
+			indices.append(near_right)
+			indices.append(near_right)
+			indices.append(far_left)
+			indices.append(far_right)
 	var arrays: Array = []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = vertices
 	arrays[Mesh.ARRAY_NORMAL] = normals
 	arrays[Mesh.ARRAY_TEX_UV] = uvs
+	arrays[Mesh.ARRAY_COLOR] = colors
 	arrays[Mesh.ARRAY_TANGENT] = tangents
 	arrays[Mesh.ARRAY_INDEX] = indices
 	var mesh: ArrayMesh = ArrayMesh.new()
@@ -166,11 +175,11 @@ static func _add_water_ribbon(parent: Node3D, node_name: String, river_points_xz
 	instance.name = node_name
 	instance.mesh = mesh
 	instance.transform = transform
-	instance.material_override = _water_material(node_name)
+	instance.material_override = _water_material(node_name, true)
 	instance.visibility_range_end = GameConfig.vis_range_water
 	instance.add_to_group(WATER_SURFACE_GROUP)
 	instance.set_meta("water_visual_kind", node_name)
-	instance.set_meta("water_visual_shape", "thalweg_ribbon")
+	instance.set_meta("water_visual_shape", "variable_width_braided_ribbon")
 	parent.add_child(instance)
 	return instance
 
@@ -560,7 +569,7 @@ static func _append_tangent(tangents: PackedFloat32Array, tangent: Vector3) -> v
 	tangents.append(1.0)
 
 
-static func _water_material(resource_name: String) -> ShaderMaterial:
+static func _water_material(resource_name: String, use_vertex_water_traits: bool = false) -> ShaderMaterial:
 	var material: ShaderMaterial = ShaderMaterial.new()
 	material.resource_name = resource_name + "_material"
 	material.shader = WaterShader
@@ -594,4 +603,5 @@ static func _water_material(resource_name: String) -> ShaderMaterial:
 	material.set_shader_parameter("flow_direction", FLOW_DIRECTION)
 	material.set_shader_parameter("foam_intensity", FOAM_INTENSITY)
 	material.set_shader_parameter("ripple_tightness", RIPPLE_TIGHTNESS)
+	material.set_shader_parameter("use_vertex_water_traits", use_vertex_water_traits)
 	return material

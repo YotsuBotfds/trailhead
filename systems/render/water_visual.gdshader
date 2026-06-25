@@ -35,6 +35,7 @@ uniform float foam_intensity : hint_range(0.0, 1.0) = 0.55;
 uniform float ripple_tightness : hint_range(0.5, 16.0) = 3.5;
 uniform vec4 ssr_sky_fallback_color : source_color = vec4(0.38, 0.54, 0.72, 1.0);
 uniform float ssr_sky_fallback_strength : hint_range(0.0, 1.0) = 0.72;
+uniform bool use_vertex_water_traits = false;
 
 const int SSR_STEP_LIMIT = 32;
 const float SSR_EDGE_FADE = 0.065;
@@ -173,6 +174,12 @@ void fragment() {
 	float shoreline = 1.0 - smoothstep(0.0, shoreline_softness, depth_delta);
 	float downstream_pos = dot(world_xz, downstream_dir);
 	float ripple = sin(downstream_pos * 11.0 - TIME * flow_speed * 9.0) * 0.5 + 0.5;
+	float vertex_shallow = use_vertex_water_traits ? clamp(COLOR.r, 0.0, 1.0) : 0.0;
+	float vertex_riffle = use_vertex_water_traits ? clamp(COLOR.g, 0.0, 1.0) : 0.0;
+	float trait_depth_lift = vertex_shallow * 0.34 + vertex_riffle * 0.22;
+	depth_mix = clamp(depth_mix - trait_depth_lift, 0.0, 1.0);
+	foam = max(foam, vertex_riffle * (0.24 + ripple * 0.22));
+	shoreline = max(shoreline, vertex_shallow * 0.46);
 	vec2 foam_uv = world_xz * foam_normal_scale - downstream_dir * TIME * downstream_flow_speed;
 	vec2 foam_gradient = foam_noise_gradient(foam_uv, TIME * foam_normal_flow_speed);
 	vec2 ripple_gradient = flow_ripple_gradient(world_xz, downstream_dir, TIME * flow_speed);
