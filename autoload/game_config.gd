@@ -82,6 +82,11 @@ var stream_collision_activations_per_tick: int = 3
 var stream_collision_result_drains_per_tick: int = 8
 var stream_collision_prebuild_per_tick: int = 1
 var stream_collision_evictions_per_tick: int = 3
+# Render-only worker results are staged into commit queues on the main thread.
+# Cap the windowed drain so a finished-job burst cannot materialize hundreds of
+# ready terrain/foliage/HLOD items into one frame. Headless fixtures keep the
+# old uncapped drain in TerrainVisualStreamer.
+var render_visual_worker_result_drains_per_frame: int = 8
 var stream_spawn_no_fall_probe_ticks: int = 840
 var render_visual_tile_frees_per_frame: int = 4
 # --- Render quality baseline (GLM perf-opt): explicit, GameConfig-driven 3D

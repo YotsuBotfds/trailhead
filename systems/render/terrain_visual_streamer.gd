@@ -124,6 +124,7 @@ var _midlod_build_queue: Array[Variant] = []
 var _stream_hlod_build_queue: Array[Variant] = []
 var _stream_hlod_densify_build_queue: Array[Variant] = []
 var _result_queue: Array[Variant] = []
+var _result_drains_remaining_this_frame: int = 0
 
 
 func _ready() -> void:
@@ -231,6 +232,7 @@ func reset_stream() -> void:
 	_stream_priority_forward_cell_delta = Vector2i.ZERO
 	_clear_worker_queues()
 	_next_visual_build_id = 0
+	_result_drains_remaining_this_frame = 0
 	_configured = false
 	_region_id = ""
 	_detail_root = null
@@ -252,6 +254,7 @@ func _process(_delta: float) -> void:
 	# render thread only attaches finished chunks or swaps finished densify meshes.
 	# Render host only — wall-clock here never feeds the deterministic sim.
 	_commit_phase_start_usec = Time.get_ticks_usec()
+	_reset_worker_result_drain_budget()
 	if _hlod_dirty:
 		_update_hlod_visibility()
 		_hlod_dirty = false
@@ -781,9 +784,16 @@ func _cancel_midlod_build(cell: Vector2i) -> void:
 func _drain_worker_results() -> void:
 	var results: Array[Dictionary] = []
 	_work_mutex.lock()
-	for result in _result_queue:
-		results.append(result)
-	_result_queue.clear()
+	if _workers.is_empty() or DisplayServer.get_name() == "headless":
+		for result in _result_queue:
+			results.append(result)
+		_result_queue.clear()
+	else:
+		var budget: int = maxi(_result_drains_remaining_this_frame, 0)
+		while budget > 0 and not _result_queue.is_empty():
+			results.append(_result_queue.pop_front() as Dictionary)
+			budget -= 1
+		_result_drains_remaining_this_frame = budget
 	_work_mutex.unlock()
 
 	results.sort_custom(Callable(self, "_build_result_less"))
@@ -851,6 +861,13 @@ func _drain_worker_results() -> void:
 			# outer active cells keep the coarse mesh. Render-only; golden-neutral.
 			if sample_step > TerrainVisualBuilderScript.REGION_DETAIL_FULLRES_SAMPLE_STEP and _is_cell_in_visual_fullres_radius(cell):
 				_enqueue_build(cell, TerrainVisualBuilderScript.REGION_DETAIL_FULLRES_SAMPLE_STEP)
+
+
+func _reset_worker_result_drain_budget() -> void:
+	if _workers.is_empty() or DisplayServer.get_name() == "headless":
+		_result_drains_remaining_this_frame = 0
+		return
+	_result_drains_remaining_this_frame = maxi(GameConfig.render_visual_worker_result_drains_per_frame, 1)
 
 
 func _drain_midlod_worker_result(result: Dictionary) -> void:
