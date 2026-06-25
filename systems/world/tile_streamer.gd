@@ -43,6 +43,8 @@ var _desired_active_cells_cache_radius: int = -1
 var _desired_active_cells_dirty: bool = true
 var _sorted_body_cells_cache: Array[Vector2i] = []
 var _sorted_body_cells_dirty: bool = true
+var _sorted_ready_cells_cache: Array[Vector2i] = []
+var _sorted_ready_cells_dirty: bool = true
 
 var _ready_flags: Dictionary[Vector2i, bool] = {}
 var _heightmap_data_by_cell: Dictionary[Vector2i, Dictionary] = {}
@@ -200,16 +202,16 @@ func reset() -> void:
 
 
 func active_cells() -> Array[Vector2i]:
-	return _sorted_body_cells()
+	return _copy_cells(_sorted_body_cells_view())
 
 
 func ready_cells() -> Array[Vector2i]:
-	return _sorted_ready_cells()
+	return _copy_cells(_sorted_ready_cells_view())
 
 
 func ready_flags() -> Dictionary[Vector2i, bool]:
 	var copy: Dictionary[Vector2i, bool] = {}
-	for cell in _sorted_ready_cells():
+	for cell in _sorted_ready_cells_view():
 		copy[cell] = true
 	return copy
 
@@ -263,19 +265,22 @@ func _physics_process(_delta: float) -> void:
 
 	var sampled_world_position: Vector3 = _sample_world_position()
 	var sampled_cell: Vector2i = _cell_for_world_position(sampled_world_position)
-	if sampled_cell != _current_cell:
+	var sampled_cell_changed: bool = sampled_cell != _current_cell
+	if sampled_cell_changed:
 		_current_cell = sampled_cell
 		_desired_active_cells_dirty = true
-	var desired_active_cells: Array[Vector2i] = _desired_active_cells_for_current_cell()
+	var desired_active_cells_changed: bool = _desired_active_cells_cache_invalid()
+	var desired_active_cells: Array[Vector2i] = _desired_active_cells_for_current_cell_view()
 	var desired_prefetch_cells: Array[Vector2i] = _prefetch_cells_for_sample(sampled_world_position, _current_cell)
 	var travel_ahead_prebuild_cells: Array[Vector2i] = _travel_ahead_prebuild_cells(sampled_world_position, _current_cell)
 	if _has_production_prewarm_workers():
 		_append_unique_cells(desired_prefetch_cells, travel_ahead_prebuild_cells)
 		_sort_cells(desired_prefetch_cells)
-	var current_active_cells: Array[Vector2i] = _sorted_body_cells()
 
-	_last_to_load = _cell_difference(desired_active_cells, current_active_cells)
-	_last_to_unload = _cell_difference(current_active_cells, desired_active_cells)
+	_update_active_cell_diff(
+		desired_active_cells,
+		not sampled_cell_changed and not desired_active_cells_changed
+	)
 
 	_drain_worker_results()
 	_prioritize_prebuilds_for_cells(travel_ahead_prebuild_cells)
@@ -497,13 +502,14 @@ func _record_load_failure(cell: Vector2i, message: String) -> void:
 
 
 func _forget_ready_cells_outside_prefetch(desired_prefetch_cells: Array[Vector2i]) -> void:
-	var ready_cells_to_check: Array[Vector2i] = _sorted_ready_cells()
+	var ready_cells_to_check: Array[Vector2i] = _sorted_ready_cells_view()
 	for cell in ready_cells_to_check:
 		if desired_prefetch_cells.has(cell):
 			continue
 		if _active_bodies_by_cell.has(cell):
 			continue
 		_ready_flags.erase(cell)
+		_sorted_ready_cells_dirty = true
 		_heightmap_data_by_cell.erase(cell)
 		_remove_prebuild_state(cell)
 		EventBus.world_tile_unprefetched.emit(cell)
@@ -659,6 +665,7 @@ func _drain_worker_results() -> void:
 			continue
 		_heightmap_data_by_cell[cell] = result
 		_ready_flags[cell] = true
+		_sorted_ready_cells_dirty = true
 		var result_shape: Variant = result.get("shape", null)
 		if result_shape != null and not _active_bodies_by_cell.has(cell):
 			_install_prebuilt_shape(cell, result_shape as HeightMapShape3D)
@@ -784,6 +791,7 @@ func _evict_cell_now(cell: Vector2i) -> void:
 	_active_shapes_by_cell.erase(cell)
 	_activated_ticks_by_cell.erase(cell)
 	_ready_flags.erase(cell)
+	_sorted_ready_cells_dirty = true
 	_heightmap_data_by_cell.erase(cell)
 	_remove_prebuild_state(cell)
 	_cancel_build(cell)
@@ -961,7 +969,7 @@ func _worker_loop() -> void:
 
 
 func _unload_all_active_bodies() -> void:
-	var cells: Array[Vector2i] = _sorted_body_cells()
+	var cells: Array[Vector2i] = _copy_cells(_sorted_body_cells_view())
 	for cell in cells:
 		var body_rid: RID = _active_bodies_by_cell[cell]
 		if body_rid.is_valid():
@@ -1162,6 +1170,39 @@ func _cell_difference(left_cells: Array[Vector2i], right_cells: Array[Vector2i])
 	return difference
 
 
+func _update_active_cell_diff(desired_active_cells: Array[Vector2i], desired_active_cells_reused: bool) -> void:
+	if (
+		desired_active_cells_reused
+		and not _sorted_body_cells_dirty
+		and _last_to_load.is_empty()
+		and _last_to_unload.is_empty()
+	):
+		_last_to_load.clear()
+		_last_to_unload.clear()
+		return
+	_last_to_load = _desired_cells_missing_from_active(desired_active_cells)
+	_last_to_unload = _active_cells_outside_desired(desired_active_cells)
+
+
+func _desired_cells_missing_from_active(desired_active_cells: Array[Vector2i]) -> Array[Vector2i]:
+	var missing_cells: Array[Vector2i] = []
+	for cell in desired_active_cells:
+		if not _active_bodies_by_cell.has(cell):
+			missing_cells.append(cell)
+	return missing_cells
+
+
+func _active_cells_outside_desired(desired_active_cells: Array[Vector2i]) -> Array[Vector2i]:
+	var desired_lookup: Dictionary[Vector2i, bool] = {}
+	for cell in desired_active_cells:
+		desired_lookup[cell] = true
+	var outside_cells: Array[Vector2i] = []
+	for cell in _sorted_body_cells_view():
+		if not desired_lookup.has(cell):
+			outside_cells.append(cell)
+	return outside_cells
+
+
 func _sort_cells(cells: Array[Vector2i]) -> void:
 	cells.sort_custom(Callable(self, "_cell_less"))
 
@@ -1185,28 +1226,33 @@ func _cell_distance_less(left: Vector2i, right: Vector2i) -> bool:
 	return left_distance < right_distance
 
 
-func _sorted_body_cells() -> Array[Vector2i]:
+func _sorted_body_cells_view() -> Array[Vector2i]:
 	if _sorted_body_cells_dirty:
 		_sorted_body_cells_cache.clear()
 		for cell in _active_bodies_by_cell.keys():
 			_sorted_body_cells_cache.append(cell)
 		_sort_cells(_sorted_body_cells_cache)
 		_sorted_body_cells_dirty = false
-	return _copy_cells(_sorted_body_cells_cache)
+	return _sorted_body_cells_cache
 
 
-func _desired_active_cells_for_current_cell() -> Array[Vector2i]:
+func _desired_active_cells_cache_invalid() -> bool:
 	var active_radius: int = GameConfig.STREAM_ACTIVE_RADIUS
-	if (
+	return (
 		_desired_active_cells_dirty
 		or _desired_active_cells_cache_cell != _current_cell
 		or _desired_active_cells_cache_radius != active_radius
-	):
+	)
+
+
+func _desired_active_cells_for_current_cell_view() -> Array[Vector2i]:
+	var active_radius: int = GameConfig.STREAM_ACTIVE_RADIUS
+	if _desired_active_cells_cache_invalid():
 		_desired_active_cells_cache = _cells_in_radius(_current_cell, active_radius)
 		_desired_active_cells_cache_cell = _current_cell
 		_desired_active_cells_cache_radius = active_radius
 		_desired_active_cells_dirty = false
-	return _copy_cells(_desired_active_cells_cache)
+	return _desired_active_cells_cache
 
 
 func _clear_cell_caches() -> void:
@@ -1216,14 +1262,18 @@ func _clear_cell_caches() -> void:
 	_desired_active_cells_dirty = true
 	_sorted_body_cells_cache.clear()
 	_sorted_body_cells_dirty = true
+	_sorted_ready_cells_cache.clear()
+	_sorted_ready_cells_dirty = true
 
 
-func _sorted_ready_cells() -> Array[Vector2i]:
-	var cells: Array[Vector2i] = []
-	for cell in _ready_flags.keys():
-		cells.append(cell)
-	_sort_cells(cells)
-	return cells
+func _sorted_ready_cells_view() -> Array[Vector2i]:
+	if _sorted_ready_cells_dirty:
+		_sorted_ready_cells_cache.clear()
+		for cell in _ready_flags.keys():
+			_sorted_ready_cells_cache.append(cell)
+		_sort_cells(_sorted_ready_cells_cache)
+		_sorted_ready_cells_dirty = false
+	return _sorted_ready_cells_cache
 
 
 func _sorted_failure_cells() -> Array[Vector2i]:
