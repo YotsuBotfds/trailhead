@@ -65,6 +65,21 @@ const JuniperTreeScene: PackedScene = preload("res://assets/models/foliage/junip
 const YuccaTreeScene: PackedScene = preload("res://assets/models/foliage/yucca.glb")
 const DETAIL_MASK_TEXTURE_PATH: String = "res://assets/textures/surface_visuals/generated/terrain_detail_mask.png"
 const GENERATED_SURFACE_TEXTURE_DIR: String = "res://assets/textures/surface_visuals/generated/"
+# Surface-index arrays read Image pixels during export/runtime prewarm. Hard refs
+# keep the current palette/fallback source textures in exported packs so prewarm
+# can read imported pixels without touching stripped raw PNG source files.
+const SurfaceIndexLooseRockAlbedoTexture: Texture2D = preload("res://assets/textures/surface_visuals/zion/loose_rock_default_albedo.png")
+const SurfaceIndexLooseRockNormalTexture: Texture2D = preload("res://assets/textures/surface_visuals/zion/loose_rock_default_normal.png")
+const SurfaceIndexPackedDirtAlbedoTexture: Texture2D = preload("res://assets/textures/surface_visuals/zion/packed_dirt_default_albedo.png")
+const SurfaceIndexPackedDirtNormalTexture: Texture2D = preload("res://assets/textures/surface_visuals/zion/packed_dirt_default_normal.png")
+const SurfaceIndexPackedGravelAlbedoTexture: Texture2D = preload("res://assets/textures/surface_visuals/zion/packed_gravel_default_albedo.png")
+const SurfaceIndexPackedGravelNormalTexture: Texture2D = preload("res://assets/textures/surface_visuals/zion/packed_gravel_default_normal.png")
+const SurfaceIndexPavedRoadAlbedoTexture: Texture2D = preload("res://assets/textures/surface_visuals/zion/paved_road_default_albedo.png")
+const SurfaceIndexPavedRoadNormalTexture: Texture2D = preload("res://assets/textures/surface_visuals/zion/paved_road_default_normal.png")
+const SurfaceIndexTallGrassAlbedoTexture: Texture2D = preload("res://assets/textures/surface_visuals/zion/tall_grass_default_albedo.png")
+const SurfaceIndexTallGrassNormalTexture: Texture2D = preload("res://assets/textures/surface_visuals/zion/tall_grass_default_normal.png")
+const SurfaceIndexWetStoneAlbedoTexture: Texture2D = preload("res://assets/textures/surface_visuals/zion/wet_stone_default_albedo.png")
+const SurfaceIndexWetStoneNormalTexture: Texture2D = preload("res://assets/textures/surface_visuals/zion/wet_stone_default_normal.png")
 # CC0 bark PBR (C1): one shared furrowed riparian bark wired onto every trunk/stem/stalk surface of
 # the foliage GLBs (which ship with zero textures). Per-species bark albedo_color tints differentiate
 # trunk hue. ARM is a packed Poly Haven map (AO=R, Roughness=G, Metallic=B). Render-only, golden-safe.
@@ -465,6 +480,7 @@ const NORMAL_ARRAY_STRENGTH_UNIFORM: StringName = &"normal_array_strength"
 const TERRAIN_DETAIL_NORMAL_TEXTURE_UNIFORM: StringName = &"terrain_detail_normal_texture"
 const TERRAIN_DETAIL_NORMAL_TEXTURE_PATH: String = "res://assets/textures/surface_visuals/ground_pbr/Ground079L/Ground079L_1K-JPG_NormalGL.jpg"
 const MACRO_ALBEDO_TEXTURE_PATH: String = "res://data/terrain/cedar_hollow_zion_macro_albedo.png"
+const MacroAlbedoTexture: Texture2D = preload("res://data/terrain/cedar_hollow_zion_macro_albedo.png")
 const MACRO_ALBEDO_TEXTURE_UNIFORM: StringName = &"macro_albedo_texture"
 const MACRO_ALBEDO_ORIGIN_XZ_UNIFORM: StringName = &"macro_albedo_origin_xz"
 const MACRO_ALBEDO_SIZE_XZ_UNIFORM: StringName = &"macro_albedo_size_xz"
@@ -1855,7 +1871,7 @@ static func _surface_index_macro_albedo_texture() -> Texture2D:
 static func _surface_index_macro_albedo_texture_locked() -> Texture2D:
 	if _surface_index_macro_albedo_cache != null:
 		return _surface_index_macro_albedo_cache
-	_surface_index_macro_albedo_cache = _load_source_image_texture(MACRO_ALBEDO_TEXTURE_PATH)
+	_surface_index_macro_albedo_cache = _load_source_image_texture(MACRO_ALBEDO_TEXTURE_PATH, true)
 	if _surface_index_macro_albedo_cache == null:
 		push_error("Terrain surface-index macro albedo failed to load: " + MACRO_ALBEDO_TEXTURE_PATH)
 	return _surface_index_macro_albedo_cache
@@ -2137,7 +2153,7 @@ static func _load_surface_index_source_albedo_image(id_value: int) -> Image:
 	var albedo_texture_path: String = visual_def.get("albedo_texture_path")
 	if albedo_texture_path.is_empty():
 		return null
-	var image: Image = _load_source_image(albedo_texture_path)
+	var image: Image = _load_source_image(albedo_texture_path, true)
 	if image == null or image.is_empty():
 		return null
 	return image
@@ -2151,7 +2167,7 @@ static func _load_surface_index_source_normal_image(id_value: int) -> Image:
 	var normal_texture_path: String = visual_def.get("normal_texture_path")
 	if normal_texture_path.is_empty():
 		return null
-	var image: Image = _load_source_image(normal_texture_path)
+	var image: Image = _load_source_image(normal_texture_path, true)
 	if image == null or image.is_empty():
 		return null
 	return image
@@ -4263,8 +4279,8 @@ static func _load_texture(path: String) -> Texture2D:
 	return _load_source_image_texture(path)
 
 
-static func _load_source_image_texture(path: String) -> Texture2D:
-	var image: Image = _load_source_image(path)
+static func _load_source_image_texture(path: String, prefer_imported: bool = false) -> Texture2D:
+	var image: Image = _load_source_image(path, prefer_imported)
 	if image == null or image.is_empty():
 		return null
 	var image_texture: ImageTexture = ImageTexture.create_from_image(image)
@@ -4277,12 +4293,14 @@ static func _load_source_image(path: String, prefer_imported: bool = false) -> I
 	# Image.load() of a res:// path that Godot imports as a texture emits an
 	# engine warning ("this will not work on export") on EVERY call and outright
 	# fails in exported builds (the raw source PNG is stripped from the PCK).
-	# For assets that always carry an imported texture and import lossless
-	# (surface-id maps: compress/mode=0, no mipmaps), read pixels straight from
-	# the imported texture instead -- pixel-exact and silent, in editor and
-	# export alike.
+	# For callers that need Image pixels from hard-referenced, lossless imported
+	# textures, read pixels straight from the imported texture instead --
+	# pixel-exact and silent, in editor and export alike.
 	if prefer_imported:
-		var imported_first: Image = _image_from_imported_texture(path)
+		var imported_first: Image = _image_from_preloaded_texture(path)
+		if imported_first != null:
+			return imported_first
+		imported_first = _image_from_imported_texture(path)
 		if imported_first != null:
 			return imported_first
 	var image: Image = Image.new()
@@ -4294,11 +4312,50 @@ static func _load_source_image(path: String, prefer_imported: bool = false) -> I
 	return _image_from_imported_texture(path)
 
 
+static func _image_from_preloaded_texture(path: String) -> Image:
+	return _image_from_texture(_preloaded_source_texture(path))
+
+
+static func _preloaded_source_texture(path: String) -> Texture2D:
+	match path:
+		"res://assets/textures/surface_visuals/zion/loose_rock_default_albedo.png":
+			return SurfaceIndexLooseRockAlbedoTexture
+		"res://assets/textures/surface_visuals/zion/loose_rock_default_normal.png":
+			return SurfaceIndexLooseRockNormalTexture
+		"res://assets/textures/surface_visuals/zion/packed_dirt_default_albedo.png":
+			return SurfaceIndexPackedDirtAlbedoTexture
+		"res://assets/textures/surface_visuals/zion/packed_dirt_default_normal.png":
+			return SurfaceIndexPackedDirtNormalTexture
+		"res://assets/textures/surface_visuals/zion/packed_gravel_default_albedo.png":
+			return SurfaceIndexPackedGravelAlbedoTexture
+		"res://assets/textures/surface_visuals/zion/packed_gravel_default_normal.png":
+			return SurfaceIndexPackedGravelNormalTexture
+		"res://assets/textures/surface_visuals/zion/paved_road_default_albedo.png":
+			return SurfaceIndexPavedRoadAlbedoTexture
+		"res://assets/textures/surface_visuals/zion/paved_road_default_normal.png":
+			return SurfaceIndexPavedRoadNormalTexture
+		"res://assets/textures/surface_visuals/zion/tall_grass_default_albedo.png":
+			return SurfaceIndexTallGrassAlbedoTexture
+		"res://assets/textures/surface_visuals/zion/tall_grass_default_normal.png":
+			return SurfaceIndexTallGrassNormalTexture
+		"res://assets/textures/surface_visuals/zion/wet_stone_default_albedo.png":
+			return SurfaceIndexWetStoneAlbedoTexture
+		"res://assets/textures/surface_visuals/zion/wet_stone_default_normal.png":
+			return SurfaceIndexWetStoneNormalTexture
+		"res://data/terrain/cedar_hollow_zion_macro_albedo.png":
+			return MacroAlbedoTexture
+	return null
+
+
 static func _image_from_imported_texture(path: String) -> Image:
 	var imported_texture: Texture2D = load(path) as Texture2D
-	if imported_texture == null:
+	return _image_from_texture(imported_texture)
+
+
+static func _image_from_texture(texture: Texture2D) -> Image:
+	if texture == null:
 		return null
-	var imported_image: Image = imported_texture.get_image()
+	var imported_image: Image = texture.get_image()
 	if imported_image == null or imported_image.is_empty():
 		return null
 	if imported_image.is_compressed():
