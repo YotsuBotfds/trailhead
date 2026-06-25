@@ -323,24 +323,24 @@ func _class_result(errors: Array[String], details: Array[String]) -> Dictionary[
 	}
 
 
-func _record_class(class_name: String, class_result: Dictionary[String, Variant]) -> void:
+func _record_class(asset_class: String, class_result: Dictionary[String, Variant]) -> void:
 	var classes: Dictionary[String, Variant] = _result["classes"] as Dictionary[String, Variant]
-	classes[class_name] = class_result
+	classes[asset_class] = class_result
 	_result["classes"] = classes
 	if bool(class_result["ok"]):
 		var details: Array[String] = class_result["details"] as Array[String]
-		print("export_parity_smoke: PASS " + class_name + " checks=" + str(details.size()))
+		print("export_parity_smoke: PASS " + asset_class + " checks=" + str(details.size()))
 		return
 	var errors: Array[String] = class_result["errors"] as Array[String]
-	print("export_parity_smoke: FAIL " + class_name + " errors=" + str(errors.size()))
+	print("export_parity_smoke: FAIL " + asset_class + " errors=" + str(errors.size()))
 	for error in errors:
-		push_error(class_name + ": " + error)
+		push_error(asset_class + ": " + error)
 
 
 func _all_classes_ok() -> bool:
 	var classes: Dictionary[String, Variant] = _result["classes"] as Dictionary[String, Variant]
-	for class_name in classes.keys():
-		var class_result: Dictionary[String, Variant] = classes[class_name] as Dictionary[String, Variant]
+	for asset_class in classes.keys():
+		var class_result: Dictionary[String, Variant] = classes[asset_class] as Dictionary[String, Variant]
 		if not bool(class_result["ok"]):
 			return false
 	return true
