@@ -103,6 +103,7 @@ func _inspect() -> void:
 	_require_hud_overlays()
 	await _wait_for_streaming(streamer)
 	if visual_root != null:
+		await _wait_for_localized_stream_hlods(streamer, visual_root)
 		_require_stream_hlod(streamer, visual_root)
 	_require_tile_streamer_active_set()
 	_require_visual_streamer_state(streamer)
@@ -581,6 +582,31 @@ func _wait_for_streaming(streamer: Node) -> void:
 		+ " foliage="
 		+ str(int(streamer.call("foliage_cell_count")))
 	)
+
+
+func _wait_for_localized_stream_hlods(streamer: Node, visual_root: Node) -> void:
+	if streamer == null or visual_root == null:
+		return
+	if visual_root.get_node_or_null(TerrainVisualBuilderScript.REGION_HLOD_NAME) == null:
+		return
+	for _i in range(WAIT_FRAMES):
+		if _localized_stream_hlods_ready(streamer, visual_root):
+			return
+		await get_tree().physics_frame
+		await get_tree().process_frame
+
+
+func _localized_stream_hlods_ready(streamer: Node, visual_root: Node) -> bool:
+	if int(streamer.call("stream_hlod_committed_chunk_count")) <= 1:
+		return false
+	var hlod: MeshInstance3D = visual_root.get_node_or_null(TerrainVisualBuilderScript.REGION_HLOD_NAME) as MeshInstance3D
+	if hlod == null:
+		return false
+	var chunks: Array[MeshInstance3D] = []
+	_collect_stream_hlod_chunks(hlod, chunks)
+	if chunks.size() <= 1:
+		return false
+	return _stream_hlod_chunk_for_cell(chunks, _expected_center_cell) != null
 
 
 func _streaming_ready(streamer: Node) -> bool:
