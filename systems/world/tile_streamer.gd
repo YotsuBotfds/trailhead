@@ -222,11 +222,7 @@ func ready_flags() -> Dictionary[Vector2i, bool]:
 
 
 func prewarmed_cells_for_tests() -> Array[Vector2i]:
-	var cells: Array[Vector2i] = []
-	for cell in _prewarmed_bodies_by_cell.keys():
-		cells.append(cell)
-	_sort_cells(cells)
-	return cells
+	return _sorted_prewarmed_body_cells()
 
 
 func load_failures() -> Dictionary[Vector2i, String]:
@@ -290,7 +286,7 @@ func _physics_process(_delta: float) -> void:
 	_drain_worker_results()
 	_prioritize_prebuilds_for_cells(travel_ahead_prebuild_cells)
 	_cancel_pending_evictions_for_cells(desired_active_cells)
-	_process_unloads(_last_to_unload)
+	_process_unloads(_last_to_unload, desired_prefetch_cells)
 	_forget_ready_cells_outside_prefetch(desired_prefetch_cells)
 	_cancel_prefetch_builds_outside(desired_prefetch_cells)
 	_enqueue_builds_for_cells(travel_ahead_prebuild_cells)
@@ -311,7 +307,7 @@ func _physics_process(_delta: float) -> void:
 	_record_sampled_world_position(sampled_world_position)
 
 
-func _process_unloads(cells: Array[Vector2i]) -> void:
+func _process_unloads(cells: Array[Vector2i], desired_prefetch_cells: Array[Vector2i]) -> void:
 	for cell in cells:
 		if not _active_bodies_by_cell.has(cell):
 			continue
@@ -319,7 +315,7 @@ func _process_unloads(cells: Array[Vector2i]) -> void:
 			continue
 		_pending_evictions_by_cell[cell] = true
 		_pending_eviction_cells.append(cell)
-	_drain_pending_evictions()
+	_drain_pending_evictions(desired_prefetch_cells)
 
 
 func _process_loads(cells: Array[Vector2i]) -> void:
@@ -769,6 +765,85 @@ func _prewarm_cell_body(cell: Vector2i, shape: HeightMapShape3D) -> void:
 	PhysicsServer3D.body_set_space(body_rid, _physics_space())
 	_collision_cooks_this_tick += 1
 	_prewarmed_bodies_by_cell[cell] = body_rid
+	_trim_prewarmed_body_pool(_preferred_prewarm_pool_cells())
+
+
+func _should_demote_active_cell_to_prewarm(cell: Vector2i, desired_prefetch_cells: Array[Vector2i]) -> bool:
+	if not _has_production_prewarm_workers():
+		return false
+	if not desired_prefetch_cells.has(cell):
+		return false
+	if not _ready_flags.has(cell):
+		return false
+	if not _heightmap_data_by_cell.has(cell):
+		return false
+	return _active_shapes_by_cell.has(cell)
+
+
+func _demote_active_cell_to_prewarm(
+	cell: Vector2i,
+	body_rid: RID,
+	shape: HeightMapShape3D,
+	desired_prefetch_cells: Array[Vector2i]
+) -> bool:
+	if not body_rid.is_valid():
+		return false
+	if shape == null:
+		return false
+	if _prewarmed_bodies_by_cell.has(cell):
+		_remove_prebuild_state(cell)
+	PhysicsServer3D.body_set_collision_layer(body_rid, 0)
+	PhysicsServer3D.body_set_collision_mask(body_rid, 0)
+	_prewarmed_bodies_by_cell[cell] = body_rid
+	_prebuilt_shapes_by_cell[cell] = shape
+	_trim_prewarmed_body_pool(desired_prefetch_cells)
+	return true
+
+
+func _preferred_prewarm_pool_cells() -> Array[Vector2i]:
+	return _cells_in_radius(_current_cell, GameConfig.STREAM_PREFETCH_RADIUS)
+
+
+func _prewarm_pool_capacity() -> int:
+	var radius: int = maxi(GameConfig.STREAM_PREFETCH_RADIUS, 0)
+	var side_length: int = (radius * 2) + 1
+	return side_length * side_length
+
+
+func _trim_prewarmed_body_pool(preferred_cells: Array[Vector2i]) -> void:
+	var capacity: int = _prewarm_pool_capacity()
+	if _prewarmed_bodies_by_cell.size() <= capacity:
+		return
+
+	var preferred_lookup: Dictionary[Vector2i, bool] = {}
+	for cell in preferred_cells:
+		preferred_lookup[cell] = true
+
+	var sorted_cells: Array[Vector2i] = _sorted_prewarmed_body_cells()
+	for cell in sorted_cells:
+		if _prewarmed_bodies_by_cell.size() <= capacity:
+			return
+		if preferred_lookup.has(cell):
+			continue
+		_remove_prebuild_state(cell)
+
+	if _prewarmed_bodies_by_cell.size() <= capacity:
+		return
+
+	var distance_sorted_cells: Array[Vector2i] = _sorted_prewarmed_body_cells()
+	_sort_origin_cell = _current_cell
+	distance_sorted_cells.sort_custom(_cell_distance_less_callable)
+	while _prewarmed_bodies_by_cell.size() > capacity and not distance_sorted_cells.is_empty():
+		var cell_to_remove: Vector2i = distance_sorted_cells.pop_back()
+		_remove_prebuild_state(cell_to_remove)
+
+
+func _sorted_prewarmed_body_cells() -> Array[Vector2i]:
+	var cells: Array[Vector2i] = []
+	for cell in _prewarmed_bodies_by_cell.keys():
+		cells.append(cell)
+	_sort_cells(cells)
+	return cells
 
 
 func _enqueue_prebuild(cell: Vector2i) -> void:
@@ -826,29 +901,34 @@ func _cancel_pending_evictions_for_cells(cells: Array[Vector2i]) -> void:
 		_pending_evictions_by_cell.erase(cell)
 
 
-func _drain_pending_evictions() -> void:
+func _drain_pending_evictions(desired_prefetch_cells: Array[Vector2i]) -> void:
 	var budget: int = maxi(GameConfig.stream_collision_evictions_per_tick, 0)
 	while budget > 0 and not _pending_eviction_cells.is_empty():
 		var cell: Vector2i = _pending_eviction_cells.pop_front()
 		if not _pending_evictions_by_cell.has(cell):
 			continue
 		_pending_evictions_by_cell.erase(cell)
-		_evict_cell_now(cell)
+		_evict_cell_now(cell, desired_prefetch_cells)
 		budget -= 1
 
 
-func _evict_cell_now(cell: Vector2i) -> void:
+func _evict_cell_now(cell: Vector2i, desired_prefetch_cells: Array[Vector2i]) -> void:
 	if not _active_bodies_by_cell.has(cell):
 		return
 	var body_rid: RID = _active_bodies_by_cell[cell]
-	if body_rid.is_valid():
+	var demoted_to_prewarm: bool = false
+	if _should_demote_active_cell_to_prewarm(cell, desired_prefetch_cells):
+		var shape: HeightMapShape3D = _active_shapes_by_cell[cell]
+		demoted_to_prewarm = _demote_active_cell_to_prewarm(cell, body_rid, shape, desired_prefetch_cells)
+	if body_rid.is_valid() and not demoted_to_prewarm:
 		PhysicsServer3D.body_set_space(body_rid, RID())
 		PhysicsServer3D.free_rid(body_rid)
 	_active_bodies_by_cell.erase(cell)
 	_sorted_body_cells_dirty = true
 	_active_shapes_by_cell.erase(cell)
 	_activated_ticks_by_cell.erase(cell)
-	_remove_prebuild_state(cell)
+	if not demoted_to_prewarm:
+		_remove_prebuild_state(cell)
 	_cancel_build(cell)
 	EventBus.world_tile_evicted.emit(cell)
 
