@@ -81,7 +81,7 @@ func _validate_sim_data(errors: PackedStringArray, active_tiles: Array[Vector2i]
 		errors.append("surface_palette_path does not exist: " + surface_palette_path)
 	if surface_id_map_path.is_empty():
 		errors.append("surface_id_map_path is empty")
-	elif not FileAccess.file_exists(surface_id_map_path):
+	elif not _surface_id_map_path_exists(surface_id_map_path):
 		errors.append("surface_id_map_path does not exist: " + surface_id_map_path)
 	if collision_tile_paths.size() != active_tiles.size():
 		errors.append("collision_tile_paths must match active tile count")
@@ -108,6 +108,10 @@ func _validate_render_data(errors: PackedStringArray, active_tiles: Array[Vector
 			errors.append("visual tile path is empty")
 		elif not FileAccess.file_exists(path):
 			errors.append("visual tile path does not exist: " + path)
+
+
+func _surface_id_map_path_exists(path: String) -> bool:
+	return FileAccess.file_exists(path) or ResourceLoader.exists(path)
 
 
 func extent_size() -> Vector2:

@@ -303,11 +303,12 @@ func _increment_terrain_id_count(id_value: int) -> void:
 
 func _load_terrain_surface_id_png(path: String) -> bool:
 	var file: FileAccess = FileAccess.open(path, FileAccess.READ)
-	if file == null:
-		return false
-	var bytes: PackedByteArray = file.get_buffer(file.get_length())
-	file.close()
-	return _decode_terrain_surface_id_png(bytes)
+	if file != null:
+		var bytes: PackedByteArray = file.get_buffer(file.get_length())
+		file.close()
+		if _decode_terrain_surface_id_png(bytes):
+			return true
+	return _load_terrain_surface_id_texture(path)
 
 
 func _decode_terrain_surface_id_png(bytes: PackedByteArray) -> bool:
@@ -375,6 +376,66 @@ func _decode_terrain_surface_id_png(bytes: PackedByteArray) -> bool:
 	_terrain_surface_width = width
 	_terrain_surface_height = height
 	return true
+
+
+func _load_terrain_surface_id_texture(path: String) -> bool:
+	var texture: Texture2D = load(path) as Texture2D
+	if texture == null:
+		return false
+	var image: Image = texture.get_image()
+	if image == null or image.is_empty():
+		return false
+	return _decode_terrain_surface_id_image(image)
+
+
+func _decode_terrain_surface_id_image(image: Image) -> bool:
+	_terrain_surface_samples = PackedByteArray()
+	_terrain_surface_width = 0
+	_terrain_surface_height = 0
+	if image.is_compressed():
+		var decompress_error: Error = image.decompress()
+		if decompress_error != OK:
+			return false
+	var width: int = image.get_width()
+	var height: int = image.get_height()
+	if width <= 0 or height <= 0:
+		return false
+	var samples: PackedByteArray = PackedByteArray()
+	samples.resize(width * height)
+	if not _copy_first_channel_samples(image, samples):
+		image.convert(Image.FORMAT_RGBA8)
+		if not _copy_first_channel_samples(image, samples):
+			return false
+	_terrain_surface_samples = samples
+	_terrain_surface_width = width
+	_terrain_surface_height = height
+	return true
+
+
+func _copy_first_channel_samples(image: Image, samples: PackedByteArray) -> bool:
+	var bytes_per_pixel: int = _first_channel_bytes_per_pixel(image.get_format())
+	if bytes_per_pixel <= 0:
+		return false
+	var bytes: PackedByteArray = image.get_data()
+	var expected_size: int = samples.size() * bytes_per_pixel
+	if bytes.size() < expected_size:
+		return false
+	for sample_index in range(samples.size()):
+		samples[sample_index] = bytes[sample_index * bytes_per_pixel]
+	return true
+
+
+func _first_channel_bytes_per_pixel(format: int) -> int:
+	match format:
+		Image.FORMAT_L8, Image.FORMAT_R8:
+			return 1
+		Image.FORMAT_LA8, Image.FORMAT_RG8:
+			return 2
+		Image.FORMAT_RGB8:
+			return 3
+		Image.FORMAT_RGBA8:
+			return 4
+	return 0
 
 
 func _unfilter_png_row(row: PackedByteArray, previous: PackedByteArray, bytes_per_pixel: int, filter_type: int) -> bool:
