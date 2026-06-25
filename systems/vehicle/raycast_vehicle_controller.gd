@@ -231,21 +231,18 @@ func _apply_wheel_forces() -> void:
 	var wheel_compressions: Array[float] = [0.0, 0.0, 0.0, 0.0]
 	var wheel_force_positions: Array[Vector3] = [Vector3.ZERO, Vector3.ZERO, Vector3.ZERO, Vector3.ZERO]
 	var wheel_contacts: Array[bool] = [false, false, false, false]
+	var wheel_contact: Array[bool] = _state.wheel_contact
+	var wheel_surface: Array[StringName] = _state.wheel_surface
+	var wheel_hit_points: Array[Vector3] = _state.wheel_hit_point
 	for i in range(_wheel_rays.size()):
 		var ray: RayCast3D = _wheel_rays[i]
 		ray.force_raycast_update()
 		var has_contact: bool = ray.is_colliding()
 		wheel_contacts[i] = has_contact
-		var wheel_contact: Array[bool] = _state.wheel_contact
 		wheel_contact[i] = has_contact
-		_state.wheel_contact = wheel_contact
 		if not has_contact:
-			var empty_surface: Array[StringName] = _state.wheel_surface
-			empty_surface[i] = &""
-			_state.wheel_surface = empty_surface
-			var empty_hit_points: Array[Vector3] = _state.wheel_hit_point
-			empty_hit_points[i] = Vector3.ZERO
-			_state.wheel_hit_point = empty_hit_points
+			wheel_surface[i] = &""
+			wheel_hit_points[i] = Vector3.ZERO
 			continue
 		contact_count += 1
 		var hit_point: Vector3 = ray.get_collision_point()
@@ -253,9 +250,7 @@ func _apply_wheel_forces() -> void:
 		if hit_normal.length() <= GameConfig.self_right_forward_epsilon:
 			hit_normal = Vector3.UP
 		normal_sum += hit_normal.normalized()
-		var wheel_hit_points: Array[Vector3] = _state.wheel_hit_point
 		wheel_hit_points[i] = hit_point
-		_state.wheel_hit_point = wheel_hit_points
 		var dist: float = ray.global_position.distance_to(hit_point)
 		var compression: float = clampf((ray_length - dist) / maxf(GameConfig.susp_travel, 0.001), 0.0, 1.0)
 		var spring_force: float = compression * GameConfig.susp_stiffness
@@ -273,9 +268,7 @@ func _apply_wheel_forces() -> void:
 		normal_load_sum += suspension_force
 		var surface_def: Resource = _resolve_surface_def(ray.get_collider(), hit_point)
 		var surface_id: StringName = _surface_id(surface_def)
-		var wheel_surface: Array[StringName] = _state.wheel_surface
 		wheel_surface[i] = surface_id
-		_state.wheel_surface = wheel_surface
 		friction_sum += _surface_float(surface_def, "friction", GameConfig.default_friction)
 		rolling_drag_sum += _surface_float(surface_def, "rolling_drag", GameConfig.default_rolling_drag)
 		slip_sum += _surface_float(surface_def, "slip", GameConfig.default_slip)
@@ -285,6 +278,9 @@ func _apply_wheel_forces() -> void:
 		wetness_residue_sum += _surface_float(surface_def, "wetness_residue", 0.0)
 		if _surface_bool(surface_def, "bog_enabled", false):
 			bog_enabled = true
+	_state.wheel_contact = wheel_contact
+	_state.wheel_surface = wheel_surface
+	_state.wheel_hit_point = wheel_hit_points
 	_apply_anti_roll(wheel_compressions, wheel_force_positions, wheel_contacts, up)
 	_state.on_ground = contact_count > 0
 	if contact_count > 0:
