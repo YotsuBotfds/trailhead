@@ -1,12 +1,18 @@
 shader_type spatial;
 render_mode diffuse_lambert, specular_schlick_ggx;
 
+#define CLOUD_SHADOW_CLOCK TI##ME
+
 uniform sampler2D surface_id_texture : hint_default_black, filter_nearest, repeat_disable;
 uniform sampler2DArray albedo_array : source_color, filter_linear_mipmap, repeat_enable;
 uniform sampler2DArray normal_array : filter_linear_mipmap, repeat_enable;
 uniform sampler2D macro_albedo_texture : source_color, filter_linear, repeat_disable;
 instance uniform vec2 control_origin_xz = vec2(0.0, 0.0);
 instance uniform vec2 control_size_xz = vec2(100.0, 100.0);
+global uniform float cloud_shadow_strength;
+global uniform float cloud_shadow_scale;
+global uniform float cloud_shadow_speed;
+global uniform vec2 cloud_shadow_dir;
 uniform vec2 macro_albedo_origin_xz = vec2(0.0, 0.0);
 uniform vec2 macro_albedo_size_xz = vec2(5500.0, 5700.0);
 uniform bool use_albedo_array = false;
@@ -277,6 +283,7 @@ varying float world_y;
 varying float local_normal_y;
 
 const float ZION_TAU = 6.28318530718;
+const float CLOUD_SHADOW_MAX_STRENGTH = 0.22;
 
 float luminance(vec3 color) {
 	return dot(color, vec3(0.2126, 0.7152, 0.0722));
@@ -298,6 +305,30 @@ float hash21_smooth(vec2 p) {
 	float h01 = hash21(cell + vec2(0.0, 1.0));
 	float h11 = hash21(cell + vec2(1.0, 1.0));
 	return mix(mix(h00, h10, blend.x), mix(h01, h11, blend.x), blend.y);
+}
+
+float cloud_shadow_fbm(vec2 p) {
+	float broad = hash21_smooth(p * 0.52);
+	float mid = hash21_smooth(p * 1.11 + vec2(17.0, 9.0));
+	float soft_breakup = hash21_smooth(p * 2.17 + vec2(4.0, 23.0));
+	return broad * 0.56 + mid * 0.31 + soft_breakup * 0.13;
+}
+
+float cloud_shadow_factor_at(vec2 world_xz_pos) {
+	float scale = max(cloud_shadow_scale, 0.0);
+	if (cloud_shadow_strength <= 0.0 || scale <= 0.0) {
+		return 0.0;
+	}
+	vec2 dir = cloud_shadow_dir;
+	float dir_len = length(dir);
+	if (dir_len <= 0.0001) {
+		dir = vec2(1.0, 0.0);
+	} else {
+		dir /= dir_len;
+	}
+	vec2 cloud_uv = world_xz_pos * scale + dir * (CLOUD_SHADOW_CLOCK * max(cloud_shadow_speed, 0.0));
+	float cloud_noise = cloud_shadow_fbm(cloud_uv);
+	return smoothstep(0.48, 0.82, cloud_noise);
 }
 
 float wrapped_line(float phase, float width) {
@@ -1059,6 +1090,12 @@ void fragment() {
 	float surface_cavity = clamp(1.0 - dot(world_micro_normal, world_geo_normal_now), 0.0, 1.0);
 	float surface_ao = 1.0 - surface_cavity * surface_ao_strength * (1.0 + surface_ao_floor_bias * low_flat_mask);
 	ALBEDO = clamp(ALBEDO * clamp(surface_ao, 0.0, 1.0), vec3(0.0), vec3(1.0));
+	float cloud_strength = clamp(cloud_shadow_strength, 0.0, CLOUD_SHADOW_MAX_STRENGTH);
+	if (cloud_strength > 0.0) {
+		float cloud_factor = cloud_shadow_factor_at(world_xz);
+		float cloud_shadow_mul = mix(1.0, 1.0 - cloud_strength, cloud_factor);
+		ALBEDO = clamp(ALBEDO * cloud_shadow_mul, vec3(0.0), vec3(1.0));
+	}
 	float roughness_wobble = (hash21_smooth(world_xz * 0.31) * 2.0 - 1.0) * micro_roughness_variation * (0.5 + micro_strength);
 	float floor_roughness_wobble = (hash21_smooth(world_xz * 0.9 + vec2(5.7, 2.4)) * 2.0 - 1.0) * micro_roughness_floor_variation * low_flat_mask;
 	float floor_roughness_shift = floor_wash_mask * 0.035 + floor_sand_patch_mask * 0.055 - floor_slickrock_mask * 0.08 + low_flat_mask * detile_floor * 0.025;

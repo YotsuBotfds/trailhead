@@ -46,6 +46,7 @@ const CAMERA_ATTRIBUTES_OWNER_META: StringName = &"atmosphere_camera_attributes_
 
 
 static func apply_mood(world_environment: WorldEnvironment, sun: DirectionalLight3D, mood: int) -> void:
+	_apply_cloud_shadow_globals()
 	if sun != null:
 		_apply_mood_sun(sun, mood)
 		_apply_sun_atmosphere(sun)
@@ -107,6 +108,13 @@ static func _apply_sun_atmosphere(sun: DirectionalLight3D) -> void:
 	sun.shadow_blur = maxf(GameConfig.atmosphere_pcss_shadow_blur, 0.0)
 	sun.shadow_opacity = clampf(GameConfig.atmosphere_pcss_shadow_opacity, 0.0, 1.0)
 	sun.light_volumetric_fog_energy = GameConfig.resolved_atmosphere_sun_volumetric_fog_energy()
+
+
+static func _apply_cloud_shadow_globals() -> void:
+	RenderingServer.global_shader_parameter_set(&"cloud_shadow_strength", GameConfig.resolved_cloud_shadow_strength())
+	RenderingServer.global_shader_parameter_set(&"cloud_shadow_scale", GameConfig.resolved_cloud_shadow_scale())
+	RenderingServer.global_shader_parameter_set(&"cloud_shadow_speed", GameConfig.resolved_cloud_shadow_speed())
+	RenderingServer.global_shader_parameter_set(&"cloud_shadow_dir", GameConfig.resolved_cloud_shadow_dir())
 
 
 static func _directional_shadow_mode(mode: int) -> int:

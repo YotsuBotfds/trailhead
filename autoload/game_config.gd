@@ -472,6 +472,11 @@ var atmosphere_shadow_normal_bias: float = 1.2
 var atmosphere_shadow_bias: float = 0.04
 var atmosphere_sun_volumetric_fog_energy: float = 1.02  # was 0.91; modest shaft boost for 4090/high tier, below the 1.1-1.2 aggressive target
 var atmosphere_sun_volumetric_fog_low_tier_scale: float = 0.0
+var cloud_shadow_strength: float = 0.22
+var cloud_shadow_low_tier_strength_scale: float = 0.0
+var cloud_shadow_scale: float = 0.0016
+var cloud_shadow_speed: float = 0.6
+var cloud_shadow_dir: Vector2 = Vector2(0.944, 0.330)
 var contact_fill_light_enabled: bool = true
 # FIDELITY (vehicle grounding): this fill lamp sits ~0.09 m BELOW the chassis
 # origin -- i.e. just under the ground plane at rest (resting min_y ~0.047 m) -- and
@@ -1024,6 +1029,27 @@ func resolved_atmosphere_pcss_shadow_max_distance() -> float:
 	if render_screen_space_gi_high_tier_enabled():
 		return maxf(base_distance * maxf(atmosphere_pcss_shadow_high_tier_scale, 0.0), 0.1)
 	return maxf(base_distance * clampf(atmosphere_pcss_shadow_low_tier_scale, 0.0, 1.0), 0.1)
+
+
+func resolved_cloud_shadow_strength() -> float:
+	var base_strength: float = clampf(cloud_shadow_strength, 0.0, 0.22)
+	if render_screen_space_gi_high_tier_enabled():
+		return base_strength
+	return base_strength * clampf(cloud_shadow_low_tier_strength_scale, 0.0, 1.0)
+
+
+func resolved_cloud_shadow_scale() -> float:
+	return maxf(cloud_shadow_scale, 0.0)
+
+
+func resolved_cloud_shadow_speed() -> float:
+	return maxf(cloud_shadow_speed, 0.0)
+
+
+func resolved_cloud_shadow_dir() -> Vector2:
+	if cloud_shadow_dir.length_squared() <= 0.000001:
+		return Vector2.RIGHT
+	return cloud_shadow_dir.normalized()
 
 
 func get_fov_for_speed(speed: float) -> float:

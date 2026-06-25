@@ -21,6 +21,25 @@ EventBus="*res://autoload/event_bus.gd"
 GameManager="*res://autoload/game_manager.gd"
 TileStreamer="*res://systems/world/tile_streamer.gd"
 
+[shader_globals]
+
+cloud_shadow_strength={
+"type": "float",
+"value": 0.0
+}
+cloud_shadow_scale={
+"type": "float",
+"value": 0.0016
+}
+cloud_shadow_speed={
+"type": "float",
+"value": 0.6
+}
+cloud_shadow_dir={
+"type": "vec2",
+"value": Vector2(0.944, 0.33)
+}
+
 [input]
 
 throttle={
