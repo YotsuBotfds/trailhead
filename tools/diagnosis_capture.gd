@@ -45,6 +45,9 @@ var _host: Node = null
 var _out_dir: String = DEFAULT_OUT_DIR
 var _label: String = "diag"
 var _recolor: bool = false
+var _custom_waypoints: Array[Vector2] = []
+var _look_at: Vector2 = Vector2.ZERO
+var _look_at_set: bool = false
 
 
 func _ready() -> void:
@@ -67,6 +70,16 @@ func _parse_args() -> void:
 			_label = text.trim_prefix("--label=")
 		elif text == "--recolor":
 			_recolor = true
+		elif text.begins_with("--waypoints="):
+			for pair in text.trim_prefix("--waypoints=").split(";", false):
+				var xz: PackedStringArray = pair.split(",", false)
+				if xz.size() == 2:
+					_custom_waypoints.append(Vector2(xz[0].to_float(), xz[1].to_float()))
+		elif text.begins_with("--look-at="):
+			var pt: PackedStringArray = text.trim_prefix("--look-at=").split(",", false)
+			if pt.size() == 2:
+				_look_at = Vector2(pt[0].to_float(), pt[1].to_float())
+				_look_at_set = true
 
 
 func _run() -> void:
@@ -76,11 +89,17 @@ func _run() -> void:
 		return
 	var terrain_def: Resource = TerrainBuilderScript.cedar_hollow_10m_terrain_def()
 	var off: Vector2 = TerrainBuilderScript.cedar_hollow_10m_horizontal_offset()
-	for i in WAYPOINTS_XZ.size():
-		var wp: Vector2 = WAYPOINTS_XZ[i]
-		var next: Vector2 = WAYPOINTS_XZ[mini(i + 1, WAYPOINTS_XZ.size() - 1)]
-		var dir: Vector2 = next - wp
-		var yaw_deg: float = 160.0 if dir.length() < 0.01 else rad_to_deg(atan2(dir.x, dir.y)) + 180.0
+	var waypoints: Array[Vector2] = _custom_waypoints if not _custom_waypoints.is_empty() else WAYPOINTS_XZ
+	for i in waypoints.size():
+		var wp: Vector2 = waypoints[i]
+		var yaw_deg: float
+		if _look_at_set:
+			var ldir: Vector2 = _look_at - wp
+			yaw_deg = 160.0 if ldir.length() < 0.01 else rad_to_deg(atan2(ldir.x, ldir.y)) + 180.0
+		else:
+			var next: Vector2 = waypoints[mini(i + 1, waypoints.size() - 1)]
+			var dir: Vector2 = next - wp
+			yaw_deg = 160.0 if dir.length() < 0.01 else rad_to_deg(atan2(dir.x, dir.y)) + 180.0
 		var bed_y: float = TerrainBuilderScript.heightmap_height_at_world_xz(terrain_def, wp, off)
 		var pos: Vector3 = Vector3(wp.x, bed_y + SURFACE_LIFT_M, wp.y)
 		_reset_vehicle(pos, yaw_deg)
