@@ -136,6 +136,13 @@ func def_for_id(surface_id: StringName) -> Resource:
 	return _fallback
 
 
+func surface_defs() -> Array[Resource]:
+	var surface_defs_out: Array[Resource] = []
+	for surface_id in _defs.keys():
+		surface_defs_out.append(_defs[surface_id])
+	return surface_defs_out
+
+
 func surface_id_from_collider(collider: Object) -> StringName:
 	var tagged_surface_id: StringName = _tagged_surface_id_from_collider(collider)
 	if tagged_surface_id != &"":

@@ -10,6 +10,17 @@ const STREAMING_COLLISION_RELEASE_SETTLE_TICKS: int = 2
 const STREAMING_COLLISION_RELEASE_STABILIZE_TICKS: int = 36
 const STREAMING_COLLISION_RELEASE_MIN_UP_DOT: float = 0.85
 
+class SurfaceSnap:
+	var id: StringName = &"packed_dirt"
+	var friction: float = 0.0
+	var rolling_drag: float = 0.0
+	var slip: float = 0.0
+	var bog_enabled: bool = false
+	var bog_threshold: float = 0.0
+	var mud_residue: float = 0.0
+	var dust_residue: float = 0.0
+	var wetness_residue: float = 0.0
+
 var _body: RigidBody3D = null
 var _wheel_rays: Array[RayCast3D] = []
 var _pending_input: RefCounted = RaycastVehicleInputScript.new()
@@ -29,6 +40,10 @@ var _recovery_position_history: Array[Vector3] = []
 var _recovery_transform_history: Array[Transform3D] = []
 var _recovery_stuck: bool = false
 var _tile_streamer: Node = null
+var _surface_map: SurfaceMap = null
+var _surface_snaps_by_resource_id: Dictionary[int, SurfaceSnap] = {}
+var _surface_snap_cache_primed: bool = false
+var _null_surface_snap: SurfaceSnap = null
 var _streaming_collision_freeze_active: bool = false
 var _streaming_collision_hold_transform: Transform3D = Transform3D.IDENTITY
 var _streaming_collision_freeze_ticks: int = 0
@@ -49,6 +64,8 @@ var _streaming_collision_release_stabilize_ticks_remaining: int = 0
 
 func _ready() -> void:
 	_tile_streamer = get_node_or_null("/root/TileStreamer")
+	_surface_map = GameManager.active_surface_map as SurfaceMap
+	_prime_surface_snap_cache()
 	_reset_surface_cache()
 	_build_physics_body()
 	GameManager.register_vehicle(self)
@@ -266,17 +283,16 @@ func _apply_wheel_forces() -> void:
 		var suspension_force: float = maxf(0.0, spring_force + clampf(damping_force, -max_damping_force, max_damping_force))
 		_body.apply_force(up * suspension_force, force_pos)
 		normal_load_sum += suspension_force
-		var surface_def: Resource = _resolve_surface_def(ray.get_collider(), hit_point)
-		var surface_id: StringName = _surface_id(surface_def)
-		wheel_surface[i] = surface_id
-		friction_sum += _surface_float(surface_def, "friction", GameConfig.default_friction)
-		rolling_drag_sum += _surface_float(surface_def, "rolling_drag", GameConfig.default_rolling_drag)
-		slip_sum += _surface_float(surface_def, "slip", GameConfig.default_slip)
-		bog_threshold_sum += _surface_float(surface_def, "bog_threshold", GameConfig.default_bog_threshold)
-		mud_residue_sum += _surface_float(surface_def, "mud_residue", 0.0)
-		dust_residue_sum += _surface_float(surface_def, "dust_residue", 0.0)
-		wetness_residue_sum += _surface_float(surface_def, "wetness_residue", 0.0)
-		if _surface_bool(surface_def, "bog_enabled", false):
+		var surface_snap: SurfaceSnap = _resolve_surface_snap(ray.get_collider(), hit_point)
+		wheel_surface[i] = surface_snap.id
+		friction_sum += surface_snap.friction
+		rolling_drag_sum += surface_snap.rolling_drag
+		slip_sum += surface_snap.slip
+		bog_threshold_sum += surface_snap.bog_threshold
+		mud_residue_sum += surface_snap.mud_residue
+		dust_residue_sum += surface_snap.dust_residue
+		wetness_residue_sum += surface_snap.wetness_residue
+		if surface_snap.bog_enabled:
 			bog_enabled = true
 	_state.wheel_contact = wheel_contact
 	_state.wheel_surface = wheel_surface
@@ -829,34 +845,82 @@ func _dominant_contact_surface() -> StringName:
 	return best_surface_id
 
 
+func _resolve_surface_snap(collider: Object, world_position: Vector3) -> SurfaceSnap:
+	var surface_def: Resource = _resolve_surface_def(collider, world_position)
+	return _surface_snap_for_def(surface_def)
+
+
 func _resolve_surface_def(collider: Object, world_position: Vector3) -> Resource:
-	var surface_map: Node = GameManager.active_surface_map
+	var surface_map: SurfaceMap = _active_surface_map()
 	if surface_map != null:
-		var resolved: Resource = surface_map.call("resolve_from_collider_at", collider, world_position) as Resource
+		var resolved: Resource = surface_map.resolve_from_collider_at(collider, world_position)
 		if resolved != null:
 			return resolved
 	return null
 
 
-func _surface_id(surface_def: Resource) -> StringName:
+func _active_surface_map() -> SurfaceMap:
+	if _surface_map != null and is_instance_valid(_surface_map):
+		return _surface_map
+	_surface_map = GameManager.active_surface_map as SurfaceMap
+	return _surface_map
+
+
+func _prime_surface_snap_cache() -> void:
+	if _surface_snap_cache_primed:
+		return
+	var surface_map: SurfaceMap = _active_surface_map()
+	if surface_map == null:
+		return
+	var surface_defs: Array[Resource] = surface_map.surface_defs()
+	for surface_def in surface_defs:
+		if surface_def == null:
+			continue
+		var resource_id: int = int(surface_def.get_instance_id())
+		if not _surface_snaps_by_resource_id.has(resource_id):
+			_surface_snaps_by_resource_id[resource_id] = _surface_snap_from_def(surface_def)
+	_surface_snap_cache_primed = true
+
+
+func _surface_snap_for_def(surface_def: Resource) -> SurfaceSnap:
 	if surface_def == null:
-		return &"packed_dirt"
+		return _current_null_surface_snap()
+	var resource_id: int = int(surface_def.get_instance_id())
+	if _surface_snaps_by_resource_id.has(resource_id):
+		return _surface_snaps_by_resource_id[resource_id]
+	var surface_snap: SurfaceSnap = _surface_snap_from_def(surface_def)
+	_surface_snaps_by_resource_id[resource_id] = surface_snap
+	return surface_snap
+
+
+func _current_null_surface_snap() -> SurfaceSnap:
+	if _null_surface_snap == null:
+		_null_surface_snap = SurfaceSnap.new()
+	_null_surface_snap.id = &"packed_dirt"
+	_null_surface_snap.friction = GameConfig.default_friction
+	_null_surface_snap.rolling_drag = GameConfig.default_rolling_drag
+	_null_surface_snap.slip = GameConfig.default_slip
+	_null_surface_snap.bog_enabled = false
+	_null_surface_snap.bog_threshold = GameConfig.default_bog_threshold
+	_null_surface_snap.mud_residue = 0.0
+	_null_surface_snap.dust_residue = 0.0
+	_null_surface_snap.wetness_residue = 0.0
+	return _null_surface_snap
+
+
+func _surface_snap_from_def(surface_def: Resource) -> SurfaceSnap:
+	var surface_snap: SurfaceSnap = SurfaceSnap.new()
 	var id_value: StringName = surface_def.get("id")
-	if id_value == &"":
-		return &"packed_dirt"
-	return id_value
-
-
-func _surface_float(surface_def: Resource, property_name: StringName, fallback: float) -> float:
-	if surface_def == null:
-		return fallback
-	return float(surface_def.get(property_name))
-
-
-func _surface_bool(surface_def: Resource, property_name: StringName, fallback: bool) -> bool:
-	if surface_def == null:
-		return fallback
-	return bool(surface_def.get(property_name))
+	surface_snap.id = &"packed_dirt" if id_value == &"" else id_value
+	surface_snap.friction = float(surface_def.get("friction"))
+	surface_snap.rolling_drag = float(surface_def.get("rolling_drag"))
+	surface_snap.slip = float(surface_def.get("slip"))
+	surface_snap.bog_enabled = bool(surface_def.get("bog_enabled"))
+	surface_snap.bog_threshold = float(surface_def.get("bog_threshold"))
+	surface_snap.mud_residue = float(surface_def.get("mud_residue"))
+	surface_snap.dust_residue = float(surface_def.get("dust_residue"))
+	surface_snap.wetness_residue = float(surface_def.get("wetness_residue"))
+	return surface_snap
 
 
 func _update_contamination(contact_count: int, mud_residue_sum: float, dust_residue_sum: float, wetness_residue_sum: float) -> void:
