@@ -36,7 +36,7 @@ const SCALING_3D_MODE_FSR2: int = Viewport.SCALING_3D_MODE_FSR2
 
 var render_frame_cap_enabled: bool = true
 var render_max_fps: int = 60
-var render_visual_tile_commits_per_frame: int = 2
+var render_visual_tile_commits_per_frame: int = 4
 var render_stream_hlod_commits_per_frame: int = 1
 # Chebyshev radius (in stream tiles) around the active cell within which stream
 # HLOD chunks are densified. Default 5 = ceil(REGION_STREAM_MIDLOD_RANGE_END_M

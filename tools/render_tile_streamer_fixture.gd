@@ -36,6 +36,7 @@ func _inspect() -> void:
 	TerrainVisualBuilderScript.clear_surface_index_tile_material_cache_for_tests()
 	await _exercise_stream_hlod_budget()
 	_streamer.call("configure_region", REGION_ID)
+	await _wait_for_stream_hlod_committed("configured stream-HLOD")
 	_streamer.call("set_worker_count_for_tests", 0)
 	_require_cell_count("configured empty", 0)
 	_require_cells("configured active cells", [])
@@ -323,12 +324,12 @@ func _exercise_stream_hlod_budget() -> void:
 	var budget: int = maxi(GameConfig.render_stream_hlod_commits_per_frame, 1)
 	if manifest_count <= budget:
 		_errors.append("stream-HLOD budget fixture needs a real manifest larger than one frame budget, manifest=" + str(manifest_count) + " budget=" + str(budget))
-	if initial_committed <= 0:
-		_errors.append("stream-HLOD should commit the first budgeted chunks during configure_region")
+	if initial_committed != 0:
+		_errors.append("stream-HLOD configure_region should not synchronously commit chunks: committed=" + str(initial_committed))
 	if initial_committed > budget:
 		_errors.append("stream-HLOD configure_region committed more than one frame budget: committed=" + str(initial_committed) + " budget=" + str(budget))
-	if initial_pending <= 0:
-		_errors.append("stream-HLOD configure_region should leave real manifest chunks queued")
+	if initial_pending != manifest_count:
+		_errors.append("stream-HLOD configure_region should leave every manifest chunk pending async build: pending=" + str(initial_pending) + " manifest=" + str(manifest_count))
 	if initial_committed + initial_pending != manifest_count:
 		_errors.append("stream-HLOD committed+pending should equal real manifest count: committed=" + str(initial_committed) + " pending=" + str(initial_pending) + " manifest=" + str(manifest_count))
 	# _process drains up to one budget of HLOD chunks per frame. One process_frame can resume
@@ -336,7 +337,7 @@ func _exercise_stream_hlod_budget() -> void:
 	# progress across several frames (and that committed+pending stays == manifest throughout).
 	var prev_committed: int = initial_committed
 	var observed_progress: bool = false
-	for frame_index in range(6):
+	for _frame_index in range(WAIT_FRAMES):
 		await get_tree().process_frame
 		var committed_now: int = int(_streamer.call("stream_hlod_committed_chunk_count"))
 		var pending_now: int = int(_streamer.call("stream_hlod_pending_chunk_count"))
@@ -348,8 +349,10 @@ func _exercise_stream_hlod_budget() -> void:
 		if committed_now + pending_now != manifest_count:
 			_errors.append("stream-HLOD committed+pending should equal real manifest count: committed=" + str(committed_now) + " pending=" + str(pending_now) + " manifest=" + str(manifest_count))
 		prev_committed = committed_now
+		if observed_progress:
+			break
 	if not observed_progress:
-		_errors.append("stream-HLOD queue made no drain progress across 6 frames (amortized build stalled)")
+		_errors.append("stream-HLOD queue made no drain progress across " + str(WAIT_FRAMES) + " frames (async build stalled)")
 	_streamer.call("reset_stream")
 
 
@@ -583,7 +586,7 @@ func _require_foliage_tile(cell: Vector2i) -> Node3D:
 
 
 func _exercise_midlod_commit_pressure() -> void:
-	_configure_streamer_for_pressure_fixture()
+	await _configure_streamer_for_pressure_fixture()
 	var pressure_cells: Array[Vector2i] = _pressure_active_cells()
 	if pressure_cells.is_empty():
 		_errors.append("mid-LOD pressure fixture found no active cells")
@@ -628,7 +631,7 @@ func _exercise_midlod_commit_pressure() -> void:
 
 
 func _exercise_midlod_failure_retry_after_free() -> void:
-	_configure_streamer_for_pressure_fixture()
+	await _configure_streamer_for_pressure_fixture()
 	EventBus.world_tile_activated.emit(PRESSURE_CENTER_CELL)
 	await _wait_for_midlod_cell_count("mid-LOD retry seed", 1)
 	var midlod_cells: Array[Vector2i] = _variant_to_cell_array(_streamer.call("active_midlod_cells"))
@@ -650,6 +653,7 @@ func _exercise_fullres_on_activation() -> void:
 	# visual mesh aligns with the physics heightmap the wheels touch.
 	_streamer.call("reset_stream")
 	_streamer.call("configure_region", REGION_ID)
+	await _wait_for_stream_hlod_committed("fullres-on-activation: stream-HLOD")
 	_streamer.call("set_worker_count_for_tests", 0)
 
 	# Step 1: prefetch → step=5 build lands in the ready cache.
@@ -690,6 +694,7 @@ func _exercise_fullres_on_inflight_prefetch_activation() -> void:
 	# for an active cell and never upgraded it.
 	_streamer.call("reset_stream")
 	_streamer.call("configure_region", REGION_ID)
+	await _wait_for_stream_hlod_committed("inflight-prefetch activation: stream-HLOD")
 	_streamer.call("set_worker_count_for_tests", 1)
 
 	var step5_data: Variant = TerrainVisualBuilderScript.build_region_visual_tile_data(
@@ -752,6 +757,7 @@ func _exercise_foliage_finish_budget() -> void:
 	GameConfig.render_visual_foliage_subcommits_per_frame = WIDE_SUBCOMMIT_BUDGET
 	_streamer.call("reset_stream")
 	_streamer.call("configure_region", REGION_ID)
+	await _wait_for_stream_hlod_committed("finish-budget: stream-HLOD")
 	_streamer.call("set_worker_count_for_tests", 0)
 
 	# Prefetch both cells so their foliage data is cached and ready BEFORE activation,
@@ -819,6 +825,7 @@ func _exercise_foliage_lod_radius() -> void:
 	GameConfig.render_visual_foliage_tile_finishes_per_frame = WIDE_BUDGET
 	_streamer.call("reset_stream")
 	_streamer.call("configure_region", REGION_ID)
+	await _wait_for_stream_hlod_committed("foliage-lod-radius: stream-HLOD")
 	_streamer.call("set_worker_count_for_tests", 0)
 
 	# Activate FAR plus the two phase-1 movers; the active center settles at (2,4), so FAR
@@ -887,6 +894,7 @@ func _wait_for_foliage_lod_child_count_at_least(label: String, cell: Vector2i, r
 func _configure_streamer_for_pressure_fixture() -> void:
 	_streamer.call("reset_stream")
 	_streamer.call("configure_region", REGION_ID)
+	await _wait_for_stream_hlod_committed("pressure fixture: stream-HLOD")
 	_streamer.call("set_worker_count_for_tests", 0)
 
 
@@ -1113,6 +1121,14 @@ func _require_pending_commit_count(label: String, expected_count: int) -> void:
 	var observed_count: int = int(_streamer.call("pending_visual_commit_count"))
 	if observed_count != expected_count:
 		_errors.append(label + " expected " + str(expected_count) + " pending visual commits, got " + str(observed_count))
+
+
+func _wait_for_stream_hlod_committed(label: String) -> void:
+	for _frame_index in range(WAIT_FRAMES):
+		if int(_streamer.call("stream_hlod_committed_chunk_count")) > 0:
+			return
+		await get_tree().process_frame
+	_errors.append(label + " expected at least one committed stream-HLOD chunk")
 
 
 func _wait_for_cell_count(label: String, expected_count: int) -> void:
