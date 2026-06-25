@@ -2245,6 +2245,48 @@ static func region_tile_cells(region_id: String) -> Array[Vector2i]:
 	return _tile_cells_from_manifest(manifest)
 
 
+static func load_region_tile_data_for_cells(region_id: String, cells: Array[Vector2i]) -> Dictionary[Vector2i, Variant]:
+	var tile_data_by_cell: Dictionary[Vector2i, Variant] = {}
+	for cell in cells:
+		var tile_data: RegionTileData = _load_region_tile(region_id, cell)
+		if tile_data != null:
+			tile_data_by_cell[cell] = tile_data
+	return tile_data_by_cell
+
+
+static func region_visual_height_at_xz(tile_data_by_cell: Dictionary[Vector2i, Variant], world_x: float, world_z: float) -> float:
+	var tile_data: RegionTileData = _variant_tile_data_for_region_xz(tile_data_by_cell, world_x, world_z)
+	if tile_data == null:
+		return 0.0
+	var local_x: float = clampf(world_x - float(tile_data.cell.x) * tile_data.tile_size_m, 0.0, tile_data.tile_size_m)
+	var local_z: float = clampf(world_z - float(tile_data.cell.y) * tile_data.tile_size_m, 0.0, tile_data.tile_size_m)
+	var col: int = int(floor(local_x / tile_data.tile_size_m * float(tile_data.width - 1) + 0.5))
+	var row: int = int(floor(local_z / tile_data.tile_size_m * float(tile_data.depth - 1) + 0.5))
+	return _height_value_at(tile_data, col, row)
+
+
+static func region_visual_normal_at_xz(tile_data_by_cell: Dictionary[Vector2i, Variant], world_x: float, world_z: float) -> Vector3:
+	var tile_data: RegionTileData = _variant_tile_data_for_region_xz(tile_data_by_cell, world_x, world_z)
+	if tile_data == null:
+		return Vector3.UP
+	var local_x: float = clampf(world_x - float(tile_data.cell.x) * tile_data.tile_size_m, 0.0, tile_data.tile_size_m)
+	var local_z: float = clampf(world_z - float(tile_data.cell.y) * tile_data.tile_size_m, 0.0, tile_data.tile_size_m)
+	var col: int = int(floor(local_x / tile_data.tile_size_m * float(tile_data.width - 1) + 0.5))
+	var row: int = int(floor(local_z / tile_data.tile_size_m * float(tile_data.depth - 1) + 0.5))
+	return _tile_normal(tile_data, col, row)
+
+
+static func region_surface_id_value_at_xz(tile_data_by_cell: Dictionary[Vector2i, Variant], world_x: float, world_z: float) -> int:
+	var tile_data: RegionTileData = _variant_tile_data_for_region_xz(tile_data_by_cell, world_x, world_z)
+	if tile_data == null or tile_data.surface_image == null:
+		return 0
+	var local_x: float = clampf(world_x - float(tile_data.cell.x) * tile_data.tile_size_m, 0.0, tile_data.tile_size_m)
+	var local_z: float = clampf(world_z - float(tile_data.cell.y) * tile_data.tile_size_m, 0.0, tile_data.tile_size_m)
+	var col: int = int(floor(local_x / tile_data.tile_size_m * float(tile_data.surface_image.get_width() - 1) + 0.5))
+	var row: int = int(floor(local_z / tile_data.tile_size_m * float(tile_data.surface_image.get_height() - 1) + 0.5))
+	return _surface_id_value_at(tile_data, col, row)
+
+
 static func _load_region_tile(region_id: String, cell: Vector2i) -> RegionTileData:
 	var cache_key: String = _region_tile_cache_key(region_id, cell)
 	var cached_tile_data: RegionTileData = _region_tile_cache_get(cache_key)
@@ -3407,6 +3449,14 @@ static func _tile_data_for_region_xz(tile_data_by_cell: Dictionary[Vector2i, Reg
 	var cell: Vector2i = Vector2i(int(floor(world_x / tile_size_m)), int(floor(world_z / tile_size_m)))
 	if tile_data_by_cell.has(cell):
 		return tile_data_by_cell[cell]
+	return null
+
+
+static func _variant_tile_data_for_region_xz(tile_data_by_cell: Dictionary[Vector2i, Variant], world_x: float, world_z: float) -> RegionTileData:
+	var tile_size_m: float = GameConfig.STREAM_TILE_SIZE_M
+	var cell: Vector2i = Vector2i(int(floor(world_x / tile_size_m)), int(floor(world_z / tile_size_m)))
+	if tile_data_by_cell.has(cell):
+		return tile_data_by_cell[cell] as RegionTileData
 	return null
 
 
