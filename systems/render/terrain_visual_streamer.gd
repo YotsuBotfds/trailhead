@@ -1306,6 +1306,8 @@ func _drain_stream_hlod_queue() -> int:
 			continue
 		_enqueue_stream_hlod_build(cell)
 		dispatched_count += 1
+		if _commit_frame_budget_exceeded():
+			break
 	if dispatched_count > 0 and _workers.is_empty():
 		_process_build_queue_synchronously()
 	return dispatched_count
@@ -1535,6 +1537,8 @@ func _drain_stream_hlod_densify_queue() -> int:
 			continue
 		_enqueue_stream_hlod_densify_build(cell)
 		dispatched_count += 1
+		if _commit_frame_budget_exceeded():
+			break
 	if dispatched_count > 0 and _workers.is_empty():
 		_process_build_queue_synchronously()
 	return dispatched_count
