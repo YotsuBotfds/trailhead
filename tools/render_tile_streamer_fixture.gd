@@ -35,7 +35,7 @@ func _inspect() -> void:
 	TerrainVisualBuilderScript.clear_region_tile_data_cache_for_tests()
 	TerrainVisualBuilderScript.clear_surface_index_tile_material_cache_for_tests()
 	await _exercise_stream_hlod_budget()
-	_streamer.call("configure_region", REGION_ID)
+	_configure_region_and_require_pipeline_warmup(REGION_ID)
 	await _wait_for_stream_hlod_committed("configured stream-HLOD")
 	_streamer.call("set_worker_count_for_tests", 0)
 	_require_cell_count("configured empty", 0)
@@ -43,7 +43,6 @@ func _inspect() -> void:
 	_require_detail_root()
 	_require_stream_midlod_root()
 	_require_streamed_foliage_root()
-	_require_pipeline_warmup()
 	await _wait_for_pipeline_warmup_release()
 	_require_stream_hlod(false)
 
@@ -190,6 +189,11 @@ func _require_streamed_foliage_root() -> void:
 		_errors.append("streamer missing StreamedFoliageCells root")
 
 
+func _configure_region_and_require_pipeline_warmup(region_id: String) -> void:
+	_streamer.call("configure_region", region_id)
+	_require_pipeline_warmup()
+
+
 func _require_pipeline_warmup() -> void:
 	var terrain_root: Node = _streamer.get_node_or_null(TerrainVisualBuilderScript.REGION_ROOT_NAME)
 	if terrain_root == null:
@@ -317,7 +321,7 @@ func _require_stream_hlod(expected_visible: bool) -> void:
 
 func _exercise_stream_hlod_budget() -> void:
 	_streamer.call("reset_stream")
-	_streamer.call("configure_region", STREAM_HLOD_BUDGET_REGION_ID)
+	_configure_region_and_require_pipeline_warmup(STREAM_HLOD_BUDGET_REGION_ID)
 	var manifest_count: int = int(_streamer.call("stream_hlod_manifest_chunk_count"))
 	var initial_committed: int = int(_streamer.call("stream_hlod_committed_chunk_count"))
 	var initial_pending: int = int(_streamer.call("stream_hlod_pending_chunk_count"))
@@ -652,7 +656,7 @@ func _exercise_fullres_on_activation() -> void:
 	# coarse data and rebuild at REGION_DETAIL_FULLRES_SAMPLE_STEP (step=1) so the
 	# visual mesh aligns with the physics heightmap the wheels touch.
 	_streamer.call("reset_stream")
-	_streamer.call("configure_region", REGION_ID)
+	_configure_region_and_require_pipeline_warmup(REGION_ID)
 	await _wait_for_stream_hlod_committed("fullres-on-activation: stream-HLOD")
 	_streamer.call("set_worker_count_for_tests", 0)
 
@@ -693,7 +697,7 @@ func _exercise_fullres_on_inflight_prefetch_activation() -> void:
 	# build was already queued. The worker then committed coarse step=5 terrain
 	# for an active cell and never upgraded it.
 	_streamer.call("reset_stream")
-	_streamer.call("configure_region", REGION_ID)
+	_configure_region_and_require_pipeline_warmup(REGION_ID)
 	await _wait_for_stream_hlod_committed("inflight-prefetch activation: stream-HLOD")
 	_streamer.call("set_worker_count_for_tests", 1)
 
@@ -756,7 +760,7 @@ func _exercise_foliage_finish_budget() -> void:
 	GameConfig.render_visual_foliage_tile_finishes_per_frame = FINISH_BUDGET
 	GameConfig.render_visual_foliage_subcommits_per_frame = WIDE_SUBCOMMIT_BUDGET
 	_streamer.call("reset_stream")
-	_streamer.call("configure_region", REGION_ID)
+	_configure_region_and_require_pipeline_warmup(REGION_ID)
 	await _wait_for_stream_hlod_committed("finish-budget: stream-HLOD")
 	_streamer.call("set_worker_count_for_tests", 0)
 
@@ -824,7 +828,7 @@ func _exercise_foliage_lod_radius() -> void:
 	GameConfig.render_visual_foliage_subcommits_per_frame = WIDE_BUDGET
 	GameConfig.render_visual_foliage_tile_finishes_per_frame = WIDE_BUDGET
 	_streamer.call("reset_stream")
-	_streamer.call("configure_region", REGION_ID)
+	_configure_region_and_require_pipeline_warmup(REGION_ID)
 	await _wait_for_stream_hlod_committed("foliage-lod-radius: stream-HLOD")
 	_streamer.call("set_worker_count_for_tests", 0)
 
@@ -893,7 +897,7 @@ func _wait_for_foliage_lod_child_count_at_least(label: String, cell: Vector2i, r
 
 func _configure_streamer_for_pressure_fixture() -> void:
 	_streamer.call("reset_stream")
-	_streamer.call("configure_region", REGION_ID)
+	_configure_region_and_require_pipeline_warmup(REGION_ID)
 	await _wait_for_stream_hlod_committed("pressure fixture: stream-HLOD")
 	_streamer.call("set_worker_count_for_tests", 0)
 
