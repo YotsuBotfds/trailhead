@@ -9,6 +9,30 @@ const PNG_SIGNATURE: PackedByteArray = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a
 const SOURCE_TAGGED: String = "tagged"
 const SOURCE_TERRAIN: String = "terrain"
 const SOURCE_FALLBACK: String = "fallback"
+const SURFACE_DEF_DIR_PATH: String = "res://data/surfaces"
+# Hard resource refs keep SurfaceDef discovery export-safe when packed builds cannot enumerate res://.
+const LooseRockSurfaceDef: Resource = preload("res://data/surfaces/loose_rock.tres")
+const MudSurfaceDef: Resource = preload("res://data/surfaces/mud.tres")
+const PackedDirtSurfaceDef: Resource = preload("res://data/surfaces/packed_dirt.tres")
+const PackedGravelSurfaceDef: Resource = preload("res://data/surfaces/packed_gravel.tres")
+const PavedRoadSurfaceDef: Resource = preload("res://data/surfaces/paved_road.tres")
+const SandWashSurfaceDef: Resource = preload("res://data/surfaces/sand_wash.tres")
+const SlickrockDrySurfaceDef: Resource = preload("res://data/surfaces/slickrock_dry.tres")
+const TallGrassSurfaceDef: Resource = preload("res://data/surfaces/tall_grass.tres")
+const WetStoneSurfaceDef: Resource = preload("res://data/surfaces/wet_stone.tres")
+const WoodPlankSurfaceDef: Resource = preload("res://data/surfaces/wood_plank.tres")
+const SURFACE_DEF_MANIFEST: Array[Resource] = [
+	LooseRockSurfaceDef,
+	MudSurfaceDef,
+	PackedDirtSurfaceDef,
+	PackedGravelSurfaceDef,
+	PavedRoadSurfaceDef,
+	SandWashSurfaceDef,
+	SlickrockDrySurfaceDef,
+	TallGrassSurfaceDef,
+	WetStoneSurfaceDef,
+	WoodPlankSurfaceDef
+]
 
 var _defs: Dictionary[StringName, Resource] = {}
 var _fallback: Resource = null
@@ -25,7 +49,7 @@ var _terrain_id_counts: Dictionary[String, int] = {}
 
 
 func _ready() -> void:
-	load_defs("res://data/surfaces/")
+	load_defs(SURFACE_DEF_DIR_PATH)
 	_fallback = _get_def(DEFAULT_SURFACE_ID)
 	reset_source_counts()
 	GameManager.register_surface_map(self)
@@ -33,6 +57,18 @@ func _ready() -> void:
 
 func load_defs(dir_path: String) -> void:
 	_defs.clear()
+	if _is_surface_def_manifest_dir(dir_path):
+		_load_surface_def_manifest()
+		return
+	_load_surface_defs_from_dir(dir_path)
+
+
+func _load_surface_def_manifest() -> void:
+	for surface_def in SURFACE_DEF_MANIFEST:
+		_register_surface_def(surface_def, "SurfaceDef manifest")
+
+
+func _load_surface_defs_from_dir(dir_path: String) -> void:
 	var dir: DirAccess = DirAccess.open(dir_path)
 	if dir == null:
 		push_error("SurfaceMap failed to open: " + dir_path)
@@ -43,12 +79,25 @@ func load_defs(dir_path: String) -> void:
 		if not dir.current_is_dir() and file_name.ends_with(".tres"):
 			var resource_path: String = dir_path.path_join(file_name)
 			var loaded: Resource = load(resource_path)
-			if loaded != null:
-				var surface_id: StringName = loaded.get("id")
-				if surface_id != &"":
-					_defs[surface_id] = loaded
+			_register_surface_def(loaded, resource_path)
 		file_name = dir.get_next()
 	dir.list_dir_end()
+
+
+func _register_surface_def(surface_def: Resource, resource_path: String) -> void:
+	if surface_def == null:
+		push_error("SurfaceMap failed to load SurfaceDef: " + resource_path)
+		return
+	var surface_id: StringName = surface_def.get("id")
+	if surface_id != &"":
+		_defs[surface_id] = surface_def
+
+
+func _is_surface_def_manifest_dir(dir_path: String) -> bool:
+	var normalized_path: String = dir_path
+	while normalized_path.ends_with("/") and normalized_path.length() > 0:
+		normalized_path = normalized_path.left(normalized_path.length() - 1)
+	return normalized_path == SURFACE_DEF_DIR_PATH
 
 
 func resolve_from_collider(collider: Object) -> Resource:
