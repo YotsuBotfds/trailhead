@@ -1164,6 +1164,12 @@ func _require_dust_mote_field(chase_camera: Camera3D, context: String) -> void:
 	if chase_camera == null:
 		_errors.append(context + " ChaseCamera missing for DustMoteField inspection")
 		return
+	var expected_count: int = DustTiltShiftVisualBuilderScript.dust_mote_effective_count()
+	if expected_count <= 0:
+		var disabled_field_node: Node = chase_camera.get_node_or_null(DustTiltShiftVisualBuilderScript.DUST_FIELD_NAME)
+		if disabled_field_node != null:
+			_errors.append(context + " DustMoteField should be absent when the effective mote count is 0")
+		return
 	var field_node: Node = _require_node(chase_camera, DustTiltShiftVisualBuilderScript.DUST_FIELD_NAME)
 	if field_node == null:
 		return
@@ -1171,17 +1177,25 @@ func _require_dust_mote_field(chase_camera: Camera3D, context: String) -> void:
 	if particles == null:
 		_errors.append(context + " ChaseCamera/" + DustTiltShiftVisualBuilderScript.DUST_FIELD_NAME + " should be GPUParticles3D")
 		return
-	if particles.amount != GameConfig.dust_mote_count:
-		_errors.append(context + " DustMoteField amount expected " + str(GameConfig.dust_mote_count) + ", got " + str(particles.amount))
+	if particles.amount != expected_count:
+		_errors.append(context + " DustMoteField amount expected " + str(expected_count) + ", got " + str(particles.amount))
 	if not particles.use_fixed_seed:
 		_errors.append(context + " DustMoteField should use a fixed seed")
 	if particles.seed != DustTiltShiftVisualBuilderScript.DUST_FIXED_SEED:
 		_errors.append(context + " DustMoteField seed expected " + str(DustTiltShiftVisualBuilderScript.DUST_FIXED_SEED) + ", got " + str(particles.seed))
 	if particles.randomness != 0.0:
 		_errors.append(context + " DustMoteField randomness expected 0.0, got " + str(particles.randomness))
+	var expected_fixed_fps: int = maxi(GameConfig.dust_mote_fixed_fps, 1)
+	if particles.fixed_fps != expected_fixed_fps:
+		_errors.append(context + " DustMoteField fixed_fps expected " + str(expected_fixed_fps) + ", got " + str(particles.fixed_fps))
 	if not particles.emitting:
 		_errors.append(context + " DustMoteField should emit by default")
 	_require_float_close(context + " DustMoteField visibility range", particles.visibility_range_end, GameConfig.vis_range_dust, FLOAT_EPSILON)
+	var process_material: ParticleProcessMaterial = particles.process_material as ParticleProcessMaterial
+	if process_material == null:
+		_errors.append(context + " DustMoteField should use ParticleProcessMaterial")
+		return
+	_require_float_close(context + " DustMoteField alpha", process_material.color.a, clampf(GameConfig.dust_mote_alpha, 0.0, 1.0), FLOAT_EPSILON)
 
 
 func _require_float_in_range_with_tolerance(label: String, actual: float, minimum_value: float, maximum_value: float, tolerance: float) -> void:

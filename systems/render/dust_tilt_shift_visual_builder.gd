@@ -10,15 +10,16 @@ const DUST_FIXED_SEED: int = 424242
 const DUST_LIFETIME: float = 9.0
 const DUST_PREPROCESS: float = 9.0
 const DUST_SCALE: float = 0.0078
-const DUST_ALPHA: float = 0.38
+const DUST_DRIFT_DIRECTION_FALLBACK: Vector3 = Vector3(0.24, 0.05, -0.18)
 
 
 static func build(parent: Node3D, chase_camera: Camera3D, orbit_camera: Camera3D, fpv_camera: Camera3D) -> Node3D:
 	var root: Node3D = Node3D.new()
 	root.name = ROOT_NAME
 	parent.add_child(root)
-	if chase_camera != null and GameConfig.dust_mote_count > 0:
-		chase_camera.add_child(_make_dust_field())
+	var dust_count: int = dust_mote_effective_count()
+	if chase_camera != null and dust_count > 0:
+		chase_camera.add_child(_make_dust_field(dust_count))
 	_ensure_tilt_shift_layer(parent)
 	_apply_tilt_shift(chase_camera)
 	_apply_tilt_shift(orbit_camera)
@@ -26,17 +27,31 @@ static func build(parent: Node3D, chase_camera: Camera3D, orbit_camera: Camera3D
 	return root
 
 
-static func _make_dust_field() -> GPUParticles3D:
+static func dust_mote_effective_count() -> int:
+	var base_count: int = maxi(GameConfig.dust_mote_count, 0)
+	if base_count <= 0:
+		return 0
+	var tier: int = mini(maxi(GameConfig.dust_mote_quality_tier, GameConfig.DUST_MOTE_TIER_OFF), GameConfig.DUST_MOTE_TIER_HIGH)
+	if tier <= GameConfig.DUST_MOTE_TIER_OFF:
+		return 0
+	if tier == GameConfig.DUST_MOTE_TIER_LOW:
+		return mini(maxi(GameConfig.dust_mote_count_low_tier, 0), base_count)
+	if tier == GameConfig.DUST_MOTE_TIER_MEDIUM:
+		return mini(maxi(GameConfig.dust_mote_count_medium_tier, 0), base_count)
+	return base_count
+
+
+static func _make_dust_field(dust_count: int) -> GPUParticles3D:
 	var particles: GPUParticles3D = GPUParticles3D.new()
 	particles.name = DUST_FIELD_NAME
-	particles.amount = maxi(GameConfig.dust_mote_count, 0)
+	particles.amount = maxi(dust_count, 0)
 	particles.lifetime = DUST_LIFETIME
 	particles.preprocess = DUST_PREPROCESS
 	particles.emitting = true
 	particles.use_fixed_seed = true
 	particles.seed = DUST_FIXED_SEED
 	particles.randomness = 0.0
-	particles.fixed_fps = 30
+	particles.fixed_fps = maxi(GameConfig.dust_mote_fixed_fps, 1)
 	particles.draw_pass_1 = _dust_mesh()
 	particles.process_material = _dust_process_material()
 	particles.position = Vector3(0.0, 0.0, -1.6)
@@ -50,14 +65,17 @@ static func _dust_process_material() -> ParticleProcessMaterial:
 	material.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
 	material.emission_box_extents = GameConfig.dust_mote_field_size
 	material.gravity = Vector3(0.0, 0.002, 0.0)
-	material.direction = Vector3(0.18, 0.04, -0.10).normalized()
+	var drift_direction: Vector3 = GameConfig.dust_mote_drift_direction
+	if drift_direction.length_squared() <= 0.000001:
+		drift_direction = DUST_DRIFT_DIRECTION_FALLBACK
+	material.direction = drift_direction.normalized()
 	material.initial_velocity_min = GameConfig.dust_mote_drift_speed * 0.45
 	material.initial_velocity_max = GameConfig.dust_mote_drift_speed
 	material.damping_min = 0.02
 	material.damping_max = 0.04
 	material.scale_min = DUST_SCALE * 0.55
 	material.scale_max = DUST_SCALE
-	material.color = Color(1.0, 0.88, 0.68, DUST_ALPHA)
+	material.color = Color(1.0, 0.88, 0.68, clampf(GameConfig.dust_mote_alpha, 0.0, 1.0))
 	return material
 
 
@@ -69,7 +87,7 @@ static func _dust_mesh() -> QuadMesh:
 	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	material.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
 	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	material.albedo_color = Color(1.0, 0.88, 0.68, DUST_ALPHA)
+	material.albedo_color = Color(1.0, 0.88, 0.68, clampf(GameConfig.dust_mote_alpha, 0.0, 1.0))
 	mesh.material = material
 	return mesh
 

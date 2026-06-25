@@ -2,6 +2,7 @@ extends Node
 
 const CedarHollowPlayableScene: PackedScene = preload("res://scenes/cedar_hollow_playable.tscn")
 const AtmosphereVisualBuilderScript: GDScript = preload("res://systems/render/atmosphere_visual_builder.gd")
+const DustTiltShiftVisualBuilderScript: GDScript = preload("res://systems/render/dust_tilt_shift_visual_builder.gd")
 const FLOAT_EPSILON: float = 0.001
 const COLOR_TOLERANCE: float = 0.02
 const WATER_SHADER_PATH: String = "res://systems/render/water_visual.gdshader"
@@ -308,9 +309,15 @@ func _inspect_dust_and_tilt_shift() -> void:
 	var orbit_camera: Camera3D = _require_node(_scene_root, "OrbitCamera") as Camera3D
 	var fpv_camera: Camera3D = _require_node(_scene_root, "FpvCamera") as Camera3D
 	_inspect_camera_far_planes(chase_camera, orbit_camera, fpv_camera)
-	if chase_camera != null and GameConfig.dust_mote_count > 0:
-		var dust: GPUParticles3D = _require_node(chase_camera, "DustMoteField") as GPUParticles3D
-		_inspect_dust_field(dust)
+	if chase_camera != null:
+		var expected_count: int = DustTiltShiftVisualBuilderScript.dust_mote_effective_count()
+		if expected_count > 0:
+			var dust: GPUParticles3D = _require_node(chase_camera, DustTiltShiftVisualBuilderScript.DUST_FIELD_NAME) as GPUParticles3D
+			_inspect_dust_field(dust)
+		else:
+			var disabled_dust: Node = chase_camera.get_node_or_null(DustTiltShiftVisualBuilderScript.DUST_FIELD_NAME)
+			if disabled_dust != null:
+				_errors.append("DustMoteField should be absent when the effective mote count is 0")
 	_inspect_tilt_shift_layer()
 	_inspect_tilt_shift_camera(chase_camera, "ChaseCamera")
 	_inspect_tilt_shift_camera(orbit_camera, "OrbitCamera")
@@ -322,12 +329,18 @@ func _inspect_dust_field(dust: GPUParticles3D) -> void:
 		return
 	if not dust.emitting:
 		_errors.append("DustMoteField should emit")
+	var expected_count: int = DustTiltShiftVisualBuilderScript.dust_mote_effective_count()
+	if dust.amount != expected_count:
+		_errors.append("DustMoteField amount expected " + str(expected_count) + ", got " + str(dust.amount))
 	if dust.amount < DUST_MOTE_COUNT_FLOOR:
 		_errors.append("DustMoteField should have particles")
 	if not dust.use_fixed_seed:
 		_errors.append("DustMoteField should use a fixed seed")
 	if dust.randomness > FLOAT_EPSILON:
 		_errors.append("DustMoteField should avoid particle randomness")
+	var expected_fixed_fps: int = maxi(GameConfig.dust_mote_fixed_fps, 1)
+	if dust.fixed_fps != expected_fixed_fps:
+		_errors.append("DustMoteField fixed_fps expected " + str(expected_fixed_fps) + ", got " + str(dust.fixed_fps))
 	if absf(dust.visibility_range_end - GameConfig.vis_range_dust) > FLOAT_EPSILON:
 		_errors.append("DustMoteField visibility range should follow GameConfig")
 	var process_material: ParticleProcessMaterial = dust.process_material as ParticleProcessMaterial
@@ -336,6 +349,7 @@ func _inspect_dust_field(dust: GPUParticles3D) -> void:
 		return
 	if process_material.emission_shape != ParticleProcessMaterial.EMISSION_SHAPE_BOX:
 		_errors.append("DustMoteField should use a box field around the camera")
+	_require_float_close("DustMoteField alpha", process_material.color.a, clampf(GameConfig.dust_mote_alpha, 0.0, 1.0), FLOAT_EPSILON)
 
 
 func _inspect_camera_far_planes(chase_camera: Camera3D, orbit_camera: Camera3D, fpv_camera: Camera3D) -> void:

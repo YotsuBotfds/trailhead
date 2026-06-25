@@ -35,6 +35,10 @@ const RENDER_SCREEN_SPACE_GI_TIER_HIGH: int = 1
 const SCALING_3D_MODE_BILINEAR: int = Viewport.SCALING_3D_MODE_BILINEAR
 const SCALING_3D_MODE_FSR: int = Viewport.SCALING_3D_MODE_FSR
 const SCALING_3D_MODE_FSR2: int = Viewport.SCALING_3D_MODE_FSR2
+const DUST_MOTE_TIER_OFF: int = 0
+const DUST_MOTE_TIER_LOW: int = 1
+const DUST_MOTE_TIER_MEDIUM: int = 2
+const DUST_MOTE_TIER_HIGH: int = 3
 
 var render_screen_space_gi_tier: int = RENDER_SCREEN_SPACE_GI_TIER_HIGH
 var render_frame_cap_enabled: bool = true
@@ -464,9 +468,17 @@ var contact_fill_light_energy: float = 0.02
 var contact_fill_light_range: float = 0.55
 var contact_fill_light_height: float = 0.09
 var contact_fill_light_color: Color = Color(1.0, 1.0, 1.0)
-var dust_mote_count: int = 0
+# Ambient camera-space motes are render-only. High is the full 4090 capture tier;
+# medium/low reduce count, and OFF disables the field for weak hardware.
+var dust_mote_quality_tier: int = DUST_MOTE_TIER_HIGH
+var dust_mote_count: int = 160
+var dust_mote_count_medium_tier: int = 80
+var dust_mote_count_low_tier: int = 40
 var dust_mote_field_size: Vector3 = Vector3(10.0, 2.0, 10.0)
-var dust_mote_drift_speed: float = 0.05
+var dust_mote_drift_direction: Vector3 = Vector3(0.24, 0.05, -0.18)
+var dust_mote_drift_speed: float = 0.035
+var dust_mote_alpha: float = 0.16
+var dust_mote_fixed_fps: int = 30
 var tilt_shift_enabled: bool = false
 var tilt_shift_blur_amount: float = 0.8
 var tilt_shift_band_center: float = 0.55
