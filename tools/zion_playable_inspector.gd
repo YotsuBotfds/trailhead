@@ -307,8 +307,14 @@ func _require_stream_hlod_chunk(chunk: MeshInstance3D) -> void:
 		_errors.append(String(chunk.name) + " HLOD visibility_range_begin expected " + str(TerrainVisualBuilderScript.REGION_STREAM_MIDLOD_RANGE_END_M) + ", got " + str(chunk.visibility_range_begin))
 	if absf(chunk.visibility_range_end) > POSITION_TOLERANCE_M:
 		_errors.append(String(chunk.name) + " HLOD visibility_range_end should be open-ended")
-	if chunk.visibility_range_fade_mode != GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED:
-		_errors.append(String(chunk.name) + " HLOD visibility_range_fade_mode expected DISABLED")
+	var expected_fade_mode: int = TerrainVisualBuilderScript.terrain_lod_visibility_range_fade_mode()
+	var expected_fade_margin: float = TerrainVisualBuilderScript.terrain_lod_visibility_range_fade_margin()
+	if chunk.visibility_range_fade_mode != expected_fade_mode:
+		_errors.append(String(chunk.name) + " HLOD visibility_range_fade_mode expected " + str(expected_fade_mode) + ", got " + str(chunk.visibility_range_fade_mode))
+	if absf(chunk.visibility_range_begin_margin - expected_fade_margin) > POSITION_TOLERANCE_M:
+		_errors.append(String(chunk.name) + " HLOD visibility_range_begin_margin expected " + str(expected_fade_margin) + ", got " + str(chunk.visibility_range_begin_margin))
+	if absf(chunk.visibility_range_end_margin) > POSITION_TOLERANCE_M:
+		_errors.append(String(chunk.name) + " HLOD visibility_range_end_margin expected 0, got " + str(chunk.visibility_range_end_margin))
 	for surface_index in range(chunk.mesh.get_surface_count()):
 		var material: ShaderMaterial = chunk.mesh.surface_get_material(surface_index) as ShaderMaterial
 		if material == null:

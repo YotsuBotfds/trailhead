@@ -49,8 +49,14 @@ func _inspect() -> void:
 			_errors.append("TerrainHLOD visibility_range_begin expected " + str(GameConfig.vis_range_terrain) + ", got " + str(hlod.visibility_range_begin))
 		if absf(hlod.visibility_range_end) > FLOAT_EPSILON:
 			_errors.append("TerrainHLOD visibility_range_end should be open-ended")
-		if hlod.visibility_range_fade_mode != GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED:
-			_errors.append("TerrainHLOD visibility_range_fade_mode expected DISABLED, got " + str(hlod.visibility_range_fade_mode))
+		var expected_fade_mode: int = TerrainVisualBuilderScript.terrain_lod_visibility_range_fade_mode()
+		var expected_fade_margin: float = TerrainVisualBuilderScript.terrain_lod_visibility_range_fade_margin()
+		if hlod.visibility_range_fade_mode != expected_fade_mode:
+			_errors.append("TerrainHLOD visibility_range_fade_mode expected " + str(expected_fade_mode) + ", got " + str(hlod.visibility_range_fade_mode))
+		if absf(hlod.visibility_range_begin_margin - expected_fade_margin) > FLOAT_EPSILON:
+			_errors.append("TerrainHLOD visibility_range_begin_margin expected " + str(expected_fade_margin) + ", got " + str(hlod.visibility_range_begin_margin))
+		if absf(hlod.visibility_range_end_margin) > FLOAT_EPSILON:
+			_errors.append("TerrainHLOD visibility_range_end_margin expected 0, got " + str(hlod.visibility_range_end_margin))
 
 	var detail_root: Node = _require_node(terrain_root, "TerrainDetailTiles")
 	if detail_root != null:
@@ -90,8 +96,14 @@ func _inspect_detail_tiles(detail_root: Node) -> void:
 		var expected_range_end: float = _detail_visibility_range_end(visibility_radius)
 		if absf(mesh_instance.visibility_range_end - expected_range_end) > FLOAT_EPSILON:
 			_errors.append("TerrainDetailTiles/" + String(child.name) + " visibility_range_end expected " + str(expected_range_end) + ", got " + str(mesh_instance.visibility_range_end))
-		if mesh_instance.visibility_range_fade_mode != GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED:
-			_errors.append("TerrainDetailTiles/" + String(child.name) + " visibility_range_fade_mode expected DISABLED, got " + str(mesh_instance.visibility_range_fade_mode))
+		var expected_fade_mode: int = TerrainVisualBuilderScript.terrain_lod_visibility_range_fade_mode()
+		var expected_fade_margin: float = TerrainVisualBuilderScript.terrain_lod_visibility_range_fade_margin()
+		if mesh_instance.visibility_range_fade_mode != expected_fade_mode:
+			_errors.append("TerrainDetailTiles/" + String(child.name) + " visibility_range_fade_mode expected " + str(expected_fade_mode) + ", got " + str(mesh_instance.visibility_range_fade_mode))
+		if absf(mesh_instance.visibility_range_begin_margin) > FLOAT_EPSILON:
+			_errors.append("TerrainDetailTiles/" + String(child.name) + " visibility_range_begin_margin expected 0, got " + str(mesh_instance.visibility_range_begin_margin))
+		if absf(mesh_instance.visibility_range_end_margin - expected_fade_margin) > FLOAT_EPSILON:
+			_errors.append("TerrainDetailTiles/" + String(child.name) + " visibility_range_end_margin expected " + str(expected_fade_margin) + ", got " + str(mesh_instance.visibility_range_end_margin))
 		if mesh_instance.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_ON:
 			_errors.append("TerrainDetailTiles/" + String(child.name) + " should cast shadows")
 		if not mesh_instance.has_meta(TILE_INDEX_META):

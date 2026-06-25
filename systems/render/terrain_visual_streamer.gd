@@ -1592,7 +1592,7 @@ func _stream_hlod_chunk_from_data(stream_hlod_tile_data: Variant) -> MeshInstanc
 	TerrainVisualBuilderScript.apply_region_mesh_instance_parameters(instance, mesh_data)
 	instance.visibility_range_begin = float(stream_hlod_tile_data.visibility_range_begin)
 	instance.visibility_range_end = float(stream_hlod_tile_data.visibility_range_end)
-	instance.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
+	TerrainVisualBuilderScript.apply_terrain_lod_visibility_fade(instance, true, false)
 	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	instance.set_meta(TerrainVisualBuilderScript.REGION_LOD_META, stream_hlod_tile_data.lod_meta)
 	instance.set_meta(TerrainVisualBuilderScript.VISIBILITY_RADIUS_META, stream_hlod_tile_data.visibility_radius)

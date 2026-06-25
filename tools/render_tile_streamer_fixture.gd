@@ -289,8 +289,14 @@ func _require_stream_hlod(expected_visible: bool) -> void:
 		_errors.append("streamed TerrainHLOD primitive count should stay <= " + str(EXPECTED_STREAM_HLOD_MAX_PRIMITIVES))
 	if hlod.visible != expected_visible:
 		_errors.append("streamed TerrainHLOD visible expected " + str(expected_visible) + ", got " + str(hlod.visible))
-	if hlod.visibility_range_fade_mode != GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED:
-		_errors.append("streamed TerrainHLOD visibility_range_fade_mode expected DISABLED")
+	var expected_fade_mode: int = TerrainVisualBuilderScript.terrain_lod_visibility_range_fade_mode()
+	var expected_fade_margin: float = TerrainVisualBuilderScript.terrain_lod_visibility_range_fade_margin()
+	if hlod.visibility_range_fade_mode != expected_fade_mode:
+		_errors.append("streamed TerrainHLOD visibility_range_fade_mode expected " + str(expected_fade_mode) + ", got " + str(hlod.visibility_range_fade_mode))
+	if absf(hlod.visibility_range_begin_margin - expected_fade_margin) > FLOAT_EPSILON:
+		_errors.append("streamed TerrainHLOD visibility_range_begin_margin expected " + str(expected_fade_margin) + ", got " + str(hlod.visibility_range_begin_margin))
+	if absf(hlod.visibility_range_end_margin) > FLOAT_EPSILON:
+		_errors.append("streamed TerrainHLOD visibility_range_end_margin expected 0, got " + str(hlod.visibility_range_end_margin))
 	if absf(hlod.visibility_range_begin - TerrainVisualBuilderScript.REGION_STREAM_MIDLOD_RANGE_END_M) > FLOAT_EPSILON:
 		_errors.append("streamed TerrainHLOD visibility_range_begin expected " + str(TerrainVisualBuilderScript.REGION_STREAM_MIDLOD_RANGE_END_M) + ", got " + str(hlod.visibility_range_begin))
 	if absf(hlod.visibility_range_end) > FLOAT_EPSILON:
@@ -412,8 +418,14 @@ func _require_visual_tile(cell: Vector2i) -> MeshInstance3D:
 		var expected_range_end: float = maxf(GameConfig.vis_range_terrain + visibility_radius, 0.0)
 		if absf(mesh_instance.visibility_range_end - expected_range_end) > FLOAT_EPSILON:
 			_errors.append("streamed visual cell visibility_range_end expected " + str(expected_range_end) + ", got " + str(mesh_instance.visibility_range_end) + ": " + String(mesh_instance.name))
-	if mesh_instance.visibility_range_fade_mode != GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED:
-		_errors.append("streamed visual cell visibility_range_fade_mode expected DISABLED, got " + str(mesh_instance.visibility_range_fade_mode) + ": " + String(mesh_instance.name))
+	var expected_fade_mode: int = TerrainVisualBuilderScript.terrain_lod_visibility_range_fade_mode()
+	var expected_fade_margin: float = TerrainVisualBuilderScript.terrain_lod_visibility_range_fade_margin()
+	if mesh_instance.visibility_range_fade_mode != expected_fade_mode:
+		_errors.append("streamed visual cell visibility_range_fade_mode expected " + str(expected_fade_mode) + ", got " + str(mesh_instance.visibility_range_fade_mode) + ": " + String(mesh_instance.name))
+	if absf(mesh_instance.visibility_range_begin_margin) > FLOAT_EPSILON:
+		_errors.append("streamed visual cell visibility_range_begin_margin expected 0, got " + str(mesh_instance.visibility_range_begin_margin) + ": " + String(mesh_instance.name))
+	if absf(mesh_instance.visibility_range_end_margin - expected_fade_margin) > FLOAT_EPSILON:
+		_errors.append("streamed visual cell visibility_range_end_margin expected " + str(expected_fade_margin) + ", got " + str(mesh_instance.visibility_range_end_margin) + ": " + String(mesh_instance.name))
 	if mesh_instance.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_ON:
 		_errors.append("streamed visual cell should cast shadows: " + String(mesh_instance.name))
 	if not mesh_instance.has_meta(TerrainVisualBuilderScript.TILE_INDEX_META):
@@ -490,8 +502,14 @@ func _require_midlod_tile(midlod_tile: MeshInstance3D) -> void:
 			_errors.append(String(midlod_tile.name) + " mid-LOD visibility_range_end expected " + str(expected_range_end) + ", got " + str(midlod_tile.visibility_range_end))
 	else:
 		_errors.append(String(midlod_tile.name) + " missing mid-LOD visibility radius metadata")
-	if midlod_tile.visibility_range_fade_mode != GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED:
-		_errors.append(String(midlod_tile.name) + " mid-LOD visibility_range_fade_mode expected DISABLED")
+	var expected_fade_mode: int = TerrainVisualBuilderScript.terrain_lod_visibility_range_fade_mode()
+	var expected_fade_margin: float = TerrainVisualBuilderScript.terrain_lod_visibility_range_fade_margin()
+	if midlod_tile.visibility_range_fade_mode != expected_fade_mode:
+		_errors.append(String(midlod_tile.name) + " mid-LOD visibility_range_fade_mode expected " + str(expected_fade_mode) + ", got " + str(midlod_tile.visibility_range_fade_mode))
+	if absf(midlod_tile.visibility_range_begin_margin - expected_fade_margin) > FLOAT_EPSILON:
+		_errors.append(String(midlod_tile.name) + " mid-LOD visibility_range_begin_margin expected " + str(expected_fade_margin) + ", got " + str(midlod_tile.visibility_range_begin_margin))
+	if absf(midlod_tile.visibility_range_end_margin - expected_fade_margin) > FLOAT_EPSILON:
+		_errors.append(String(midlod_tile.name) + " mid-LOD visibility_range_end_margin expected " + str(expected_fade_margin) + ", got " + str(midlod_tile.visibility_range_end_margin))
 	if midlod_tile.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF:
 		_errors.append(String(midlod_tile.name) + " mid-LOD should not cast shadows")
 	if midlod_tile.mesh == null:

@@ -84,6 +84,8 @@ var render_visual_fullres_radius_cells: int = 2
 # render_visual_detail_radius; cells outside the detail radius do not get foliage
 # nodes and render through MidLOD/HLOD terrain only.
 var render_visual_foliage_radius_cells: int = 2
+var terrain_lod_fade_enabled: bool = true
+var terrain_lod_fade_margin: float = 4.0
 var render_visual_foliage_subcommits_per_frame: int = 6
 # High-tier foliage defaults for the 4090/review lane. Lower these together on weaker
 # GPUs instead of editing terrain builder constants; placement remains deterministic.

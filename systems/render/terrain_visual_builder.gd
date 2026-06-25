@@ -791,7 +791,7 @@ static func add_region_stream_hlod_root(parent: Node3D, region_id: String) -> Me
 	instance.visible = false
 	instance.visibility_range_begin = _stream_hlod_visibility_range_begin()
 	instance.visibility_range_end = 0.0
-	instance.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
+	apply_terrain_lod_visibility_fade(instance, true, false)
 	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	instance.set_meta(REGION_LOD_META, "stream_hlod_root")
 	instance.set_meta(REGION_ID_META, region_id)
@@ -880,7 +880,7 @@ static func region_visual_tile_from_data(parent: Node3D, visual_tile_data: Regio
 	instance.mesh = visual_tile_data.mesh
 	apply_region_mesh_instance_parameters(instance, visual_tile_data.mesh_data)
 	instance.visibility_range_end = visual_tile_data.visibility_range_end
-	instance.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
+	apply_terrain_lod_visibility_fade(instance, false, true)
 	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 	instance.set_meta(REGION_LOD_META, "detail")
 	instance.set_meta(VISIBILITY_RADIUS_META, visual_tile_data.visibility_radius)
@@ -902,7 +902,7 @@ static func region_stream_midlod_tile_from_data(parent: Node3D, midlod_tile_data
 	apply_region_mesh_instance_parameters(instance, midlod_tile_data.mesh_data)
 	instance.visibility_range_begin = midlod_tile_data.visibility_range_begin
 	instance.visibility_range_end = midlod_tile_data.visibility_range_end
-	instance.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
+	apply_terrain_lod_visibility_fade(instance, true, true)
 	# Cast-shadow grounding: this is the near/mid canyon-wall terrain band (camera out to ~500m;
 	# the detail tile under it already casts). Letting it cast plants mid-ground walls' shadows on
 	# the canyon floor so they stop reading as pasted-on cutouts. The far stream-HLOD chunks
@@ -1122,6 +1122,25 @@ static func _stream_hlod_visibility_range_begin() -> float:
 	return maxf(REGION_STREAM_MIDLOD_RANGE_END_M, _hlod_visibility_range_begin())
 
 
+static func terrain_lod_visibility_range_fade_mode() -> int:
+	if GameConfig.terrain_lod_fade_enabled:
+		return GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+	return GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
+
+
+static func terrain_lod_visibility_range_fade_margin() -> float:
+	if not GameConfig.terrain_lod_fade_enabled:
+		return 0.0
+	return maxf(GameConfig.terrain_lod_fade_margin, 0.0)
+
+
+static func apply_terrain_lod_visibility_fade(instance: GeometryInstance3D, fade_begin: bool, fade_end: bool) -> void:
+	var fade_margin: float = terrain_lod_visibility_range_fade_margin()
+	instance.visibility_range_fade_mode = terrain_lod_visibility_range_fade_mode()
+	instance.visibility_range_begin_margin = fade_margin if fade_begin else 0.0
+	instance.visibility_range_end_margin = fade_margin if fade_end else 0.0
+
+
 static func _foliage_lod0_visibility_range_end(cell_radius: float) -> float:
 	return maxf(GameConfig.vis_range_grass + cell_radius, 0.0)
 
@@ -1339,7 +1358,7 @@ static func _add_region_hlod(parent: Node3D, tile_data_list: Array[RegionTileDat
 	instance.mesh = _build_region_mesh(tile_data_list, REGION_HLOD_SAMPLE_STEP, "spike_1km_terrain_hlod_mesh", Vector2.ZERO)
 	instance.visibility_range_begin = _hlod_visibility_range_begin()
 	instance.visibility_range_end = 0.0
-	instance.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
+	apply_terrain_lod_visibility_fade(instance, true, false)
 	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	instance.set_meta(REGION_LOD_META, "hlod")
 	parent.add_child(instance)
@@ -1388,7 +1407,7 @@ static func _region_stream_hlod_chunk(region_id: String, tile_data: RegionTileDa
 	instance.mesh = region_mesh_from_data(mesh_data)
 	instance.visibility_range_begin = _stream_hlod_visibility_range_begin()
 	instance.visibility_range_end = 0.0
-	instance.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
+	apply_terrain_lod_visibility_fade(instance, true, false)
 	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	instance.set_meta(REGION_LOD_META, "stream_hlod")
 	instance.set_meta(VISIBILITY_RADIUS_META, _tile_visibility_radius(tile_data))
@@ -1442,7 +1461,7 @@ static func _add_region_detail_tile(parent: Node3D, region_id: String, tile_data
 	var mesh_data: RegionMeshData = build_region_surface_index_mesh_data(tile_data, REGION_DETAIL_SAMPLE_STEP, tile_data.key + "_terrain_detail_mesh", tile_origin_xz)
 	instance.mesh = region_mesh_from_data(mesh_data)
 	instance.visibility_range_end = _detail_visibility_range_end(tile_data)
-	instance.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
+	apply_terrain_lod_visibility_fade(instance, false, true)
 	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 	instance.set_meta(REGION_LOD_META, "detail")
 	instance.set_meta(VISIBILITY_RADIUS_META, _tile_visibility_radius(tile_data))
