@@ -13,6 +13,13 @@ const MIDLOD_COMMIT_BUDGET_PER_FRAME: int = 2
 # frame once this many microseconds of the current frame have already been spent in the
 # streamer's commit phase. ~4 ms leaves the frame headroom for sim+render.
 const COMMIT_FRAME_BUDGET_USEC: int = 4000
+# Render-frame retention for recently evicted detail/foliage cells. 180 frames is
+# ~3 seconds at the target 60 FPS, enough to cover parking/turnaround/weaving
+# re-crosses without carrying stale cells for a long drive. The cap is a little
+# over the default 5x5 detail ring, so total retained detail memory stays bounded
+# to a small near-field working set.
+const VISUAL_CELL_RETENTION_FRAMES: int = 180
+const VISUAL_CELL_RETENTION_MAX: int = 32
 
 
 class FoliageSubcommit:
@@ -98,6 +105,7 @@ var _pending_foliage_subcommit_counts_by_cell: Dictionary[Vector2i, int] = {}
 var _foliage_finish_queue: Array[Vector2i] = []
 var _queued_foliage_finishes: Dictionary[Vector2i, bool] = {}
 var _pending_free_cells: Array[Vector2i] = []
+var _pending_free_queued_frame: Dictionary[Vector2i, int] = {}
 var _pending_free_midlod_cells: Array[Vector2i] = []
 var _stream_hlod_queue: Array[Vector2i] = []
 var _queued_stream_hlod_cells: Dictionary[Vector2i, bool] = {}
@@ -121,6 +129,7 @@ var _work_mutex: Mutex = Mutex.new()
 var _work_semaphore: Semaphore = Semaphore.new()
 var _worker_should_stop: bool = false
 var _next_visual_build_id: int = 0
+var _render_frame_index: int = 0
 var _commit_phase_start_usec: int = 0
 var _build_queue: Array[Variant] = []
 var _midlod_build_queue: Array[Variant] = []
@@ -248,6 +257,7 @@ func reset_stream() -> void:
 	_foliage_finish_queue.clear()
 	_queued_foliage_finishes.clear()
 	_pending_free_cells.clear()
+	_pending_free_queued_frame.clear()
 	_pending_free_midlod_cells.clear()
 	_stream_hlod_queue.clear()
 	_queued_stream_hlod_cells.clear()
@@ -268,6 +278,7 @@ func reset_stream() -> void:
 	_stream_priority_forward_cell_delta = Vector2i.ZERO
 	_clear_worker_queues()
 	_next_visual_build_id = 0
+	_render_frame_index = 0
 	_result_drains_remaining_this_frame = 0
 	_reset_perf_attribution_frame()
 	_configured = false
@@ -283,6 +294,7 @@ func reset_stream() -> void:
 
 
 func _process(_delta: float) -> void:
+	_render_frame_index += 1
 	_reset_perf_attribution_frame()
 	if not _configured:
 		return
@@ -656,7 +668,7 @@ func _disconnect_event_connections() -> void:
 func _on_world_tile_activated(cell: Vector2i) -> void:
 	if not _configured or _detail_root == null or _midlod_root == null or _foliage_root == null:
 		return
-	_pending_free_cells.erase(cell)
+	_cancel_visual_cell_free(cell)
 	_active_cells[cell] = true
 	_update_stream_priority_from_active_cells()
 	_hlod_dirty = true
@@ -704,7 +716,7 @@ func _refresh_visual_detail_streaming() -> void:
 
 
 func _ensure_visual_detail_cell(cell: Vector2i) -> void:
-	_pending_free_cells.erase(cell)
+	_cancel_visual_cell_free(cell)
 	var wants_fullres: bool = _is_cell_in_visual_fullres_radius(cell)
 	if _visual_tiles_by_cell.has(cell):
 		var committed_step: int = int(_committed_tile_step_by_cell.get(cell, TerrainVisualBuilderScript.REGION_DETAIL_SAMPLE_STEP))
@@ -769,9 +781,8 @@ func _downgrade_visual_detail_cell(cell: Vector2i) -> void:
 		var queued_step: int = int(_queued_build_step_by_cell.get(cell, TerrainVisualBuilderScript.REGION_DETAIL_SAMPLE_STEP))
 		if queued_step <= TerrainVisualBuilderScript.REGION_DETAIL_FULLRES_SAMPLE_STEP:
 			_cancel_build(cell)
-	if (_visual_tiles_by_cell.has(cell) or _foliage_tiles_by_cell.has(cell) or _partial_foliage_tiles_by_cell.has(cell)) \
-			and not _pending_free_cells.has(cell):
-		_pending_free_cells.append(cell)
+	if _visual_tiles_by_cell.has(cell) or _foliage_tiles_by_cell.has(cell) or _partial_foliage_tiles_by_cell.has(cell):
+		_queue_visual_cell_free(cell)
 
 
 func _on_world_tile_evicted(cell: Vector2i) -> void:
@@ -796,8 +807,7 @@ func _on_world_tile_evicted(cell: Vector2i) -> void:
 	_deferred_lod0_foliage_data_by_cell.erase(cell)
 	_ready_upgrade_tile_data_by_cell.erase(cell)
 	_ready_upgrade_tile_step_by_cell.erase(cell)
-	if not _pending_free_cells.has(cell):
-		_pending_free_cells.append(cell)
+	_queue_visual_cell_free(cell)
 	_load_failures_by_cell.erase(cell)
 	if _perf_attribution_enabled:
 		_evict_usec_last_frame += maxi(Time.get_ticks_usec() - evict_start_usec, 0)
@@ -902,6 +912,52 @@ func _request_visual_detail_refresh() -> void:
 
 func _request_deferred_foliage_promote() -> void:
 	_deferred_foliage_promote_requested = true
+
+
+func _queue_visual_cell_free(cell: Vector2i) -> void:
+	if _pending_free_cells.has(cell):
+		if not _pending_free_queued_frame.has(cell):
+			_pending_free_queued_frame[cell] = _render_frame_index
+		return
+	_pending_free_cells.append(cell)
+	_pending_free_queued_frame[cell] = _render_frame_index
+	_enforce_visual_cell_retention_cap()
+
+
+func _cancel_visual_cell_free(cell: Vector2i) -> void:
+	_pending_free_cells.erase(cell)
+	_pending_free_queued_frame.erase(cell)
+
+
+func _visual_cell_retention_frames() -> int:
+	if _headless:
+		return 0
+	return VISUAL_CELL_RETENTION_FRAMES
+
+
+func _is_visual_cell_free_eligible(cell: Vector2i, retention_frames: int) -> bool:
+	if retention_frames <= 0:
+		return true
+	if not _pending_free_queued_frame.has(cell):
+		return true
+	var queued_frame: int = int(_pending_free_queued_frame[cell])
+	return _render_frame_index - queued_frame >= retention_frames
+
+
+func _free_pending_visual_cell_at(pending_index: int) -> void:
+	var cell: Vector2i = _pending_free_cells[pending_index]
+	_pending_free_cells.remove_at(pending_index)
+	_pending_free_queued_frame.erase(cell)
+	_free_visual_cell(cell)
+	_free_foliage_cell(cell)
+
+
+func _enforce_visual_cell_retention_cap() -> void:
+	if _visual_cell_retention_frames() <= 0:
+		return
+	var retained_cap: int = maxi(VISUAL_CELL_RETENTION_MAX, 0)
+	while _pending_free_cells.size() > retained_cap:
+		_free_pending_visual_cell_at(0)
 
 
 func _queue_midlod_free(cell: Vector2i) -> void:
@@ -1307,10 +1363,14 @@ func _drain_pending_frees() -> void:
 		return
 	var free_budget: int = maxi(GameConfig.render_visual_tile_frees_per_frame, 1)
 	var freed_count: int = 0
-	while freed_count < free_budget and not _pending_free_cells.is_empty():
-		var cell: Vector2i = _pending_free_cells.pop_front()
-		_free_visual_cell(cell)
-		_free_foliage_cell(cell)
+	var retention_frames: int = _visual_cell_retention_frames()
+	var pending_index: int = 0
+	while freed_count < free_budget and pending_index < _pending_free_cells.size():
+		var cell: Vector2i = _pending_free_cells[pending_index]
+		if not _is_visual_cell_free_eligible(cell, retention_frames):
+			pending_index += 1
+			continue
+		_free_pending_visual_cell_at(pending_index)
 		freed_count += 1
 	while freed_count < free_budget and not _pending_free_midlod_cells.is_empty():
 		var cell: Vector2i = _pending_free_midlod_cells.pop_front()
