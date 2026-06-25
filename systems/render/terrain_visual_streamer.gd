@@ -124,6 +124,8 @@ var _stream_hlod_densify_build_queue: Array[Variant] = []
 var _result_queue: Array[Variant] = []
 var _result_drains_remaining_this_frame: int = 0
 var _visual_commits_last_frame: int = 0
+var _visual_commit_usec_last_frame: int = 0
+var _perf_attribution_enabled: bool = false
 
 
 func _ready() -> void:
@@ -232,6 +234,8 @@ func reset_stream() -> void:
 	_clear_worker_queues()
 	_next_visual_build_id = 0
 	_result_drains_remaining_this_frame = 0
+	_visual_commits_last_frame = 0
+	_visual_commit_usec_last_frame = 0
 	_configured = false
 	_region_id = ""
 	_detail_root = null
@@ -246,6 +250,7 @@ func reset_stream() -> void:
 
 func _process(_delta: float) -> void:
 	_visual_commits_last_frame = 0
+	_visual_commit_usec_last_frame = 0
 	if not _configured:
 		return
 	# Stamp the streamer's per-frame work-phase budget window HERE, at the very top, so
@@ -266,6 +271,9 @@ func _process(_delta: float) -> void:
 	if _workers.is_empty():
 		_process_build_queue_synchronously()
 	_drain_worker_results()
+	var visual_commit_start_usec: int = 0
+	if _perf_attribution_enabled:
+		visual_commit_start_usec = Time.get_ticks_usec()
 	_drain_stream_hlod_commit_queue()
 	_drain_stream_hlod_densify_commit_queue()
 	# Drain visual tiles AND foliage subcommits every frame. The old gate only drained
@@ -284,6 +292,8 @@ func _process(_delta: float) -> void:
 	_drain_foliage_finish_queue()
 	_drain_midlod_commit_queue()
 	_drain_pending_frees()
+	if _perf_attribution_enabled:
+		_visual_commit_usec_last_frame = maxi(Time.get_ticks_usec() - visual_commit_start_usec, 0)
 
 
 func _commit_frame_budget_exceeded() -> bool:
@@ -367,6 +377,16 @@ func foliage_cell_count() -> int:
 
 func visual_commits_last_frame() -> int:
 	return _visual_commits_last_frame
+
+
+func visual_commit_ms_last_frame() -> float:
+	return float(_visual_commit_usec_last_frame) / 1000.0
+
+
+func set_perf_attribution_enabled(enabled: bool) -> void:
+	_perf_attribution_enabled = enabled
+	if not _perf_attribution_enabled:
+		_visual_commit_usec_last_frame = 0
 
 
 func has_ready_visual_cell(cell: Vector2i) -> bool:

@@ -84,7 +84,7 @@ const AUTODRIVE_STEER_STRENGTH: float = 0.18
 const PERF_LOG_USER_ARG: String = "--perf-log"
 const PERF_LOG_DEFAULT_DIR: String = "user://trailhead/perf"
 const PERF_LOG_FLUSH_ROW_COUNT: int = 120
-const PERF_LOG_HEADER: String = "frame,dt_ms,fps,process_ms,physics_process_ms,viewport_cpu_ms,viewport_gpu_ms,scaling_3d_scale,scaling_3d_scale_changed,dynamic_res_target_ms,draw_calls,primitives,objects,video_mem_mb,static_mem_mb,current_cell,active_cells,ready_cells,stream_tick,crossing_flag,hitch_flag,hitch_at_crossing,window_is_focused"
+const PERF_LOG_HEADER: String = "frame,dt_ms,fps,process_ms,physics_process_ms,viewport_cpu_ms,viewport_gpu_ms,scaling_3d_scale,scaling_3d_scale_changed,dynamic_res_target_ms,draw_calls,primitives,objects,video_mem_mb,static_mem_mb,current_cell,active_cells,ready_cells,stream_tick,crossing_flag,hitch_flag,hitch_at_crossing,window_is_focused,collision_cooks,visual_commits,visual_commit_ms"
 const PERF_LOG_CROSSING_WINDOW_FRAMES: int = 5
 const PERF_LOG_MEDIAN_WINDOW_SIZE: int = 121
 const PERF_LOG_HITCH_MEDIAN_MULTIPLIER: float = 2.0
@@ -587,12 +587,15 @@ func _sample_perf_log_frame() -> void:
 	var active_count: int = _perf_log_active_cell_count(streamer)
 	var ready_count: int = _perf_log_ready_cell_count(streamer)
 	var stream_tick: int = _perf_log_stream_tick(streamer)
+	var collision_cooks: int = _perf_log_collision_cooks(streamer)
+	var visual_commits: int = _perf_log_visual_commits()
+	var visual_commit_ms: float = _perf_log_visual_commit_ms()
 	var hitch_at_crossing: bool = _perf_log_frame_index - _perf_log_last_crossing_frame <= PERF_LOG_CROSSING_WINDOW_FRAMES
 	var hitch_flag: bool = _perf_log_is_hitch(dt_ms)
 	var window_focused: bool = DisplayServer.window_is_focused()
 	_record_perf_log_dt_sample(dt_ms)
 
-	_perf_log_rows.append("%d,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.4f,%d,%.3f,%d,%d,%d,%.3f,%.3f,%s,%d,%d,%d,%d,%d,%d,%d" % [
+	_perf_log_rows.append("%d,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.4f,%d,%.3f,%d,%d,%d,%.3f,%.3f,%s,%d,%d,%d,%d,%d,%d,%d,%d,%d,%.3f" % [
 		_perf_log_frame_index,
 		dt_ms,
 		fps,
@@ -616,6 +619,9 @@ func _sample_perf_log_frame() -> void:
 		1 if hitch_flag else 0,
 		1 if hitch_at_crossing else 0,
 		1 if window_focused else 0,
+		collision_cooks,
+		visual_commits,
+		visual_commit_ms,
 	])
 	if _perf_log_rows.size() >= PERF_LOG_FLUSH_ROW_COUNT:
 		_flush_perf_log_rows()
@@ -681,6 +687,24 @@ func _perf_log_stream_tick(streamer: Node) -> int:
 	return 0
 
 
+func _perf_log_collision_cooks(streamer: Node) -> int:
+	if streamer != null and streamer.has_method("collision_cooks_this_tick"):
+		return int(streamer.call("collision_cooks_this_tick"))
+	return 0
+
+
+func _perf_log_visual_commits() -> int:
+	if _terrain_visual_streamer != null and _terrain_visual_streamer.has_method("visual_commits_last_frame"):
+		return int(_terrain_visual_streamer.call("visual_commits_last_frame"))
+	return 0
+
+
+func _perf_log_visual_commit_ms() -> float:
+	if _terrain_visual_streamer != null and _terrain_visual_streamer.has_method("visual_commit_ms_last_frame"):
+		return float(_terrain_visual_streamer.call("visual_commit_ms_last_frame"))
+	return 0.0
+
+
 func _perf_log_scaling_3d_scale_changed(scaling_3d_scale: float) -> bool:
 	var changed: bool = false
 	if _perf_log_has_last_scaling_3d_scale:
@@ -743,6 +767,8 @@ func _setup_world() -> void:
 		return
 	_terrain_visual_streamer.name = "TerrainVisualStreamer"
 	_world.add_child(_terrain_visual_streamer)
+	if _perf_log_active and _terrain_visual_streamer.has_method("set_perf_attribution_enabled"):
+		_terrain_visual_streamer.call("set_perf_attribution_enabled", true)
 	# Pay the ~44 MB surface-index Texture2DArray realization + shared terrain
 	# ShaderMaterial build HERE in _ready (before the drive) so the first live terrain
 	# commit is a pure cache hit. configure_region's pipeline-warmup mesh binds the same
