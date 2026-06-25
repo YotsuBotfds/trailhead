@@ -162,21 +162,62 @@ static func build_cedar_hollow(parent: Node3D) -> Node3D:
 
 
 static func build_zion_desert_spawn_apron(parent: Node3D, region_id: String, spawn_transform: Transform3D) -> Node3D:
-	var root: Node3D = Node3D.new()
-	root.name = ZION_DESERT_SCATTER_ROOT_NAME
-	root.position = spawn_transform.origin
-	parent.add_child(root)
-
+	var root: Node3D = create_zion_desert_spawn_apron_root(parent, spawn_transform)
 	var center_xz: Vector2 = Vector2(spawn_transform.origin.x, spawn_transform.origin.z)
-	var tile_cells: Array[Vector2i] = _zion_desert_cells_for_radius(center_xz, ZION_DESERT_APRON_RADIUS_M + ZION_DESERT_EDGE_MARGIN_M)
+	var tile_cells: Array[Vector2i] = zion_desert_spawn_apron_cells(spawn_transform)
 	var tile_data_by_cell: Dictionary[Vector2i, Variant] = TerrainVisualBuilderScript.load_region_tile_data_for_cells(region_id, tile_cells)
 	if tile_data_by_cell.is_empty():
 		push_error("ScatterVisualBuilder: Zion desert scatter found no streamed terrain tiles near " + str(center_xz))
 		return root
 
-	var grass_count: int = _add_zion_desert_grass(root, tile_data_by_cell, spawn_transform.origin, center_xz)
-	var branch_count: int = _add_zion_desert_branches(root, tile_data_by_cell, spawn_transform.origin, center_xz)
-	var boulder_count: int = _add_zion_desert_boulders(root, tile_data_by_cell, spawn_transform.origin, center_xz)
+	var grass_count: int = add_zion_desert_spawn_apron_grass(root, tile_data_by_cell, spawn_transform)
+	var branch_count: int = add_zion_desert_spawn_apron_branches(root, tile_data_by_cell, spawn_transform)
+	var boulder_count: int = add_zion_desert_spawn_apron_boulders(root, tile_data_by_cell, spawn_transform)
+	finalize_zion_desert_spawn_apron(root, grass_count, branch_count, boulder_count)
+	return root
+
+
+static func create_zion_desert_spawn_apron_root(parent: Node3D, spawn_transform: Transform3D) -> Node3D:
+	var root: Node3D = Node3D.new()
+	root.name = ZION_DESERT_SCATTER_ROOT_NAME
+	root.position = spawn_transform.origin
+	if parent != null:
+		parent.add_child(root)
+	return root
+
+
+static func zion_desert_spawn_apron_cells(spawn_transform: Transform3D) -> Array[Vector2i]:
+	var center_xz: Vector2 = Vector2(spawn_transform.origin.x, spawn_transform.origin.z)
+	return _zion_desert_cells_for_radius(center_xz, ZION_DESERT_APRON_RADIUS_M + ZION_DESERT_EDGE_MARGIN_M)
+
+
+static func load_zion_desert_spawn_apron_tile_cell(region_id: String, cell: Vector2i) -> Variant:
+	var cells: Array[Vector2i] = []
+	cells.append(cell)
+	var tile_data_by_cell: Dictionary[Vector2i, Variant] = TerrainVisualBuilderScript.load_region_tile_data_for_cells(region_id, cells)
+	if not tile_data_by_cell.has(cell):
+		return null
+	return tile_data_by_cell[cell]
+
+
+static func add_zion_desert_spawn_apron_grass(root: Node3D, tile_data_by_cell: Dictionary[Vector2i, Variant], spawn_transform: Transform3D) -> int:
+	var center_xz: Vector2 = Vector2(spawn_transform.origin.x, spawn_transform.origin.z)
+	return _add_zion_desert_grass(root, tile_data_by_cell, spawn_transform.origin, center_xz)
+
+
+static func add_zion_desert_spawn_apron_branches(root: Node3D, tile_data_by_cell: Dictionary[Vector2i, Variant], spawn_transform: Transform3D) -> int:
+	var center_xz: Vector2 = Vector2(spawn_transform.origin.x, spawn_transform.origin.z)
+	return _add_zion_desert_branches(root, tile_data_by_cell, spawn_transform.origin, center_xz)
+
+
+static func add_zion_desert_spawn_apron_boulders(root: Node3D, tile_data_by_cell: Dictionary[Vector2i, Variant], spawn_transform: Transform3D) -> int:
+	var center_xz: Vector2 = Vector2(spawn_transform.origin.x, spawn_transform.origin.z)
+	return _add_zion_desert_boulders(root, tile_data_by_cell, spawn_transform.origin, center_xz)
+
+
+static func finalize_zion_desert_spawn_apron(root: Node3D, grass_count: int, branch_count: int, boulder_count: int) -> void:
+	if root == null:
+		return
 	root.set_meta(ZION_DESERT_SCATTER_RADIUS_META, ZION_DESERT_APRON_RADIUS_M)
 	root.set_meta(ZION_DESERT_GRASS_COUNT_META, grass_count)
 	root.set_meta(ZION_DESERT_BRANCH_COUNT_META, branch_count)
@@ -187,7 +228,6 @@ static func build_zion_desert_spawn_apron(parent: Node3D, region_id: String, spa
 		push_error("ScatterVisualBuilder: Zion desert branch count below target: " + str(branch_count))
 	if boulder_count < ZION_DESERT_BOULDER_MIN_COUNT:
 		push_error("ScatterVisualBuilder: Zion desert boulder count below target: " + str(boulder_count))
-	return root
 
 
 static func _add_grass(parent: Node3D) -> void:

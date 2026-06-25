@@ -86,6 +86,11 @@ const SCREENSHOT_USER_ARG: String = "--screenshot-secs"
 const SCREENSHOT_DEFAULT_DIR: String = "user://trailhead/shots"
 const SCREENSHOT_CAPTURE_COUNT: int = 3
 const SCREENSHOT_CAPTURE_INTERVAL_SECONDS: float = 0.5
+const ZION_DESERT_SCATTER_TILE_LOADS_PER_FRAME: int = 1
+const ZION_DESERT_SCATTER_BUILD_STEP_GRASS: int = 0
+const ZION_DESERT_SCATTER_BUILD_STEP_BRANCHES: int = 1
+const ZION_DESERT_SCATTER_BUILD_STEP_BOULDERS: int = 2
+const ZION_DESERT_SCATTER_BUILD_STEP_FINALIZE: int = 3
 const PERF_LOG_USER_ARG: String = "--perf-log"
 const PERF_LOG_DEFAULT_DIR: String = "user://trailhead/perf"
 const PERF_LOG_FLUSH_ROW_COUNT: int = 120
@@ -187,6 +192,17 @@ var _track_applied_cells: Dictionary[Vector2i, bool] = {}
 # the track RT's texture/bounds, and the apply queue are all unchanged, the
 # per-frame re-apply is skipped (visually identical — see the gate comment).
 var _track_last_active_cells: Dictionary[Vector2i, bool] = {}
+var _zion_desert_scatter_root: Node3D = null
+var _zion_desert_scatter_spawn_transform: Transform3D = Transform3D.IDENTITY
+var _zion_desert_scatter_tile_queue: Array[Vector2i] = []
+var _zion_desert_scatter_tile_data_by_cell: Dictionary[Vector2i, Variant] = {}
+var _zion_desert_scatter_build_queue: Array[int] = []
+var _zion_desert_scatter_build_scheduled: bool = false
+var _zion_desert_scatter_waiting_post_reveal_frame: bool = false
+var _zion_desert_scatter_complete: bool = false
+var _zion_desert_scatter_grass_count: int = 0
+var _zion_desert_scatter_branch_count: int = 0
+var _zion_desert_scatter_boulder_count: int = 0
 var _cold_start_streaming_released: bool = false
 var _cold_start_hold_elapsed: float = 0.0
 var _audio_rig: Node = null
@@ -309,6 +325,8 @@ func _physics_process(delta: float) -> void:
 
 func _process(delta: float) -> void:
 	_update_cold_start_streaming_gate(delta)
+	# Cosmetic spawn scatter waits until after reveal, then drains one load/build step per frame.
+	_drain_zion_desert_scatter_build_queue()
 	_sample_perf_log_frame()
 	_update_screenshot_capture(delta)
 	if _terrain_track_painter == null:
@@ -939,7 +957,6 @@ func _setup_world() -> void:
 	TerrainVisualBuilderScript.prewarm_surface_index_pipeline()
 	_terrain_visual_streamer.call("configure_region", ZION_REGION_ID)
 	_setup_terrain_tracks(_terrain_visual_streamer)
-	_setup_zion_desert_scatter()
 	WaterVisualBuilderScript.build_zion_virgin_river(_world)
 
 
@@ -960,11 +977,85 @@ func _setup_terrain_tracks(terrain_root: Node3D) -> void:
 	_remember_track_texture_state(track_texture, track_bounds_min, track_bounds_max)
 
 
-func _setup_zion_desert_scatter() -> void:
-	if _world == null:
+func _schedule_zion_desert_scatter_build() -> void:
+	if _zion_desert_scatter_build_scheduled or _zion_desert_scatter_complete:
 		return
-	var spawn_transform: Transform3D = CedarRoute.call("spawn_transform", ZION_SPAWN_ID)
-	ScatterVisualBuilderScript.build_zion_desert_spawn_apron(_world, ZION_REGION_ID, spawn_transform)
+	if _world == null:
+		_zion_desert_scatter_complete = true
+		return
+	_zion_desert_scatter_spawn_transform = CedarRoute.call("spawn_transform", ZION_SPAWN_ID)
+	_zion_desert_scatter_root = ScatterVisualBuilderScript.create_zion_desert_spawn_apron_root(_world, _zion_desert_scatter_spawn_transform)
+	_zion_desert_scatter_tile_queue = ScatterVisualBuilderScript.zion_desert_spawn_apron_cells(_zion_desert_scatter_spawn_transform)
+	_zion_desert_scatter_tile_data_by_cell.clear()
+	_zion_desert_scatter_build_queue.clear()
+	_zion_desert_scatter_build_queue.append(ZION_DESERT_SCATTER_BUILD_STEP_GRASS)
+	_zion_desert_scatter_build_queue.append(ZION_DESERT_SCATTER_BUILD_STEP_BRANCHES)
+	_zion_desert_scatter_build_queue.append(ZION_DESERT_SCATTER_BUILD_STEP_BOULDERS)
+	_zion_desert_scatter_build_queue.append(ZION_DESERT_SCATTER_BUILD_STEP_FINALIZE)
+	_zion_desert_scatter_grass_count = 0
+	_zion_desert_scatter_branch_count = 0
+	_zion_desert_scatter_boulder_count = 0
+	_zion_desert_scatter_waiting_post_reveal_frame = true
+	_zion_desert_scatter_build_scheduled = true
+
+
+func _drain_zion_desert_scatter_build_queue() -> void:
+	if not _cold_start_streaming_released or _zion_desert_scatter_complete:
+		return
+	if not _zion_desert_scatter_build_scheduled:
+		_schedule_zion_desert_scatter_build()
+		return
+	if _zion_desert_scatter_waiting_post_reveal_frame:
+		_zion_desert_scatter_waiting_post_reveal_frame = false
+		return
+	if not _zion_desert_scatter_tile_queue.is_empty():
+		_drain_zion_desert_scatter_tile_load_queue()
+		return
+	if _zion_desert_scatter_tile_data_by_cell.is_empty():
+		var center_xz: Vector2 = Vector2(_zion_desert_scatter_spawn_transform.origin.x, _zion_desert_scatter_spawn_transform.origin.z)
+		push_error("ScatterVisualBuilder: Zion desert scatter found no streamed terrain tiles near " + str(center_xz))
+		_zion_desert_scatter_complete = true
+		return
+	if _zion_desert_scatter_build_queue.is_empty():
+		_zion_desert_scatter_complete = true
+		return
+	var build_step: int = int(_zion_desert_scatter_build_queue.pop_front())
+	if build_step == ZION_DESERT_SCATTER_BUILD_STEP_GRASS:
+		_zion_desert_scatter_grass_count = ScatterVisualBuilderScript.add_zion_desert_spawn_apron_grass(
+			_zion_desert_scatter_root,
+			_zion_desert_scatter_tile_data_by_cell,
+			_zion_desert_scatter_spawn_transform
+		)
+	elif build_step == ZION_DESERT_SCATTER_BUILD_STEP_BRANCHES:
+		_zion_desert_scatter_branch_count = ScatterVisualBuilderScript.add_zion_desert_spawn_apron_branches(
+			_zion_desert_scatter_root,
+			_zion_desert_scatter_tile_data_by_cell,
+			_zion_desert_scatter_spawn_transform
+		)
+	elif build_step == ZION_DESERT_SCATTER_BUILD_STEP_BOULDERS:
+		_zion_desert_scatter_boulder_count = ScatterVisualBuilderScript.add_zion_desert_spawn_apron_boulders(
+			_zion_desert_scatter_root,
+			_zion_desert_scatter_tile_data_by_cell,
+			_zion_desert_scatter_spawn_transform
+		)
+	elif build_step == ZION_DESERT_SCATTER_BUILD_STEP_FINALIZE:
+		ScatterVisualBuilderScript.finalize_zion_desert_spawn_apron(
+			_zion_desert_scatter_root,
+			_zion_desert_scatter_grass_count,
+			_zion_desert_scatter_branch_count,
+			_zion_desert_scatter_boulder_count
+		)
+		_zion_desert_scatter_complete = true
+
+
+func _drain_zion_desert_scatter_tile_load_queue() -> void:
+	var loaded_count: int = 0
+	while loaded_count < ZION_DESERT_SCATTER_TILE_LOADS_PER_FRAME and not _zion_desert_scatter_tile_queue.is_empty():
+		var cell: Vector2i = _zion_desert_scatter_tile_queue.pop_front()
+		var tile_data: Variant = ScatterVisualBuilderScript.load_zion_desert_spawn_apron_tile_cell(ZION_REGION_ID, cell)
+		if tile_data != null:
+			_zion_desert_scatter_tile_data_by_cell[cell] = tile_data
+		loaded_count += 1
 
 
 func _setup_demo_props() -> void:
