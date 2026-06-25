@@ -7,6 +7,7 @@ const BranchScene: PackedScene = preload("res://assets/models/scatter/branch_a.g
 const PineconeScene: PackedScene = preload("res://assets/models/scatter/pinecone.glb")
 const FernClumpScene: PackedScene = preload("res://assets/models/scatter/fern_clump.glb")
 const CattailScene: PackedScene = preload("res://assets/models/scatter/cattail.glb")
+const TerrainVisualBuilderScript: GDScript = preload("res://systems/render/terrain_visual_builder.gd")
 const GrassShader: Shader = preload("res://systems/render/grass_billboard.gdshader")
 
 const EXPECTED_GRASS_TUFTS: int = 72
@@ -92,6 +93,58 @@ const OCCLUDER_CLUSTER_LATTICE_X_CELLS: int = 11
 const OCCLUDER_CLUSTER_LATTICE_Z_CELLS: int = 13
 const CLUSTER_NUDGE_STEP: float = 0.6
 const CLUSTER_NUDGE_MAX_ATTEMPTS: int = 6
+const ZION_DESERT_SCATTER_ROOT_NAME: String = "ZionDesertScatterVisuals"
+const ZION_DESERT_GRASS_NODE_NAME: String = "desert_sage_tufts"
+const ZION_DESERT_BRANCH_NODE_NAME: String = "dry_brush_branches"
+const ZION_DESERT_BOULDER_NODE_NAME: String = "sandstone_rocks"
+const ZION_DESERT_SCATTER_RADIUS_META: StringName = &"trailhead_zion_desert_scatter_radius_m"
+const ZION_DESERT_GRASS_COUNT_META: StringName = &"trailhead_zion_desert_grass_count"
+const ZION_DESERT_BRANCH_COUNT_META: StringName = &"trailhead_zion_desert_branch_count"
+const ZION_DESERT_BOULDER_COUNT_META: StringName = &"trailhead_zion_desert_boulder_count"
+const ZION_DESERT_APRON_RADIUS_M: float = 96.0
+const ZION_DESERT_CLEAR_RADIUS_M: float = 3.2
+const ZION_DESERT_EDGE_MARGIN_M: float = 2.0
+const ZION_DESERT_GRASS_TARGET_COUNT: int = 620
+const ZION_DESERT_BRANCH_TARGET_COUNT: int = 190
+const ZION_DESERT_BOULDER_TARGET_COUNT: int = 96
+const ZION_DESERT_GRASS_MIN_COUNT: int = 460
+const ZION_DESERT_BRANCH_MIN_COUNT: int = 130
+const ZION_DESERT_BOULDER_MIN_COUNT: int = 68
+const ZION_DESERT_GRASS_MIN_SPACING: float = 1.55
+const ZION_DESERT_BRANCH_MIN_SPACING: float = 3.2
+const ZION_DESERT_BOULDER_MIN_SPACING: float = 5.4
+const ZION_DESERT_GRASS_CLUSTER_COUNT: int = 42
+const ZION_DESERT_BRANCH_CLUSTER_COUNT: int = 34
+const ZION_DESERT_BOULDER_CLUSTER_COUNT: int = 24
+const ZION_DESERT_GRASS_CLUSTER_RADIUS: float = 9.5
+const ZION_DESERT_BRANCH_CLUSTER_RADIUS: float = 13.0
+const ZION_DESERT_BOULDER_CLUSTER_RADIUS: float = 15.5
+const ZION_DESERT_NEAR_CLUSTER_STRIDE: int = 5
+const ZION_DESERT_NEAR_CLUSTER_MIN_RADIUS_M: float = 5.8
+const ZION_DESERT_NEAR_CLUSTER_MAX_RADIUS_M: float = 28.0
+const ZION_DESERT_MAX_ATTEMPTS_PER_INSTANCE: int = 420
+const ZION_DESERT_PATTERN_MODULUS: int = 7919
+const ZION_DESERT_PATTERN_INDEX_MULTIPLIER: int = 367
+const ZION_DESERT_PATTERN_ATTEMPT_MULTIPLIER: int = 941
+const ZION_DESERT_PATTERN_SALT_MULTIPLIER: int = 1597
+const ZION_DESERT_MIN_NORMAL_Y_GRASS: float = 0.74
+const ZION_DESERT_MIN_NORMAL_Y_BRANCH: float = 0.70
+const ZION_DESERT_MIN_NORMAL_Y_BOULDER: float = 0.62
+const ZION_DESERT_Y_OFFSET_GRASS: float = 0.012
+const ZION_DESERT_Y_OFFSET_BRANCH: float = 0.006
+const ZION_DESERT_Y_OFFSET_BOULDER: float = 0.0
+const ZION_DESERT_CULL_MARGIN: float = 1.5
+const ZION_DESERT_VISIBILITY_FADE_MARGIN: float = 24.0
+const ZION_DESERT_GRASS_BASE_COLOR: Color = Color(0.36, 0.34, 0.20, 1.0)
+const ZION_DESERT_GRASS_TIP_COLOR: Color = Color(0.72, 0.64, 0.36, 1.0)
+const ZION_DESERT_BACKLIGHT_COLOR: Color = Color(0.96, 0.62, 0.32, 1.0)
+const ZION_DESERT_BRANCH_BASE_COLOR: Color = Color(0.42, 0.25, 0.12, 1.0)
+const ZION_DESERT_BOULDER_BASE_COLOR: Color = Color(0.62, 0.38, 0.24, 1.0)
+
+
+class ZionScatterBatch:
+	var transforms: Array[Transform3D] = []
+	var colors: Array[Color] = []
 
 
 static func build_cedar_hollow(parent: Node3D) -> Node3D:
@@ -105,6 +158,35 @@ static func build_cedar_hollow(parent: Node3D) -> Node3D:
 	_add_pinecones(root)
 	_add_ferns(root)
 	_add_cattails(root)
+	return root
+
+
+static func build_zion_desert_spawn_apron(parent: Node3D, region_id: String, spawn_transform: Transform3D) -> Node3D:
+	var root: Node3D = Node3D.new()
+	root.name = ZION_DESERT_SCATTER_ROOT_NAME
+	root.position = spawn_transform.origin
+	parent.add_child(root)
+
+	var center_xz: Vector2 = Vector2(spawn_transform.origin.x, spawn_transform.origin.z)
+	var tile_cells: Array[Vector2i] = _zion_desert_cells_for_radius(center_xz, ZION_DESERT_APRON_RADIUS_M + ZION_DESERT_EDGE_MARGIN_M)
+	var tile_data_by_cell: Dictionary[Vector2i, Variant] = TerrainVisualBuilderScript.load_region_tile_data_for_cells(region_id, tile_cells)
+	if tile_data_by_cell.is_empty():
+		push_error("ScatterVisualBuilder: Zion desert scatter found no streamed terrain tiles near " + str(center_xz))
+		return root
+
+	var grass_count: int = _add_zion_desert_grass(root, tile_data_by_cell, spawn_transform.origin, center_xz)
+	var branch_count: int = _add_zion_desert_branches(root, tile_data_by_cell, spawn_transform.origin, center_xz)
+	var boulder_count: int = _add_zion_desert_boulders(root, tile_data_by_cell, spawn_transform.origin, center_xz)
+	root.set_meta(ZION_DESERT_SCATTER_RADIUS_META, ZION_DESERT_APRON_RADIUS_M)
+	root.set_meta(ZION_DESERT_GRASS_COUNT_META, grass_count)
+	root.set_meta(ZION_DESERT_BRANCH_COUNT_META, branch_count)
+	root.set_meta(ZION_DESERT_BOULDER_COUNT_META, boulder_count)
+	if grass_count < ZION_DESERT_GRASS_MIN_COUNT:
+		push_error("ScatterVisualBuilder: Zion desert grass count below target: " + str(grass_count))
+	if branch_count < ZION_DESERT_BRANCH_MIN_COUNT:
+		push_error("ScatterVisualBuilder: Zion desert branch count below target: " + str(branch_count))
+	if boulder_count < ZION_DESERT_BOULDER_MIN_COUNT:
+		push_error("ScatterVisualBuilder: Zion desert boulder count below target: " + str(boulder_count))
 	return root
 
 
@@ -198,6 +280,280 @@ static func _add_cattails(parent: Node3D) -> void:
 		_instance_scatter(parent, CattailScene, "cattail_" + str(i + 1), positions[i], Vector3(0.0, _scatter_yaw_degrees(i, 151), 0.0), scale)
 
 
+static func _add_zion_desert_grass(parent: Node3D, tile_data_by_cell: Dictionary[Vector2i, Variant], root_origin: Vector3, center_xz: Vector2) -> int:
+	var grass_mesh: Mesh = _extract_combined_mesh(GrassTuftScene, "zion_desert_grass_tuft")
+	if grass_mesh == null:
+		return 0
+	var batch: ZionScatterBatch = _zion_desert_batch(
+		tile_data_by_cell,
+		root_origin,
+		center_xz,
+		ZION_DESERT_GRASS_TARGET_COUNT,
+		ZION_DESERT_GRASS_MIN_SPACING,
+		ZION_DESERT_CLEAR_RADIUS_M,
+		ZION_DESERT_APRON_RADIUS_M,
+		ZION_DESERT_GRASS_CLUSTER_COUNT,
+		ZION_DESERT_GRASS_CLUSTER_RADIUS,
+		ZION_DESERT_MIN_NORMAL_Y_GRASS,
+		ZION_DESERT_Y_OFFSET_GRASS,
+		2101,
+		Vector2(0.46, 0.92),
+		Vector2(0.38, 0.78),
+		ZION_DESERT_GRASS_BASE_COLOR
+	)
+	_zion_desert_multimesh(
+		parent,
+		ZION_DESERT_GRASS_NODE_NAME,
+		grass_mesh,
+		_create_zion_desert_grass_material(),
+		batch,
+		GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	)
+	return batch.transforms.size()
+
+
+static func _add_zion_desert_branches(parent: Node3D, tile_data_by_cell: Dictionary[Vector2i, Variant], root_origin: Vector3, center_xz: Vector2) -> int:
+	var branch_mesh: Mesh = _extract_combined_mesh(BranchScene, "zion_desert_branch")
+	if branch_mesh == null:
+		return 0
+	var batch: ZionScatterBatch = _zion_desert_batch(
+		tile_data_by_cell,
+		root_origin,
+		center_xz,
+		ZION_DESERT_BRANCH_TARGET_COUNT,
+		ZION_DESERT_BRANCH_MIN_SPACING,
+		ZION_DESERT_CLEAR_RADIUS_M + 1.0,
+		ZION_DESERT_APRON_RADIUS_M,
+		ZION_DESERT_BRANCH_CLUSTER_COUNT,
+		ZION_DESERT_BRANCH_CLUSTER_RADIUS,
+		ZION_DESERT_MIN_NORMAL_Y_BRANCH,
+		ZION_DESERT_Y_OFFSET_BRANCH,
+		3301,
+		Vector2(1.24, 2.35),
+		Vector2(0.72, 1.10),
+		ZION_DESERT_BRANCH_BASE_COLOR
+	)
+	_zion_desert_multimesh(
+		parent,
+		ZION_DESERT_BRANCH_NODE_NAME,
+		branch_mesh,
+		_create_zion_desert_branch_material(),
+		batch,
+		GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	)
+	return batch.transforms.size()
+
+
+static func _add_zion_desert_boulders(parent: Node3D, tile_data_by_cell: Dictionary[Vector2i, Variant], root_origin: Vector3, center_xz: Vector2) -> int:
+	var boulder_mesh: Mesh = _extract_combined_mesh(BoulderScene, "zion_desert_boulder")
+	if boulder_mesh == null:
+		return 0
+	var batch: ZionScatterBatch = _zion_desert_batch(
+		tile_data_by_cell,
+		root_origin,
+		center_xz,
+		ZION_DESERT_BOULDER_TARGET_COUNT,
+		ZION_DESERT_BOULDER_MIN_SPACING,
+		ZION_DESERT_CLEAR_RADIUS_M + 2.5,
+		ZION_DESERT_APRON_RADIUS_M,
+		ZION_DESERT_BOULDER_CLUSTER_COUNT,
+		ZION_DESERT_BOULDER_CLUSTER_RADIUS,
+		ZION_DESERT_MIN_NORMAL_Y_BOULDER,
+		ZION_DESERT_Y_OFFSET_BOULDER,
+		4603,
+		Vector2(1.18, 3.18),
+		Vector2(0.82, 1.30),
+		ZION_DESERT_BOULDER_BASE_COLOR
+	)
+	_zion_desert_multimesh(
+		parent,
+		ZION_DESERT_BOULDER_NODE_NAME,
+		boulder_mesh,
+		_create_zion_desert_boulder_material(),
+		batch,
+		GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+	)
+	return batch.transforms.size()
+
+
+static func _zion_desert_multimesh(parent: Node3D, node_name: String, mesh: Mesh, material: Material, batch: ZionScatterBatch, shadow_mode: int) -> void:
+	if batch.transforms.is_empty():
+		return
+	var multimesh: MultiMesh = MultiMesh.new()
+	multimesh.transform_format = MultiMesh.TRANSFORM_3D
+	multimesh.use_colors = true
+	multimesh.mesh = mesh
+	multimesh.custom_aabb = _zion_desert_custom_aabb(batch.transforms)
+	multimesh.instance_count = batch.transforms.size()
+	for i in range(batch.transforms.size()):
+		multimesh.set_instance_transform(i, batch.transforms[i])
+		multimesh.set_instance_color(i, batch.colors[i])
+
+	var instance: MultiMeshInstance3D = MultiMeshInstance3D.new()
+	instance.name = node_name
+	instance.multimesh = multimesh
+	instance.material_override = material
+	instance.extra_cull_margin = ZION_DESERT_CULL_MARGIN
+	instance.visibility_range_end = GameConfig.vis_range_scatter
+	instance.visibility_range_end_margin = ZION_DESERT_VISIBILITY_FADE_MARGIN
+	instance.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+	instance.cast_shadow = shadow_mode
+	parent.add_child(instance)
+
+
+static func _zion_desert_batch(
+	tile_data_by_cell: Dictionary[Vector2i, Variant],
+	root_origin: Vector3,
+	center_xz: Vector2,
+	target_count: int,
+	min_spacing: float,
+	min_radius: float,
+	max_radius: float,
+	cluster_count: int,
+	cluster_radius: float,
+	min_normal_y: float,
+	y_offset: float,
+	salt: int,
+	width_scale_range: Vector2,
+	height_scale_range: Vector2,
+	base_color: Color
+) -> ZionScatterBatch:
+	var batch: ZionScatterBatch = ZionScatterBatch.new()
+	var placed_xz: Array[Vector2] = []
+	var safe_cluster_count: int = maxi(cluster_count, 1)
+	for item_index in range(target_count):
+		for attempt in range(ZION_DESERT_MAX_ATTEMPTS_PER_INSTANCE):
+			var world_xz: Vector2 = _zion_desert_candidate_xz(center_xz, item_index, attempt, max_radius, safe_cluster_count, cluster_radius, salt)
+			if not _zion_desert_candidate_in_radius(center_xz, world_xz, min_radius, max_radius):
+				continue
+			var surface_id_value: int = TerrainVisualBuilderScript.region_surface_id_value_at_xz(tile_data_by_cell, world_xz.x, world_xz.y)
+			if not _zion_desert_surface_allowed(surface_id_value):
+				continue
+			if not _zion_desert_spacing_allowed(placed_xz, world_xz, min_spacing):
+				continue
+			var normal: Vector3 = TerrainVisualBuilderScript.region_visual_normal_at_xz(tile_data_by_cell, world_xz.x, world_xz.y)
+			if normal.y < min_normal_y:
+				continue
+			var height: float = TerrainVisualBuilderScript.region_visual_height_at_xz(tile_data_by_cell, world_xz.x, world_xz.y)
+			var yaw: float = _zion_desert_unit(item_index, attempt, salt + 71) * SCATTER_FULL_TURN_RADIANS
+			var width_scale: float = lerpf(width_scale_range.x, width_scale_range.y, _zion_desert_unit(item_index, attempt, salt + 79))
+			var height_scale: float = lerpf(height_scale_range.x, height_scale_range.y, _zion_desert_unit(item_index, attempt, salt + 83))
+			var basis: Basis = _basis_on_ground_normal(yaw, normal, Vector3(width_scale, height_scale, width_scale))
+			var local_position: Vector3 = Vector3(world_xz.x, height + y_offset, world_xz.y) - root_origin
+			batch.transforms.append(Transform3D(basis, local_position))
+			batch.colors.append(_zion_desert_instance_color(base_color, item_index, attempt, salt))
+			placed_xz.append(world_xz)
+			break
+	return batch
+
+
+static func _zion_desert_candidate_xz(center_xz: Vector2, item_index: int, attempt: int, max_radius: float, cluster_count: int, cluster_radius: float, salt: int) -> Vector2:
+	var cluster_index: int = (item_index + attempt + salt) % cluster_count
+	var cluster_angle: float = _zion_desert_unit(cluster_index, 0, salt + 3) * SCATTER_FULL_TURN_RADIANS
+	var cluster_distance_unit: float = _zion_desert_unit(cluster_index, 0, salt + 5)
+	var cluster_distance: float = max_radius * (0.10 + sqrt(cluster_distance_unit) * 0.86)
+	if (item_index + salt) % ZION_DESERT_NEAR_CLUSTER_STRIDE == 0:
+		cluster_distance = lerpf(ZION_DESERT_NEAR_CLUSTER_MIN_RADIUS_M, ZION_DESERT_NEAR_CLUSTER_MAX_RADIUS_M, cluster_distance_unit)
+	var cluster_center: Vector2 = center_xz + Vector2(cos(cluster_angle), sin(cluster_angle)) * cluster_distance
+	var item_angle: float = _zion_desert_unit(item_index, attempt, salt + 11) * SCATTER_FULL_TURN_RADIANS
+	var item_distance_unit: float = _zion_desert_unit(item_index, attempt, salt + 13)
+	var item_distance: float = cluster_radius * sqrt(item_distance_unit)
+	return cluster_center + Vector2(cos(item_angle), sin(item_angle)) * item_distance
+
+
+static func _zion_desert_candidate_in_radius(center_xz: Vector2, candidate_xz: Vector2, min_radius: float, max_radius: float) -> bool:
+	var distance: float = center_xz.distance_to(candidate_xz)
+	return distance >= min_radius and distance <= max_radius - ZION_DESERT_EDGE_MARGIN_M
+
+
+static func _zion_desert_surface_allowed(surface_id_value: int) -> bool:
+	if surface_id_value == GameConfig.ZION_SURFACE_ID_WATER:
+		return false
+	if surface_id_value == GameConfig.ZION_SURFACE_ID_PAVEMENT:
+		return false
+	return surface_id_value > 0
+
+
+static func _zion_desert_spacing_allowed(placed_xz: Array[Vector2], candidate_xz: Vector2, min_spacing: float) -> bool:
+	for existing_xz in placed_xz:
+		if existing_xz.distance_to(candidate_xz) < min_spacing:
+			return false
+	return true
+
+
+static func _basis_on_ground_normal(yaw: float, normal: Vector3, scale: Vector3) -> Basis:
+	var up: Vector3 = normal.normalized()
+	if up.length_squared() <= 0.0001:
+		up = Vector3.UP
+	var tangent_x: Vector3 = Basis(Vector3.UP, yaw) * Vector3.RIGHT
+	tangent_x = tangent_x - up * tangent_x.dot(up)
+	if tangent_x.length_squared() <= 0.0001:
+		tangent_x = up.cross(Vector3.FORWARD)
+	if tangent_x.length_squared() <= 0.0001:
+		tangent_x = Vector3.RIGHT
+	tangent_x = tangent_x.normalized()
+	var tangent_z: Vector3 = tangent_x.cross(up).normalized()
+	return Basis(tangent_x, up, tangent_z).scaled(scale)
+
+
+static func _zion_desert_instance_color(base_color: Color, item_index: int, attempt: int, salt: int) -> Color:
+	var warmth: float = _zion_desert_unit(item_index, attempt, salt + 97) - 0.5
+	var value: float = 0.78 + _zion_desert_unit(item_index, attempt, salt + 101) * 0.34
+	return Color(
+		clampf(base_color.r * value + warmth * 0.08, 0.0, 1.0),
+		clampf(base_color.g * value + warmth * 0.04, 0.0, 1.0),
+		clampf(base_color.b * value - warmth * 0.03, 0.0, 1.0),
+		base_color.a
+	)
+
+
+static func _zion_desert_custom_aabb(transforms: Array[Transform3D]) -> AABB:
+	if transforms.is_empty():
+		return AABB()
+	var min_position: Vector3 = transforms[0].origin
+	var max_position: Vector3 = transforms[0].origin
+	for transform in transforms:
+		min_position.x = minf(min_position.x, transform.origin.x)
+		min_position.y = minf(min_position.y, transform.origin.y)
+		min_position.z = minf(min_position.z, transform.origin.z)
+		max_position.x = maxf(max_position.x, transform.origin.x)
+		max_position.y = maxf(max_position.y, transform.origin.y)
+		max_position.z = maxf(max_position.z, transform.origin.z)
+	var padding: Vector3 = Vector3(ZION_DESERT_CULL_MARGIN, 3.0, ZION_DESERT_CULL_MARGIN)
+	return AABB(min_position - padding, (max_position - min_position) + padding * 2.0)
+
+
+static func _zion_desert_cells_for_radius(center_xz: Vector2, radius: float) -> Array[Vector2i]:
+	var tile_size_m: float = GameConfig.STREAM_TILE_SIZE_M
+	var min_cell_x: int = int(floor((center_xz.x - radius) / tile_size_m))
+	var max_cell_x: int = int(floor((center_xz.x + radius) / tile_size_m))
+	var min_cell_z: int = int(floor((center_xz.y - radius) / tile_size_m))
+	var max_cell_z: int = int(floor((center_xz.y + radius) / tile_size_m))
+	var cells: Array[Vector2i] = []
+	for cell_x in range(min_cell_x, max_cell_x + 1):
+		for cell_z in range(min_cell_z, max_cell_z + 1):
+			cells.append(Vector2i(cell_x, cell_z))
+	cells.sort_custom(Callable(ScatterVisualBuilder, "_cell_less"))
+	return cells
+
+
+static func _cell_less(left: Vector2i, right: Vector2i) -> bool:
+	if left.x == right.x:
+		return left.y < right.y
+	return left.x < right.x
+
+
+static func _zion_desert_unit(index: int, attempt: int, salt: int) -> float:
+	var value: int = (
+		index * ZION_DESERT_PATTERN_INDEX_MULTIPLIER
+		+ attempt * ZION_DESERT_PATTERN_ATTEMPT_MULTIPLIER
+		+ salt * ZION_DESERT_PATTERN_SALT_MULTIPLIER
+	) % ZION_DESERT_PATTERN_MODULUS
+	if value < 0:
+		value += ZION_DESERT_PATTERN_MODULUS
+	return float(value) / float(ZION_DESERT_PATTERN_MODULUS - 1)
+
+
 static func _instance_scatter(parent: Node3D, scene: PackedScene, node_name: String, position: Vector3, rotation: Vector3, scale: Vector3) -> Node3D:
 	var instance: Node3D = scene.instantiate() as Node3D
 	if instance == null:
@@ -222,6 +578,58 @@ static func _extract_first_mesh(scene: PackedScene, node_name: String) -> Mesh:
 	if mesh == null:
 		push_error("ScatterVisualBuilder: failed to extract mesh from " + node_name)
 	return mesh
+
+
+static func _extract_combined_mesh(scene: PackedScene, node_name: String) -> Mesh:
+	var root: Node = scene.instantiate()
+	if root == null:
+		push_error("ScatterVisualBuilder: failed to instantiate " + node_name)
+		return null
+	var combined_mesh: ArrayMesh = ArrayMesh.new()
+	combined_mesh.resource_name = node_name + "_combined_mesh"
+	_append_combined_mesh_surfaces(root, Transform3D.IDENTITY, combined_mesh)
+	root.free()
+	if combined_mesh.get_surface_count() <= 0:
+		push_error("ScatterVisualBuilder: failed to combine mesh surfaces from " + node_name)
+		return null
+	return combined_mesh
+
+
+static func _append_combined_mesh_surfaces(node: Node, parent_transform: Transform3D, combined_mesh: ArrayMesh) -> void:
+	var node_transform: Transform3D = parent_transform
+	var node_3d: Node3D = node as Node3D
+	if node_3d != null:
+		node_transform = parent_transform * node_3d.transform
+	var mesh_instance: MeshInstance3D = node as MeshInstance3D
+	if mesh_instance != null and mesh_instance.mesh != null:
+		_append_mesh_instance_surfaces(mesh_instance, node_transform, combined_mesh)
+	for child in node.get_children():
+		_append_combined_mesh_surfaces(child, node_transform, combined_mesh)
+
+
+static func _append_mesh_instance_surfaces(mesh_instance: MeshInstance3D, transform: Transform3D, combined_mesh: ArrayMesh) -> void:
+	var source_mesh: Mesh = mesh_instance.mesh
+	if source_mesh == null:
+		return
+	for surface_index in range(source_mesh.get_surface_count()):
+		var source_arrays: Array[Variant] = []
+		source_arrays.assign(source_mesh.surface_get_arrays(surface_index))
+		var output_arrays: Array[Variant] = []
+		output_arrays.resize(Mesh.ARRAY_MAX)
+		for array_index in range(Mesh.ARRAY_MAX):
+			output_arrays[array_index] = source_arrays[array_index]
+		var vertices: PackedVector3Array = output_arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array
+		for vertex_index in range(vertices.size()):
+			vertices[vertex_index] = transform * vertices[vertex_index]
+		output_arrays[Mesh.ARRAY_VERTEX] = vertices
+		var normals: PackedVector3Array = output_arrays[Mesh.ARRAY_NORMAL] as PackedVector3Array
+		for normal_index in range(normals.size()):
+			normals[normal_index] = (transform.basis * normals[normal_index]).normalized()
+		output_arrays[Mesh.ARRAY_NORMAL] = normals
+		combined_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, output_arrays)
+		var material: Material = source_mesh.surface_get_material(surface_index)
+		if material != null:
+			combined_mesh.surface_set_material(combined_mesh.get_surface_count() - 1, material)
 
 
 static func _find_first_mesh(parent: Node) -> Mesh:
@@ -254,6 +662,43 @@ static func _create_grass_material() -> ShaderMaterial:
 	material.set_shader_parameter(&"wind_time_factor", wind_time_factor)
 	material.set_shader_parameter(&"backlight_color", GameConfig.grass_backlight_color)
 	material.set_shader_parameter(&"backlight_energy", backlight_energy)
+	return material
+
+
+static func _create_zion_desert_grass_material() -> ShaderMaterial:
+	var material: ShaderMaterial = ShaderMaterial.new()
+	material.resource_name = "zion_desert_grass_material"
+	material.shader = GrassShader
+	material.set_shader_parameter(&"blade_base_color", ZION_DESERT_GRASS_BASE_COLOR)
+	material.set_shader_parameter(&"blade_tip_color", ZION_DESERT_GRASS_TIP_COLOR)
+	material.set_shader_parameter(&"wind_strength", maxf(GameConfig.grass_wind_strength * 0.65, 0.0))
+	material.set_shader_parameter(&"wind_speed", maxf(GameConfig.grass_wind_speed * 0.82, 0.0))
+	var wind_time_factor: float = 1.0
+	if GameConfig.grass_wind_freeze_for_capture:
+		wind_time_factor = 0.0
+	material.set_shader_parameter(&"wind_time_factor", wind_time_factor)
+	material.set_shader_parameter(&"backlight_color", ZION_DESERT_BACKLIGHT_COLOR)
+	material.set_shader_parameter(&"backlight_energy", maxf(GameConfig.grass_backlight_energy * 0.70, 0.0))
+	return material
+
+
+static func _create_zion_desert_branch_material() -> StandardMaterial3D:
+	var material: StandardMaterial3D = StandardMaterial3D.new()
+	material.resource_name = "zion_desert_branch_material"
+	material.albedo_color = ZION_DESERT_BRANCH_BASE_COLOR
+	material.roughness = 0.92
+	material.metallic = 0.0
+	material.vertex_color_use_as_albedo = true
+	return material
+
+
+static func _create_zion_desert_boulder_material() -> StandardMaterial3D:
+	var material: StandardMaterial3D = StandardMaterial3D.new()
+	material.resource_name = "zion_desert_boulder_material"
+	material.albedo_color = ZION_DESERT_BOULDER_BASE_COLOR
+	material.roughness = 0.88
+	material.metallic = 0.0
+	material.vertex_color_use_as_albedo = true
 	return material
 
 

@@ -11,6 +11,7 @@ const ChaseCameraMath: GDScript = preload("res://systems/render/chase_camera_mat
 const TerrainVisualBuilderScript: GDScript = preload("res://systems/render/terrain_visual_builder.gd")
 const TerrainVisualStreamerScript: GDScript = preload("res://systems/render/terrain_visual_streamer.gd")
 const WaterVisualBuilderScript: GDScript = preload("res://systems/render/water_visual_builder.gd")
+const ScatterVisualBuilderScript: GDScript = preload("res://systems/render/scatter_visual_builder.gd")
 const AtmosphereVisualBuilderScript: GDScript = preload("res://systems/render/atmosphere_visual_builder.gd")
 const DustTiltShiftVisualBuilderScript: GDScript = preload("res://systems/render/dust_tilt_shift_visual_builder.gd")
 const ProceduralBuggyVisualScript: GDScript = preload("res://systems/render/procedural_buggy_visual.gd")
@@ -739,6 +740,7 @@ func _setup_world() -> void:
 	TerrainVisualBuilderScript.prewarm_surface_index_pipeline()
 	_terrain_visual_streamer.call("configure_region", ZION_REGION_ID)
 	_setup_terrain_tracks(_terrain_visual_streamer)
+	_setup_zion_desert_scatter()
 	WaterVisualBuilderScript.build_zion_virgin_river(_world)
 
 
@@ -757,6 +759,13 @@ func _setup_terrain_tracks(terrain_root: Node3D) -> void:
 	var track_bounds_min: Vector2 = _terrain_track_painter.call("render_bounds_min")
 	var track_bounds_max: Vector2 = _terrain_track_painter.call("render_bounds_max")
 	_remember_track_texture_state(track_texture, track_bounds_min, track_bounds_max)
+
+
+func _setup_zion_desert_scatter() -> void:
+	if _world == null:
+		return
+	var spawn_transform: Transform3D = CedarRoute.call("spawn_transform", ZION_SPAWN_ID)
+	ScatterVisualBuilderScript.build_zion_desert_spawn_apron(_world, ZION_REGION_ID, spawn_transform)
 
 
 func _setup_demo_props() -> void:
