@@ -212,7 +212,7 @@ var _mood: int = MOOD_DUSK
 var _terrain_track_painter: Node = null
 var _terrain_visual_streamer: Node3D = null
 var _ambient_life_root: Node3D = null
-var _ambient_life_tick: int = 0
+var _ambient_life_phase: float = 0.0
 var _terrain_builder_process_node: Node = null
 var _vehicle_juice_rig: Node = null
 var _photograph_system: Node = null
@@ -371,11 +371,7 @@ func _physics_process(delta: float) -> void:
 	# frame counters below refresh it on the next render or physics frame.
 	_clear_vehicle_state_frame_cache()
 	_sample_golden_line()
-	_update_ambient_life_phase()
-	_update_visual_wheels(delta)
 	_update_terrain_tracks()
-	if _runtime_camera_updates_enabled():
-		_update_camera(delta)
 
 
 func _process(delta: float) -> void:
@@ -390,6 +386,7 @@ func process_usec_last_frame() -> int:
 
 func _process_body(delta: float) -> void:
 	_update_cold_start_streaming_gate(delta)
+	_update_render_presentation(delta)
 	# Cosmetic spawn scatter waits until after reveal, then drains one load/build step per frame.
 	_drain_zion_desert_scatter_build_queue()
 	_sample_perf_log_frame()
@@ -397,6 +394,15 @@ func _process_body(delta: float) -> void:
 	if _terrain_track_painter == null:
 		return
 	_apply_terrain_tracks_to_streamed_tiles()
+
+
+func _update_render_presentation(delta: float) -> void:
+	if _vehicle == null:
+		return
+	_update_ambient_life_phase(delta)
+	_update_visual_wheels(delta)
+	if _runtime_camera_updates_enabled():
+		_update_camera(delta)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -1082,18 +1088,15 @@ func _setup_ambient_life() -> void:
 	if _world == null:
 		return
 	_ambient_life_root = AmbientLifeBuilderScript.build(_world)
-	_ambient_life_tick = 0
+	_ambient_life_phase = 0.0
 
 
-func _update_ambient_life_phase() -> void:
+func _update_ambient_life_phase(delta: float) -> void:
 	if _ambient_life_root == null:
 		return
-	_ambient_life_tick += 1
-	var phase: float = fposmod(
-		float(_ambient_life_tick) * GameConfig.FIXED_DT * maxf(GameConfig.ambient_life_bird_phase_radians_per_second, 0.0),
-		TAU
-	)
-	AmbientLifeBuilderScript.apply_phase(_ambient_life_root, phase)
+	var phase_step: float = maxf(delta, 0.0) * maxf(GameConfig.ambient_life_bird_phase_radians_per_second, 0.0)
+	_ambient_life_phase = fposmod(_ambient_life_phase + phase_step, TAU)
+	AmbientLifeBuilderScript.apply_phase(_ambient_life_root, _ambient_life_phase)
 
 
 func _setup_terrain_tracks(terrain_root: Node3D) -> void:
@@ -1752,7 +1755,6 @@ func _enter_cinematic_tour() -> void:
 	_cinematic_tour_previous_controls_hint_visible = _controls_hint_hud.visible if _controls_hint_hud != null else false
 	_cinematic_tour_previous_title_hud_visible = _title_card_hud.visible if _title_card_hud != null else false
 	_set_cinematic_tour_hud_visible(false)
-	_update_cinematic_camera(0.0)
 
 
 func _exit_cinematic_tour() -> void:
@@ -1763,7 +1765,6 @@ func _exit_cinematic_tour() -> void:
 	_restore_cinematic_tour_hud()
 	if _cinematic_camera != null:
 		_cinematic_camera.current = false
-	_update_camera(GameConfig.FIXED_DT)
 
 
 func _set_cinematic_tour_hud_visible(hud_visible: bool) -> void:
@@ -1812,7 +1813,6 @@ func _enter_photo_mode() -> void:
 	_photo_mode_previous_controls_hint_visible = _controls_hint_hud.visible if _controls_hint_hud != null else false
 	_camera_mode = CAMERA_MODE_FPV
 	_set_photo_mode_hud_visible(false)
-	_update_camera(GameConfig.FIXED_DT)
 
 
 func _exit_photo_mode() -> void:
@@ -1821,7 +1821,6 @@ func _exit_photo_mode() -> void:
 	_photo_mode_active = false
 	_camera_mode = _photo_mode_previous_camera_mode
 	_restore_photo_mode_hud()
-	_update_camera(GameConfig.FIXED_DT)
 
 
 func _set_photo_mode_hud_visible(hud_visible: bool) -> void:
@@ -1852,14 +1851,11 @@ func cycle_camera_mode() -> void:
 		return
 	if _camera_mode == CAMERA_MODE_CHASE:
 		_camera_mode = CAMERA_MODE_ORBIT
-		_update_camera(GameConfig.FIXED_DT)
 		return
 	if _camera_mode == CAMERA_MODE_ORBIT:
 		_camera_mode = CAMERA_MODE_FPV
-		_update_camera(GameConfig.FIXED_DT)
 		return
 	_camera_mode = CAMERA_MODE_CHASE
-	_update_camera(GameConfig.FIXED_DT)
 
 
 func _update_hud_input() -> void:
