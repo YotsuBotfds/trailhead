@@ -269,6 +269,9 @@ func _physics_process(_delta: float) -> void:
 	var desired_active_cells: Array[Vector2i] = _desired_active_cells_for_current_cell()
 	var desired_prefetch_cells: Array[Vector2i] = _prefetch_cells_for_sample(sampled_world_position, _current_cell)
 	var travel_ahead_prebuild_cells: Array[Vector2i] = _travel_ahead_prebuild_cells(sampled_world_position, _current_cell)
+	if _has_production_prewarm_workers():
+		_append_unique_cells(desired_prefetch_cells, travel_ahead_prebuild_cells)
+		_sort_cells(desired_prefetch_cells)
 	var current_active_cells: Array[Vector2i] = _sorted_body_cells()
 
 	_last_to_load = _cell_difference(desired_active_cells, current_active_cells)
@@ -284,10 +287,9 @@ func _physics_process(_delta: float) -> void:
 	_enqueue_builds_for_cells(desired_prefetch_cells)
 	# Prioritize the active ring (the cell under the vehicle + its immediate
 	# neighbors) ahead of the wider prefetch ring so the collision build that
-	# gates the streaming freeze finishes first. Travel-ahead leads are applied
-	# last → they sit at the very front, the current cell right behind. Both
-	# helpers no-op when no production workers are running, so the deterministic
-	# worker<2 / synchronous path is byte-identical.
+	# gates the streaming freeze finishes first. Production travel-ahead rings are
+	# applied last, so the cells the next crossings will activate sit at the very
+	# front. Worker 0/1 keeps the old travel-ahead list and activation behavior.
 	_prioritize_active_ring_builds(desired_active_cells)
 	_prioritize_queued_builds_for_cells(travel_ahead_prebuild_cells)
 	if _workers.is_empty():
@@ -681,8 +683,12 @@ func _drain_prebuild_queue() -> void:
 
 func _install_prebuilt_shape(cell: Vector2i, shape: HeightMapShape3D) -> void:
 	_prebuilt_shapes_by_cell[cell] = shape
-	if _workers.size() >= 2 and not _prewarmed_bodies_by_cell.has(cell):
+	if _has_production_prewarm_workers() and not _prewarmed_bodies_by_cell.has(cell):
 		_prewarm_cell_body(cell, shape)
+
+
+func _has_production_prewarm_workers() -> bool:
+	return _workers.size() >= 2
 
 
 func _prewarm_cell_body(cell: Vector2i, shape: HeightMapShape3D) -> void:
@@ -1030,6 +1036,12 @@ func _travel_ahead_prebuild_cells(world_position: Vector3, center_cell: Vector2i
 	if travel_cell_step == Vector2i.ZERO:
 		return cells
 	var lead_cells: int = _speed_scaled_prebuild_lead_cells(_horizontal_speed_mps(travel_delta))
+	if _has_production_prewarm_workers():
+		for step in range(1, lead_cells + 1):
+			var bias_center: Vector2i = center_cell + Vector2i(travel_cell_step.x * step, travel_cell_step.y * step)
+			_append_unique_cells(cells, _cells_in_radius(bias_center, GameConfig.STREAM_ACTIVE_RADIUS))
+		_sort_cells(cells)
+		return cells
 	for step in range(1, lead_cells + 1):
 		cells.append(center_cell + Vector2i(travel_cell_step.x * step, travel_cell_step.y * step))
 	return cells
