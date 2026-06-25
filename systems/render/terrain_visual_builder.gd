@@ -297,9 +297,8 @@ const FOLIAGE_SPECIES_LIST: Array[StringName] = [FOLIAGE_SPECIES_GRASS, FOLIAGE_
 const FOLIAGE_SPECIES_GRASS_COLOR: Color = Color(0.64, 0.53, 0.25, 0.92)
 const FOLIAGE_SPECIES_RIPARIAN_GRASS_COLOR: Color = Color(0.16, 0.32, 0.09, 0.92)
 const FOLIAGE_SPECIES_SHRUB_COLOR: Color = Color(0.46, 0.50, 0.39, 0.94)
-const FOLIAGE_SHRUB_RABBITBRUSH_COLOR: Color = Color(0.58, 0.56, 0.22, 0.95)
-const FOLIAGE_SHRUB_SAGE_COLOR: Color = Color(0.38, 0.44, 0.40, 0.95)
-const FOLIAGE_SHRUB_MORMON_TEA_COLOR: Color = Color(0.31, 0.39, 0.27, 0.95)
+const FOLIAGE_SHRUB_SAGE_COLOR: Color = Color(0.52, 0.55, 0.46, 0.95)
+const FOLIAGE_SHRUB_RABBITBRUSH_COLOR: Color = Color(0.55, 0.50, 0.22, 0.95)
 const FOLIAGE_SPECIES_YUCCA_COLOR: Color = Color(0.28, 0.38, 0.32, 0.95)
 const FOLIAGE_SPECIES_JUNIPER_COLOR: Color = Color(0.12, 0.20, 0.17, 0.97)
 const FOLIAGE_SPECIES_WILLOW_COLOR: Color = Color(0.20, 0.32, 0.13, 0.95)
@@ -308,12 +307,20 @@ const FOLIAGE_SPECIES_BOULDER_COLOR: Color = Color(0.69, 0.47, 0.31, 1.0)
 const FOLIAGE_SPECIES_GRASS_DUSK_TINT: Color = Color(0.76, 0.55, 0.30, 0.92)
 const FOLIAGE_SPECIES_RIPARIAN_GRASS_DUSK_TINT: Color = Color(0.22, 0.33, 0.12, 0.92)
 const FOLIAGE_SPECIES_SHRUB_DUSK_TINT: Color = Color(0.52, 0.46, 0.34, 0.94)
+const FOLIAGE_SHRUB_SAGE_DUSK_TINT: Color = Color(0.55, 0.52, 0.43, 0.95)
+const FOLIAGE_SHRUB_RABBITBRUSH_DUSK_TINT: Color = Color(0.60, 0.47, 0.24, 0.95)
 const FOLIAGE_SPECIES_YUCCA_DUSK_TINT: Color = Color(0.35, 0.40, 0.33, 0.95)
 const FOLIAGE_SPECIES_JUNIPER_DUSK_TINT: Color = Color(0.15, 0.20, 0.17, 0.97)
 const FOLIAGE_SPECIES_WILLOW_DUSK_TINT: Color = Color(0.25, 0.32, 0.14, 0.95)
 const FOLIAGE_SPECIES_COTTONWOOD_DUSK_TINT: Color = Color(0.38, 0.40, 0.11, 0.96)
 const FOLIAGE_SPECIES_MATERIAL_DUSK_STRENGTH: float = 0.18
 const FOLIAGE_SPECIES_INSTANCE_DUSK_JITTER: float = 0.18
+const FOLIAGE_SHRUB_CLUMP_SIZE_M: float = 48.0
+const FOLIAGE_SHRUB_RABBITBRUSH_BASE_SHARE: float = 0.36
+const FOLIAGE_SHRUB_RABBITBRUSH_TALUS_BIAS: float = 0.18
+const FOLIAGE_SHRUB_RABBITBRUSH_WASH_BIAS: float = 0.14
+const FOLIAGE_SHRUB_RABBITBRUSH_MAX_SHARE: float = 0.70
+const FOLIAGE_SHRUB_CLUMP_TONE_SALT: int = 31
 # Per-instance tonal variety for the GLB tree leaf canopy (willow/cottonwood). A stand of
 # cottonwoods read as the SAME asset cloned: instances already get full-360 yaw + non-uniform
 # width/height scale (see _build_region_foliage_cell_data_with_audit), but the MultiMesh per-
@@ -397,7 +404,6 @@ const FOLIAGE_VIS_RANGE_TREE_LOD1_END: float = 650.0
 const FOLIAGE_FADE_MARGIN_GRASS: float = 28.0
 const FOLIAGE_FADE_MARGIN_TREE: float = 55.0
 const FOLIAGE_FADE_MARGIN_BOULDER: float = 35.0
-const FOLIAGE_BENCH_SHRUB_SHARE: float = 0.30
 const FOLIAGE_BENCH_GRASS_SHARE: float = 0.56
 const FOLIAGE_BENCH_JUNIPER_SHARE: float = 0.08
 const FOLIAGE_WOODLAND_SHRUB_SHARE: float = 0.24
@@ -2692,7 +2698,9 @@ static func _build_region_foliage_cell_data_with_audit(tile_data_by_cell: Dictio
 		_record_foliage_acceptance(audit, terrain_normal.y, species_id)
 		_record_foliage_species_acceptance(audit, species_id)
 		var color_warmth: float = _region_foliage_unit(foliage_cell, lod_index, attempt, 7)
-		if is_grass_clump:
+		if species_id == FOLIAGE_SPECIES_SHRUB:
+			species_data.colors.append(_foliage_shrub_instance_color(surface_id_value, place_x, place_z, color_warmth))
+		elif is_grass_clump:
 			species_data.colors.append(_grass_clump_instance_color(species_id, color_warmth, foliage_cell, lod_index, attempt))
 		elif _foliage_species_uses_source_material(species_id):
 			# GLB tree canopy (willow/cottonwood read it via vertex_color_use_as_albedo on the leaf
@@ -3714,12 +3722,18 @@ static func _foliage_species_for_surface_value(surface_id_value: int) -> StringN
 	return &""
 
 
+static func _bench_foliage_shrub_share() -> float:
+	var max_shrub_share: float = maxf(1.0 - FOLIAGE_BENCH_GRASS_SHARE - FOLIAGE_BENCH_JUNIPER_SHARE, 0.0)
+	return clampf(GameConfig.resolved_scrub_bench_shrub_share(), 0.0, max_shrub_share)
+
+
 static func _bench_foliage_species_for_selector(selector: float) -> StringName:
-	if selector <= FOLIAGE_BENCH_SHRUB_SHARE:
+	var shrub_share: float = _bench_foliage_shrub_share()
+	if selector <= shrub_share:
 		return FOLIAGE_SPECIES_SHRUB
-	if selector <= FOLIAGE_BENCH_SHRUB_SHARE + FOLIAGE_BENCH_GRASS_SHARE:
+	if selector <= shrub_share + FOLIAGE_BENCH_GRASS_SHARE:
 		return FOLIAGE_SPECIES_GRASS
-	if selector <= FOLIAGE_BENCH_SHRUB_SHARE + FOLIAGE_BENCH_GRASS_SHARE + FOLIAGE_BENCH_JUNIPER_SHARE:
+	if selector <= shrub_share + FOLIAGE_BENCH_GRASS_SHARE + FOLIAGE_BENCH_JUNIPER_SHARE:
 		return FOLIAGE_SPECIES_JUNIPER
 	return FOLIAGE_SPECIES_YUCCA
 
@@ -3961,21 +3975,44 @@ static func _foliage_material_color_for_species(species_id: StringName) -> Color
 	return base_color.lerp(_foliage_dusk_tint_for_species(species_id), FOLIAGE_SPECIES_MATERIAL_DUSK_STRENGTH)
 
 
-static func _foliage_shrub_variant_color(selector: float) -> Color:
-	if selector < 0.34:
-		return FOLIAGE_SHRUB_RABBITBRUSH_COLOR
-	if selector < 0.67:
-		return FOLIAGE_SHRUB_SAGE_COLOR
-	return FOLIAGE_SHRUB_MORMON_TEA_COLOR
-
-
 static func _foliage_instance_color(species_id: StringName, color_warmth: float) -> Color:
 	var base_color: Color = _foliage_color_for_species(species_id)
 	if species_id == FOLIAGE_SPECIES_BOULDER:
 		return base_color
-	if species_id == FOLIAGE_SPECIES_SHRUB:
-		base_color = _foliage_shrub_variant_color(color_warmth)
 	var dusk_color: Color = _foliage_dusk_tint_for_species(species_id)
+	var dusk_amount: float = clampf(FOLIAGE_SPECIES_MATERIAL_DUSK_STRENGTH + color_warmth * FOLIAGE_SPECIES_INSTANCE_DUSK_JITTER, 0.0, 1.0)
+	return base_color.lerp(dusk_color, dusk_amount)
+
+
+static func _foliage_shrub_clump_cell(world_x: float, world_z: float) -> Vector2i:
+	return Vector2i(int(floor(world_x / FOLIAGE_SHRUB_CLUMP_SIZE_M)), int(floor(world_z / FOLIAGE_SHRUB_CLUMP_SIZE_M)))
+
+
+static func _foliage_shrub_rabbitbrush_share(surface_id_value: int, world_x: float, world_z: float) -> float:
+	var share: float = FOLIAGE_SHRUB_RABBITBRUSH_BASE_SHARE
+	if bool(TerrainSurfacePaletteResource.call("has_surface_id_value", surface_id_value)):
+		var surface_id: StringName = _surface_id_for_value(surface_id_value)
+		if surface_id == &"loose_rock":
+			share += FOLIAGE_SHRUB_RABBITBRUSH_TALUS_BIAS
+		elif surface_id == &"packed_gravel":
+			share += FOLIAGE_SHRUB_RABBITBRUSH_WASH_BIAS
+	if _foliage_is_corridor_scrub_position(world_x, world_z):
+		share += FOLIAGE_SHRUB_RABBITBRUSH_WASH_BIAS
+	return clampf(share, 0.0, FOLIAGE_SHRUB_RABBITBRUSH_MAX_SHARE)
+
+
+static func _foliage_shrub_is_rabbitbrush(surface_id_value: int, world_x: float, world_z: float) -> bool:
+	var clump_cell: Vector2i = _foliage_shrub_clump_cell(world_x, world_z)
+	var selector: float = _region_foliage_mixed_unit(clump_cell, 0, 0, FOLIAGE_SHRUB_CLUMP_TONE_SALT)
+	return selector < _foliage_shrub_rabbitbrush_share(surface_id_value, world_x, world_z)
+
+
+static func _foliage_shrub_instance_color(surface_id_value: int, world_x: float, world_z: float, color_warmth: float) -> Color:
+	var base_color: Color = FOLIAGE_SHRUB_SAGE_COLOR
+	var dusk_color: Color = FOLIAGE_SHRUB_SAGE_DUSK_TINT
+	if _foliage_shrub_is_rabbitbrush(surface_id_value, world_x, world_z):
+		base_color = FOLIAGE_SHRUB_RABBITBRUSH_COLOR
+		dusk_color = FOLIAGE_SHRUB_RABBITBRUSH_DUSK_TINT
 	var dusk_amount: float = clampf(FOLIAGE_SPECIES_MATERIAL_DUSK_STRENGTH + color_warmth * FOLIAGE_SPECIES_INSTANCE_DUSK_JITTER, 0.0, 1.0)
 	return base_color.lerp(dusk_color, dusk_amount)
 

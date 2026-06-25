@@ -269,6 +269,8 @@ var grass_occluder_band_count: int = 16
 var foliage_grass_scrub_lod0_scale: Vector3 = Vector3(0.72, 0.50, 0.72)
 var foliage_grass_scrub_lod1_scale: Vector3 = Vector3(0.62, 0.30, 0.62)
 var scrub_density_bench_shrub: float = 0.90
+var scrub_bench_shrub_share: float = 0.34
+var scrub_bench_shrub_share_high_tier: float = 0.36
 var scrub_density_packed_gravel: float = 0.60
 var scrub_density_loose_rock_corridor: float = 0.12
 var scrub_loose_rock_corridor_river_distance_m: float = 260.0
@@ -937,6 +939,13 @@ var default_landmark_radius: float = 0.4
 
 func render_screen_space_gi_high_tier_enabled() -> bool:
 	return render_screen_space_gi_tier >= RENDER_SCREEN_SPACE_GI_TIER_HIGH
+
+
+func resolved_scrub_bench_shrub_share() -> float:
+	var share: float = scrub_bench_shrub_share
+	if render_screen_space_gi_high_tier_enabled():
+		share = maxf(share, scrub_bench_shrub_share_high_tier)
+	return clampf(share, 0.0, 1.0)
 
 
 func ambient_life_effective_tier() -> int:
