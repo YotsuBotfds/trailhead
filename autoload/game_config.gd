@@ -49,6 +49,9 @@ const WHEEL_DUST_TIER_OFF: int = 0
 const WHEEL_DUST_TIER_LOW: int = 1
 const WHEEL_DUST_TIER_MEDIUM: int = 2
 const WHEEL_DUST_TIER_HIGH: int = 3
+const FLOOR_POM_TIER_OFF: int = 0
+const FLOOR_POM_TIER_LOW: int = 1
+const FLOOR_POM_TIER_HIGH: int = 2
 
 var render_screen_space_gi_tier: int = RENDER_SCREEN_SPACE_GI_TIER_HIGH
 var render_frame_cap_enabled: bool = true
@@ -681,6 +684,16 @@ var terrain_pom_enabled: bool = true
 var terrain_pom_depth_scale: float = 0.028
 var terrain_pom_min_layers: int = 4
 var terrain_pom_max_layers: int = 6
+# Floor POM is render-only relief for the surface-index floor PBR band. The shader
+# defaults remain 0/off; the builder enables these resolved values only when the
+# height array is bound.
+var floor_pom_enabled: bool = true
+var floor_pom_quality_tier: int = FLOOR_POM_TIER_HIGH
+var floor_pom_layers: int = 12
+var floor_pom_low_tier_layers: int = 0
+var floor_pom_depth: float = 0.026
+var floor_pom_low_tier_depth: float = 0.0
+var floor_pom_uv_scale: Vector2 = Vector2(0.75, 0.75)
 
 # --- Terrain tire-track painter: local render window, not whole-region bounds.
 var terrain_track_painter_enabled: bool = true
@@ -989,6 +1002,43 @@ func resolved_wheel_dust_emission_radius() -> float:
 	if wheel_dust_high_tier_enabled():
 		return maxf(wheel_dust_emission_radius_high_tier, 0.001)
 	return maxf(wheel_dust_emission_radius, 0.001)
+
+
+func floor_pom_effective_tier() -> int:
+	var tier: int = mini(maxi(floor_pom_quality_tier, FLOOR_POM_TIER_OFF), FLOOR_POM_TIER_HIGH)
+	if not render_screen_space_gi_high_tier_enabled():
+		tier = mini(tier, FLOOR_POM_TIER_LOW)
+	return tier
+
+
+func resolved_floor_pom_enabled() -> bool:
+	return floor_pom_enabled and resolved_floor_pom_layers() > 0 and resolved_floor_pom_depth() > 0.0
+
+
+func resolved_floor_pom_layers() -> int:
+	if not floor_pom_enabled:
+		return 0
+	var tier: int = floor_pom_effective_tier()
+	if tier <= FLOOR_POM_TIER_OFF:
+		return 0
+	if tier == FLOOR_POM_TIER_LOW:
+		return mini(maxi(floor_pom_low_tier_layers, 0), 16)
+	return mini(maxi(floor_pom_layers, 0), 16)
+
+
+func resolved_floor_pom_depth() -> float:
+	if resolved_floor_pom_layers() <= 0:
+		return 0.0
+	if floor_pom_effective_tier() == FLOOR_POM_TIER_LOW:
+		return minf(maxf(floor_pom_low_tier_depth, 0.0), 0.04)
+	return minf(maxf(floor_pom_depth, 0.0), 0.04)
+
+
+func resolved_floor_pom_uv_scale() -> Vector2:
+	return Vector2(
+		clampf(floor_pom_uv_scale.x, 0.0, 1.0),
+		clampf(floor_pom_uv_scale.y, 0.0, 1.0)
+	)
 
 
 func resolved_atmosphere_ssao_radius() -> float:

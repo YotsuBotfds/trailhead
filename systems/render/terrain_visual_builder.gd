@@ -81,16 +81,22 @@ const GENERATED_SURFACE_TEXTURE_DIR: String = "res://assets/textures/surface_vis
 # can read imported pixels without touching stripped raw PNG source files.
 const SurfaceIndexLooseRockAlbedoTexture: Texture2D = preload("res://assets/textures/surface_visuals/zion/loose_rock_default_albedo.png")
 const SurfaceIndexLooseRockNormalTexture: Texture2D = preload("res://assets/textures/surface_visuals/zion/loose_rock_default_normal.png")
+const SurfaceIndexLooseRockHeightTexture: Texture2D = preload("res://assets/textures/surface_visuals/zion/loose_rock_default_height.png")
 const SurfaceIndexPackedDirtAlbedoTexture: Texture2D = preload("res://assets/textures/surface_visuals/zion/packed_dirt_default_albedo.png")
 const SurfaceIndexPackedDirtNormalTexture: Texture2D = preload("res://assets/textures/surface_visuals/zion/packed_dirt_default_normal.png")
+const SurfaceIndexPackedDirtHeightTexture: Texture2D = preload("res://assets/textures/surface_visuals/zion/packed_dirt_default_height.png")
 const SurfaceIndexPackedGravelAlbedoTexture: Texture2D = preload("res://assets/textures/surface_visuals/zion/packed_gravel_default_albedo.png")
 const SurfaceIndexPackedGravelNormalTexture: Texture2D = preload("res://assets/textures/surface_visuals/zion/packed_gravel_default_normal.png")
+const SurfaceIndexPackedGravelHeightTexture: Texture2D = preload("res://assets/textures/surface_visuals/zion/packed_gravel_default_height.png")
 const SurfaceIndexPavedRoadAlbedoTexture: Texture2D = preload("res://assets/textures/surface_visuals/zion/paved_road_default_albedo.png")
 const SurfaceIndexPavedRoadNormalTexture: Texture2D = preload("res://assets/textures/surface_visuals/zion/paved_road_default_normal.png")
+const SurfaceIndexPavedRoadHeightTexture: Texture2D = preload("res://assets/textures/surface_visuals/zion/paved_road_default_height.png")
 const SurfaceIndexTallGrassAlbedoTexture: Texture2D = preload("res://assets/textures/surface_visuals/zion/tall_grass_default_albedo.png")
 const SurfaceIndexTallGrassNormalTexture: Texture2D = preload("res://assets/textures/surface_visuals/zion/tall_grass_default_normal.png")
+const SurfaceIndexTallGrassHeightTexture: Texture2D = preload("res://assets/textures/surface_visuals/zion/tall_grass_default_height.png")
 const SurfaceIndexWetStoneAlbedoTexture: Texture2D = preload("res://assets/textures/surface_visuals/zion/wet_stone_default_albedo.png")
 const SurfaceIndexWetStoneNormalTexture: Texture2D = preload("res://assets/textures/surface_visuals/zion/wet_stone_default_normal.png")
+const SurfaceIndexWetStoneHeightTexture: Texture2D = preload("res://assets/textures/surface_visuals/zion/wet_stone_default_height.png")
 const CliffPbrAlbedoTexture: Texture2D = preload("res://assets/textures/surface_visuals/ground_pbr/Ground080/Ground080_1K-JPG_Color.jpg")
 const CliffPbrRoughnessTexture: Texture2D = preload("res://assets/textures/surface_visuals/ground_pbr/Ground080/Ground080_1K-JPG_Roughness.jpg")
 # CC0 bark PBR (C1): one shared furrowed riparian bark wired onto every trunk/stem/stalk surface of
@@ -147,6 +153,7 @@ const SURFACE_INDEX_ARRAY_CACHE_DIR: String = "user://trailhead/terrain_surface_
 const SURFACE_INDEX_ARRAY_CACHE_VERSION: String = "surface-index-array-cache-v2"
 const SURFACE_INDEX_ALBEDO_ARRAY_CACHE_KIND: String = "albedo"
 const SURFACE_INDEX_NORMAL_ARRAY_CACHE_KIND: String = "normal"
+const SURFACE_INDEX_HEIGHT_ARRAY_CACHE_KIND: String = "height"
 const SURFACE_INDEX_ARRAY_IMAGE_FORMAT_NAME: String = "RGBA8"
 const SURFACE_INDEX_ARRAY_RESIZE_FILTER_NAME: String = "LANCZOS"
 
@@ -164,6 +171,7 @@ static var _foliage_leaf_atlas_loaded: bool = false
 static var _foliage_leaf_atlas_texture: Texture2D = null
 static var _surface_index_albedo_array_cache: Texture2DArray = null
 static var _surface_index_normal_array_cache: Texture2DArray = null
+static var _surface_index_height_array_cache: Texture2DArray = null
 static var _surface_index_macro_albedo_cache: Texture2D = null
 static var _surface_cache_mutex: Mutex = Mutex.new()
 static var _region_tile_data_cache: Dictionary[String, Variant] = {}
@@ -564,6 +572,7 @@ const FLOOR_PBR_BLEND_UNIFORM: StringName = &"floor_pbr_blend"
 const FLOOR_PBR_NORMAL_STRENGTH_UNIFORM: StringName = &"floor_pbr_normal_strength"
 const FLOOR_PBR_ROUGHNESS_STRENGTH_UNIFORM: StringName = &"floor_pbr_roughness_strength"
 const FLOOR_PBR_UV_SCALE_UNIFORM: StringName = &"floor_pbr_uv_scale"
+const FLOOR_PBR_HEIGHT_TEXTURE_UNIFORM: StringName = &"floor_pbr_height_texture"
 const FLOOR_PBR_SLICKROCK_SCALE_MUL_UNIFORM: StringName = &"floor_pbr_slickrock_scale_mul"
 const FLOOR_PBR_TRIPLANAR_BLEND_UNIFORM: StringName = &"floor_pbr_triplanar_blend"
 const FLOOR_PBR_SLOPE_FLAT_NY_UNIFORM: StringName = &"floor_pbr_slope_flat_ny"
@@ -571,6 +580,10 @@ const FLOOR_PBR_SLOPE_STEEP_NY_UNIFORM: StringName = &"floor_pbr_slope_steep_ny"
 const FLOOR_PBR_HEIGHT_START_OFFSET_UNIFORM: StringName = &"floor_pbr_height_start_offset"
 const FLOOR_PBR_HEIGHT_END_OFFSET_UNIFORM: StringName = &"floor_pbr_height_end_offset"
 const FLOOR_PBR_SINGLE_PLANE_THRESHOLD_UNIFORM: StringName = &"floor_pbr_single_plane_threshold"
+const FLOOR_POM_ENABLED_UNIFORM: StringName = &"floor_pom_enabled"
+const FLOOR_POM_LAYERS_UNIFORM: StringName = &"floor_pom_layers"
+const FLOOR_POM_DEPTH_UNIFORM: StringName = &"floor_pom_depth"
+const FLOOR_POM_UV_SCALE_UNIFORM: StringName = &"floor_pom_uv_scale"
 const FLOOR_PBR_ENABLED: bool = true
 const FLOOR_PBR_BLEND: float = 0.55
 const FLOOR_PBR_NORMAL_STRENGTH: float = 0.50
@@ -1741,6 +1754,9 @@ static func _surface_index_material_locked(surface_data: MeshSurfaceData) -> Sha
 	if normal_array != null:
 		material.set_shader_parameter(NORMAL_ARRAY_UNIFORM, normal_array)
 		material.set_shader_parameter(USE_NORMAL_ARRAY_UNIFORM, true)
+	var height_array: Texture2DArray = _surface_index_height_array_locked()
+	if height_array != null:
+		material.set_shader_parameter(FLOOR_PBR_HEIGHT_TEXTURE_UNIFORM, height_array)
 	# TILED-DETAIL-NORMAL: bind the neutral CC0 rock-grain scan so the shader's tiled detail
 	# normal has real micro-relief. If it fails to load the sampler stays unbound (hint_normal =
 	# flat no-op), so this never breaks the golden-neutral default-safe path.
@@ -1755,6 +1771,8 @@ static func _surface_index_material_locked(surface_data: MeshSurfaceData) -> Sha
 	material.set_shader_parameter(TERRAIN_ROUGHNESS_UNIFORM, _average_default_surface_roughness())
 	material.set_shader_parameter(TERRAIN_SPECULAR_UNIFORM, 0.18)
 	_apply_zion_surface_index_tuning(material)
+	if height_array == null:
+		material.set_shader_parameter(FLOOR_POM_ENABLED_UNIFORM, false)
 	if cliff_pbr_ready:
 		material.set_shader_parameter(USE_CLIFF_PBR_UNIFORM, CLIFF_PBR_ENABLED)
 	_apply_surface_index_palette(material)
@@ -1824,9 +1842,10 @@ static func _surface_index_warmup_material() -> ShaderMaterial:
 static func prewarm_surface_index_pipeline() -> bool:
 	var albedo_array: Texture2DArray = _surface_index_albedo_array()
 	var normal_array: Texture2DArray = _surface_index_normal_array()
+	var height_array: Texture2DArray = _surface_index_height_array()
 	_surface_index_macro_albedo_texture()
 	var _shared_material: ShaderMaterial = _surface_index_warmup_material()
-	return albedo_array != null and normal_array != null
+	return albedo_array != null and normal_array != null and height_array != null
 
 
 static func _apply_surface_index_palette(material: ShaderMaterial) -> void:
@@ -1906,6 +1925,10 @@ static func _apply_zion_surface_index_tuning(material: ShaderMaterial) -> void:
 	material.set_shader_parameter(FLOOR_PBR_HEIGHT_START_OFFSET_UNIFORM, FLOOR_PBR_HEIGHT_START_OFFSET)
 	material.set_shader_parameter(FLOOR_PBR_HEIGHT_END_OFFSET_UNIFORM, FLOOR_PBR_HEIGHT_END_OFFSET)
 	material.set_shader_parameter(FLOOR_PBR_SINGLE_PLANE_THRESHOLD_UNIFORM, FLOOR_PBR_SINGLE_PLANE_THRESHOLD)
+	material.set_shader_parameter(FLOOR_POM_ENABLED_UNIFORM, GameConfig.resolved_floor_pom_enabled())
+	material.set_shader_parameter(FLOOR_POM_LAYERS_UNIFORM, GameConfig.resolved_floor_pom_layers())
+	material.set_shader_parameter(FLOOR_POM_DEPTH_UNIFORM, GameConfig.resolved_floor_pom_depth())
+	material.set_shader_parameter(FLOOR_POM_UV_SCALE_UNIFORM, GameConfig.resolved_floor_pom_uv_scale())
 	# CLIFF-PBR: shader defaults keep this off; the material binder flips use_cliff_pbr
 	# only after both Ground080 maps are resident, preserving export-safe fallback behavior.
 	material.set_shader_parameter(CLIFF_PBR_BLEND_UNIFORM, CLIFF_PBR_BLEND)
@@ -2038,6 +2061,55 @@ static func _surface_index_normal_array_locked() -> Texture2DArray:
 	return _surface_index_normal_array_cache
 
 
+static func _surface_index_height_array() -> Texture2DArray:
+	_surface_cache_mutex.lock()
+	var texture_array: Texture2DArray = _surface_index_height_array_locked()
+	_surface_cache_mutex.unlock()
+	return texture_array
+
+
+static func _surface_index_height_array_locked() -> Texture2DArray:
+	if _surface_index_height_array_cache != null:
+		if _surface_index_array_has_expected_layers(_surface_index_height_array_cache):
+			return _surface_index_height_array_cache
+		_surface_index_height_array_cache = null
+		_surface_index_material_cache.clear()
+		_surface_index_tile_material_cache.clear()
+		_surface_index_tile_material_cache_order.clear()
+	var target_size: Vector2i = _surface_index_height_target_size()
+	var cache_path: String = _surface_index_array_cache_path(SURFACE_INDEX_HEIGHT_ARRAY_CACHE_KIND, target_size)
+	var cached_array: Texture2DArray = _load_surface_index_array_cache(cache_path)
+	if cached_array != null:
+		cached_array.resource_name = "terrain_surface_index_height_array"
+		_surface_index_height_array_cache = cached_array
+		return _surface_index_height_array_cache
+	var images: Array[Image] = []
+	for id_value in range(SURFACE_INDEX_LAYER_COUNT):
+		var image: Image = _surface_index_height_image(id_value, target_size)
+		if image == null:
+			return null
+		images.append(image)
+	var texture_array: Texture2DArray = Texture2DArray.new()
+	var create_error: Error = texture_array.create_from_images(images)
+	if create_error != OK:
+		push_error("Terrain surface-index height array failed to create: " + error_string(create_error))
+		return null
+	texture_array.resource_name = "terrain_surface_index_height_array"
+	for layer_index in range(images.size()):
+		texture_array.update_layer(images[layer_index], layer_index)
+	if not _surface_index_array_has_expected_layers(texture_array):
+		push_error(
+			"Terrain surface-index height array created with "
+			+ str(texture_array.get_layers())
+			+ " layers, expected "
+			+ str(SURFACE_INDEX_LAYER_COUNT)
+		)
+		return null
+	_save_surface_index_array_cache(texture_array, cache_path)
+	_surface_index_height_array_cache = texture_array
+	return _surface_index_height_array_cache
+
+
 static func _surface_index_albedo_target_size() -> Vector2i:
 	for id_value in range(SURFACE_INDEX_LAYER_COUNT):
 		var image: Image = _load_surface_index_source_albedo_image(id_value)
@@ -2050,6 +2122,15 @@ static func _surface_index_albedo_target_size() -> Vector2i:
 static func _surface_index_normal_target_size() -> Vector2i:
 	for id_value in range(SURFACE_INDEX_LAYER_COUNT):
 		var image: Image = _load_surface_index_source_normal_image(id_value)
+		if image == null:
+			continue
+		return Vector2i(image.get_width(), image.get_height())
+	return Vector2i(4, 4)
+
+
+static func _surface_index_height_target_size() -> Vector2i:
+	for id_value in range(SURFACE_INDEX_LAYER_COUNT):
+		var image: Image = _load_surface_index_source_height_image(id_value)
 		if image == null:
 			continue
 		return Vector2i(image.get_width(), image.get_height())
@@ -2109,6 +2190,8 @@ static func _surface_index_array_texture_path(kind: String, visual_def: Resource
 		return String(visual_def.get("albedo_texture_path"))
 	if kind == SURFACE_INDEX_NORMAL_ARRAY_CACHE_KIND:
 		return String(visual_def.get("normal_texture_path"))
+	if kind == SURFACE_INDEX_HEIGHT_ARRAY_CACHE_KIND:
+		return String(visual_def.get("height_texture_path"))
 	return ""
 
 
@@ -2117,6 +2200,8 @@ static func _surface_index_array_fallback_signature(kind: String, id_value: int)
 		return str(_surface_index_fallback_color(id_value))
 	if kind == SURFACE_INDEX_NORMAL_ARRAY_CACHE_KIND:
 		return str(Color(0.5, 0.5, 1.0, 1.0))
+	if kind == SURFACE_INDEX_HEIGHT_ARRAY_CACHE_KIND:
+		return str(Color(1.0, 1.0, 1.0, 1.0))
 	return "<unknown>"
 
 
@@ -2208,6 +2293,21 @@ static func _surface_index_normal_image(id_value: int, target_size: Vector2i) ->
 	return image
 
 
+static func _surface_index_height_image(id_value: int, target_size: Vector2i) -> Image:
+	var image: Image = _load_surface_index_source_height_image(id_value)
+	if image == null:
+		image = Image.create(target_size.x, target_size.y, false, Image.FORMAT_RGBA8)
+		image.fill(Color(1.0, 1.0, 1.0, 1.0))
+	else:
+		if image.get_width() != target_size.x or image.get_height() != target_size.y:
+			image.resize(target_size.x, target_size.y, Image.INTERPOLATE_LANCZOS)
+		image.convert(Image.FORMAT_RGBA8)
+	var mip_error: Error = image.generate_mipmaps()
+	if mip_error != OK:
+		push_error("Terrain surface-index height mipmaps failed for layer " + str(id_value) + ": " + error_string(mip_error))
+	return image
+
+
 static func _load_surface_index_source_albedo_image(id_value: int) -> Image:
 	var surface_id: StringName = _surface_id_for_value(id_value)
 	var visual_def: Resource = SurfaceVisualCatalogResource.call("default_visual_for_surface_id", surface_id)
@@ -2231,6 +2331,20 @@ static func _load_surface_index_source_normal_image(id_value: int) -> Image:
 	if normal_texture_path.is_empty():
 		return null
 	var image: Image = _load_source_image(normal_texture_path, true)
+	if image == null or image.is_empty():
+		return null
+	return image
+
+
+static func _load_surface_index_source_height_image(id_value: int) -> Image:
+	var surface_id: StringName = _surface_id_for_value(id_value)
+	var visual_def: Resource = SurfaceVisualCatalogResource.call("default_visual_for_surface_id", surface_id)
+	if visual_def == null:
+		return null
+	var height_texture_path: String = visual_def.get("height_texture_path")
+	if height_texture_path.is_empty():
+		return null
+	var image: Image = _load_source_image(height_texture_path, true)
 	if image == null or image.is_empty():
 		return null
 	return image
@@ -4487,26 +4601,38 @@ static func _preloaded_source_texture(path: String) -> Texture2D:
 			return SurfaceIndexLooseRockAlbedoTexture
 		"res://assets/textures/surface_visuals/zion/loose_rock_default_normal.png":
 			return SurfaceIndexLooseRockNormalTexture
+		"res://assets/textures/surface_visuals/zion/loose_rock_default_height.png":
+			return SurfaceIndexLooseRockHeightTexture
 		"res://assets/textures/surface_visuals/zion/packed_dirt_default_albedo.png":
 			return SurfaceIndexPackedDirtAlbedoTexture
 		"res://assets/textures/surface_visuals/zion/packed_dirt_default_normal.png":
 			return SurfaceIndexPackedDirtNormalTexture
+		"res://assets/textures/surface_visuals/zion/packed_dirt_default_height.png":
+			return SurfaceIndexPackedDirtHeightTexture
 		"res://assets/textures/surface_visuals/zion/packed_gravel_default_albedo.png":
 			return SurfaceIndexPackedGravelAlbedoTexture
 		"res://assets/textures/surface_visuals/zion/packed_gravel_default_normal.png":
 			return SurfaceIndexPackedGravelNormalTexture
+		"res://assets/textures/surface_visuals/zion/packed_gravel_default_height.png":
+			return SurfaceIndexPackedGravelHeightTexture
 		"res://assets/textures/surface_visuals/zion/paved_road_default_albedo.png":
 			return SurfaceIndexPavedRoadAlbedoTexture
 		"res://assets/textures/surface_visuals/zion/paved_road_default_normal.png":
 			return SurfaceIndexPavedRoadNormalTexture
+		"res://assets/textures/surface_visuals/zion/paved_road_default_height.png":
+			return SurfaceIndexPavedRoadHeightTexture
 		"res://assets/textures/surface_visuals/zion/tall_grass_default_albedo.png":
 			return SurfaceIndexTallGrassAlbedoTexture
 		"res://assets/textures/surface_visuals/zion/tall_grass_default_normal.png":
 			return SurfaceIndexTallGrassNormalTexture
+		"res://assets/textures/surface_visuals/zion/tall_grass_default_height.png":
+			return SurfaceIndexTallGrassHeightTexture
 		"res://assets/textures/surface_visuals/zion/wet_stone_default_albedo.png":
 			return SurfaceIndexWetStoneAlbedoTexture
 		"res://assets/textures/surface_visuals/zion/wet_stone_default_normal.png":
 			return SurfaceIndexWetStoneNormalTexture
+		"res://assets/textures/surface_visuals/zion/wet_stone_default_height.png":
+			return SurfaceIndexWetStoneHeightTexture
 		"res://data/terrain/cedar_hollow_zion_macro_albedo.png":
 			return MacroAlbedoTexture
 	return null

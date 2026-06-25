@@ -227,12 +227,22 @@ uniform float floor_pbr_blend = 0.55;               // detail-blend authority of
 uniform float floor_pbr_normal_strength = 0.50;     // world-space floor normal-map authority
 uniform float floor_pbr_roughness_strength = 0.10;  // roughness lift driven by normal relief
 uniform vec2 floor_pbr_uv_scale = vec2(0.45, 0.45); // world repeats/meter (sand-fine ~2.2 m/tile default)
+uniform sampler2DArray floor_pbr_height_texture : filter_linear_mipmap, repeat_enable;
 uniform float floor_pbr_slickrock_scale_mul = 0.5;  // broader tiling where the floor reads as slickrock
 uniform float floor_pbr_triplanar_blend = 6.0;      // axis-weight power (higher = harder triplanar seams)
 uniform float floor_pbr_slope_flat_ny = 0.86;       // local_normal_y >= this = full floor texture (~30 deg)
 uniform float floor_pbr_slope_steep_ny = 0.55;      // local_normal_y <= this = no floor texture (~57 deg, cliff)
 uniform float floor_pbr_height_start_offset = 6.0;  // m above zion_sand_height_end where PBR begins to fade
 uniform float floor_pbr_height_end_offset = 22.0;   // m above zion_sand_height_end where PBR is fully gone (floor + low slickrock only)
+// FLOOR-POM: fragment-stage relief for the drivable floor PBR band only. Defaults are
+// exact no-op (disabled, 0 layers, 0 depth); the render builder binds a height array and
+// tier-resolved values from GameConfig. The top-plane basis matches the floor normal decode:
+// T=+world X, B=+world Z, N=+world Y. Distance fade reuses detail_fade in fragment() so far
+// terrain falls back to ordinary normal mapping before aliasing/shimmer becomes visible.
+uniform bool floor_pom_enabled = false;
+uniform int floor_pom_layers = 0;
+uniform float floor_pom_depth = 0.0;
+uniform vec2 floor_pom_uv_scale = vec2(0.0, 0.0);
 // PERF: when the top (Y) plane's triplanar weight is >= this threshold, sample ONLY the top
 // plane (2 fetches) instead of all three (6 fetches). The flat floor -- the overwhelming
 // majority of drivable pixels -- is near-horizontal so the side planes contribute <10% each
@@ -282,6 +292,9 @@ varying float local_normal_y;
 
 const float ZION_TAU = 6.28318530718;
 const float CLOUD_SHADOW_MAX_STRENGTH = 0.22;
+const int FLOOR_POM_MAX_LAYERS = 16;
+const float FLOOR_POM_MAX_DEPTH_M = 0.04;
+const float FLOOR_POM_MAX_UV_OFFSET = 0.035;
 
 float luminance(vec3 color) {
 	return dot(color, vec3(0.2126, 0.7152, 0.0722));
@@ -636,6 +649,46 @@ vec3 apply_detail_normal(vec3 geo_world_normal, vec2 world_xz_pos, float amp) {
 	return normalize(perturbed);
 }
 
+// Fragment-stage steep parallax / POM for the floor's top projection. Height maps are
+// authored as white=high, black=low, so convert to depth as (1-height). The tangent frame is
+// explicit and matches the floor PBR top-plane normal decode: T=+world X, B=+world Z, N=+world Y.
+vec2 floor_pom_uv(vec2 base_uv, float layer, vec3 view_dir_w, float uv_scale, float pom_gate) {
+	int layer_count = min(floor_pom_layers, FLOOR_POM_MAX_LAYERS);
+	float depth_m = min(max(floor_pom_depth, 0.0), FLOOR_POM_MAX_DEPTH_M) * clamp(pom_gate, 0.0, 1.0);
+	if (!floor_pom_enabled || layer_count <= 0 || depth_m <= 0.0 || view_dir_w.y <= 0.05) {
+		return base_uv;
+	}
+	vec3 view_ts = normalize(vec3(view_dir_w.x, view_dir_w.z, max(view_dir_w.y, 0.05)));
+	float active_layer_f = clamp(ceil(mix(2.0, float(layer_count), clamp(pom_gate, 0.0, 1.0))), 1.0, float(FLOOR_POM_MAX_LAYERS));
+	int active_layers = int(active_layer_f);
+	vec2 uv_scale_clamped = clamp(floor_pom_uv_scale, vec2(0.0), vec2(1.0));
+	vec2 ray_offset = (view_ts.xy / max(view_ts.z, 0.18)) * depth_m * max(uv_scale, 0.0001) * uv_scale_clamped;
+	ray_offset = clamp(ray_offset, vec2(-FLOOR_POM_MAX_UV_OFFSET), vec2(FLOOR_POM_MAX_UV_OFFSET));
+	vec2 delta_uv = ray_offset / active_layer_f;
+	vec2 current_uv = base_uv;
+	float current_depth = 0.0;
+	float layer_depth = 1.0 / active_layer_f;
+	float sampled_depth = 1.0 - texture(floor_pbr_height_texture, vec3(current_uv, layer)).r;
+	for (int i = 0; i < FLOOR_POM_MAX_LAYERS; i++) {
+		if (i >= active_layers || current_depth >= sampled_depth) {
+			break;
+		}
+		current_uv -= delta_uv;
+		current_depth += layer_depth;
+		sampled_depth = 1.0 - texture(floor_pbr_height_texture, vec3(current_uv, layer)).r;
+	}
+	vec2 previous_uv = current_uv + delta_uv;
+	float after_depth = sampled_depth - current_depth;
+	float before_sampled_depth = 1.0 - texture(floor_pbr_height_texture, vec3(previous_uv, layer)).r;
+	float before_depth = before_sampled_depth - (current_depth - layer_depth);
+	float denom = after_depth - before_depth;
+	if (abs(denom) <= 0.0001) {
+		return current_uv;
+	}
+	float weight = clamp(after_depth / denom, 0.0, 1.0);
+	return mix(current_uv, previous_uv, weight);
+}
+
 // FLOOR-PBR triplanar sample. Projects the per-surface-id albedo_array + normal_array onto
 // the three world planes and weight-blends them by the (powered) absolute geometric normal,
 // so the drivable floor reads as real sand/slickrock/gravel up close without stretching on
@@ -651,6 +704,8 @@ void sample_floor_pbr_triplanar(
 		float surface_id_value,
 		float uv_scale,
 		float triplanar_power,
+		vec3 view_dir_w,
+		float pom_gate,
 		out vec3 out_albedo,
 		out vec3 out_world_normal,
 		out float out_bump
@@ -660,7 +715,9 @@ void sample_floor_pbr_triplanar(
 	vec3 w = pow(abs(geo_world_normal), vec3(max(triplanar_power, 0.0001)));
 	float w_sum = max(dot(w, vec3(1.0)), 1e-4);
 	w /= w_sum;
-	vec2 uv_y = world_xz_pos * scale;                       // top plane (normal +Y): xz
+	vec2 uv_y_base = world_xz_pos * scale;                  // top plane (normal +Y): xz
+	vec2 uv_y = floor_pom_uv(uv_y_base, layer, view_dir_w, uv_scale, pom_gate);
+	vec2 pom_world_xz_pos = world_xz_pos + (uv_y - uv_y_base) / scale;
 	// PERF (single-plane on flats): the triplanar axis weights are cheap (no fetches), so
 	// decide here. When the top plane dominates beyond floor_pbr_single_plane_threshold the
 	// side planes would contribute <10% each -- not worth 4 extra fetches -- so sample only
@@ -674,8 +731,8 @@ void sample_floor_pbr_triplanar(
 		out_bump = clamp(1.0 - max(dot(n_w, geo_world_normal), 0.0), 0.0, 1.0);
 		return;
 	}
-	vec2 uv_x = vec2(world_y_pos, world_xz_pos.y) * scale;  // +X plane: yz
-	vec2 uv_z = vec2(world_xz_pos.x, world_y_pos) * scale;  // +Z plane: xy
+	vec2 uv_x = vec2(world_y_pos, pom_world_xz_pos.y) * scale;  // +X plane: yz
+	vec2 uv_z = vec2(pom_world_xz_pos.x, world_y_pos) * scale;  // +Z plane: xy
 	vec3 a_y = texture(albedo_array, vec3(uv_y, layer)).rgb;
 	vec3 a_x = texture(albedo_array, vec3(uv_x, layer)).rgb;
 	vec3 a_z = texture(albedo_array, vec3(uv_z, layer)).rgb;
@@ -731,7 +788,9 @@ void fragment() {
 	float surface_id_value = floor(texture(surface_id_texture, control_uv).r * 255.0 + 0.5);
 	vec3 world_geo_normal_now = normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
 	vec3 detail_camera_pos = INV_VIEW_MATRIX[3].xyz;
-	float detail_camera_dist = length(vec3(world_xz.x, world_y, world_xz.y) - detail_camera_pos);
+	vec3 world_pos = vec3(world_xz.x, world_y, world_xz.y);
+	vec3 view_dir_w = normalize(detail_camera_pos - world_pos);
+	float detail_camera_dist = length(world_pos - detail_camera_pos);
 	float detail_fade = 1.0 - smoothstep(terrain_detail_normal_fade_start_m, max(terrain_detail_normal_fade_end_m, terrain_detail_normal_fade_start_m + 1.0), detail_camera_dist);
 	vec4 surface_color = surface_color_for_id(surface_id_value);
 	// FLOOR-PBR eligibility, computed early so the planar array fetch below can be skipped on
@@ -969,7 +1028,7 @@ void fragment() {
 	// ~= 0 off the low drivable surface, so wetrock/varnish/macro/bleach below run unaltered.
 	if (floor_pbr_gate > 0.001) {
 		vec3 floor_pbr_albedo = vec3(0.5);
-		sample_floor_pbr_triplanar(world_geo_normal_now, world_xz, world_y, surface_id_value, floor_pbr_uv, floor_pbr_triplanar_blend, floor_pbr_albedo, floor_pbr_normal_w, floor_pbr_bump);
+		sample_floor_pbr_triplanar(world_geo_normal_now, world_xz, world_y, surface_id_value, floor_pbr_uv, floor_pbr_triplanar_blend, view_dir_w, floor_pbr_gate * detail_fade, floor_pbr_albedo, floor_pbr_normal_w, floor_pbr_bump);
 		ALBEDO = mix(ALBEDO, floor_pbr_albedo, floor_pbr_blend * floor_pbr_gate);
 		ALBEDO = clamp(ALBEDO, vec3(0.0), vec3(1.0));
 	}
