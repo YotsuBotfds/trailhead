@@ -5,20 +5,22 @@ const WaterShader: Shader = preload("res://systems/render/water_visual.gdshader"
 const TerrainBuilderScript: GDScript = preload("res://systems/world/terrain_builder.gd")
 const ROOT_NAME: String = "WaterVisuals"
 const WATER_SURFACE_GROUP: String = "render_water_surface"
-const BED_TINT_COLOR: Color = Color(0.59, 0.46, 0.26)
-const BED_TINT_STRENGTH: float = 0.50
+const BED_TINT_COLOR: Color = Color(0.36, 0.42, 0.30)
+const BED_TINT_STRENGTH: float = 0.42
 const SHALLOW_ALPHA: float = 0.50
 const DOWNSTREAM_FLOW_SPEED: float = 0.10
-const FOAM_COLOR: Color = Color(0.70, 0.63, 0.42)
+const FOAM_COLOR: Color = Color(0.86, 0.90, 0.84)
 const WETLINE_STRENGTH: float = 0.28
 const RIPPLE_NORMAL_STRENGTH: float = 0.08
 const RIPPLE_NORMAL_SCALE: float = 1.60
 const SHORELINE_SOFTNESS: float = 0.22
-const FRESNEL_GLINT_COLOR: Color = Color(1.0, 0.74, 0.46)
+const FRESNEL_GLINT_COLOR: Color = Color(1.0, 0.78, 0.50)
 const FRESNEL_GLINT_STRENGTH: float = 0.12
 const FLOW_DIRECTION: Vector2 = Vector2(0.0, 1.0)
 const FOAM_INTENSITY: float = 0.55
 const RIPPLE_TIGHTNESS: float = 3.5
+const SSR_SKY_FALLBACK_COLOR: Color = Color(0.62, 0.50, 0.32)
+const SSR_SKY_FALLBACK_STRENGTH: float = 0.58
 const ZION_RIVER_SURFACE_RISE_M: float = 0.30
 # Variable-width river-width model — drives both the water ribbon envelope and
 # the Virgin-River bank detail meshes (wet shoreline / gravel bars / riffles /
@@ -105,6 +107,31 @@ static func build_zion_virgin_river(parent: Node3D) -> Node3D:
 	_add_water_ribbon(root, "virgin_river_east", _zion_river_east_water_points(), ZION_RIVER_EAST_RUNOUT_M)
 	_add_zion_bank_details(root)
 	return root
+
+
+static func water_ssr_uses_high_quality() -> bool:
+	if not GameConfig.water_ssr_high_quality_enabled:
+		return false
+	var min_render_scale: float = clampf(GameConfig.water_ssr_high_quality_min_render_scale, 0.25, 1.0)
+	if GameConfig.render_scaling_3d_scale < min_render_scale:
+		return false
+	if GameConfig.render_dynamic_resolution_max_scale < min_render_scale:
+		return false
+	if GameConfig.render_dynamic_resolution_min_scale < min_render_scale:
+		return false
+	return true
+
+
+static func water_ssr_effective_intensity() -> float:
+	if water_ssr_uses_high_quality():
+		return maxf(GameConfig.water_ssr_high_quality_intensity, 0.0)
+	return maxf(GameConfig.water_ssr_intensity, 0.0)
+
+
+static func water_ssr_effective_max_steps() -> int:
+	if water_ssr_uses_high_quality():
+		return maxi(GameConfig.water_ssr_high_quality_max_steps, 0)
+	return maxi(GameConfig.water_ssr_max_steps, 0)
 
 
 # East water reach: the centerline truncated at the terminus where the canyon
@@ -637,8 +664,8 @@ static func _water_material(resource_name: String, use_vertex_water_traits: bool
 	material.set_shader_parameter("foam_normal_scale", GameConfig.water_foam_normal_scale)
 	material.set_shader_parameter("foam_normal_flow_speed", GameConfig.water_foam_normal_flow_speed)
 	material.set_shader_parameter("ssr_enabled", GameConfig.water_ssr_enabled)
-	material.set_shader_parameter("ssr_intensity", GameConfig.water_ssr_intensity)
-	material.set_shader_parameter("ssr_max_steps", GameConfig.water_ssr_max_steps)
+	material.set_shader_parameter("ssr_intensity", water_ssr_effective_intensity())
+	material.set_shader_parameter("ssr_max_steps", water_ssr_effective_max_steps())
 	material.set_shader_parameter("ssr_step_size", GameConfig.water_ssr_step_size)
 	material.set_shader_parameter("ssr_thickness", GameConfig.water_ssr_thickness)
 	material.set_shader_parameter("water_roughness", GameConfig.water_roughness)
@@ -653,8 +680,10 @@ static func _water_material(resource_name: String, use_vertex_water_traits: bool
 	material.set_shader_parameter("shoreline_softness", SHORELINE_SOFTNESS)
 	material.set_shader_parameter("fresnel_glint_color", FRESNEL_GLINT_COLOR)
 	material.set_shader_parameter("fresnel_glint_strength", FRESNEL_GLINT_STRENGTH)
-	material.set_shader_parameter("flow_direction", FLOW_DIRECTION)
+	material.set_shader_parameter("flow_direction", Vector2.ZERO if use_vertex_water_traits else FLOW_DIRECTION)
 	material.set_shader_parameter("foam_intensity", FOAM_INTENSITY)
 	material.set_shader_parameter("ripple_tightness", RIPPLE_TIGHTNESS)
+	material.set_shader_parameter("ssr_sky_fallback_color", SSR_SKY_FALLBACK_COLOR)
+	material.set_shader_parameter("ssr_sky_fallback_strength", SSR_SKY_FALLBACK_STRENGTH)
 	material.set_shader_parameter("use_vertex_water_traits", use_vertex_water_traits)
 	return material

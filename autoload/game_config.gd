@@ -687,12 +687,19 @@ var water_foam_normal_strength: float = 0.14
 var water_foam_normal_scale: float = 14.0
 var water_foam_normal_flow_speed: float = 0.08
 var water_ssr_enabled: bool = true
+# Base SSR values are the low-cost fallback. WaterVisualBuilder only applies
+# the high-quality overrides below when the render-quality band is native/high.
 var water_ssr_intensity: float = 0.20
 var water_ssr_max_steps: int = 8
+var water_ssr_high_quality_enabled: bool = true
+var water_ssr_high_quality_min_render_scale: float = 0.85
+var water_ssr_high_quality_intensity: float = 0.30
+var water_ssr_high_quality_max_steps: int = 12
 var water_ssr_step_size: float = 0.035
 var water_ssr_thickness: float = 0.08
-var water_shallow_color: Color = Color(0.34, 0.27, 0.12)
-var water_deep_color: Color = Color(0.11, 0.105, 0.045)
+# Palette stays GameConfig-tunable so muddy/clear water variants remain data edits.
+var water_shallow_color: Color = Color(0.20, 0.32, 0.24)
+var water_deep_color: Color = Color(0.04, 0.16, 0.14)
 var water_alpha: float = 0.82
 var water_roughness: float = 0.22
 var vis_range_terrain: float = 140.0

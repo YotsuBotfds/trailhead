@@ -3,6 +3,7 @@ extends Node
 const CedarHollowPlayableScene: PackedScene = preload("res://scenes/cedar_hollow_playable.tscn")
 const AtmosphereVisualBuilderScript: GDScript = preload("res://systems/render/atmosphere_visual_builder.gd")
 const DustTiltShiftVisualBuilderScript: GDScript = preload("res://systems/render/dust_tilt_shift_visual_builder.gd")
+const WaterVisualBuilderScript: GDScript = preload("res://systems/render/water_visual_builder.gd")
 const FLOAT_EPSILON: float = 0.001
 const COLOR_TOLERANCE: float = 0.02
 const WATER_SHADER_PATH: String = "res://systems/render/water_visual.gdshader"
@@ -709,11 +710,13 @@ func _inspect_water_surface(water: MeshInstance3D) -> void:
 	_require_shader_float(material, "foam_normal_scale", GameConfig.water_foam_normal_scale, String(water.name))
 	_require_shader_float(material, "foam_normal_flow_speed", GameConfig.water_foam_normal_flow_speed, String(water.name))
 	_require_shader_bool(material, "ssr_enabled", GameConfig.water_ssr_enabled, String(water.name))
-	_require_shader_int(material, "ssr_max_steps", GameConfig.water_ssr_max_steps, String(water.name))
-	_require_shader_float(material, "ssr_intensity", GameConfig.water_ssr_intensity, String(water.name))
+	_require_shader_int(material, "ssr_max_steps", WaterVisualBuilderScript.water_ssr_effective_max_steps(), String(water.name))
+	_require_shader_float(material, "ssr_intensity", WaterVisualBuilderScript.water_ssr_effective_intensity(), String(water.name))
 	_require_shader_float(material, "ssr_step_size", GameConfig.water_ssr_step_size, String(water.name))
 	_require_shader_float(material, "ssr_thickness", GameConfig.water_ssr_thickness, String(water.name))
 	_require_shader_float(material, "water_roughness", GameConfig.water_roughness, String(water.name))
+	_require_shader_color(material, "ssr_sky_fallback_color", WaterVisualBuilderScript.SSR_SKY_FALLBACK_COLOR, String(water.name))
+	_require_shader_float(material, "ssr_sky_fallback_strength", WaterVisualBuilderScript.SSR_SKY_FALLBACK_STRENGTH, String(water.name))
 
 
 func _is_streamed_zion_host() -> bool:

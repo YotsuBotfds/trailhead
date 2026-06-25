@@ -3,8 +3,8 @@ render_mode blend_mix, depth_prepass_alpha, cull_back, diffuse_burley, specular_
 
 uniform sampler2D depth_texture : hint_depth_texture, repeat_disable, filter_nearest;
 uniform sampler2D screen_texture : hint_screen_texture, repeat_disable, filter_linear_mipmap;
-uniform vec4 shallow_color : source_color = vec4(0.34, 0.27, 0.12, 1.0);
-uniform vec4 deep_color : source_color = vec4(0.11, 0.105, 0.045, 1.0);
+uniform vec4 shallow_color : source_color = vec4(0.20, 0.32, 0.24, 1.0);
+uniform vec4 deep_color : source_color = vec4(0.04, 0.16, 0.14, 1.0);
 uniform float water_alpha : hint_range(0.0, 1.0) = 0.82;
 uniform float depth_fade_distance : hint_range(0.001, 2.0) = 0.32;
 uniform float foam_edge_width : hint_range(0.001, 0.5) = 0.14;
@@ -14,27 +14,27 @@ uniform float foam_normal_strength : hint_range(0.0, 1.0) = 0.14;
 uniform float foam_normal_scale : hint_range(1.0, 64.0) = 14.0;
 uniform float foam_normal_flow_speed : hint_range(0.0, 1.0) = 0.08;
 uniform bool ssr_enabled = true;
-uniform float ssr_intensity : hint_range(0.0, 1.0) = 0.20;
-uniform int ssr_max_steps : hint_range(0, 32) = 8;
+uniform float ssr_intensity : hint_range(0.0, 1.0) = 0.30;
+uniform int ssr_max_steps : hint_range(0, 32) = 12;
 uniform float ssr_step_size : hint_range(0.005, 0.2) = 0.035;
 uniform float ssr_thickness : hint_range(0.005, 0.3) = 0.08;
 uniform float water_roughness : hint_range(0.0, 1.0) = 0.22;
-uniform vec4 bed_tint_color : source_color = vec4(0.59, 0.46, 0.26, 1.0);
-uniform float bed_tint_strength : hint_range(0.0, 1.0) = 0.50;
+uniform vec4 bed_tint_color : source_color = vec4(0.36, 0.42, 0.30, 1.0);
+uniform float bed_tint_strength : hint_range(0.0, 1.0) = 0.42;
 uniform float shallow_alpha : hint_range(0.0, 1.0) = 0.50;
 uniform float downstream_flow_speed : hint_range(0.0, 0.5) = 0.10;
-uniform vec4 foam_color : source_color = vec4(0.70, 0.63, 0.42, 1.0);
+uniform vec4 foam_color : source_color = vec4(0.86, 0.90, 0.84, 1.0);
 uniform float wetline_strength : hint_range(0.0, 1.0) = 0.28;
 uniform float ripple_normal_strength : hint_range(0.0, 1.0) = 0.08;
 uniform float ripple_normal_scale : hint_range(0.1, 8.0) = 1.60;
 uniform float shoreline_softness : hint_range(0.001, 0.8) = 0.22;
-uniform vec4 fresnel_glint_color : source_color = vec4(1.0, 0.74, 0.46, 1.0);
+uniform vec4 fresnel_glint_color : source_color = vec4(1.0, 0.78, 0.50, 1.0);
 uniform float fresnel_glint_strength : hint_range(0.0, 0.5) = 0.12;
 uniform vec2 flow_direction = vec2(0.0, 1.0);
 uniform float foam_intensity : hint_range(0.0, 1.0) = 0.55;
 uniform float ripple_tightness : hint_range(0.5, 16.0) = 3.5;
-uniform vec4 ssr_sky_fallback_color : source_color = vec4(0.38, 0.54, 0.72, 1.0);
-uniform float ssr_sky_fallback_strength : hint_range(0.0, 1.0) = 0.72;
+uniform vec4 ssr_sky_fallback_color : source_color = vec4(0.62, 0.50, 0.32, 1.0);
+uniform float ssr_sky_fallback_strength : hint_range(0.0, 1.0) = 0.58;
 uniform bool use_vertex_water_traits = false;
 
 const int SSR_STEP_LIMIT = 32;
@@ -155,9 +155,17 @@ void vertex() {
 	vec2 flow_xz = MODEL_MATRIX[0].xz;
 	float flow_len = length(flow_xz);
 	vec2 mesh_dir = flow_len > 0.00001 ? flow_xz / flow_len : vec2(1.0, 0.0);
+	if (use_vertex_water_traits) {
+		vec2 tangent_xz = (MODEL_MATRIX * vec4(TANGENT, 0.0)).xz;
+		float tangent_len = length(tangent_xz);
+		if (tangent_len > 0.00001) {
+			mesh_dir = tangent_xz / tangent_len;
+		}
+	}
 	float user_dir_len = length(flow_direction);
 	vec2 user_dir = user_dir_len > 0.00001 ? flow_direction / user_dir_len : vec2(0.0, 0.0);
-	downstream_dir = normalize(mix(mesh_dir, user_dir, clamp(user_dir_len, 0.0, 1.0)));
+	float user_dir_weight = use_vertex_water_traits ? 0.0 : clamp(user_dir_len, 0.0, 1.0);
+	downstream_dir = normalize(mix(mesh_dir, user_dir, user_dir_weight));
 	float downstream_pos = dot(world_xz, downstream_dir);
 	VERTEX.y += sin((downstream_pos + TIME * flow_speed) * 18.0) * wave_amplitude;
 }
