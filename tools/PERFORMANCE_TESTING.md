@@ -17,6 +17,50 @@ and visual streaming cadence still need a real-device playtest.
   so HLOD, detail, foliage, MidLOD and evictions all make progress. Headless keeps
   the existing drain order and per-queue count budgets.
 
+### Second pass: main-thread bookkeeping (output-identical)
+
+These remove script-level sorting and scans from the streamer's main-thread
+maintenance. Every queue, commit and free happens in the same order as before.
+
+- **Cached active-cell center.** `_active_cell_center()` sorted the ~49 active cells
+  with a GDScript comparator on every call. It feeds every detail/full-res/foliage
+  radius check, which run per cell in the detail and MidLOD refresh sweeps and per
+  queued commit/foliage subcommit (roughly 150+ sorts per cell crossing, and ~6 per
+  frame while foliage streams). It is now computed once per activation/eviction.
+  Integer sums are order-independent, so the value is identical.
+- **Native cell sorts.** `_sorted_cells` and the stream-HLOD priority sort pack
+  each cell into one int64 key and sort a `PackedInt64Array` natively instead of
+  calling a script comparator per comparison. This matters most for the boot-time
+  sort of all ~3.1k Zion region cells and the HLOD queue resort that runs on every
+  activation/eviction frame until all HLOD chunks have dispatched (~1 per frame,
+  so roughly the first 50 s of a drive). Out-of-range coordinates fall back to the
+  original comparator.
+- **Near-densify walk.** `_queue_near_stream_hlod_densification` sorted every
+  committed HLOD chunk (eventually the whole region) on each activation/eviction
+  frame to find the 11x11 ring. It now walks that square directly. Walking x-outer,
+  y-inner produces the same `_cell_less` order.
+- **MidLOD desired cells** are generated in `_cell_less` order, so their sort is gone.
+- **Foliage subcommit index.** `_remove_queued_foliage_subcommits` rebuilt the whole
+  subcommit queue (hundreds to ~1k entries after a crossing) for every evicted,
+  unprefetched, downgraded or freed cell, even cells with nothing queued. A per-cell
+  count now skips those calls. The detail refresh alone made ~24 such calls per
+  activation frame.
+- **Scheduler fix.** A pending-free queue holding only retained cells (normal while
+  driving) counted as commit work. That let a no-op drain claim the scheduler's
+  guaranteed over-deadline slot, so a budget-starved frame made no progress when the
+  cursor reached it. Only free-eligible cells count now.
+
+The maintenance phase runs before the commit drains and shares the same 4 ms window
+(`_commit_phase_start_usec` is stamped first), so cheaper maintenance also leaves more
+of the window for commits. In captures, compare `detail_refresh_ms`,
+`midlod_refresh_ms`, `hlod_queue_ms` and `evict_ms` on crossing frames, plus
+`visual_commits` per frame under load.
+
+These changes were written without a Godot binary available, so the second-pass
+fixture checks below have **not been executed yet**. Run the headless fixture before
+the GPU capture. It compares each native path against the original comparator or
+scan inside the engine.
+
 The deadline remains soft: one atomic commit can exceed 4 ms, and maintenance,
 worker-result staging, deferred engine frees and renderer work have their own costs.
 This change prevents each subsequent queue from taking another over-budget turn;
@@ -30,6 +74,14 @@ Environment: Linux, Godot 4.6.3 official, headless/Dummy renderer.
   preserves headless ordering, verifies first-load/upgrade foliage behavior and
   original payload identity, and compares spatial spacing decisions against the
   original linear scan, including negative coordinates and exact boundaries.
+  Second pass (not yet run, see above): retained frees are not commit work; native
+  `_sorted_cells` and HLOD priority sorts match the comparators, including random
+  sets, negative coordinates, int32 extremes, non-cell entries and the fallback
+  range; the cached center matches a fresh mean across set/erase/clear; MidLOD
+  desired cells stay sorted; the near-densify walk matches the old full-sort scan
+  for dense and sparse chunk sets; and the subcommit index matches a queue recount
+  after push, pop, no-op removal, removal and drain. It also prints informational
+  native-vs-comparator timings for 3,136-cell sorts.
 - Existing `tools/render_tile_streamer_fixture.tscn` completed its lifecycle,
   full-resolution upgrade, in-flight prefetch, LOD promotion and eviction assertions.
 - `tools/suites/90_render_and_data_inspectors.sh` exited 0, including the new fixture.

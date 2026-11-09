@@ -4,6 +4,12 @@ const TerrainVisualBuilderScript: GDScript = preload("res://systems/render/terra
 const MAX_BUILD_WORKERS: int = 7
 const MIDLOD_COMMIT_BUDGET_PER_FRAME: int = 2
 const COMMIT_DRAIN_COUNT: int = 7
+# Native cell-sort keys (see _sorted_cells and _sort_cells_by_stream_hlod_priority).
+const CELL_SORT_KEY_X_SCALE: int = 4294967296
+const CELL_SORT_KEY_Y_BIAS: int = 2147483648
+const CELL_SORT_KEY_Y_MASK: int = 4294967295
+const HLOD_SORT_KEY_FIELD_SCALE: int = 2097152
+const HLOD_SORT_KEY_COORD_BIAS: int = 1048576
 
 # Soft per-frame wall-clock budget (RENDER host — wall-clock is allowed here; this
 # never touches the deterministic sim). The commit/subcommit drains already cap how
@@ -65,7 +71,17 @@ var _midlod_refresh_requested: bool = false
 var _detail_refresh_requested: bool = false
 var _deferred_foliage_promote_requested: bool = false
 var _region_cells_by_cell: Dictionary[Vector2i, bool] = {}
+# Mutate only via _set_active_cell/_erase_active_cell/_clear_active_cells so the
+# cached center below stays coherent.
 var _active_cells: Dictionary[Vector2i, bool] = {}
+# _active_cell_center() feeds every detail/full-res/foliage radius check, which run
+# per cell inside the detail and MidLOD refresh sweeps and per queued commit and
+# foliage subcommit. It used to sort the ~49 active cells with a GDScript comparator
+# on each call. The center depends only on the active set, so compute it once per
+# activation/eviction. Integer sums are order-independent, so the result is
+# identical to the old sorted sum.
+var _active_cell_center_cache: Vector2i = Vector2i.ZERO
+var _active_cell_center_valid: bool = false
 var _desired_midlod_cells_by_cell: Dictionary[Vector2i, bool] = {}
 var _visual_tiles_by_cell: Dictionary[Vector2i, Node3D] = {}
 var _midlod_tiles_by_cell: Dictionary[Vector2i, Node3D] = {}
@@ -99,6 +115,11 @@ var _midlod_commit_queue: Array[Vector2i] = []
 var _queued_commits: Dictionary[Vector2i, bool] = {}
 var _queued_midlod_commits: Dictionary[Vector2i, bool] = {}
 var _foliage_subcommit_queue: Array[FoliageSubcommit] = []
+# Exact number of entries per cell currently in _foliage_subcommit_queue. Unlike
+# _pending_foliage_subcommit_counts_by_cell (tile-assembly accounting, which omits
+# in-place LOD0 upgrades of live tiles), this indexes the queue itself so removal can
+# skip the O(queue) rebuild for the many evicted/unprefetched cells that never queued.
+var _queued_foliage_subcommits_by_cell: Dictionary[Vector2i, int] = {}
 var _pending_foliage_subcommit_counts_by_cell: Dictionary[Vector2i, int] = {}
 # Cells whose foliage subcommits have all completed and are waiting to move from
 # partial to fully-live accounting. The render-object materialization happens earlier,
@@ -228,7 +249,7 @@ func reset_stream() -> void:
 	for cell in _sorted_cells(_partial_foliage_tiles_by_cell.keys()):
 		_free_foliage_cell(cell)
 	_region_cells_by_cell.clear()
-	_active_cells.clear()
+	_clear_active_cells()
 	_desired_midlod_cells_by_cell.clear()
 	_visual_tiles_by_cell.clear()
 	_midlod_tiles_by_cell.clear()
@@ -255,6 +276,7 @@ func reset_stream() -> void:
 	_queued_commits.clear()
 	_queued_midlod_commits.clear()
 	_foliage_subcommit_queue.clear()
+	_queued_foliage_subcommits_by_cell.clear()
 	_pending_foliage_subcommit_counts_by_cell.clear()
 	_foliage_finish_queue.clear()
 	_queued_foliage_finishes.clear()
@@ -366,7 +388,21 @@ func _has_pending_commit_work(drain_index: int) -> bool:
 		3: return not _foliage_subcommit_queue.is_empty()
 		4: return not _foliage_finish_queue.is_empty()
 		5: return not _midlod_commit_queue.is_empty()
-		6: return not _pending_free_cells.is_empty() or not _pending_free_midlod_cells.is_empty()
+		6: return not _pending_free_midlod_cells.is_empty() or _has_free_eligible_pending_visual_cell()
+	return false
+
+
+func _has_free_eligible_pending_visual_cell() -> bool:
+	# Retained cells (inside VISUAL_CELL_RETENTION_FRAMES) sit in _pending_free_cells
+	# for seconds while driving. Counting them as work let a no-op free drain claim
+	# the scheduler's one guaranteed over-deadline slot, so a budget-starved frame
+	# made no commit progress at all whenever the cursor reached the free queue.
+	if _pending_free_cells.is_empty():
+		return false
+	var retention_frames: int = _visual_cell_retention_frames()
+	for cell in _pending_free_cells:
+		if _is_visual_cell_free_eligible(cell, retention_frames):
+			return true
 	return false
 
 
@@ -685,7 +721,7 @@ func _on_world_tile_activated(cell: Vector2i) -> void:
 	if not _configured or _detail_root == null or _midlod_root == null or _foliage_root == null:
 		return
 	_cancel_visual_cell_free(cell)
-	_active_cells[cell] = true
+	_set_active_cell(cell)
 	_update_stream_priority_from_active_cells()
 	_hlod_dirty = true
 	_request_stream_hlod_queue_resort()
@@ -807,7 +843,7 @@ func _on_world_tile_evicted(cell: Vector2i) -> void:
 	var evict_start_usec: int = 0
 	if _perf_attribution_enabled:
 		evict_start_usec = Time.get_ticks_usec()
-	_active_cells.erase(cell)
+	_erase_active_cell(cell)
 	_update_stream_priority_from_active_cells()
 	_hlod_dirty = true
 	_request_stream_hlod_queue_resort()
@@ -1044,8 +1080,9 @@ func _desired_midlod_cells() -> Array[Vector2i]:
 	var max_distance: float = TerrainVisualBuilderScript.REGION_STREAM_MIDLOD_RANGE_END_M + tile_radius
 	var cell_radius: int = maxi(int(ceilf(max_distance / maxf(tile_size_m, 0.001))), 1)
 	var center_xz: Vector2 = Vector2((float(center_cell.x) + 0.5) * tile_size_m, (float(center_cell.y) + 0.5) * tile_size_m)
-	for y in range(center_cell.y - cell_radius, center_cell.y + cell_radius + 1):
-		for x in range(center_cell.x - cell_radius, center_cell.x + cell_radius + 1):
+	# x-outer / y-inner emits cells already in _cell_less order, so no sort is needed.
+	for x in range(center_cell.x - cell_radius, center_cell.x + cell_radius + 1):
+		for y in range(center_cell.y - cell_radius, center_cell.y + cell_radius + 1):
 			var cell: Vector2i = Vector2i(x, y)
 			if _active_cells.has(cell) and _is_cell_in_visual_detail_radius(cell):
 				continue
@@ -1055,23 +1092,41 @@ func _desired_midlod_cells() -> Array[Vector2i]:
 			if center_xz.distance_to(cell_xz) > max_distance:
 				continue
 			desired_cells.append(cell)
-	desired_cells.sort_custom(Callable(self, "_cell_less"))
 	return desired_cells
+
+
+func _set_active_cell(cell: Vector2i) -> void:
+	_active_cells[cell] = true
+	_active_cell_center_valid = false
+
+
+func _erase_active_cell(cell: Vector2i) -> void:
+	_active_cells.erase(cell)
+	_active_cell_center_valid = false
+
+
+func _clear_active_cells() -> void:
+	_active_cells.clear()
+	_active_cell_center_valid = false
 
 
 func _active_cell_center() -> Vector2i:
 	if _active_cells.is_empty():
 		return Vector2i.ZERO
+	if _active_cell_center_valid:
+		return _active_cell_center_cache
 	var sum_x: int = 0
 	var sum_y: int = 0
-	for cell in _sorted_cells(_active_cells.keys()):
+	for cell: Vector2i in _active_cells:
 		sum_x += cell.x
 		sum_y += cell.y
 	var count: int = maxi(_active_cells.size(), 1)
-	return Vector2i(
+	_active_cell_center_cache = Vector2i(
 		int(floorf(float(sum_x) / float(count) + 0.5)),
 		int(floorf(float(sum_y) / float(count) + 0.5))
 	)
+	_active_cell_center_valid = true
+	return _active_cell_center_cache
 
 
 func _enqueue_midlod_build(cell: Vector2i) -> void:
@@ -1283,14 +1338,34 @@ func _remove_queued_midlod_commit(cell: Vector2i) -> void:
 
 
 func _remove_queued_foliage_subcommits(cell: Vector2i) -> void:
-	if _foliage_subcommit_queue.is_empty() and not _pending_foliage_subcommit_counts_by_cell.has(cell):
+	_pending_foliage_subcommit_counts_by_cell.erase(cell)
+	if not _queued_foliage_subcommits_by_cell.has(cell):
 		return
+	_queued_foliage_subcommits_by_cell.erase(cell)
 	var retained_queue: Array[FoliageSubcommit] = []
 	for subcommit in _foliage_subcommit_queue:
 		if subcommit.cell != cell:
 			retained_queue.append(subcommit)
 	_foliage_subcommit_queue = retained_queue
-	_pending_foliage_subcommit_counts_by_cell.erase(cell)
+
+
+func _push_foliage_subcommit(cell: Vector2i, cell_data: Variant, species_data: Variant) -> void:
+	var subcommit: FoliageSubcommit = FoliageSubcommit.new()
+	subcommit.cell = cell
+	subcommit.cell_data = cell_data
+	subcommit.species_data = species_data
+	_foliage_subcommit_queue.append(subcommit)
+	_queued_foliage_subcommits_by_cell[cell] = int(_queued_foliage_subcommits_by_cell.get(cell, 0)) + 1
+
+
+func _pop_foliage_subcommit() -> FoliageSubcommit:
+	var subcommit: FoliageSubcommit = _foliage_subcommit_queue.pop_front()
+	var remaining: int = int(_queued_foliage_subcommits_by_cell.get(subcommit.cell, 0)) - 1
+	if remaining > 0:
+		_queued_foliage_subcommits_by_cell[subcommit.cell] = remaining
+	else:
+		_queued_foliage_subcommits_by_cell.erase(subcommit.cell)
+	return subcommit
 
 
 func _remove_queued_foliage_finish(cell: Vector2i) -> void:
@@ -1322,7 +1397,8 @@ func _drain_midlod_commit_queue() -> int:
 	if _midlod_commit_queue.is_empty():
 		return 0
 	var commit_budget: int = maxi(MIDLOD_COMMIT_BUDGET_PER_FRAME, 1)
-	_midlod_commit_queue.sort_custom(Callable(self, "_cell_less"))
+	if _midlod_commit_queue.size() > 1:
+		_midlod_commit_queue.assign(_sorted_cells(_midlod_commit_queue))
 	var committed_count: int = 0
 	while committed_count < commit_budget and not _midlod_commit_queue.is_empty():
 		var cell: Vector2i = _midlod_commit_queue.pop_front()
@@ -1360,7 +1436,7 @@ func _drain_foliage_subcommit_queue() -> void:
 	var subcommit_budget: int = maxi(GameConfig.render_visual_foliage_subcommits_per_frame, 1)
 	var committed_count: int = 0
 	while committed_count < subcommit_budget and not _foliage_subcommit_queue.is_empty():
-		var subcommit: FoliageSubcommit = _foliage_subcommit_queue.pop_front()
+		var subcommit: FoliageSubcommit = _pop_foliage_subcommit()
 		if not _active_cells.has(subcommit.cell) or not _is_cell_in_visual_detail_radius(subcommit.cell):
 			continue
 		# Resolve the tile root from the partial (still assembling) OR the live (already
@@ -1480,13 +1556,46 @@ func _resort_stream_hlod_queue() -> void:
 		if _perf_attribution_enabled:
 			_hlod_queue_usec_last_frame += maxi(Time.get_ticks_usec() - hlod_queue_start_usec, 0)
 		return
-	_stream_hlod_queue.sort_custom(Callable(self, "_stream_hlod_cell_less"))
+	_sort_cells_by_stream_hlod_priority(_stream_hlod_queue)
 	if _perf_attribution_enabled:
 		_hlod_queue_usec_last_frame += maxi(Time.get_ticks_usec() - hlod_queue_start_usec, 0)
 
 
 func _request_stream_hlod_queue_resort() -> void:
 	_stream_hlod_queue_resort_requested = true
+
+
+func _sort_cells_by_stream_hlod_priority(cells: Array[Vector2i]) -> void:
+	# In-place equivalent of sort_custom(_stream_hlod_cell_less). The pending HLOD
+	# queue starts with every region cell (3k+ on Zion) and is re-sorted on each
+	# activation/eviction frame, so a script comparator call per comparison is a
+	# real hitch. Pack (Manhattan distance, x, y) into one non-negative int64 key
+	# (21 bits each) and sort natively; same total order, same result. Any cell
+	# outside the packable range falls back to the comparator.
+	if cells.size() <= 1:
+		return
+	if _active_cells.is_empty():
+		cells.assign(_sorted_cells(cells))
+		return
+	var center: Vector2i = _stream_hlod_active_center_cell()
+	var count: int = cells.size()
+	var keys: PackedInt64Array = PackedInt64Array()
+	keys.resize(count)
+	for index in range(count):
+		var cell: Vector2i = cells[index]
+		var biased_x: int = cell.x + HLOD_SORT_KEY_COORD_BIAS
+		var biased_y: int = cell.y + HLOD_SORT_KEY_COORD_BIAS
+		var distance: int = absi(cell.x - center.x) + absi(cell.y - center.y)
+		if biased_x < 0 or biased_x >= HLOD_SORT_KEY_FIELD_SCALE or biased_y < 0 or biased_y >= HLOD_SORT_KEY_FIELD_SCALE or distance >= HLOD_SORT_KEY_FIELD_SCALE:
+			cells.sort_custom(Callable(self, "_stream_hlod_cell_less"))
+			return
+		keys[index] = (distance * HLOD_SORT_KEY_FIELD_SCALE + biased_x) * HLOD_SORT_KEY_FIELD_SCALE + biased_y
+	keys.sort()
+	for index in range(count):
+		var key: int = keys[index]
+		var biased_y: int = key % HLOD_SORT_KEY_FIELD_SCALE
+		var biased_x: int = (key / HLOD_SORT_KEY_FIELD_SCALE) % HLOD_SORT_KEY_FIELD_SCALE
+		cells[index] = Vector2i(biased_x - HLOD_SORT_KEY_COORD_BIAS, biased_y - HLOD_SORT_KEY_COORD_BIAS)
 
 
 func _stream_hlod_cell_less(left: Vector2i, right: Vector2i) -> bool:
@@ -1576,7 +1685,7 @@ func _drain_stream_hlod_commit_queue() -> int:
 	if _stream_hlod_commit_queue.is_empty():
 		return 0
 	var commit_budget: int = maxi(GameConfig.render_stream_hlod_commits_per_frame, 1)
-	_stream_hlod_commit_queue.sort_custom(Callable(self, "_stream_hlod_cell_less"))
+	_sort_cells_by_stream_hlod_priority(_stream_hlod_commit_queue)
 	var committed_count: int = 0
 	while committed_count < commit_budget and not _stream_hlod_commit_queue.is_empty():
 		var cell: Vector2i = _stream_hlod_commit_queue.pop_front()
@@ -1687,8 +1796,17 @@ func _queue_near_stream_hlod_densification() -> void:
 		return
 	var center: Vector2i = _stream_hlod_active_center_cell()
 	var radius: int = maxi(GameConfig.render_stream_hlod_densify_radius, 1)
-	for cell in _sorted_cells(_stream_hlod_chunks_by_cell.keys()):
-		_queue_stream_hlod_densification_in_radius(cell, center, radius)
+	var side: int = radius * 2 + 1
+	if side * side < _stream_hlod_chunks_by_cell.size():
+		# Only cells inside the Chebyshev square can queue. Walking it x-outer /
+		# y-inner visits them in the same _cell_less order as sorting every committed
+		# chunk (the whole region, 3k+ on Zion) did, so the queue order is unchanged.
+		for x in range(center.x - radius, center.x + radius + 1):
+			for y in range(center.y - radius, center.y + radius + 1):
+				_queue_stream_hlod_densification_in_radius(Vector2i(x, y), center, radius)
+	else:
+		for cell in _sorted_cells(_stream_hlod_chunks_by_cell.keys()):
+			_queue_stream_hlod_densification_in_radius(cell, center, radius)
 	if _perf_attribution_enabled:
 		_hlod_queue_usec_last_frame += maxi(Time.get_ticks_usec() - hlod_queue_start_usec, 0)
 
@@ -1827,7 +1945,7 @@ func _drain_stream_hlod_densify_commit_queue() -> int:
 	if _stream_hlod_densify_commit_queue.is_empty():
 		return 0
 	var commit_budget: int = maxi(GameConfig.render_stream_hlod_commits_per_frame, 1)
-	_stream_hlod_densify_commit_queue.sort_custom(Callable(self, "_stream_hlod_cell_less"))
+	_sort_cells_by_stream_hlod_priority(_stream_hlod_densify_commit_queue)
 	var committed_count: int = 0
 	while committed_count < commit_budget and not _stream_hlod_densify_commit_queue.is_empty():
 		var cell: Vector2i = _stream_hlod_densify_commit_queue.pop_front()
@@ -1931,11 +2049,7 @@ func _begin_foliage_tile_commit(cell: Vector2i, foliage_tile_data: Variant) -> v
 		for species_data in cell_data.species:
 			if species_data == null or bool(species_data.transforms.is_empty()):
 				continue
-			var subcommit: FoliageSubcommit = FoliageSubcommit.new()
-			subcommit.cell = cell
-			subcommit.cell_data = cell_data
-			subcommit.species_data = species_data
-			_foliage_subcommit_queue.append(subcommit)
+			_push_foliage_subcommit(cell, cell_data, species_data)
 			subcommit_count += 1
 	if subcommit_count <= 0:
 		_queue_foliage_tile_finish(cell)
@@ -1983,11 +2097,7 @@ func _enqueue_lod0_foliage_upgrade(cell: Vector2i) -> void:
 		for species_data in cell_data.species:
 			if species_data == null or bool(species_data.transforms.is_empty()):
 				continue
-			var subcommit: FoliageSubcommit = FoliageSubcommit.new()
-			subcommit.cell = cell
-			subcommit.cell_data = cell_data
-			subcommit.species_data = species_data
-			_foliage_subcommit_queue.append(subcommit)
+			_push_foliage_subcommit(cell, cell_data, species_data)
 			added_count += 1
 	if added_count <= 0:
 		return
@@ -2578,11 +2688,27 @@ func _region_cell_lookup(region_id: String) -> Dictionary[Vector2i, bool]:
 
 
 func _sorted_cells(value: Array) -> Array[Vector2i]:
-	var cells: Array[Vector2i] = []
-	for item in value:
+	# Same (x, then y) order as sort_custom(_cell_less), but sorted natively: each
+	# cell packs into one int64 key (x * 2^32 + (y + 2^31)), whose signed order is
+	# exactly lexicographic (x, y) across the full int32 range. A GDScript comparator
+	# costs one script call per comparison, which dominated the per-crossing
+	# refresh sweeps and the boot-time sort of every region cell (3k+ on Zion).
+	var keys: PackedInt64Array = PackedInt64Array()
+	keys.resize(value.size())
+	var count: int = 0
+	for item: Variant in value:
 		if item is Vector2i:
-			cells.append(item)
-	cells.sort_custom(Callable(self, "_cell_less"))
+			var cell: Vector2i = item
+			keys[count] = cell.x * CELL_SORT_KEY_X_SCALE + (cell.y + CELL_SORT_KEY_Y_BIAS)
+			count += 1
+	keys.resize(count)
+	keys.sort()
+	var cells: Array[Vector2i] = []
+	cells.resize(count)
+	for index in range(count):
+		var key: int = keys[index]
+		var biased_y: int = key & CELL_SORT_KEY_Y_MASK
+		cells[index] = Vector2i((key - biased_y) / CELL_SORT_KEY_X_SCALE, biased_y - CELL_SORT_KEY_Y_BIAS)
 	return cells
 
 

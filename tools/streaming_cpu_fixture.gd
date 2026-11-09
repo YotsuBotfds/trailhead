@@ -33,6 +33,11 @@ class BudgetProbe:
 	func _drain_pending_frees() -> void:
 		_record(6)
 
+# Unmodified streamer, typed so private helpers can be called directly. Never
+# configured or added to the tree: no workers, no EventBus connections.
+class StreamerProbe:
+	extends "res://systems/render/terrain_visual_streamer.gd"
+
 var _errors: PackedStringArray = PackedStringArray()
 
 
@@ -42,11 +47,18 @@ func _ready() -> void:
 
 func _run() -> void:
 	_check_shared_budget()
+	_check_retained_frees_are_not_commit_work()
+	_check_native_cell_sort_parity()
+	_check_stream_hlod_priority_sort_parity()
+	_check_active_center_cache()
+	_check_desired_midlod_cells_sorted()
+	_check_near_densify_walk_parity()
+	_check_foliage_subcommit_index()
 	_check_scatter_spacing_equivalence()
 	_check_upgrade_reuses_foliage()
 	_measure_spawn_scatter()
 	if _errors.is_empty():
-		print("ok: streaming CPU regressions (shared budget, foliage reuse, scatter parity)")
+		print("ok: streaming CPU regressions (shared budget, native sorts, center cache, densify walk, subcommit index, foliage reuse, scatter parity)")
 	else:
 		for error in _errors:
 			push_error(error)
@@ -76,6 +88,274 @@ func _check_shared_budget() -> void:
 	if probe.calls != [0, 1, 2, 3, 4, 5, 6]:
 		_errors.append("headless must preserve the original full drain order")
 	probe.free()
+
+
+func _check_retained_frees_are_not_commit_work() -> void:
+	# A free queue holding only retained cells must not claim the scheduler's one
+	# guaranteed over-deadline drain; an expired cell or a MidLOD free must.
+	var probe: StreamerProbe = StreamerProbe.new()
+	probe._headless = false
+	probe._render_frame_index = 1000
+	var cell: Vector2i = Vector2i(4, -3)
+	probe._pending_free_cells.append(cell)
+	probe._pending_free_queued_frame[cell] = 1000
+	if probe._has_pending_commit_work(6):
+		_errors.append("retained-only visual frees were reported as commit work")
+	probe._pending_free_queued_frame[cell] = 0
+	if not probe._has_pending_commit_work(6):
+		_errors.append("an expired visual free was not reported as commit work")
+	probe._pending_free_queued_frame[cell] = 1000
+	probe._pending_free_midlod_cells.append(Vector2i(9, 9))
+	if not probe._has_pending_commit_work(6):
+		_errors.append("a MidLOD free was not reported as commit work")
+	probe._pending_free_midlod_cells.clear()
+	probe._headless = true
+	if not probe._has_pending_commit_work(6):
+		_errors.append("headless (no retention) must treat every pending free as work")
+	probe.free()
+
+
+func _random_unique_cells(rng: RandomNumberGenerator, count: int, span: int) -> Array[Vector2i]:
+	var lookup: Dictionary[Vector2i, bool] = {}
+	var guard: int = 0
+	while lookup.size() < count and guard < count * 20:
+		lookup[Vector2i(rng.randi_range(-span, span), rng.randi_range(-span, span))] = true
+		guard += 1
+	var cells: Array[Vector2i] = []
+	for cell: Vector2i in lookup:
+		cells.append(cell)
+	return cells
+
+
+func _check_native_cell_sort_parity() -> void:
+	var probe: StreamerProbe = StreamerProbe.new()
+	var rng: RandomNumberGenerator = RandomNumberGenerator.new()
+	rng.seed = 150
+	for trial in range(40):
+		var span: int = [3, 40, 3000, 1000000][trial % 4]
+		var cells: Array[Vector2i] = _random_unique_cells(rng, rng.randi_range(0, 200), span)
+		var expected: Array[Vector2i] = []
+		expected.assign(cells)
+		expected.sort_custom(Callable(probe, "_cell_less"))
+		if probe._sorted_cells(cells) != expected:
+			_errors.append("native _sorted_cells order differs from _cell_less (trial " + str(trial) + ")")
+			break
+	# Full int32 range, negatives, and non-Vector2i entries (filtered as before).
+	var extremes: Array[int] = [-2147483648, -2147483647, -1, 0, 1, 2147483646, 2147483647]
+	var mixed: Array = ["skip", 7, null]
+	var extreme_cells: Array[Vector2i] = []
+	for x in extremes:
+		for y in extremes:
+			mixed.append(Vector2i(x, y))
+			extreme_cells.append(Vector2i(x, y))
+	extreme_cells.reverse()
+	extreme_cells.sort_custom(Callable(probe, "_cell_less"))
+	if probe._sorted_cells(mixed) != extreme_cells:
+		_errors.append("native _sorted_cells mishandles int32 extremes or non-cell entries")
+	# Informational: the boot-time region sort (Zion has ~3.1k cells).
+	var region: Array[Vector2i] = []
+	for x in range(-28, 28):
+		for y in range(-28, 28):
+			region.append(Vector2i(x, y))
+	region.shuffle()
+	var start_usec: int = Time.get_ticks_usec()
+	probe._sorted_cells(region)
+	var native_ms: float = float(Time.get_ticks_usec() - start_usec) / 1000.0
+	var reference: Array[Vector2i] = []
+	reference.assign(region)
+	start_usec = Time.get_ticks_usec()
+	reference.sort_custom(Callable(probe, "_cell_less"))
+	var comparator_ms: float = float(Time.get_ticks_usec() - start_usec) / 1000.0
+	print("streaming_cpu: sort ", region.size(), " cells native ms=", native_ms, " comparator ms=", comparator_ms)
+	probe.free()
+
+
+func _check_stream_hlod_priority_sort_parity() -> void:
+	var probe: StreamerProbe = StreamerProbe.new()
+	var rng: RandomNumberGenerator = RandomNumberGenerator.new()
+	rng.seed = 2611
+	# Empty active set: plain _cell_less order.
+	var cells: Array[Vector2i] = _random_unique_cells(rng, 150, 30)
+	_expect_stream_hlod_sort_parity(probe, cells, "empty active set")
+	# Active ring with and without a stream-priority center.
+	for x in range(10, 17):
+		for y in range(-9, -2):
+			probe._set_active_cell(Vector2i(x, y))
+	_expect_stream_hlod_sort_parity(probe, cells, "active center")
+	probe._update_stream_priority_from_active_cells()
+	for trial in range(12):
+		_expect_stream_hlod_sort_parity(probe, _random_unique_cells(rng, rng.randi_range(0, 400), [6, 60, 4000][trial % 3]), "priority center trial " + str(trial))
+	# Out of packable range: comparator fallback must still give the same order.
+	var wide: Array[Vector2i] = _random_unique_cells(rng, 50, 40)
+	wide.append(Vector2i(2000000, 3))
+	wide.append(Vector2i(-5, -1500000))
+	_expect_stream_hlod_sort_parity(probe, wide, "fallback range")
+	# Informational: one activation-frame resort of a fresh Zion-sized queue.
+	var region: Array[Vector2i] = []
+	for x in range(-28, 28):
+		for y in range(-28, 28):
+			region.append(Vector2i(x, y))
+	var reference: Array[Vector2i] = []
+	reference.assign(region)
+	var start_usec: int = Time.get_ticks_usec()
+	probe._sort_cells_by_stream_hlod_priority(region)
+	var native_ms: float = float(Time.get_ticks_usec() - start_usec) / 1000.0
+	start_usec = Time.get_ticks_usec()
+	reference.sort_custom(Callable(probe, "_stream_hlod_cell_less"))
+	var comparator_ms: float = float(Time.get_ticks_usec() - start_usec) / 1000.0
+	print("streaming_cpu: HLOD resort ", region.size(), " cells native ms=", native_ms, " comparator ms=", comparator_ms)
+	probe.free()
+
+
+func _expect_stream_hlod_sort_parity(probe: StreamerProbe, cells: Array[Vector2i], label: String) -> void:
+	var expected: Array[Vector2i] = []
+	expected.assign(cells)
+	expected.sort_custom(Callable(probe, "_stream_hlod_cell_less"))
+	var actual: Array[Vector2i] = []
+	actual.assign(cells)
+	actual.reverse()
+	probe._sort_cells_by_stream_hlod_priority(actual)
+	if actual != expected:
+		_errors.append("native stream-HLOD priority sort differs from _stream_hlod_cell_less (" + label + ")")
+
+
+func _reference_active_center(active: Dictionary[Vector2i, bool]) -> Vector2i:
+	if active.is_empty():
+		return Vector2i.ZERO
+	var sum_x: int = 0
+	var sum_y: int = 0
+	for cell: Vector2i in active:
+		sum_x += cell.x
+		sum_y += cell.y
+	return Vector2i(
+		int(floorf(float(sum_x) / float(active.size()) + 0.5)),
+		int(floorf(float(sum_y) / float(active.size()) + 0.5))
+	)
+
+
+func _check_active_center_cache() -> void:
+	var probe: StreamerProbe = StreamerProbe.new()
+	var rng: RandomNumberGenerator = RandomNumberGenerator.new()
+	rng.seed = 49
+	if probe._active_cell_center() != Vector2i.ZERO:
+		_errors.append("empty active set must center at zero")
+	for step in range(300):
+		var cell: Vector2i = Vector2i(rng.randi_range(-12, 12), rng.randi_range(-12, 12))
+		if rng.randi_range(0, 2) == 0:
+			probe._erase_active_cell(cell)
+		else:
+			probe._set_active_cell(cell)
+		if step % 97 == 96:
+			probe._clear_active_cells()
+		# Query twice: the second hit comes from the cache.
+		var expected: Vector2i = _reference_active_center(probe._active_cells)
+		if probe._active_cell_center() != expected or probe._active_cell_center() != expected:
+			_errors.append("cached active center went stale at step " + str(step))
+			break
+	probe.free()
+
+
+func _check_desired_midlod_cells_sorted() -> void:
+	var probe: StreamerProbe = StreamerProbe.new()
+	for x in range(-5, 30):
+		for y in range(-8, 26):
+			probe._region_cells_by_cell[Vector2i(x, y)] = true
+	for x in range(7, 14):
+		for y in range(5, 12):
+			probe._set_active_cell(Vector2i(x, y))
+	var desired: Array[Vector2i] = probe._desired_midlod_cells()
+	var expected: Array[Vector2i] = []
+	expected.assign(desired)
+	expected.sort_custom(Callable(probe, "_cell_less"))
+	if desired.is_empty() or desired != expected:
+		_errors.append("_desired_midlod_cells must stay non-empty and in _cell_less order")
+	for cell in desired:
+		if probe._active_cells.has(cell) and probe._is_cell_in_visual_detail_radius(cell):
+			_errors.append("_desired_midlod_cells included an active detail cell")
+			break
+	probe.free()
+
+
+func _check_near_densify_walk_parity() -> void:
+	# Dense (square walk) and sparse (sorted-key fallback) chunk sets must queue the
+	# same cells in the same order as the original sort-every-chunk scan.
+	for dense in [true, false]:
+		var probe: StreamerProbe = StreamerProbe.new()
+		probe._region_id = "cedar_hollow_zion"
+		var rng: RandomNumberGenerator = RandomNumberGenerator.new()
+		rng.seed = 7 if dense else 8
+		if dense:
+			for x in range(-20, 25):
+				for y in range(-18, 27):
+					if rng.randi_range(0, 9) != 0:
+						probe._stream_hlod_chunks_by_cell[Vector2i(x, y)] = null
+		else:
+			# 40 unique cells (i mod 13, 5i mod 11), mostly inside the radius.
+			for i in range(40):
+				probe._stream_hlod_chunks_by_cell[Vector2i(i % 13 - 4, (i * 5) % 11 - 2)] = null
+		var chunk_cells: Array[Vector2i] = []
+		for cell: Vector2i in probe._stream_hlod_chunks_by_cell:
+			chunk_cells.append(cell)
+		for index in range(0, chunk_cells.size(), 5):
+			probe._densified_stream_hlod_cells[chunk_cells[index]] = true
+		for index in range(2, chunk_cells.size(), 7):
+			probe._queued_stream_hlod_densify_cells[chunk_cells[index]] = true
+		for x in range(1, 4):
+			for y in range(2, 5):
+				probe._set_active_cell(Vector2i(x, y))
+		probe._update_stream_priority_from_active_cells()
+		var center: Vector2i = probe._stream_hlod_active_center_cell()
+		var radius: int = maxi(GameConfig.render_stream_hlod_densify_radius, 1)
+		chunk_cells.sort_custom(Callable(probe, "_cell_less"))
+		var expected: Array[Vector2i] = []
+		for cell in chunk_cells:
+			if probe._densified_stream_hlod_cells.has(cell) or probe._queued_stream_hlod_densify_cells.has(cell):
+				continue
+			if absi(cell.x - center.x) > radius or absi(cell.y - center.y) > radius:
+				continue
+			expected.append(cell)
+		probe._queue_near_stream_hlod_densification()
+		if expected.is_empty() or probe._stream_hlod_densify_queue != expected:
+			_errors.append("near densify queue changed (" + ("square walk" if dense else "sparse fallback") + ")")
+		probe.free()
+
+
+func _check_foliage_subcommit_index() -> void:
+	var probe: StreamerProbe = StreamerProbe.new()
+	var a: Vector2i = Vector2i(1, 1)
+	var b: Vector2i = Vector2i(-2, 3)
+	var c: Vector2i = Vector2i(5, -7)
+	var absent: Vector2i = Vector2i(40, 40)
+	for cell in [a, a, b, a, c, b, a]:
+		probe._push_foliage_subcommit(cell, null, null)
+	probe._pop_foliage_subcommit()
+	_expect_subcommit_index(probe, [a, b, a, c, b, a], "after pop")
+	probe._pending_foliage_subcommit_counts_by_cell[absent] = 3
+	probe._remove_queued_foliage_subcommits(absent)
+	if probe._pending_foliage_subcommit_counts_by_cell.has(absent):
+		_errors.append("removing a cell with no queued subcommits must still clear its pending count")
+	_expect_subcommit_index(probe, [a, b, a, c, b, a], "after no-op removal")
+	probe._pending_foliage_subcommit_counts_by_cell[b] = 2
+	probe._remove_queued_foliage_subcommits(b)
+	if probe._pending_foliage_subcommit_counts_by_cell.has(b):
+		_errors.append("removing queued subcommits must clear the pending count")
+	_expect_subcommit_index(probe, [a, a, c, a], "after removal")
+	while not probe._foliage_subcommit_queue.is_empty():
+		probe._pop_foliage_subcommit()
+	_expect_subcommit_index(probe, [], "after drain")
+	probe.free()
+
+
+func _expect_subcommit_index(probe: StreamerProbe, expected_cells: Array, label: String) -> void:
+	var actual_cells: Array = []
+	var recount: Dictionary[Vector2i, int] = {}
+	for subcommit in probe._foliage_subcommit_queue:
+		actual_cells.append(subcommit.cell)
+		recount[subcommit.cell] = int(recount.get(subcommit.cell, 0)) + 1
+	if actual_cells != expected_cells:
+		_errors.append("foliage subcommit queue order changed " + label)
+	if probe._queued_foliage_subcommits_by_cell != recount:
+		_errors.append("foliage subcommit index out of sync " + label)
 
 
 func _check_scatter_spacing_equivalence() -> void:
