@@ -3,6 +3,7 @@ extends Node3D
 const TerrainVisualBuilderScript: GDScript = preload("res://systems/render/terrain_visual_builder.gd")
 const MAX_BUILD_WORKERS: int = 7
 const MIDLOD_COMMIT_BUDGET_PER_FRAME: int = 2
+const COMMIT_DRAIN_COUNT: int = 7
 
 # Soft per-frame wall-clock budget (RENDER host — wall-clock is allowed here; this
 # never touches the deterministic sim). The commit/subcommit drains already cap how
@@ -131,6 +132,7 @@ var _worker_should_stop: bool = false
 var _next_visual_build_id: int = 0
 var _render_frame_index: int = 0
 var _commit_phase_start_usec: int = 0
+var _commit_drain_cursor: int = 0
 var _build_queue: Array[Variant] = []
 var _midlod_build_queue: Array[Variant] = []
 var _stream_hlod_build_queue: Array[Variant] = []
@@ -279,6 +281,7 @@ func reset_stream() -> void:
 	_clear_worker_queues()
 	_next_visual_build_id = 0
 	_render_frame_index = 0
+	_commit_drain_cursor = 0
 	_result_drains_remaining_this_frame = 0
 	_reset_perf_attribution_frame()
 	_configured = false
@@ -317,41 +320,54 @@ func _process(_delta: float) -> void:
 	var visual_commit_start_usec: int = 0
 	if _perf_attribution_enabled:
 		visual_commit_start_usec = Time.get_ticks_usec()
-	_drain_stream_hlod_commit_queue()
-	_drain_stream_hlod_densify_commit_queue()
-	# Drain visual tiles AND foliage subcommits every frame. The old gate only drained
-	# foliage when zero visual tiles committed that frame; while driving, visual tiles
-	# commit continuously, so foliage starved to a trickle and the floor ahead of the
-	# moving car stayed bare. Foliage drain is already bounded by its own per-frame budget
-	# (GameConfig.render_visual_foliage_subcommits_per_frame), so ungating does not uncap work.
-	# The commit/subcommit/mid-LOD drains share the soft wall-clock budget stamped above
-	# (COMMIT_FRAME_BUDGET_USEC), so a burst spreads across frames instead of stalling one.
-	_drain_commit_queue()
-	var foliage_build_start_usec: int = 0
-	if _perf_attribution_enabled:
-		foliage_build_start_usec = Time.get_ticks_usec()
-	_drain_foliage_subcommit_queue()
-	if _perf_attribution_enabled:
-		_foliage_build_usec_last_frame += maxi(Time.get_ticks_usec() - foliage_build_start_usec, 0)
-	# Attach fully-built (detached) foliage tiles to the live root at most N per frame.
-	# Runs after the subcommit drain so tiles that finished THIS frame are eligible, and
-	# shares the COMMIT_FRAME_BUDGET_USEC window so the materialization burst spreads
-	# instead of stalling one frame. This is the cell-crossing-freeze fix.
-	foliage_build_start_usec = 0
-	if _perf_attribution_enabled:
-		foliage_build_start_usec = Time.get_ticks_usec()
-	_drain_foliage_finish_queue()
-	if _perf_attribution_enabled:
-		_foliage_build_usec_last_frame += maxi(Time.get_ticks_usec() - foliage_build_start_usec, 0)
-	_drain_midlod_commit_queue()
-	var evict_start_usec: int = 0
-	if _perf_attribution_enabled:
-		evict_start_usec = Time.get_ticks_usec()
-	_drain_pending_frees()
-	if _perf_attribution_enabled:
-		_evict_usec_last_frame += maxi(Time.get_ticks_usec() - evict_start_usec, 0)
+	_drain_budgeted_commits()
 	if _perf_attribution_enabled:
 		_visual_commit_usec_last_frame = maxi(Time.get_ticks_usec() - visual_commit_start_usec, 0)
+
+
+func _drain_budgeted_commits() -> void:
+	# One shared soft budget, with round-robin service under pressure. Only the
+	# first nonempty drain may start after the deadline, ensuring progress without
+	# allowing every queue its own over-budget item. Headless keeps the original
+	# ordering/count budgets for deterministic fixtures.
+	var first_drain: int = 0 if _headless else _commit_drain_cursor
+	var drained_any: bool = false
+	for offset in range(COMMIT_DRAIN_COUNT):
+		var drain_index: int = (first_drain + offset) % COMMIT_DRAIN_COUNT
+		if not _has_pending_commit_work(drain_index):
+			continue
+		if drained_any and _commit_frame_budget_exceeded():
+			break
+		var start_usec: int = Time.get_ticks_usec() if _perf_attribution_enabled else 0
+		match drain_index:
+			0: _drain_stream_hlod_commit_queue()
+			1: _drain_stream_hlod_densify_commit_queue()
+			2: _drain_commit_queue()
+			3: _drain_foliage_subcommit_queue()
+			4: _drain_foliage_finish_queue()
+			5: _drain_midlod_commit_queue()
+			6: _drain_pending_frees()
+		if _perf_attribution_enabled:
+			var elapsed_usec: int = maxi(Time.get_ticks_usec() - start_usec, 0)
+			if drain_index == 3 or drain_index == 4:
+				_foliage_build_usec_last_frame += elapsed_usec
+			elif drain_index == 6:
+				_evict_usec_last_frame += elapsed_usec
+		drained_any = true
+		if not _headless:
+			_commit_drain_cursor = (drain_index + 1) % COMMIT_DRAIN_COUNT
+
+
+func _has_pending_commit_work(drain_index: int) -> bool:
+	match drain_index:
+		0: return not _stream_hlod_commit_queue.is_empty()
+		1: return not _stream_hlod_densify_commit_queue.is_empty()
+		2: return not _commit_queue.is_empty()
+		3: return not _foliage_subcommit_queue.is_empty()
+		4: return not _foliage_finish_queue.is_empty()
+		5: return not _midlod_commit_queue.is_empty()
+		6: return not _pending_free_cells.is_empty() or not _pending_free_midlod_cells.is_empty()
+	return false
 
 
 func _drain_hlod_maintenance_requests() -> void:
@@ -389,8 +405,8 @@ func _drain_hlod_maintenance_requests() -> void:
 
 func _commit_frame_budget_exceeded() -> bool:
 	# True once this frame's commit phase has already spent COMMIT_FRAME_BUDGET_USEC.
-	# Callers always commit at least one item before consulting this, so a single fat
-	# tile can never deadlock the queue — it just yields the remainder to next frame.
+	# The shared scheduler allows one drain to make progress before checking this;
+	# each drain also checks between items so a single fat tile cannot deadlock it.
 	# Headless fixtures busy-loop a single frame and rely on draining the whole queue
 	# in one _process tick, so the budget is disabled under the headless DisplayServer.
 	if _headless:
@@ -882,6 +898,15 @@ func _enqueue_build(cell: Vector2i, sample_step: int = TerrainVisualBuilderScrip
 		"kind": "visual",
 		"region_id": _region_id,
 		"sample_step": sample_step,
+		# Placement does not depend on terrain mesh resolution. Keep the payload
+		# produced by the coarse job (ready, partially attached, live or deferred)
+		# instead of regenerating all foliage for the full-resolution upgrade.
+		"build_foliage": not (
+			_ready_foliage_data_by_cell.has(cell)
+			or _partial_foliage_tiles_by_cell.has(cell)
+			or _foliage_tiles_by_cell.has(cell)
+			or _deferred_lod0_foliage_data_by_cell.has(cell)
+		),
 	}
 	_work_mutex.lock()
 	_build_queue.append(job)
@@ -1372,10 +1397,14 @@ func _drain_pending_frees() -> void:
 			continue
 		_free_pending_visual_cell_at(pending_index)
 		freed_count += 1
+		if _commit_frame_budget_exceeded():
+			return
 	while freed_count < free_budget and not _pending_free_midlod_cells.is_empty():
 		var cell: Vector2i = _pending_free_midlod_cells.pop_front()
 		_free_midlod_cell(cell)
 		freed_count += 1
+		if _commit_frame_budget_exceeded():
+			return
 
 
 func _commit_visual_tile(cell: Vector2i, visual_tile_data: Variant, sample_step: int) -> void:
@@ -2227,11 +2256,11 @@ func _build_visual_tile_result(job: Dictionary) -> Dictionary:
 	else:
 		visual_tile_data = TerrainVisualBuilderScript.build_region_visual_tile_data(region_id, cell, sample_step)
 	var foliage_tile_data: Variant = null
-	if sync_perf_enabled:
+	if bool(job.get("build_foliage", true)) and sync_perf_enabled:
 		var foliage_build_start_usec: int = Time.get_ticks_usec()
 		foliage_tile_data = TerrainVisualBuilderScript.build_region_foliage_tile_data(region_id, cell)
 		_foliage_build_usec_last_frame += maxi(Time.get_ticks_usec() - foliage_build_start_usec, 0)
-	else:
+	elif bool(job.get("build_foliage", true)):
 		foliage_tile_data = TerrainVisualBuilderScript.build_region_foliage_tile_data(region_id, cell)
 	var ok: bool = visual_tile_data != null and bool(visual_tile_data.ok)
 	var message: String = ""

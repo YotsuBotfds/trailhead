@@ -459,7 +459,7 @@ static func _zion_desert_batch(
 	base_color: Color
 ) -> ZionScatterBatch:
 	var batch: ZionScatterBatch = ZionScatterBatch.new()
-	var placed_xz: Array[Vector2] = []
+	var placed_by_cell: Dictionary[Vector2i, Variant] = {}
 	var safe_cluster_count: int = maxi(cluster_count, 1)
 	for item_index in range(target_count):
 		for attempt in range(ZION_DESERT_MAX_ATTEMPTS_PER_INSTANCE):
@@ -469,7 +469,7 @@ static func _zion_desert_batch(
 			var surface_id_value: int = TerrainVisualBuilderScript.region_surface_id_value_at_xz(tile_data_by_cell, world_xz.x, world_xz.y)
 			if not _zion_desert_surface_allowed(surface_id_value):
 				continue
-			if not _zion_desert_spacing_allowed(placed_xz, world_xz, min_spacing):
+			if not _zion_desert_spacing_allowed(placed_by_cell, world_xz, min_spacing):
 				continue
 			var normal: Vector3 = TerrainVisualBuilderScript.region_visual_normal_at_xz(tile_data_by_cell, world_xz.x, world_xz.y)
 			if normal.y < min_normal_y:
@@ -482,7 +482,7 @@ static func _zion_desert_batch(
 			var local_position: Vector3 = Vector3(world_xz.x, height + y_offset, world_xz.y) - root_origin
 			batch.transforms.append(Transform3D(basis, local_position))
 			batch.colors.append(_zion_desert_instance_color(base_color, item_index, attempt, salt))
-			placed_xz.append(world_xz)
+			_zion_desert_record_placement(placed_by_cell, world_xz, min_spacing)
 			break
 	return batch
 
@@ -514,10 +514,34 @@ static func _zion_desert_surface_allowed(surface_id_value: int) -> bool:
 	return surface_id_value > 0
 
 
-static func _zion_desert_spacing_allowed(placed_xz: Array[Vector2], candidate_xz: Vector2, min_spacing: float) -> bool:
-	for existing_xz in placed_xz:
-		if existing_xz.distance_to(candidate_xz) < min_spacing:
-			return false
+static func _zion_desert_spacing_cell(point: Vector2, min_spacing: float) -> Vector2i:
+	var cell_size: float = maxf(min_spacing, 0.001)
+	return Vector2i(floori(point.x / cell_size), floori(point.y / cell_size))
+
+
+static func _zion_desert_record_placement(placed_by_cell: Dictionary[Vector2i, Variant], point: Vector2, min_spacing: float) -> void:
+	var cell: Vector2i = _zion_desert_spacing_cell(point, min_spacing)
+	if not placed_by_cell.has(cell):
+		var bucket: Array[Vector2] = []
+		placed_by_cell[cell] = bucket
+	var points: Array[Vector2] = placed_by_cell[cell]
+	points.append(point)
+
+
+static func _zion_desert_spacing_allowed(placed_by_cell: Dictionary[Vector2i, Variant], candidate_xz: Vector2, min_spacing: float) -> bool:
+	# Any point closer than min_spacing must be in this cell or one of its eight
+	# neighbors. Preserve the original distance comparison and candidate order so
+	# every accepted transform/color stays identical to the linear scan.
+	var cell: Vector2i = _zion_desert_spacing_cell(candidate_xz, min_spacing)
+	for x in range(cell.x - 1, cell.x + 2):
+		for y in range(cell.y - 1, cell.y + 2):
+			var neighbor: Vector2i = Vector2i(x, y)
+			if not placed_by_cell.has(neighbor):
+				continue
+			var points: Array[Vector2] = placed_by_cell[neighbor]
+			for existing_xz in points:
+				if existing_xz.distance_to(candidate_xz) < min_spacing:
+					return false
 	return true
 
 

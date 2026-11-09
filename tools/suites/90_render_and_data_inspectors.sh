@@ -42,3 +42,6 @@ printf 'run: chase camera stop-lock (stationary freeze guard)\n'
 
 printf 'run: skyline height manifest guard\n'
 "$godot_bin" --headless --path . res://tools/skyline_height_guard_fixture.tscn
+
+printf 'run: streaming CPU regressions\n'
+"$godot_bin" --headless --path . res://tools/streaming_cpu_fixture.tscn
